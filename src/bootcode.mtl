@@ -4208,17 +4208,19 @@ fun webmac key=strcatlist _webmac key 0;;
 
 fun trameID2Hex t= if t==MSG_IDLE then "7fffffff" else if t==MSG_ASLEEP then "7ffffffe" else itoh t;;
 
-// Pour le dÃ©veloppement, dÃ©commenter une des lignes ci-dessous.
+// Pour le developpement,dommenter une des lignes ci-dessous.
 // fun confGetServerUrl = "r.nabaztag.com/vl";;
 //fun confGetServerUrl = "nabdev.violet.net/vl";; // debug
 // fun confGetServerUrl = "192.168.1.11/vl";;
 
 // URLs normales
 fun configurl=strcatlist confGetServerUrl::"/locate.jsp?sn="::(webmac netMac)::"&h="::(itoa HARDWARE)::nil;;
-fun pingurl=strcatlist confGetServerUrl::"/vl/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
-fun recordurl mode=strcatlist confGetServerUrl::"/vl/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
-fun rfidurl tag=strcatlist confGetServerUrl::"/vl/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t="::(webmac tag)::nil;;
-fun interactifurl application = strcatlist confGetServerUrl::"/vl/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
+fun pingurl=strcatlist confGetServerUrl::"/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
+fun recordurl mode=strcatlist confGetServerUrl::"/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
+fun rfidurl tag1 tag2=
+  strcatlist confGetServerUrl::"/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t[]="::(webmac tag1)::"&t[]="::(webmac tag2)::nil;;
+
+fun interactifurl application = strcatlist confGetServerUrl::"/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
 
 // Construction des urls d'interactivit?
 fun interactifurl_start application= strcatlist (interactifurl application)::"&st=start&tc="::(trameID2Hex currentTrameID)::nil;;
@@ -5640,7 +5642,8 @@ fun _cbrfidhttp http res=
 	0;;
 
 fun dumprfid l0=
-	for l=l0;l!=nil;tl l do let hd l->x in Secholn webmac x;
+	for l=l0;l!=nil;tl l do let hd l->x in 
+	  Secholn webmac x;
 	l0;;
 
 fun ParseRfidChar id index= // v19
@@ -5656,27 +5659,28 @@ fun ParseRfid id = // v19
 // *************** CONTROLS *************
 
 fun controlrfid= //v19
-//	let hd dumprfid rfidGetList -> rfid in
+//	let hd dumprfid rfidGetList -> [rfid rfid1] in
+
 	if (gInteractiveApp == nil) then // disabled when interactive
-	let rfidGet -> rfid in	
+	let hd dumprfid rfidGetList -> rfid in
 	if (strcmp rfid lastrfid) && (RFIDchek == 0) && (time_ms - RFIDlast > 750) then
 	(
 		if ((time_ms - RFIDlast) > 1000) then set lastrfid = "0000000";
 		if rfid!=nil then
 		(
-			if (ParseRfid rfid) !=0 then
-			(
+			//if (ParseRfid rfid) !=0 then
+			//(
 				set lastrfid=rfid;
-				set RFIDchek = 1;
+				set RFIDchek = 0;
 				set RFIDlast = time_ms;
 				// TOBI controlsound midi_RFIDok;
 				
 				// lancer l'animation (v19)
 				msgchorstart chor_RFIDok::nil nil nil;
-				set chortimescale=10; // recopi? d'avant, mas pourquoi ? N?cessaire ? [AS 24oct07]				
+				set chortimescale=10; // recopi? d'avant, mas pourquoi ? N?cessaire ? [AS 24oct07]
 				
-				httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
-			)
+				httprequest "GET" rfidurl rfid rfid nil #_cbrfidhttp HTTP_NORMAL
+			//)
 		)
 	);
 	0;;
