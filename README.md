@@ -1,0 +1,1 @@
+inspred by https://github.com/quimarche/trudy/blob/master/trudy.rb
