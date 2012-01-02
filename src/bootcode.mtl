@@ -1,7 +1,7 @@
 // VLISP - Feb 06 - by Sylvain Huet
 // Metal
 // V16 : Nouveau Taichi d'Antoine Schmitt
-// V17 : 25may07 : Nouvelles chorgraphies streaming d'Antoine Schmitt
+// V17 : 25may07 : Nouvelles chor?graphies streaming d'Antoine Schmitt
 // v17bis : 31may07 : Validation de la palette pour les messages
 // v18 : 01june07 : Ouverture du micro à distance par romain
 // v19 : july07 : Amélioration du RFID (son + lumière + suppression du 0000000) + Permet la reco meme lorsque le lapin dort
@@ -1981,7 +1981,7 @@ fun earWaitRun=
 		else if dv>2 then
 		(
 			// Pas de mvt autonome.
-			// Veut dire qu'une oreille a t tourne par l'utilisateur :
+			// Veut dire qu'une oreille a ?t? tourn?e par l'utilisateur :
 			// si interactif : le noter
 			// sinon passer en mode detect
 			set e.lvalE=v;
@@ -2059,23 +2059,23 @@ fun earGo i p d=
 ifdef INFOLIB {
 
 // gestion des services
-// v21 : chang la gestion du tempo : maintenant gestion base sur le temps rel (bug 195)
-// v21 : chang animation orage (bug 202)
-// v21 : chang couleur de palette de traffic (de 9  1) (bug 197)
+// v21 : chang? la gestion du tempo : maintenant gestion bas?e sur le temps r?el (bug 195)
+// v21 : chang? animation orage (bug 202)
+// v21 : chang? couleur de palette de traffic (de 9  1) (bug 197)
 
 // infodata : les definitions des animations visuelles des services (meteo, traffic, etc..)
 // Liste de tuples. Un tuple = [<type de service> <animations>]
 // animations = tableau de N animations, une par valeur du service. Animation = tuple = [tempo <couleurs>]
 // couleurs = X fois 3 couleurs pour les 3 leds du ventre (led 1, 2, 3)
 // couleur = index dans le tableau 'infoPalette'
-// tempo = 0.5*log2 du nombre d'itrations  durer sur la couleur courante (ex : tempo = 3, dure = 16 itrations)
+// tempo = 0.5*log2 du nombre d'it?rations  durer sur la couleur courante (ex : tempo = 3, dur?e = 16 it?rations)
 var infodata;;
 
-// infosrc : les services courants affichs par ce lapin (envoy par le serveur et mis  jour par le fonction 'infoUpdate')
+// infosrc : les services courants affich?s par ce lapin (envoy? par le serveur et mis  jour par le fonction 'infoUpdate')
 // Un tableau de 32 valeurs.
-// Les 16 premires entres sont pour les services courants. 2 valeurs par service donc 8 services max.
+// Les 16 premires entr?es sont pour les services courants. 2 valeurs par service donc 8 services max.
 // 2 valeurs par service : la premire valeur vaut 1+infoType (ex : 1 pour meteo), la deuxime vaut infoVal, la valeur du service (ex : 0 pour soleil)
-// Les valeurs suivantes semblent utilises par le serveur pour divers usages:
+// Les valeurs suivantes semblent utilis?es par le serveur pour divers usages:
 // Il semble que le serveur stocke des choses dans les cases 18 et 19 de infosrc (messages en attente par exemple)
 var infosrc;;
 
@@ -2140,7 +2140,7 @@ fun infoInit=
 ]::
 nil;;
 
-// v21 : chang couleur jaune clair (11) de 0xffff80  0xffcc00 (bug 197)
+// v21 : chang? couleur jaune clair (11) de 0xffff80  0xffcc00 (bug 197)
 var infoPalette={
 //  noir     rouge    vert     jaune    bleu     violet   cyan     blanc
 	0x000000 0xff0000 0x00ff00 0xffff00 0x0000ff 0xff00ff 0x00ffff 0xffffff
@@ -2149,7 +2149,7 @@ var infoPalette={
 };;
 
 
-// heure de dmarrage du service courant
+// heure de d?marrage du service courant
 var infoStartTime;;
 // index du service courant (dans infosrc)
 var infoIndex=0;;
@@ -2159,13 +2159,13 @@ var infoType;;
 var infoVal;;
 // index de la couleur dans le tableau des couleurs de l'animation courante
 var infoAnimColori;;
-// Date de dmarrage de la couleur..
+// Date de d?marrage de la couleur..
 var infoAnimColorStart;;
-// dure de la couleur...
+// dur?e de la couleur...
 var infoAnimColorDur;;
 
-// dure d'affichage d'un service, en secondes
-// v21 : pass  15s
+// dur?e d'affichage d'un service, en secondes
+// v21 : pass?  15s
 var INFO_TIMEOUT=15;;
 
 fun infoAnimationsOf typ=listswitch infodata typ;;
@@ -2232,7 +2232,7 @@ fun infoRun=
 		)
 	);;
 		
-// fonction de mise  jour de infosrc (appel par la boucle de rception des messages du serveur '_pingcbhttp')
+// fonction de mise  jour de infosrc (appel? par la boucle de r?ception des messages du serveur '_pingcbhttp')
 fun infoUpdate data=
 	let strlen data -> len in
 	for i=0;i<len do set infosrc.i=strget data i;
@@ -2243,10 +2243,10 @@ fun infoGet_ i typ=
 	else if typ==infosrc.i then infosrc.(i+1)
 	else infoGet_ i+1 typ;;
 
-// Retourne la valeur du type de service donn.
-// Attention : gestion spciale du type taichi (TYPE_taichi). Il semble que le serveur permette au lapin de faire du taichi en donnant 
+// Retourne la valeur du type de service donn?.
+// Attention : gestion sp?ciale du type taichi (TYPE_taichi). Il semble que le serveur permette au lapin de faire du taichi en donnant 
 // une valeur non nulle au service TYPE_taichi (14).
-// En fait, cette fonction est utilise uniquement pour le taichi...
+// En fait, cette fonction est utilis?e uniquement pour le taichi...
 fun infoGet typ=infoGet_ 0 typ;;
 	
 
@@ -2499,11 +2499,6 @@ fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
 fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
 
 
-
-
-
-
-
 ifdef NOMINAL {		
 
 var TYPE_taichi=14;;
@@ -2523,17 +2518,6 @@ fun osc x=
 	else if q==1 then 255-tab_osc.(127-x)
 	else if q==2 then 255-tab_osc.(x-128)
 	else tab_osc.(255-x);;
-
-// ?? UNUSED ? [AS nov07]
-var midi_connect=
-"\$4d\$54\$68\$64\$00\$00\$00\$06\$00\$00\$00\$01\$01\$e0\$4d\$54\
-\$72\$6b\$00\$00\$00\$5d\$00\$ff\$51\$03\$10\$59\$43\$00\$c0\$09\
-\$02\$90\$58\$5a\$12\$48\$62\$31\$60\$62\$0a\$80\$58\$78\$2c\$90\
-\$58\$52\$12\$80\$60\$54\$43\$90\$60\$49\$04\$80\$58\$6c\$33\$90\
-\$58\$45\$05\$80\$60\$6a\$81\$00\$90\$60\$40\$22\$80\$58\$6f\$7a\
-\$90\$5d\$58\$03\$80\$48\$49\$04\$60\$52\$0b\$90\$4f\$48\$84\$24\
-\$80\$5d\$4d\$11\$4f\$76\$81\$3a\$90\$30\$01\$74\$80\$30\$40\$00\
-\$f\$2f\$00";;
 
 type Run= configstartRun | configwaitRun _|  pingstartRun |pingwaitRun _ | interactiveReqWaitRun _ |
 	rscLoadNextRun | rscLoadWaitRun _ | msgchorRun _ |msgchorstreamRun _ | msgEvalOne _| idlewaitRun | stdWaitRun _ |
@@ -2612,14 +2596,14 @@ var CH_setmotordir=20;; // v16
 // ************************
 
 var current_palette = {0 0 0 0 0 0 0 0};;
-var current_palette_is_random = 1;; // random par dfaut (pour pallier au fait que les podcasts ne prcisent pas de palette)
+var current_palette_is_random = 1;; // random par d?faut (pour pallier au fait que les podcasts ne pr?cisent pas de palette)
 
 // 7 palettes
 // de 7 couleurs chacune
-// Note : il y a un 8eme lment  chaque fois pour pouvoir faire i&7 et ne pas risquer de planter.
+// Note : il y a un 8eme ?l?ment  chaque fois pour pouvoir faire i&7 et ne pas risquer de planter.
 var all_palettes=
 {
-	{255 12 0 0 255 31 255 242 0 0 3 255 255 242 0 0 255 31 255 12 0 0 0 0} // acidule
+	{255 12 0 0 255 31 255 242 0 0 3 255 255 242 0 0 255 31 255 12 0 0 0 0} // acidul?e
 	{95 0 255 127 0 255 146 0 255 191 0 255 223 0 255 255 0 223 255 0 146 0 0 0} // violet
 	{255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 255 0 0 0} // lumiere
 	{254 128 2 243 68 2 216 6 7 200 4 13 170 0 24 218 5 96 207 6 138 0 0 0} // emotion
@@ -2635,7 +2619,7 @@ fun set_current_palette p=
 	let all_palettes.(p&7) -> p in
 	for i=0;i<8 do let i*3 -> j in set current_palette.i=((p.(j))<<16)+((p.(j+1))<<8)+p.(j+2);;
 
-// is mode >= 8 : palette aleatoire. Sinon fixe  m
+// is mode >= 8 : palette aleatoire. Sinon fix?e  m
 fun set_current_palette_mode m=
 	if (m >= 8) then
 	(
@@ -3644,7 +3628,7 @@ var chordef_taichi=
 \$00\$00\$00\$00\$00\$07\$02\$00\$00\$00\$00\$00\$00\$07\$01\$00\
 \$33\$ff\$00\$00\$01\$07\$01\$00\$00\$00\$00\$00\$01";;
 
-// la liste des pas de danse pour la chorgraphie de streaming (messages audio, podcasts, radios...)
+// la liste des pas de danse pour la chor?graphie de streaming (messages audio, podcasts, radios...)
 var chorstream_chorslist=
 "\$01\$01\$01\$01\$00\$01\$10\$00\$0e\$04\$00\$00\$0e\$03\$01\$00\
 \$0e\$01\$01\$00\$0e\$00\$02\$01\$0a\$03\$00\$0a\$01\$00\$0e\$02\
@@ -4231,12 +4215,12 @@ fun trameID2Hex t= if t==MSG_IDLE then "7fffffff" else if t==MSG_ASLEEP then "7f
 
 // URLs normales
 fun configurl=strcatlist confGetServerUrl::"/locate.jsp?sn="::(webmac netMac)::"&h="::(itoa HARDWARE)::nil;;
-fun pingurl=strcatlist pingsrv::"/vl/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
-fun recordurl mode=strcatlist pingsrv::"/vl/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
+fun pingurl=strcatlist confGetServerUrl::"/vl/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
+fun recordurl mode=strcatlist confGetServerUrl::"/vl/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
 fun rfidurl tag=strcatlist confGetServerUrl::"/vl/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t="::(webmac tag)::nil;;
-fun interactifurl application = strcatlist pingsrv::"/vl/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
+fun interactifurl application = strcatlist confGetServerUrl::"/vl/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
 
-// Construction des urls d'interactivit
+// Construction des urls d'interactivit?
 fun interactifurl_start application= strcatlist (interactifurl application)::"&st=start&tc="::(trameID2Hex currentTrameID)::nil;;
 fun interactifurl_btn application position cmdindex btn= strcatlist (interactifurl application)::"&st=btn&pos="::(itoa position)::"&idx="::(itoa cmdindex)::"&btn="::(itoa btn)::g_cookie::nil;;
 fun interactifurl_done application = strcatlist (interactifurl application)::"&st=done"::g_cookie::nil;;
@@ -4397,8 +4381,8 @@ fun msgsStart=
 	// Si la palette est definie pour ce message, alors on ne met pas l'aleatoire
 	if(paletteselected==0) then
 	(
-		set current_palette=tabnew 0 8; // v17 : c'tait invers
-		set_current_palette_mode 8 // random palette par dfaut
+		set current_palette=tabnew 0 8; // v17 : c'?tait invers?
+		set_current_palette_mode 8 // random palette par d?faut
 	);
 	// start evaluating first message
 	set currentTrameID=atoi listswitchstr gCurrentMessageList "ID";
@@ -4996,7 +4980,7 @@ fun interactiveSendEarTouched lefttouch righttouch=
 
 fun interactiveEarProcessTouched=
 	if (gInteractiveApp != nil) then
-	// [AS 24oct07 : il y a surement plus simple  crire, mais CAML est un peu bizarre qd mme
+	// [AS 24oct07 : il y a surement plus simple  ?crire, mais CAML est un peu bizarre qd mme
 	let touchedP 0 -> lefttouch in
 	let touchedP 1 -> righttouch in
 	if (lefttouch || righttouch) then (
@@ -5077,7 +5061,7 @@ fun eval_IC_msg val=
 				else set g_record_enabled = 0;
 				0
 			) else if !strcmp ickey "streaming.chor.enabled" then (
-				// streaming.chor.enabled   -> chorgraphie de streaming (oreilles)
+				// streaming.chor.enabled   -> chor?graphie de streaming (oreilles)
 				if (!strcmp icval "true") then set g_streaming_chor_enabled = 1
 				else set g_streaming_chor_enabled = 0;
 				0
@@ -5088,7 +5072,7 @@ fun eval_IC_msg val=
 				0
 			
 			) else if !strcmp ickey "cookie" then (
-				// cookie -> cookie envoy au serveur
+				// cookie -> cookie envoy? au serveur
 				set g_cookie = strcatlist "&c="::icval::nil;
 				0
 			) else (
@@ -5098,22 +5082,22 @@ fun eval_IC_msg val=
 
 
 // ****************************************
-// Excution des chorgraphies de streaming
+// Ex?cution des chor?graphies de streaming
 // v17 - AS 25may07
 
 // - 4 pas de danse fournis (dans chorstream_chorslist)
-// - une squence :
+// - une s?quence :
 // 	- une fois sur chorst_oreille_chance, bouger les oreilles :
-// 		- pour chaque oreille, choisir une position au hasard entre les 4 possibles (0, 4, 8, 12 dents) et, si elle est diffrente de la position courante, y aller, dans le sens 'vers l'avant'.
+// 		- pour chaque oreille, choisir une position au hasard entre les 4 possibles (0, 4, 8, 12 dents) et, si elle est diff?rente de la position courante, y aller, dans le sens 'vers l'avant'.
 // 	- tirer un pas de danse au hasard (parmi les 4 fournis)
 // 	- tirer un nombre de boucles N au hasard entre 3 et 20 (inclus)
 // 	- tirer un frame_duration au hasard entre 16 et 25 (soit entre 160 ms et 250 ms par frame)
 // or les pas durent de 44  71 frames, donc le pas dure de 7  17 secs,
-// donc la squence dure de 21s  5m40s
-// 	-> jouer le pas de danse N fois  ce tempo, puis nouvelle squence
+// donc la s?quence dure de 21s  5m40s
+// 	-> jouer le pas de danse N fois  ce tempo, puis nouvelle s?quence
 // A chaque pas de danse : tirer 3 couleurs au hazard dans la palette courante : tete, ventre, pied
-// Si palette alatoire : la changer  toutes les squences
-// sinon, fixe par le serveur.
+// Si palette al?atoire : la changer  toutes les s?quences
+// sinon, fix?e par le serveur.
 // 
 var chorst_pasdedanse;;
 var chorst_index;;
@@ -5122,7 +5106,7 @@ var chorst_loops;;
 var chorst_nexttime;;
 var chorst_palettecolors = {0 0 0};;
 
-// v17 AS 25may07 : ratio entre changt de squence et mvt d'oreille. Plus c'est grand moins souvent les moteurs joueront.
+// v17 AS 25may07 : ratio entre changt de s?quence et mvt d'oreille. Plus c'est grand moins souvent les moteurs joueront.
 // = 0 :  chaque chgt de seq (en myenne toutes les 2,5 minutes)
 // = 1 : une fois sur 2 (soit en moyenne ttes les 5 minutes)
 // = 2 : une fois sur 3 (soit en moyenne ttes les 7,5 minutes), etc...
@@ -5132,7 +5116,7 @@ var chorst_oreille_chance;;
 fun dochorstream=
 	if chorst_pasdedanse==nil || ((chorst_index>=strlen chorst_pasdedanse)&&(chorst_loops<1)) then
 	(
-		// nouvelle squence
+		// nouvelle s?quence
 		// Secho "Sequence suivante ";
 
 		// ears enabled ?
@@ -5140,7 +5124,7 @@ fun dochorstream=
 		(
 		// movements moteur
 		// toutes les chorst_oreille_chance fois en moyenne
-		// et aussi la premire fois forcment histoire de montrer qu'on commence
+		// et aussi la premire fois forc?ment histoire de montrer qu'on commence
 		if (chorst_pasdedanse == nil) then
 		(
 			// une des oreilles en haut, une autre en bas : radio...
@@ -5151,7 +5135,7 @@ fun dochorstream=
 
 		) else if ((random chorst_oreille_chance) == 0) then
 		(
-			// pour chaque oreille, choisir une position au hasard entre les 4 possibles (0, 5, 10, 14 dents) et, si elle est diffrente de la position courante, y aller, dans le sens 'vers l'avant'.
+			// pour chaque oreille, choisir une position au hasard entre les 4 possibles (0, 5, 10, 14 dents) et, si elle est diff?rente de la position courante, y aller, dans le sens 'vers l'avant'.
 			let 0::5::10::14::nil -> ear4Positions in
 			(
 				let listnth ear4Positions rand&3 -> p in earGo 0 p 0;
@@ -5163,7 +5147,7 @@ fun dochorstream=
 		)
 		);
 		
-		// choix d'une squence = pas de danse (chorst_pasdedanse), tempo et nb de boucles
+		// choix d'une s?quence = pas de danse (chorst_pasdedanse), tempo et nb de boucles
 		set chorst_pasdedanse = listnth chorstream_chorslist Iecholn rand&3;
 
 		set chorst_index=4+1; // on saute le header (4 bytes)
@@ -5230,7 +5214,7 @@ fun dochorstream=
 				)
 
 				else (
-					// problme : commande inconnue : forcer  recommencer au dbut en incrmentant beaucoup trop
+					// problme : commande inconnue : forcer  recommencer au d?but en incr?mentant beaucoup trop
 					Secho "dochorstream : unknown command, restarting dance"; Iecholn cmd;
 					strlen chorst_pasdedanse
 				);			
@@ -5238,7 +5222,7 @@ fun dochorstream=
 		// pas de danse fini ?
 		if (chorst_index>=strlen chorst_pasdedanse) then
 		(
-			// on est arrivs au bout du pas de danse
+			// on est arriv?s au bout du pas de danse
 			// next repeat
 			set chorst_loops=chorst_loops-1;
 			//Secho "loops "; Iecholn chorst_loops;
@@ -5251,12 +5235,12 @@ fun dochorstream=
 				
 				0 // pour avoir le mme type de return value que les autres branches du if...
 
-			) // sinon on laisse chorst_loops = 0 et chorst_index trop loin, ce qui force un passage  la sq suivante
+			) // sinon on laisse chorst_loops = 0 et chorst_index trop loin, ce qui force un passage  la s?q suivante
 			
 		) else 
 			// date de la prochaine commande
-			// note : on repart de time_ms, histoire de se caler sur le temps prsent et non pas sur le temps de
-			// la chorgraphie, sinon, on a des coups de speed car cette fonction n'est pas toujours appele de manire rgulire.
+			// note : on repart de time_ms, histoire de se caler sur le temps pr?sent et non pas sur le temps de
+			// la chor?graphie, sinon, on a des coups de speed car cette fonction n'est pas toujours appel?e de manire r?gulire.
 			let strget chorst_pasdedanse chorst_index-1 -> delay in
 				set chorst_nexttime = time_ms+delay*chorst_tempo
 		
@@ -5295,7 +5279,7 @@ fun _pingcbstreaming http res lastid=
 	);
 	0;;
 
-// boucle principale de la chorgraphie de streaming
+// boucle principale de la chor?graphie de streaming
 fun runmsgchorstreaming iTimeTime=
 	let iTimeTime->[i0 t0 ping0] in
 	if wavrunning==0 then
@@ -5316,7 +5300,7 @@ fun runmsgchorstreaming iTimeTime=
 		// execute streaming choreography
 		if !wav_buffering then dochorstream;
 
-		// ping spcial toutes les minutes pour vrifier le sleep
+		// ping sp?cial toutes les minutes pour v?rifier le sleep
 		// don't ping if interactive mode
 		if (gInteractiveApp == nil) then 
 		if (time-ping0)>STREAMING_PING then
@@ -5350,7 +5334,7 @@ fun runEvalOneMsg i0=
 	let listnth gCurrentMessageList i0 -> [key val] in
 	if (Secholn key)==nil then
 	(
-		// tous messages jous : demander la suite
+		// tous messages jou?s : demander la suite
 		msgEndOfMessages;
 		0
 	)
@@ -5633,7 +5617,7 @@ fun noseled=
 
 fun bottomled=
 	if !earDetecting then
-	if ((time-lasthttpevent)>LED_TIMEOUT) then led 4 0xff00ff // bloqu
+	if ((time-lasthttpevent)>LED_TIMEOUT) then led 4 0xff00ff // bloqu?
 	else (let osc time_ms>>4 -> v in led 4 v*0x10001); // pulse violet
 	0;;
 	
@@ -5689,7 +5673,7 @@ fun controlrfid= //v19
 				
 				// lancer l'animation (v19)
 				msgchorstart chor_RFIDok::nil nil nil;
-				set chortimescale=10; // recopi d'avant, mas pourquoi ? Ncessaire ? [AS 24oct07]				
+				set chortimescale=10; // recopi? d'avant, mas pourquoi ? N?cessaire ? [AS 24oct07]				
 				
 				httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
 			)
@@ -5799,7 +5783,6 @@ fun loop=
 
 //	Secholn ":loop";
 
-//	rfidtest;
 	wavtime;
 
 
