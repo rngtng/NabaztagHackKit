@@ -5659,29 +5659,11 @@ fun ParseRfid id = // v19
 // *************** CONTROLS *************
 
 fun controlrfid= //v19
-//	let hd dumprfid rfidGetList -> [rfid rfid1] in
-
-	if (gInteractiveApp == nil) then // disabled when interactive
-	let hd dumprfid rfidGetList -> rfid in
-	if (strcmp rfid lastrfid) && (RFIDchek == 0) && (time_ms - RFIDlast > 750) then
+	//let hd dumprfid rfidGetList -> rfid in
+	let rfidGet -> rfid in
+	if rfid!=nil then
 	(
-		if ((time_ms - RFIDlast) > 1000) then set lastrfid = "0000000";
-		if rfid!=nil then
-		(
-			//if (ParseRfid rfid) !=0 then
-			//(
-				set lastrfid=rfid;
-				set RFIDchek = 0;
-				set RFIDlast = time_ms;
-				// TOBI controlsound midi_RFIDok;
-				
-				// lancer l'animation (v19)
-				msgchorstart chor_RFIDok::nil nil nil;
-				set chortimescale=10; // recopi? d'avant, mas pourquoi ? N?cessaire ? [AS 24oct07]
-				
-				httprequest "GET" rfidurl rfid rfid nil #_cbrfidhttp HTTP_NORMAL
-			//)
-		)
+	  httprequest "GET" rfidurl rfid rfid nil #_cbrfidhttp HTTP_NORMAL
 	);
 	0;;
 

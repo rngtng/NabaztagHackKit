@@ -1,36 +1,43 @@
 require 'sinatra'
 
 def message(data)
-  [0x7F] + [0x03, 0x00, 0x00, 0x01, 0x01] + [0xFF, 0x0A]
+  [0x7F] + Array(data) + [0xFF, 0x0A]
+end
+
+def ping(time = 30) #seconds
+  message [0x03, 0x00, 0x00, 0x01, time]
+end
+
+def reboot
+  message [0x09, 0x00, 0x00, 0x00]
 end
 
 def send_byte_array byte_array
-   byte_array.pack('c*')
- end
+  byte_array.pack('c*')
+end
+
+##################################
 
 get '/vl/bc.jsp' do
   puts "bootcode"
   send_file File.join('public', 'bootcode', 'b3.bin')
 end
 
-get '/vl/locate.jsp' do
+get '/vl/p4.jsp' do
   puts "ping"
+  send_byte_array ping
+end
+
+get '/vl/locate.jsp' do
+  puts "conf"
   "ping #{ENV['HOST']}\nbroad #{ENV['HOST']}"
 end
 
 get '/vl/rfid.jsp' do
-  send_byte_array message(
-    [0x01, 0x1E, 0x5B, 0x4F] +
-    [0xE1, 0x0C, 0x6B, 0xCE] +
-    [0x3B, 0xA7, 0x12, 0x89] +
-    [0xB3, 0xCE, 0xC5]
-  )
+  msg = (params["t"][0] == "d0021a0352d64cec") ? reboot : ping
+  send_byte_array(msg)
 end
 
 get '/*' do
-  puts "########################"
   puts params.inspect
-  puts
 end
-
-# 0x0A, 0x00, 0x00, data.size] + Array(data) 
