@@ -1,0 +1,55 @@
+//------------------- HTTP
+
+//where to put this
+fun isip s i=
+	if i>=strlen s then 1
+	else let strget s i -> c in
+	if (c<'0' || c>'9')&&c!='.' then 0
+	else isip s i+1;;
+
+
+fun cuturl url=
+  if !strcmp (strsub url 0 strlen http_prefurl) http_prefurl then cuturl strsub url strlen http_prefurl strlen url
+  else let strstr url "/" 0 -> i in
+    let if i==nil then url else strsub url 0 i -> addr in
+    let strstr addr ":" 0 -> j in
+    let if j==nil then [addr 80]
+      else [strsub addr 0 j atoi strsub addr j+1 strlen addr] -> [host port] in
+    let if i==nil then "/" else strsub url i strlen url -> path in
+    [host port path];;
+
+fun httpsendreq ip x=
+ 	Secho "found ip>>>>>>>>>>>>>>>>>>>>>>>>>"; Secholn ip;
+ 	let x->[port httpreq] in
+ 	if ip==nil then (call httpreq.cbH [httpreq nil]; nil)
+ 	else
+ 	(
+ 		set httpreq.cnxH=opentcp netip nil useparamip ip port fixarg4 #tcpevent httpreq;
+ 		set httpreq.stateH=HTTP_REACH;
+ 		nil
+ 	);
+ 	0;;
+
+fun httprequest verb url postdata cb type=
+  let cuturl url ->[host port path] in
+  //let if confGetProxy then strcatlist "http://"::host::":"::(itoa port)::path::nil else path -> path in //Icy-MetaData:1\13\n
+  //let if confGetProxy then webip confGetProxyip else host -> host in
+  //let if confGetProxy then confGetProxyport else port -> port in
+
+  let strcatlist verb::" "::path::" HTTP/1.0\13\nUser-Agent: MTL\13\nPragma: no-cache\13\nIcy-MetaData:1\13\nHost: "::host::"\13\n"::
+      if postdata==nil then "\13\n"::nil
+      else "Content-length: "::(itoa strlen postdata)::"\13\n\13\n"::postdata::nil
+    -> request in  // création de la chaîne requête
+
+  let [outputH:request indexH:0 cbH:cb typeH:type stateH:HTTP_SOLVE aliveH:time_ms] -> httpreq in  // création de la structure requête
+  (
+//    Secho "HTTPREQUEST host =";Secholn host;
+    if isip host 0 then httpsendreq host [port httpreq]
+    else
+    (
+      dnsreq host fixarg2 #httpsendreq [port httpreq];
+      nil
+    );
+    httpreq  // on retourne la structure requête pour pouvoir éventuellement l'interrompre en cours de route
+  );;
+

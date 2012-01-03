@@ -1,0 +1,26 @@
+// --------------- UTIL
+
+fun listrem l x=if l!=nil then if x==hd l then tl l else (hd l)::listrem tl l x;;
+
+fun strstr s p i=strfind s i p 0 nil;;
+
+fun _useparamip s i val j=
+	if i<4 then
+	let strstr val "." j -> k in
+	(
+		strset s i atoi strsub val j if k==nil then nil else k-j;
+		_useparamip s i+1 val if k==nil then strlen val else k+1
+	);;
+
+fun useparamip val=
+	let strnew 4 -> ip in
+	(
+		_useparamip ip 0 val 0;
+		ip
+	);;
+
+fun select l a f= if l!=nil then let hd l-> x in if call f [x a] then x::select tl l a f else select tl l a f;;
+	
+fun rev p q=if p==nil then q else rev tl p (hd p)::q;;
+
+fun remfromlist l t= if l!=nil then if t==hd l then tl l else (hd l)::remfromlist tl l t;;

@@ -1,0 +1,15 @@
+var http_prefurl="http://";;
+
+var HTTP_NORMAL=0;;
+var HTTP_STREAM=1;;
+var HTTP_DIRECT=2;;
+
+var HTTP_SOLVE=0;;
+var HTTP_REACH=1;;
+var HTTP_CONNECTED=2;;
+
+var lasthttpevent;;
+
+type Httpreq=[cnxH inputH outputH indexH cbH typeH stateH aliveH];;
+
+const DNSLOCAL=1597;;

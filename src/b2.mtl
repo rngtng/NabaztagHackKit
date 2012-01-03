@@ -3,78 +3,44 @@
 
 proto main 0;;
 
-var conf;;
-var CONF_NETDHCP=41;; //1
-var netip="\0\0\0\0";;
-var netip_empty="\0\0\0\0";;
+//include "lib/var"
+//include "lib/util"
+//include "lib/arp"
+//include "lib/udp"
+//include "lib/tcp"
+//include "lib/dns"
+//include "lib/http"
 
-fun confGet i len= strsub conf i len;;
-fun confGetDhcp=strget confGet CONF_NETDHCP 1 0;;
+fun confGetServerUrl = "192.168.1.104/vl";;
+fun _webmac key i=
+  if i < strlen key then (ctoh strget key i)::_webmac key i+1;;
 
-
-//fun MACecho src i0 ln=
-//  for i=0;i<6 do (Secho ctoh strget src i0+i; Secho ".");  if ln then Secholn "";
-//  src;;
-//
-//fun confInit=
-//  set conf=strnew CONF_LENGTH;
-//  load conf 0 "conf.bin" 0 CONF_LENGTH;
-//  dump conf;;
-
-// --------------- WIFI
-type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW | reconnectW;;
-var wifi;;
-var wifitry;;
-var wifiscans;;
-
-fun setleds col= for i=0;i<5 do led i col;;
-
-//fun wifiInit rescan=
-//	set wifitry=nil;
-//	let envget -> env in
-//	if env==nil then
-//	(
-//		setleds 0xff00ff;
-//		set wifi=initW;
-//		if rescan then set wifiscans=nil;
-//		if confGetDhcp then
-//		  set netip=netip_empty
-//		else
-//		(
-//			set netmask=confGetNetmask;
-//			set netgateway=confGetNetgateway;
-//			set netdns=confGetNetdns;
-//			set netip=confGetNetip
-//		);
-//		0
-//	)
-//	else
-//	(
-//		setleds 0x00ff00;
-//		set mymac=netMac;
-//		set wifi=stationW;
-//		envrestore env;
-//		envset nil;
-//		nil
-//	);
-//	0;;
+fun webmac key=
+  strcatlist _webmac key 0;;
 
 
-// --------------- MAIN
+//-------------------- RFID
+fun rfidurl tag=
+  strcatlist confGetServerUrl::"/rfid.jsp?t="::(webmac tag)::nil;;
+
+var RFIDlast = 0;;
+fun controlrfid=
+  if ((time_ms - RFIDlast) > 500) then
+  (
+    let rfidGet -> rfid in
+    if rfid != nil then
+    (
+      set RFIDlast = time_ms
+      //httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
+    )
+  );
+  0;;
+
+fun _cbrfidhttp http res=
+  Secholn res;
+  //evalTrame res;
+  0;;
+
 
 fun main=
-  //MACecho netMac 0 1;
-  //confInit;
-  //wifiInit 0;
-  //loopcb	#loop;
-  //infoInit;
-  //netstart;
-  //startdnsclient;
-  //Secholn ":done";
-
-  //srand time_ms;
-  //updatevol;
-  ////wavstartlocal midi_endrecord::nil;
-  //dumpscan wifiscans;
-  //runinit;
   0;;
