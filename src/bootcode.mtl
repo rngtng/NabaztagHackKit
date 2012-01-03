@@ -111,7 +111,7 @@ fun strreplace2 sn s p v i id=
 		if j!=nil then strcpy sn id+k-i v 0 nil;
 		strreplace2 sn s p v k+strlen p id+k-i+strlen v
 	);;
-	
+
 fun strreplace s p v=
 	let countpattern s p 0 -> i in
 	if !i then s
@@ -185,7 +185,7 @@ var tmp;;
 var val;;
 fun leftrotate val nb_rot =
 	let val.(0) -> valh in
-	let val.(1) -> vall in ( 
+	let val.(1) -> vall in (
 		if nb_rot == 16 then (
 			{vall valh}
 		) else (
@@ -195,7 +195,7 @@ fun leftrotate val nb_rot =
 				set valh = vall;
 				set vall = tmp;
 				set nb_rot = nb_rot - 16
-			);				
+			);
 			{
 				(valh << nb_rot) & 0xFFFF | (vall >> (16 - nb_rot))
 				(vall << nb_rot) & 0xFFFF | (valh >> (16 - nb_rot))
@@ -216,11 +216,11 @@ fun leftrotate val nb_rot =
 // http://fr.wikipedia.org/wiki/MD5
 // Constantes
 var md5r		= { 7 12 17 22 7 12 17 22 7 12 17 22 7 12 17 22 5 9 14 20 5 9 14 20 5 9 14 20 5 9 14 20 4 11 16 23 4 11 16 23 4 11 16 23 4 11 16 23 6 10 15 21 6 10 15 21 6 10 15 21 6 10 15 21 };;
-var md5k 		= { 0xd76a 0xa478 0xe8c7 0xb756 0x2420 0x70db 0xc1bd 0xceee 
-0xf57c 0x0faf 0x4787 0xc62a 0xa830 0x4613 0xfd46 0x9501 
-0x6980 0x98d8 0x8b44 0xf7af 0xffff 0x5bb1 0x895c 0xd7be 
-0x6b90 0x1122 0xfd98 0x7193 0xa679 0x438e 0x49b4 0x0821 
-0xf61e 0x2562 0xc040 0xb340 0x265e 0x5a51 0xe9b6 0xc7aa 
+var md5k 		= { 0xd76a 0xa478 0xe8c7 0xb756 0x2420 0x70db 0xc1bd 0xceee
+0xf57c 0x0faf 0x4787 0xc62a 0xa830 0x4613 0xfd46 0x9501
+0x6980 0x98d8 0x8b44 0xf7af 0xffff 0x5bb1 0x895c 0xd7be
+0x6b90 0x1122 0xfd98 0x7193 0xa679 0x438e 0x49b4 0x0821
+0xf61e 0x2562 0xc040 0xb340 0x265e 0x5a51 0xe9b6 0xc7aa
 0xd62f 0x105d 0x0244 0x1453 0xd8a1 0xe681 0xe7d3 0xfbc8
 0x21e1 0xcde6 0xc337 0x07d6 0xf4d5 0x0d87 0x455a 0x14ed
 0xa9e3 0xe905 0xfcef 0xa3f8 0x676f 0x02d9 0x8d2a 0x4c8a
@@ -265,21 +265,21 @@ fun md5 strmd5=
 	set md5mult 	= md5len/64;						// Reste de la division par 64octets(512bits)
 	if (md5reste > 55 && md5reste < 64) then set md5mult = md5mult + 1;	// Si la taille de la chaine entre dans les 64Bits de fin (en comptant le bit de fin de message) on allonge de 512bits
 	set md5msglen	= (md5mult+1)*64;					// Taille du message après preparation
-	
+
 	// ### Preparation du message
 	set md5message 	= strnew md5msglen;							// Allocation de la chaine
 	for i=0;i<md5msglen do strset md5message i 0;				// Initialise la chaine
 	for i=0;i<md5len do strset md5message i (strget strmd5 i);	// Copie le message
 	strset md5message md5len 0x80;								// Ajout d'un bit 1 à la fin du message
-	
+
 	// Puisque la chaine est de longueur de la chaine est max de 2^30 octect >> elle est de max (2^30) * 8 (01 FF FF FF F8)
 	set md5len64h = ((((0xFFFFFF000000&md5len)>>24)*8) + (((((0x000000FFFFFF&md5len)>>00)*8)>>24)&0x000000FFFFFF));
 	set md5len64l = ((((0x000000FFFFFF&md5len)>>00)*8)&0x000000FFFFFF);
-	
+
 	// On copie la longueur de 64 bits
 	for i=0; i<3 do	strset md5message (md5msglen-8+i) (((md5len64l)>>(i*8))&0xFF);
 	for i=3; i<6 do	strset md5message (md5msglen-8+i) (((md5len64h)>>((i-3)*8))&0xFF);
-	
+
 	// ### Calcul par blocs
 	for i=0; i<=md5mult do (	// Faire tous les blocs de md5message
 		// Preparation du bloc
@@ -289,11 +289,11 @@ fun md5 strmd5=
 			set md5bloc.(j*2+1) = (strget md5message ((i*64) + (j*4) + 1)) * 0x100;
 			set md5bloc.(j*2+1) = (strget md5message ((i*64) + (j*4) + 0)) + md5bloc.(j*2+1)
 		);
-		
+
 		// Initialiser les valeurs de hachage
 		set md5ah	= md5h0h;		set md5al	= md5h0l;		set md5bh	= md5h1h;		set md5bl	= md5h1l;
 		set md5ch	= md5h2h;		set md5cl	= md5h2l;		set md5dh	= md5h3h;		set md5dl	= md5h3l;
-		
+
 		// Opérations de l'algo
 		for j=0; j<64 do (
 			if j < 16 then (
@@ -313,9 +313,9 @@ fun md5 strmd5=
 				set md5fl 	= md5cl^(md5bl|((~md5dl)&0xFFFF));	//f := c xor (b ou (non d))
 				set md5g	= (7*j) %16
 			);
-			
+
 			set md5tmp1h 	= md5dh;			set md5tmp1l	= md5dl;			set md5dh 		= md5ch;
-			set md5dl 		= md5cl;			set md5ch 		= md5bh;			set md5cl 		= md5bl;			
+			set md5dl 		= md5cl;			set md5ch 		= md5bh;			set md5cl 		= md5bl;
 			// ((a+f+g+k(i) + w(g)
 			set md5tmp2h 	= (md5ah + md5fh + md5k.(j*2  ) + md5bloc.(md5g*2  ));
 			set md5tmp2l 	= (md5al + md5fl + md5k.(j*2+1) + md5bloc.(md5g*2+1));
@@ -326,14 +326,14 @@ fun md5 strmd5=
 			let leftrotate { md5tmp2h md5tmp2l } nb_rot -> tmpr in (
 				set md5tmp2h	= tmpr.(0);
 				set md5tmp2l	= tmpr.(1)
-			);			
+			);
 			set md5bh		= ((md5tmp2h + md5bh) + ((md5tmp2l + md5bl) >> 16))&0xFFFF;
-			set md5bl		= (md5tmp2l + md5bl)&0xFFFF;			
+			set md5bl		= (md5tmp2l + md5bl)&0xFFFF;
 			set md5ah 		= md5tmp1h;
 			set md5al 		= md5tmp1l
 		);
-		
-		// Dernière étape pour le prochain bloc 
+
+		// Dernière étape pour le prochain bloc
 		set md5h0h		= (md5h0h + md5ah + ((md5h0l+md5al) >> 16)) & 0xFFFF;
 		set md5h0l		= (md5h0l + md5al) & 0xFFFF;
 		set md5h1h		= (md5h1h + md5bh + ((md5h1l+md5bl) >> 16)) & 0xFFFF;
@@ -342,9 +342,9 @@ fun md5 strmd5=
 		set md5h2l		= (md5h2l + md5cl)&0xFFFF;
 		set md5h3h		= (md5h3h + md5dh + ((md5h3l+md5dl) >> 16)) & 0xFFFF;
 		set md5h3l		= (md5h3l + md5dl)&0xFFFF
-		
+
 	);
-		
+
 	// #### Concaténation et création de la chaine de caractère
 	set md5return = "";
 	for i=0; i<8 do (
@@ -361,7 +361,7 @@ fun md5 strmd5=
 				set md5return = strcat md5return "0";
 			set md5return = strcat md5return itoh((md5tmp2h>>(8*j))&0xFF)
 		)
-	);	
+	);
 	md5return;;
 
 fun MACecho src i0 ln=
@@ -548,7 +548,7 @@ fun filterarpip l src =
 	else (hd l)::filterarpip tl l src;;
 
 fun checkarp l src=
-	if l!=nil then let hd l->[ip _ cb] in 
+	if l!=nil then let hd l->[ip _ cb] in
 	(
 		if !vstrcmp src 8+14 ip 0 4 then
 		let strsub src 8+8 6 -> mac in
@@ -585,8 +585,8 @@ fun subnet_ ip i=
 fun subnet ip=
 	Secho "test subnet "; IPecho ip 0 1;
 	Iecholn subnet_ ip 3;;
-	
-	
+
+
 fun arpreq ip cb=
 	let IPecho (if subnet ip then ip else netgateway) 0 1 -> ip in
 	let listswitchstr larp ip -> mac in
@@ -619,7 +619,7 @@ fun resetarp=
 
 // ------------- UDP debut
 fun mkudp ipsrc ipdst portsrc portdst content=
-	let strcatlist 
+	let strcatlist
 	"\$aa\$aa\$03\$00\$00\$00\$08\$00\$45\$00\$00\$00\$00\$00\$00\$00\100\17\0\0"::
 	ipsrc::
 	ipdst::
@@ -696,7 +696,7 @@ var TCPMAX=1024;;
 type Tcp=[stateT locT dstT locpT dstpT seqT ackT cbT macT lastsentT retryT locksendT enableT];;
 
 fun mktcp_ ipsrc ipdst portsrc portdst seq ack flag content=
-	let strcatlist 
+	let strcatlist
 	"\$aa\$aa\$03\$00\$00\$00\$08\$00\$45\$00\$00\$00\$00\$00\$00\$00\100\6\0\0"::
 	ipsrc::
 	ipdst::
@@ -740,7 +740,7 @@ fun headerlen src=((strget src 8+32)>>4)<<2;;
 fun datalength src=(strgetword src 10)-20-headerlen src;;
 
 fun sendtcp t trame=
-//	Secholn "tcpSend"; dump trame; 
+//	Secholn "tcpSend"; dump trame;
 	netSend trame 0 nil (/*MACecho*/ t.macT /*0 1*/) 0 1;
 	let strget trame 8+33 -> flag in
 	set t.seqT=netSeqAdd t.seqT (datalength trame)+(if flag&(TSYN|TFIN) then 1 else 0);
@@ -780,7 +780,7 @@ fun listentcp localp cb=
 	(
 		set ltcp=tcp::ltcp
 	);;
-	
+
 fun findtcp l localp dstp src=
 	if l!=nil then let hd l-> t in
 	if t.locpT==localp && t.dstpT==dstp && (!vstrcmp src 8+16 t.locT 0 4)&& (!vstrcmp src 8+12 t.dstT 0 4)
@@ -792,7 +792,7 @@ fun sendclose t=
 	Secholn "## sendclose";
 	sendtcp t mktcp t TFIN+TACK nil;
 	set t.stateT=STFIN;
-	0;; 
+	0;;
 
 fun cbnettcp src mac=
 	Secho "t";
@@ -1163,7 +1163,7 @@ fun tcpcb t cb=
 
 fun listentcp port cb=
 	set ltcp=[tcpListen port cb]::ltcp;;
-	
+
 // ---- WE ARE IN TCP/UDP EMULATION !!
 
 fun opentcp local localp dst dstp cb=
@@ -1233,7 +1233,7 @@ fun parseans s i n=
 		strcatlist (itoa strget s j+10)::"."::(itoa strget s j+11)::"."::
 		(itoa strget s j+12)::"."::(itoa strget s j+13)::nil
 	else parseans s (j+10+strgetword s j+8) n-1;;
-	
+
 fun parsemsg s=
 	let strgetword s 0 -> id in
 	let strgetword s 2 -> code in
@@ -1274,7 +1274,7 @@ fun dnsreq domain cb=
 
 fun selectbyid d v= d.idD==v;;
 
-fun cbnetdns msg mac ipfrom= 
+fun cbnetdns msg mac ipfrom=
 	let strgetword msg 0 -> id in
 	let parsemsg msg -> ip in
 	let hd select ldnsreq id #selectbyid -> x in
@@ -1359,8 +1359,8 @@ fun tcpread cnx input httpreq=
 
 // callback d'écriture sur la socket d'une requête
 fun tcpwrite cnx httpreq=
-	set httpreq.stateH=HTTP_CONNECTED; 
-	set httpreq.aliveH=time_ms;	
+	set httpreq.stateH=HTTP_CONNECTED;
+	set httpreq.aliveH=time_ms;
 	if httpreq.outputH!=nil then	// s'il y a des choses à envoyer (notamment la première fois)
 	(
 		set httpreq.indexH=writetcp cnx httpreq.outputH httpreq.indexH;	// envoyer ce qui peut l'être
@@ -1456,7 +1456,7 @@ fun httpinactive httpreq = time_ms-httpreq.aliveH;;
 
 var http_sep="\13\n\13\n";;	// séparateur entre l'en-tête et le corps de la réponse à une requête
 
-	
+
 
 //##> retourne le header d'une réponse à une requête
 fun httpgetheader res =
@@ -1649,7 +1649,7 @@ fun _wavplaycb i =
 		if !wav_buffering then
 		let hd wav_fifo -> sample in
 		let strlen sample -> len in
-		(			
+		(
 			// push sample data
 			// wav_index is the index within the current sample.
 			if wav_index<len then (
@@ -1702,7 +1702,7 @@ fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;
 fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
 
 fun mkwav freq channel bps=
-	let strcatlist 
+	let strcatlist
 		"WAVEfmt "::(itobin4 0x12)::
 			(itobin2 1)::(itobin2 channel)::
 			(itobin4 freq)::(itobin4 freq*channel*bps/8)::
@@ -1899,7 +1899,7 @@ fun earDetectRun=
 			set earsmode=EARSMODE_WAITANDDETECT
 		)
 	);;
-		
+
 fun earResetRun=
 	for i=0;i<2 do let ears.i -> e in
 	if e.dirE then
@@ -2029,12 +2029,12 @@ fun earGo i p d=
 		Secho "earGo ";Iecho i; Secholn " broken !";
 		nil
 	)
-	else		
+	else
 	if p!=earTarget i then //v16 add start
 	(
 		Secho "earGo ";Iecho i; Secho " to ";Iecho p;Secho " dir ";Iecholn d;
-		set e.targetE=earCheck p; 
-		set e.targetLoopE=earLoopCount p 0; 
+		set e.targetE=earCheck p;
+		set e.targetLoopE=earLoopCount p 0;
 		Secho "targetE=";Iecho e.targetE; Secho " targetLoopE="; Iecholn e.targetLoopE;
 		if e.posE==e.targetE then
 			if e.targetLoopE==0 then
@@ -2231,7 +2231,7 @@ fun infoRun=
 			led 3 0; led 2 0; led 1 0
 		)
 	);;
-		
+
 // fonction de mise  jour de infosrc (appel? par la boucle de r?ception des messages du serveur '_pingcbhttp')
 fun infoUpdate data=
 	let strlen data -> len in
@@ -2244,12 +2244,10 @@ fun infoGet_ i typ=
 	else infoGet_ i+1 typ;;
 
 // Retourne la valeur du type de service donn?.
-// Attention : gestion sp?ciale du type taichi (TYPE_taichi). Il semble que le serveur permette au lapin de faire du taichi en donnant 
+// Attention : gestion sp?ciale du type taichi (TYPE_taichi). Il semble que le serveur permette au lapin de faire du taichi en donnant
 // une valeur non nulle au service TYPE_taichi (14).
 // En fait, cette fonction est utilis?e uniquement pour le taichi...
 fun infoGet typ=infoGet_ 0 typ;;
-	
-
 
 }
 
@@ -2499,14 +2497,14 @@ fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
 fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
 
 
-ifdef NOMINAL {		
+ifdef NOMINAL {
 
 var TYPE_taichi=14;;
 
 var tab_osc={
-	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8 
-	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35 
-	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76 
+	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
+	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
+	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76
 	79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
 };;
 
@@ -2661,8 +2659,6 @@ var chordef_interactiveerror=
 "\$00";;
 var chordef_startInteractive=
 "\$00";;
-var chordef_taichi=
-"\$00";;
 var chorstream_chorslist=
 "\$00"::"\$00"::"\$00"::"\$00"::nil;;
 var midi_startrecord=
@@ -2756,13 +2752,20 @@ fun trameID2Hex t= if t==MSG_IDLE then "7fffffff" else if t==MSG_ASLEEP then "7f
 // fun confGetServerUrl = "192.168.1.11/vl";;
 
 // URLs normales
-fun configurl=strcatlist confGetServerUrl::"/locate.jsp?sn="::(webmac netMac)::"&h="::(itoa HARDWARE)::nil;;
-fun pingurl=strcatlist confGetServerUrl::"/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
-fun recordurl mode=strcatlist confGetServerUrl::"/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
-fun rfidurl tag1 tag2=
+fun configurl=
+  strcatlist confGetServerUrl::"/locate.jsp?sn="::(webmac netMac)::"&h="::(itoa HARDWARE)::nil;;
+
+fun pingurl=
+  strcatlist confGetServerUrl::"/p4.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&st=1&sd="::(itoh senddata)::"&tc="::(trameID2Hex currentTrameID)::"&h="::(itoa HARDWARE)::nil;;
+
+fun recordurl mode=
+  strcatlist confGetServerUrl::"/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
+
+fun rfidurl tag1=
   strcatlist confGetServerUrl::"/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t[]="::(webmac tag1)::"&t[]="::(webmac tag2)::nil;;
 
-fun interactifurl application = strcatlist confGetServerUrl::"/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
+fun interactifurl application=
+  strcatlist confGetServerUrl::"/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
 
 // Construction des urls d'interactivit?
 fun interactifurl_start application= strcatlist (interactifurl application)::"&st=start&tc="::(trameID2Hex currentTrameID)::nil;;
@@ -2848,7 +2851,7 @@ fun rscfrommsg l=
 	if (!strcmp key "MU") || (!strcmp key "CH") then [val /*nil*/300000]::rscfrommsg tl l
 	else if (!strcmp key "MC") then [val SIGNCUTSIZE]::rscfrommsg tl l
 	else rscfrommsg tl l;;
-	
+
 
 
 var paletteselected = 0;;
@@ -2921,7 +2924,7 @@ fun msgInitialize messageList=
 fun msgsStart=
 	// Starts playing the messages
 	// setleds 0xff0000;
-	
+
 	// Si la palette est definie pour ce message, alors on ne met pas l'aleatoire
 	if(paletteselected==0) then
 	(
@@ -2964,7 +2967,7 @@ fun _rscLoadCBhttp http res maxsize=
 		let hd rsctoget ->[url _] in
 		// remember rsc loaded
 		set rscloaded=[url tl rev rsctmp nil]::rscloaded;
-		
+
 		// load next rsc
 		set rsctoget=tl rsctoget;
 		set run=rscLoadNextRun;
@@ -3015,7 +3018,7 @@ fun callPingRequest aSenddata=
 		set run=pingRequestWaitRun httprequest "GET" Secholn pingurl nil #_pingcbhttp HTTP_NORMAL
 	);
 	0;;
-	
+
 fun runPingRequestWait http=
 	// Attente du retour de ping
 	// check timeout and retry
@@ -3212,7 +3215,7 @@ fun msgendchor i0=
 fun runmsgchor i0=
 	//	Secho "runmsgchor i:";Iecho chorindex; Secho " t:";Iecholn chornexttime;
 	// Manage buffering and pauses
-	
+
 	if (!chor_paused && wav_buffering) then (
 		// start pause
 		set chor_paused_since = time_ms;
@@ -3223,7 +3226,7 @@ fun runmsgchor i0=
 		// increment paused_dur
 		set chor_paused_dur = chor_paused_dur + (time_ms - chor_paused_since)
 	);
-	
+
 	if (!chor_paused) then
 	if time_ms-chor_paused_dur >= chornexttime then
 	(
@@ -3278,7 +3281,7 @@ fun runmsgchor i0=
 			2
 		)
 		// v17
-		else if code== CH_set_led_off then 
+		else if code== CH_set_led_off then
 		(
 			Secholn "CH_set_led_off ";
 			led 4-strget chordata chorindex+1 0;
@@ -3338,17 +3341,6 @@ fun _cbtaichiend unused=
 			0
 		)
 	;;
-	
-fun taichistart=
-	Secho "taichistart ";
-	
-	set chorrandom=((Iecholn rand&255)*30)>>8;
-	Secho "chorrandom="; Iecholn chorrandom;
-	set chortaichimotordir={0 0};
-
-	earUndetect;
-	msgchorstart chordef_taichi::nil #_cbtaichiend nil;
-	0;;
 
 
 // **********************
@@ -3367,10 +3359,10 @@ fun interactiveStart application=
 	set gInteractiveApp = application;
 
 	reset_IC;
-		
+
 	// oreilles vers l'avant
 	(earGo 0 3 0; earGo 1 3 0);
-	
+
 	// jingle
 	controlsound midi_startInteractive;
 	msgchorstart chordef_startInteractive::nil #_cbContinueStartInteractive nil;
@@ -3378,13 +3370,13 @@ fun interactiveStart application=
 	0;;
 
 fun _cbContinueStartInteractive unused=
-	
+
 	// ask for instructions
 	set run=interactiveReqWaitRun (httprequest "GET" (interactifurl_start gInteractiveApp) nil #_interactiveReqCBhttp HTTP_NORMAL);
-	
+
 	// forget currentTrameID so that the next ping does not send it
 	set currentTrameID = 0;
-	
+
 	0;;
 
 fun interactiveError=
@@ -3396,7 +3388,7 @@ fun interactiveError=
 fun _cbContinueErrorInteractive unused=
 	interactiveStop;
 	0;;
-	
+
 fun interactiveStop=
 	// jingle de fin
 	controlsound midi_endInteractive;
@@ -3460,7 +3452,7 @@ fun earDeltaPosNormalized deltaPos=
 	if (deltaPos > EARS_HOLES>>1) then deltaPos - EARS_HOLES
 	else if (deltaPos < -EARS_HOLES>>1) then deltaPos + EARS_HOLES
 	else deltaPos;;
-	
+
 fun interactiveNoteEarTouched eari curPos deltaPos=
 	// right = 0, left = 1
 	if (eari == 0 && (g_int_mask & MASK_EAR_RIGHT == 0)) || (eari == 1 && (g_int_mask & MASK_EAR_LEFT == 0)) then // active
@@ -3472,12 +3464,12 @@ fun interactiveNoteEarTouched eari curPos deltaPos=
 			set et.refPos_ET = curPos;
 			if ((earDeltaPosNormalized deltaPos) > 0) then set et.moveDir_ET = 0 else set et.moveDir_ET = 1;
 			set et.lastDV_ET = 0
-			
+
 		) else if !et.turned_ET then
 		// was already moving and not turned yet : test turned
 		let (earDeltaPosNormalized (curPos - et.refPos_ET)) -> normalizedDV in (
 			Secho "NDV="; Iecho normalizedDV; Secho ",";
-			
+
 			// Test 1 tour or stopped
 			if (et.moveDir_ET == 0 && normalizedDV >= 0 && et.lastDV_ET < 0) then
 				// if more than one tour forward : ok
@@ -3485,9 +3477,9 @@ fun interactiveNoteEarTouched eari curPos deltaPos=
 			else if (et.moveDir_ET == 1 && normalizedDV <= 0 && et.lastDV_ET > 0) then
 				// if more than one tour backward : ok
 				set et.turned_ET = 1;
-	
+
 			Secho "TOUCH="; Iecho et.turned_ET; Secho ",";
-				
+
 			set et.lastDV_ET = normalizedDV
 		)
 	);;
@@ -3503,7 +3495,7 @@ fun interactiveSendEarTouched lefttouch righttouch=
 	let wav_curplayedbytes -> readBytes in  // controlsound resets wav_curplayedbytes so we cache it
 	(
 		if (lefttouch) then controlsound midi_precedent;
-		if (righttouch) then controlsound midi_suivant;		
+		if (righttouch) then controlsound midi_suivant;
 		set run=interactiveReqWaitRun (httprequest "GET" (interactifurl_ear gInteractiveApp readBytes gCurrentAudioMsgIndex righttouch lefttouch) nil #_interactiveReqCBhttp HTTP_NORMAL)
 	);
 	0;;
@@ -3537,7 +3529,7 @@ fun _interactiveReqCBhttp http res=
 
 	if !recording then
 		evalTrame res;
-		
+
 	0;;
 
 // Interactive request wait : timeout
@@ -3549,7 +3541,7 @@ fun runInteractiveReqWait http=
 	(
 		Secholn "##timeout on runInteractiveReqWait";
 		httpabort http;
-		
+
 		// error
 		interactiveError
 	);
@@ -3595,12 +3587,12 @@ fun eval_IC_msg val=
 				if (!strcmp icval "true") then set g_streaming_chor_enabled = 1
 				else set g_streaming_chor_enabled = 0;
 				0
-			
+
 			) else if !strcmp ickey "int.mask" then (
 				// int.mask -> masque d'interruption pour le mode interactif
 				set g_int_mask = (atoi icval);
 				0
-			
+
 			) else if !strcmp ickey "cookie" then (
 				// cookie -> cookie envoy? au serveur
 				set g_cookie = strcatlist "&c="::icval::nil;
@@ -3628,7 +3620,7 @@ fun eval_IC_msg val=
 // A chaque pas de danse : tirer 3 couleurs au hazard dans la palette courante : tete, ventre, pied
 // Si palette al?atoire : la changer  toutes les s?quences
 // sinon, fix?e par le serveur.
-// 
+//
 var chorst_pasdedanse;;
 var chorst_index;;
 var chorst_tempo;;
@@ -3640,7 +3632,7 @@ var chorst_palettecolors = {0 0 0};;
 // = 0 :  chaque chgt de seq (en myenne toutes les 2,5 minutes)
 // = 1 : une fois sur 2 (soit en moyenne ttes les 5 minutes)
 // = 2 : une fois sur 3 (soit en moyenne ttes les 7,5 minutes), etc...
-var chorst_oreille_chance;; 
+var chorst_oreille_chance;;
 
 // mouvement des leds et oreilles
 fun dochorstream=
@@ -3650,7 +3642,7 @@ fun dochorstream=
 		// Secho "Sequence suivante ";
 
 		// ears enabled ?
-		if (g_streaming_chor_enabled) then 
+		if (g_streaming_chor_enabled) then
 		(
 		// movements moteur
 		// toutes les chorst_oreille_chance fois en moyenne
@@ -3659,7 +3651,7 @@ fun dochorstream=
 		(
 			// une des oreilles en haut, une autre en bas : radio...
 			if ((random 2) == 1) then (earGo 0 0 0; earGo 1 10 0) else (earGo 0 10 0; earGo 1 0 0);
-			
+
 			// initialisation chorst_oreille_chance
 			set chorst_oreille_chance = 0
 
@@ -3671,12 +3663,12 @@ fun dochorstream=
 				let listnth ear4Positions rand&3 -> p in earGo 0 p 0;
 				let listnth ear4Positions rand&3 -> p in earGo 1 p 0
 			);
-			
+
 			// de moins en moins souvent, puis de nouveau souvent, etc..
 			if ((set chorst_oreille_chance = chorst_oreille_chance + 1) > 4) then set chorst_oreille_chance = 0
 		)
 		);
-		
+
 		// choix d'une s?quence = pas de danse (chorst_pasdedanse), tempo et nb de boucles
 		set chorst_pasdedanse = listnth chorstream_chorslist Iecholn rand&3;
 
@@ -3685,24 +3677,24 @@ fun dochorstream=
 		//Secho "tempo "; Iecholn chorst_tempo;
 		set chorst_loops=3+random 18; // entre 3 et 20 (inclus)
 		//Secho "loops "; Iecholn chorst_loops;
-		
+
 		if (current_palette_is_random) then
 			// changer palette courante
 			set_current_palette random 7;
-		
+
 		// choisir 3 couleurs au hasard dans la palette
 		set chorst_palettecolors={(random 7) (random 7) (random 7)};
-		
+
 		set chorst_nexttime=time_ms
-		
+
 	);
-	
+
 	// continuer  jouer
 	while (chorst_index < strlen chorst_pasdedanse) && time_ms >= chorst_nexttime do
 	(
 		// interprte la choragraphie. Uniquement des set_led_palette et des set_led_off et des set_led_color
-		
-		let strget chorst_pasdedanse chorst_index -> cmd in		
+
+		let strget chorst_pasdedanse chorst_index -> cmd in
 			// avance l'index de...
 			set chorst_index=chorst_index+2+
 				if (cmd == CH_set_led_palette) then
@@ -3711,7 +3703,7 @@ fun dochorstream=
 					let strget chorst_pasdedanse chorst_index+1 -> iled in
 					let strget chorst_pasdedanse chorst_index+2 -> icol in
 					let chorst_palettecolors.(3&icol) -> palcol in
-						// jouer la LED						
+						// jouer la LED
 						led iled current_palette.palcol;
 
 					// 2 bytes : led, color
@@ -3722,17 +3714,17 @@ fun dochorstream=
 					// off
 					let strget chorst_pasdedanse chorst_index+1 -> iled in
 						led iled 0;
-						
+
 					// 1 byte : led
 					1
 				)
 				else if (cmd == CH_set_led_color) then
 				(
 					led strget chorst_pasdedanse chorst_index+1
-						((strget chorst_pasdedanse chorst_index+2)<<16) + 
-						((strget chorst_pasdedanse chorst_index+3)<<8) + 
+						((strget chorst_pasdedanse chorst_index+2)<<16) +
+						((strget chorst_pasdedanse chorst_index+3)<<8) +
 						((strget chorst_pasdedanse chorst_index+4));
-						
+
 						// 6 bytes : 2 qui ne servent  rien
 						6
 				)
@@ -3747,8 +3739,8 @@ fun dochorstream=
 					// problme : commande inconnue : forcer  recommencer au d?but en incr?mentant beaucoup trop
 					Secho "dochorstream : unknown command, restarting dance"; Iecholn cmd;
 					strlen chorst_pasdedanse
-				);			
-		
+				);
+
 		// pas de danse fini ?
 		if (chorst_index>=strlen chorst_pasdedanse) then
 		(
@@ -3761,21 +3753,21 @@ fun dochorstream=
 				// recommencer pas de danse
 				set chorst_index=4+1;  // on saute le header (4 bytes)
 				// tout de suite
-				set chorst_nexttime=time_ms;				
-				
+				set chorst_nexttime=time_ms;
+
 				0 // pour avoir le mme type de return value que les autres branches du if...
 
 			) // sinon on laisse chorst_loops = 0 et chorst_index trop loin, ce qui force un passage  la s?q suivante
-			
-		) else 
+
+		) else
 			// date de la prochaine commande
 			// note : on repart de time_ms, histoire de se caler sur le temps pr?sent et non pas sur le temps de
 			// la chor?graphie, sinon, on a des coups de speed car cette fonction n'est pas toujours appel?e de manire r?gulire.
 			let strget chorst_pasdedanse chorst_index-1 -> delay in
 				set chorst_nexttime = time_ms+delay*chorst_tempo
-		
+
 	);
-	
+
 	0;;
 
 // Pour savoir si on passe en mode sleep.
@@ -3815,14 +3807,14 @@ fun runmsgchorstreaming iTimeTime=
 	if wavrunning==0 then
 	(
 		// Fin du stream
-		
+
 		// oreilles en haut
 		earGo 0 0 0;
 		earGo 1 0 0;
-		
+
 		// next message
 		set run=msgEvalOne i0+1;
-			
+
 		nil
 	)
 	else
@@ -3832,7 +3824,7 @@ fun runmsgchorstreaming iTimeTime=
 
 		// ping sp?cial toutes les minutes pour v?rifier le sleep
 		// don't ping if interactive mode
-		if (gInteractiveApp == nil) then 
+		if (gInteractiveApp == nil) then
 		if (time-ping0)>STREAMING_PING then
 		(
 			update iTimeTime with [_ _ time];
@@ -3860,7 +3852,7 @@ fun _cbWavError=
 fun runEvalOneMsg i0=
 //	Secho "runEvalOneMsg ";Iecholn i0;
 	interactiveResetEarsTouched;
-		
+
 	let listnth gCurrentMessageList i0 -> [key val] in
 	if (Secholn key)==nil then
 	(
@@ -3946,7 +3938,7 @@ fun runEvalOneMsg i0=
 	(
 		set AskR = 1;
 		wavstop;
-		earStop;		
+		earStop;
 		_controlrecord 2;
 		0
 	)*/
@@ -3956,7 +3948,7 @@ fun runEvalOneMsg i0=
 		if !strcmp key "CL" then
 				let atoi val -> x in set_current_palette_color (x>>24) x&0xffffff;
 		if !strcmp key "IC" then eval_IC_msg val;
-		
+
 		// and skip command
 		set run=msgEvalOne i0+1;
 		runEvalOneMsg i0+1
@@ -3973,22 +3965,6 @@ fun runasleep=
 	);;
 
 var nexttaichi;;
-
-fun dotaichinow=
-	Secho "checktaichi ";
-	let Iecholn infoGet TYPE_taichi -> v in
-	if v then
-		let if nexttaichi!=nil then time-nexttaichi>0 else 0 -> now in
-		(
-			if now || nexttaichi==nil then set nexttaichi=time+((v*60*((rand&127)+64))>>7);
-			now
-		)
-	else
-	(
-		set nexttaichi=nil;
-		0
-	);;
-
 
 // **********************
 // Main function : evaluate trame
@@ -4024,10 +4000,10 @@ fun evalTrame res=
 				(
 					// analyse each trame
 					Iecho code; Secho " : ";
-					
+
 					// ping delay
 					if code==3 then set pingdelay=Iecholn (strget val 0)*1;
-					
+
 					// update sources (services) and ears desired positions
 					if code==4 then
 					(
@@ -4043,7 +4019,7 @@ fun evalTrame res=
 							set extright=newright
 						)
 					);
-					
+
 					// messages (or IDLE or SLEEP)
 					if code==10 then
 					(
@@ -4051,7 +4027,7 @@ fun evalTrame res=
 						set messageList=dumpconfig filterconfig val 1;
 						0
 					);
-					
+
 					// reboot
 					if code==9 then
 					(
@@ -4060,7 +4036,7 @@ fun evalTrame res=
 					);
 					0
 				); // for l=framelist
-			
+
 				// post process : message or not ?
 				if messageList==nil then
 				(
@@ -4068,8 +4044,7 @@ fun evalTrame res=
 					(
 						earGo 0 extleft 0;
 						earGo 1 extright 0;
-						if dotaichinow then (taichistart;nil)
-						else set run=stdWaitRun time+pingdelay
+            set run=stdWaitRun time+pingdelay
 					)
 					else set run=stdWaitRun time+pingdelay
 				) else (
@@ -4132,7 +4107,7 @@ var gWasNetActivity = 0;;
 
 fun noseled=
 	if !earDetecting then
-	// led tete clignote if netactivity or wav_buffering // 
+	// led tete clignote if netactivity or wav_buffering //
 	let uploading || (match run with (rscLoadWaitRun _-> 1)|(pingRequestWaitRun _-> 1)|(interactiveReqWaitRun _->1)|(_->0)) -> netactivity in
 	if (netactivity || wav_buffering) then (
 		let if netactivity then 256 else if wav_buffering then 128 else 0 -> speed in
@@ -4150,7 +4125,7 @@ fun bottomled=
 	if ((time-lasthttpevent)>LED_TIMEOUT) then led 4 0xff00ff // bloqu?
 	else (let osc time_ms>>4 -> v in led 4 v*0x10001); // pulse violet
 	0;;
-	
+
 
 // ********** RFID **********************
 // v19 Amélioration de la lecteure RFID
@@ -4162,7 +4137,7 @@ var RFIDchek = 0;; // v19
 var RFIDlast = 0;; // v19
 
 var tmptps = 0;;
-	
+
 fun _cbrfidhttp http res=
 	Secholn res;
 	set RFIDchek = 0;
@@ -4170,7 +4145,7 @@ fun _cbrfidhttp http res=
 	0;;
 
 fun dumprfid l0=
-	for l=l0;l!=nil;tl l do let hd l->x in 
+	for l=l0;l!=nil;tl l do let hd l->x in
 	  Secholn webmac x;
 	l0;;
 
@@ -4194,7 +4169,7 @@ fun controlrfid= //v19
 	  if rfid!=nil then
 	  (
 	    set RFIDlast = time_ms;
-	    httprequest "GET" rfidurl rfid "a" nil #_cbrfidhttp HTTP_NORMAL
+	    httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
 	  )
 	);
 	0;;
@@ -4235,7 +4210,7 @@ fun controlinteractif=
 	(
 		Secholn "controlinteractif";
 		if ev==BUTTON_CLIC || ev==BUTTON_DCLIC then	(
-			if (g_int_mask&MASK_BUTTON == 0) then interactiveSendBtn ev		
+			if (g_int_mask&MASK_BUTTON == 0) then interactiveSendBtn ev
 
 		) else if ev==BUTTON_LCLIC then (
 			if (g_record_enabled) then (
@@ -4245,7 +4220,7 @@ fun controlinteractif=
 			) else (
 				// like BUTTON_CLIC
 				set ev = BUTTON_CLIC;
-				if (g_int_mask&MASK_BUTTON == 0) then interactiveSendBtn ev	
+				if (g_int_mask&MASK_BUTTON == 0) then interactiveSendBtn ev
 			)
 		)
 	)
@@ -4310,7 +4285,7 @@ fun main=
 	MACecho netMac 0 1;
 	set master=0;
 	Secholn ":started";
-	
+
 	confInit;
 	wifiInit 0;
 	loopcb	#loop;
@@ -4319,7 +4294,7 @@ fun main=
 	netstart;
 	startdnsclient;
 	Secholn ":done";
-	
+
 	srand time_ms;
 	//updatevol;
   //wavstartlocal midi_endrecord::nil;
