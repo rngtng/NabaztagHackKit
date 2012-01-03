@@ -1,18 +1,18 @@
 require 'sinatra'
 
-def message(data)
+def full_message(data)
   [0x7F] + Array(data) + [0xFF, 0x0A]
 end
 
-def ping(time = 30) #seconds
-  message [0x03, 0x00, 0x00, 0x01, time]
+def ping(seconds = 30)
+  full_message [0x03, 0x00, 0x00, 0x01, seconds]
 end
 
 def reboot
-  message [0x09, 0x00, 0x00, 0x00]
+  full_message [0x09, 0x00, 0x00, 0x00]
 end
 
-def send_byte_array byte_array
+def send_byte_array(byte_array)
   byte_array.pack('c*')
 end
 

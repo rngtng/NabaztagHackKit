@@ -225,7 +225,7 @@ L’opérateur `let ... -> ... in ...` permet de créer une variable locale dont
 
 On peut modifier une variable globale grâce à l’opérateur `set ...=...`  qui retourne la valeur passée en argument et qui, par effet de bord, remplace la valeur de la variable.
 
-Dans l’exemple suivant, on veut calculer x+y et placer le résultat dans z.
+Dans l’exemple suivant, on veut calculer _x+y_ et placer le résultat dans _z_.
 
     var x=123 ;;
     var y=456 ;;
