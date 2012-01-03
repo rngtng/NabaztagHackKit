@@ -10,10 +10,7 @@
 
 proto main 0;;
 
-//var SIMU;;
 var NOMINAL;;
-
-var AUDIOLIB;;
 
 ifdef NOMINAL
 {
@@ -23,16 +20,8 @@ var INFOLIB;;
 var RECLIB;;
 }
 
-ifdef SIMU
-{
-var HARDWARE=4;;
-var DNSLOCAL=999;;
-}
-else
-{
 var HARDWARE=4;;
 var DNSLOCAL=1597;;
-}
 
 proto buttoncheckevent 0;;
 
@@ -204,166 +193,6 @@ fun leftrotate val nb_rot =
 	);;
 
 
-
-
-
-
-// ################################################
-// ##### MD5 // Octobre 2007 // Romain COCHET
-// ################################################
-// Exemple de fonctionnement : Secholn md5 "http://r.nabaztag.com/vl/securestreaming.jsp?t=1189430760&r=42&pos=0&sn=0013D380FD33violet";
-// ATTENTION LA TAILLE de la chaine ne doit pas être suppérieurs à  134 217 728 octets ...
-// http://fr.wikipedia.org/wiki/MD5
-// Constantes
-var md5r		= { 7 12 17 22 7 12 17 22 7 12 17 22 7 12 17 22 5 9 14 20 5 9 14 20 5 9 14 20 5 9 14 20 4 11 16 23 4 11 16 23 4 11 16 23 4 11 16 23 6 10 15 21 6 10 15 21 6 10 15 21 6 10 15 21 };;
-var md5k 		= { 0xd76a 0xa478 0xe8c7 0xb756 0x2420 0x70db 0xc1bd 0xceee
-0xf57c 0x0faf 0x4787 0xc62a 0xa830 0x4613 0xfd46 0x9501
-0x6980 0x98d8 0x8b44 0xf7af 0xffff 0x5bb1 0x895c 0xd7be
-0x6b90 0x1122 0xfd98 0x7193 0xa679 0x438e 0x49b4 0x0821
-0xf61e 0x2562 0xc040 0xb340 0x265e 0x5a51 0xe9b6 0xc7aa
-0xd62f 0x105d 0x0244 0x1453 0xd8a1 0xe681 0xe7d3 0xfbc8
-0x21e1 0xcde6 0xc337 0x07d6 0xf4d5 0x0d87 0x455a 0x14ed
-0xa9e3 0xe905 0xfcef 0xa3f8 0x676f 0x02d9 0x8d2a 0x4c8a
-0xfffa 0x3942 0x8771 0xf681 0x6d9d 0x6122 0xfde5 0x380c
-0xa4be 0xea44 0x4bde 0xcfa9 0xf6bb 0x4b60 0xbebf 0xbc70
-0x289b 0x7ec6 0xeaa1 0x27fa 0xd4ef 0x3085 0x0488 0x1d05
-0xd9d4 0xd039 0xe6db 0x99e5 0x1fa2 0x7cf8 0xc4ac 0x5665
-0xf429 0x2244 0x432a 0xff97 0xab94 0x23a7 0xfc93 0xa039
-0x655b 0x59c3 0x8f0c 0xcc92 0xffef 0xf47d 0x8584 0x5dd1
-0x6fa8 0x7e4f 0xfe2c 0xe6e0 0xa301 0x4314 0x4e08 0x11a1
-0xf753 0x7e82 0xbd3a 0xf235 0x2ad7 0xd2bb 0xeb86 0xd391 };;
-var md5h0h		= 0x6745;;var md5h0l		= 0x2301;;var md5h1h		= 0xEFCD;;var md5h1l		= 0xAB89;;
-var md5h2h		= 0x98BA;;var md5h2l		= 0xDCFE;;var md5h3h		= 0x1032;;var md5h3l		= 0x5476;;
-var md5len		= 0;;	// Taille du message     md5len = 512 * md5mult + md5reste
-var md5mult		= 0;;var md5reste	= 0;;var md5message	= "msg";;var md5return	= "";;
-var md5bloc		= {
-	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000
-	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000
-	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000
-	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000	0x0000 };;
-// Variables (a, b, c, d, f,g et divers)
-var md5ah		= 0;;var md5al		= 0;;var md5bh		= 0;;var md5bl		= 0;;var md5ch		= 0;;var md5cl		= 0;;
-var md5dh		= 0;;var md5dl		= 0;;var md5fh		= 0;;var md5fl		= 0;;var md5g		= 0;;var md5msglen	= 0;;
-var md5tmp1h	= 0;;var md5tmp1l	= 0;;var md5tmp2h	= 0;;var md5tmp2l	= 0;;var md5tmp3h	= 0;;var md5tmp3l	= 0;;
-var md5len64h	= 0x00000000;;			 var md5len64l	= 0x00000000;;
-
-// Fonction Principale MD5
-fun md5 strmd5=
-	// ### Initialisation des variables
-	// Constantes
-	set md5h0h		= 0x6745;
-	set md5h0l		= 0x2301;
-	set md5h1h		= 0xEFCD;
-	set md5h1l		= 0xAB89;
-	set md5h2h		= 0x98BA;
-	set md5h2l		= 0xDCFE;
-	set md5h3h		= 0x1032;
-	set md5h3l		= 0x5476;
-	// Variable de message
-	set md5len		= strlen strmd5;					// Taille de la chaine de caractere
-	set md5reste 	= md5len&0x3FF;						// Reste de la division par 512 bits
-	set md5mult 	= md5len/64;						// Reste de la division par 64octets(512bits)
-	if (md5reste > 55 && md5reste < 64) then set md5mult = md5mult + 1;	// Si la taille de la chaine entre dans les 64Bits de fin (en comptant le bit de fin de message) on allonge de 512bits
-	set md5msglen	= (md5mult+1)*64;					// Taille du message après preparation
-
-	// ### Preparation du message
-	set md5message 	= strnew md5msglen;							// Allocation de la chaine
-	for i=0;i<md5msglen do strset md5message i 0;				// Initialise la chaine
-	for i=0;i<md5len do strset md5message i (strget strmd5 i);	// Copie le message
-	strset md5message md5len 0x80;								// Ajout d'un bit 1 à la fin du message
-
-	// Puisque la chaine est de longueur de la chaine est max de 2^30 octect >> elle est de max (2^30) * 8 (01 FF FF FF F8)
-	set md5len64h = ((((0xFFFFFF000000&md5len)>>24)*8) + (((((0x000000FFFFFF&md5len)>>00)*8)>>24)&0x000000FFFFFF));
-	set md5len64l = ((((0x000000FFFFFF&md5len)>>00)*8)&0x000000FFFFFF);
-
-	// On copie la longueur de 64 bits
-	for i=0; i<3 do	strset md5message (md5msglen-8+i) (((md5len64l)>>(i*8))&0xFF);
-	for i=3; i<6 do	strset md5message (md5msglen-8+i) (((md5len64h)>>((i-3)*8))&0xFF);
-
-	// ### Calcul par blocs
-	for i=0; i<=md5mult do (	// Faire tous les blocs de md5message
-		// Preparation du bloc
-		for j=0; j<16 do (		// A chaque bloc organiser le blog de 16 * 32bits en little endian
-			set md5bloc.(j*2) = (strget md5message ((i*64) + (j*4) + 3)) * 0x100;
-			set md5bloc.(j*2) = (strget md5message ((i*64) + (j*4) + 2)) + md5bloc.(j*2);
-			set md5bloc.(j*2+1) = (strget md5message ((i*64) + (j*4) + 1)) * 0x100;
-			set md5bloc.(j*2+1) = (strget md5message ((i*64) + (j*4) + 0)) + md5bloc.(j*2+1)
-		);
-
-		// Initialiser les valeurs de hachage
-		set md5ah	= md5h0h;		set md5al	= md5h0l;		set md5bh	= md5h1h;		set md5bl	= md5h1l;
-		set md5ch	= md5h2h;		set md5cl	= md5h2l;		set md5dh	= md5h3h;		set md5dl	= md5h3l;
-
-		// Opérations de l'algo
-		for j=0; j<64 do (
-			if j < 16 then (
-				set md5fh 	= (md5bh&md5ch)|((~md5bh)&md5dh);	//f := (b et c) ou ((non b) et d)
-				set md5fl 	= (md5bl&md5cl)|((~md5bl)&md5dl);	//f := (b et c) ou ((non b) et d)
-				set md5g	= j
-			) else if  j < 32 then (
-				set md5fh 	= (md5dh&md5bh)|((~md5dh)&md5ch);	//f := (d et b) ou ((non d) et c)
-				set md5fl 	= (md5dl&md5bl)|((~md5dl)&md5cl);	//f := (d et b) ou ((non d) et c)
-				set md5g	= (5*j + 1) %16
-			) else if  j < 48 then (
-				set md5fh 	=  md5bh^md5ch^md5dh;				//f := b xor c xor d
-				set md5fl 	=  md5bl^md5cl^md5dl;				//f := b xor c xor d
-				set md5g	= (3*j + 5) %16
-			) else (
-				set md5fh 	= md5ch^(md5bh|((~md5dh)&0xFFFF));	//f := c xor (b ou (non d))
-				set md5fl 	= md5cl^(md5bl|((~md5dl)&0xFFFF));	//f := c xor (b ou (non d))
-				set md5g	= (7*j) %16
-			);
-
-			set md5tmp1h 	= md5dh;			set md5tmp1l	= md5dl;			set md5dh 		= md5ch;
-			set md5dl 		= md5cl;			set md5ch 		= md5bh;			set md5cl 		= md5bl;
-			// ((a+f+g+k(i) + w(g)
-			set md5tmp2h 	= (md5ah + md5fh + md5k.(j*2  ) + md5bloc.(md5g*2  ));
-			set md5tmp2l 	= (md5al + md5fl + md5k.(j*2+1) + md5bloc.(md5g*2+1));
-			set md5tmp2h	= ((md5tmp2l >> 16) + md5tmp2h) & 0xFFFF;
-			set md5tmp2l	= md5tmp2l & 0xFFFF;
-			// Rotation
-			let md5r.(j) -> nb_rot in
-			let leftrotate { md5tmp2h md5tmp2l } nb_rot -> tmpr in (
-				set md5tmp2h	= tmpr.(0);
-				set md5tmp2l	= tmpr.(1)
-			);
-			set md5bh		= ((md5tmp2h + md5bh) + ((md5tmp2l + md5bl) >> 16))&0xFFFF;
-			set md5bl		= (md5tmp2l + md5bl)&0xFFFF;
-			set md5ah 		= md5tmp1h;
-			set md5al 		= md5tmp1l
-		);
-
-		// Dernière étape pour le prochain bloc
-		set md5h0h		= (md5h0h + md5ah + ((md5h0l+md5al) >> 16)) & 0xFFFF;
-		set md5h0l		= (md5h0l + md5al) & 0xFFFF;
-		set md5h1h		= (md5h1h + md5bh + ((md5h1l+md5bl) >> 16)) & 0xFFFF;
-		set md5h1l		= (md5h1l + md5bl)&0xFFFF;
-		set md5h2h		= (md5h2h + md5ch + ((md5h2l+md5cl) >> 16)) & 0xFFFF;
-		set md5h2l		= (md5h2l + md5cl)&0xFFFF;
-		set md5h3h		= (md5h3h + md5dh + ((md5h3l+md5dl) >> 16)) & 0xFFFF;
-		set md5h3l		= (md5h3l + md5dl)&0xFFFF
-
-	);
-
-	// #### Concaténation et création de la chaine de caractère
-	set md5return = "";
-	for i=0; i<8 do (
-		for j=0; j<2 do (
-			if 		i == 0 then set md5tmp2h = md5h0l
-			else if i == 1 then set md5tmp2h = md5h0h
-			else if i == 2 then set md5tmp2h = md5h1l
-			else if i == 3 then set md5tmp2h = md5h1h
-			else if i == 4 then set md5tmp2h = md5h2l
-			else if i == 5 then set md5tmp2h = md5h2h
-			else if i == 6 then set md5tmp2h = md5h3l
-			else 				set md5tmp2h = md5h3h;
-			if((md5tmp2h>>(8*j))&0xFF < 0x10) then
-				set md5return = strcat md5return "0";
-			set md5return = strcat md5return itoh((md5tmp2h>>(8*j))&0xFF)
-		)
-	);
-	md5return;;
-
 fun MACecho src i0 ln=
 	for i=0;i<6 do (Secho ctoh strget src i0+i; Secho ".");	if ln then Secholn "";
 	src;;
@@ -435,19 +264,6 @@ var CONF_LENGTH=208;;
 
 var conf;;
 
-/*
-var conf0=
-"r.nabaztag.com/vl\0-----------------------\
-\1\0\0\0\0\255\255\255\0\0\0\0\0\0\0\0\0\
-\0-------------------------------\
-\0\0abcde\0----------------------------------------------------------\
-\0\0\0\0\0\0\0\
-\0\0\0\0\0\0\
-\0\0\0\0\0\0\
---------------------------------\
-\$48";;
-*/
-
 fun confSave=
 	Secholn "## save configuration";
 	dump conf;
@@ -456,15 +272,7 @@ fun confSave=
 fun confInit=
 	set conf=strnew CONF_LENGTH;
 	load conf 0 "conf.bin" 0 CONF_LENGTH;
-/*	if (strget conf CONF_MAGIC)!=0x48 then
-	(
-		set conf=strnew CONF_LENGTH;
-		strcpy conf 0 conf0 0 nil;
-		confSave;
-		set conf=strnew CONF_LENGTH;
-		load conf 0 "conf.bin" 0 CONF_LENGTH
-	);
-*/	dump conf;;
+	dump conf;;
 
 fun confGet i len= strsub conf i len;;
 
@@ -528,7 +336,6 @@ var ARPANS=2;;
 
 var larp;;
 var larpreq;;
-
 
 fun mkarp op ipsrc macdst ipdst=
 	strcatlist
@@ -668,7 +475,6 @@ fun cbnetudp src mac=
 
 
 // -------------- UDP fin
-
 // ------------- TCP debut
 var TFIN=0x01;;
 var TSYN=0x02;;
@@ -1472,7 +1278,6 @@ fun httpgetcontent res =
 
 //-------------------
 
-
 ifdef RECLIB {
 var lrec;;
 var recording=0;;
@@ -1483,19 +1288,7 @@ fun sqrt_ i i0 i1=
 	else if m*m>i then sqrt_ i i0 m else sqrt_ i m i1;;
 fun sqrt i=sqrt_ i 0 256;;
 
-var buff;;
-var buffx;;
-var buffy;;
-
 fun cbrec s=
-/*	if buff==nil then set buff=strnew 505*2;
-	if buffx==nil then set buffx=strnew 505;
-	if buffy==nil then set buffy=strnew 505*2;
-	adp2wav buff 0 s 0 256;
-//	wav2alaw buffx 0 buff 0 505*2 1;
-//	alaw2wav buffy 0 buffx 0 505 1;
-	set s=wav2adp strnew 256 0 buff 0 505*2;
-*/
 	Iecho strlen s; Secho "!";
 	let 255-(Iecholn sqrt recVol s 0) -> vol in
 	let 255-((vol*vol)>>8) -> vol in
@@ -1541,7 +1334,6 @@ fun recriff =
 		set lrec=nil;
 		res
 	);;
-
 }
 
 ifdef AUDIOLIB {
@@ -1697,19 +1489,6 @@ fun wavstartlocalEx l timeout=
 	;;
 
 fun wavstartlocal l=wavstartlocalEx l WAV_END_TIMEOUT;;
-/*
-fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;;
-fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
-
-fun mkwav freq channel bps=
-	let strcatlist
-		"WAVEfmt "::(itobin4 0x12)::
-			(itobin2 1)::(itobin2 channel)::
-			(itobin4 freq)::(itobin4 freq*channel*bps/8)::
-			(itobin2 channel*bps/8)::(itobin4 bps)::
-		"data"::(itobin4 0)::nil -> c in
-	strcatlist "RIFF"::(itobin4 (strlen c))::c::nil;;
-*/
 
 fun _wavcbhttp httpreq req=
 	Secho "w";
@@ -1781,7 +1560,6 @@ fun wavtime =
 ifdef EARSLIB {
 
 // ears management
-
 var EARSMODE_RESET=0;;
 var EARSMODE_WAIT=1;;
 var EARSMODE_WAITANDDETECT=2;;
@@ -2498,9 +2276,6 @@ fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
 
 
 ifdef NOMINAL {
-
-var TYPE_taichi=14;;
-
 var tab_osc={
 	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
 	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
@@ -2531,7 +2306,6 @@ var currentTrameID=0;;
 var pingdelay=10;;
 var recorddelay=4;;
 
-var sources;;
 var extleft;;
 var extright;;
 
@@ -2582,7 +2356,6 @@ var CH_set_leds_color=9;; // v16
 var CH_set_led_off=10;; // v17
 var CH_set_led_palette=14;;
 //var CH_set_palette=15;;
-var CH_randmidi=16;;
 var CH_avance=17;;
 var CH_ifne=18;;
 var CH_attend=19;;
@@ -2641,8 +2414,6 @@ var midi_ministop=
 "\$00";;
 var midi_abort=
 "\$00";;
-var midi_ears=
-"\$00";;
 var midi_communion=
 "\$00";;
 var midi_ack=
@@ -2661,18 +2432,10 @@ var chordef_startInteractive=
 "\$00";;
 var chorstream_chorslist=
 "\$00"::"\$00"::"\$00"::"\$00"::nil;;
-var midi_startrecord=
-"\$00";;
 var midi_endrecord=
 "\$00";;
 var mp3_startrecord=
 "\$00";;
-var midi_RFIDok=
-"\$00";;
-var chor_RFIDok=
-"\$00";;
-
-var midilist;;
 
 fun controlsound s=
 	wavstartlocal s::nil;
@@ -2762,7 +2525,7 @@ fun recordurl mode=
   strcatlist confGetServerUrl::"/record.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&m="::(itoa mode)::nil;;
 
 fun rfidurl tag1=
-  strcatlist confGetServerUrl::"/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t[]="::(webmac tag1)::"&t[]="::(webmac tag2)::nil;;
+  strcatlist confGetServerUrl::"/rfid.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&t[]="::(webmac tag1)::nil;;
 
 fun interactifurl application=
   strcatlist confGetServerUrl::"/itmode.jsp?sn="::(webmac netMac)::"&v="::(itoa FIRMWARE)::"&h="::(itoa HARDWARE)::"&a="::application::nil;;
@@ -3122,9 +2885,6 @@ fun uploadtimeout=
 		)
 	);;
 
-var AskR = 0;; // v18
-var RecordingTime = 8000;; // v18
-
 fun runrecord=
 //	led 0 if time_ms&1024 then 0xff0000 else 0;
 	if !button2 || ((time_ms-recordtimestart)>8000)then
@@ -3144,42 +2904,6 @@ fun runrecord=
 			)
 		)
 	);;
-
-/****** OLD
-fun runrecord=
-//	led 0 if time_ms&1024 then 0xff0000 else 0;
-	if !AskR then //v18
-	(
-		if !button2 || ((time_ms-recordtimestart)>8000) then
-		(
-			recstop;
-			setleds 0x00;
-			let recriff -> wavfile in
-			(
-					set recorddata=strcatlist wavfile;
-					set recordretry=3;
-					set recordplayend=time_ms+400;
-					set recordreq=httprequest "POST" Secholn recordurl recordmode recorddata #_cbrecordhttp HTTP_NORMAL;
-					set run=stdWaitRun time+recorddelay
-			)
-		)
-	)else
-	(
-		if (time_ms-recordtimestart)>3000 then
-		(
-			recstop;
-			setleds 0xFF;
-			let recriff -> wavfile in
-			(
-					set recorddata=strcatlist wavfile;
-					set recordretry=3;
-					set recordplayend=time_ms+400;
-					set recordreq=httprequest "POST" Secholn recordurl recordmode recorddata #_cbrecordhttp HTTP_NORMAL;
-					set run=stdWaitRun time+recorddelay
-			)
-		)
-	);;
-*********/
 
 // ************************* Choregraphies (TaiChi, .chor) ************
 var chordata;;
@@ -3434,7 +3158,7 @@ type EarTouch=[num_ET refPos_ET moveDir_ET lastDV_ET lastMoveTime_ET turned_ET];
 var earsTouch;;
 var EAR_TOUCH_TIMEOUT=1000;;
 
-fun interactiveResetEarsTouched=
+fun interactiveResetEarsTouchedrsTouched=
 	set earsTouch=tabnew nil 2;
 	for i=0;i<2 do set earsTouch.i=[num_ET:i];
 	for i=0;i<2 do let earsTouch.i -> et in
@@ -3892,7 +3616,7 @@ fun runEvalOneMsg i0=
 		let rscfilterurl val -> music in (
 			set music = strcatlist music::"&sn="::(webmac netMac)::nil;
 			let music -> tmpval in (
-				set tmpval = md5(strcatlist music::"teloiv"::nil);
+				//set tmpval = md5(strcatlist music::"teloiv"::nil);
 				set music = strcatlist music::"&cs="::tmpval::nil
 			);
 			wavstarthttp music #_cbWavError
@@ -3934,14 +3658,6 @@ fun runEvalOneMsg i0=
 		interactiveStop;
 		0
 	)
-	/*else if !strcmp key "RC" then  // v18 //v20
-	(
-		set AskR = 1;
-		wavstop;
-		earStop;
-		_controlrecord 2;
-		0
-	)*/
 	else
 	(
 		if !strcmp key "PL" then set_current_palette_mode atoi val;
@@ -3963,8 +3679,6 @@ fun runasleep=
 		set run=stdWaitRun time+pingdelay;
 		0
 	);;
-
-var nexttaichi;;
 
 // **********************
 // Main function : evaluate trame
@@ -4130,13 +3844,10 @@ fun bottomled=
 // ********** RFID **********************
 // v19 Amélioration de la lecteure RFID
 // v19 Les fonction ParseRfid servent à tester les caractères de l'identifiant RFID
-var lastrfid;;
 var RFIDchar = 2;; // v19
 var RFIDint = 6;; // v19
 var RFIDchek = 0;; // v19
 var RFIDlast = 0;; // v19
-
-var tmptps = 0;;
 
 fun _cbrfidhttp http res=
 	Secholn res;
@@ -4226,10 +3937,8 @@ fun controlinteractif=
 	)
 	;;
 
-
 var CONTROL_WAIT=1;;
 var CONTROL_PLAY=2;;
-var CONTROL_INTERACTIF=3;;
 
 fun loop=
 //Secho "l";
@@ -4289,7 +3998,7 @@ fun main=
 	confInit;
 	wifiInit 0;
 	loopcb	#loop;
-	//earInit;
+	
 	infoInit;
 	netstart;
 	startdnsclient;
