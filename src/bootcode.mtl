@@ -2334,7 +2334,6 @@ proto interactiveFinished 0;;
 proto interactiveSendUpload 0;;
 proto interactiveStop 0;;
 proto interactiveError 0;;
-proto interactiveResetEarsTouched 0;;
 
 var gCurrentAudioMsgIndex=-1;;
 
@@ -3230,8 +3229,7 @@ fun interactiveEarProcessTouched=
 	let touchedP 0 -> lefttouch in
 	let touchedP 1 -> righttouch in
 	if (lefttouch || righttouch) then (
-		interactiveSendEarTouched lefttouch righttouch;
-		interactiveResetEarsTouched
+		interactiveSendEarTouched lefttouch righttouch
 	);;
 
 fun interactiveSendUpload=
@@ -3575,8 +3573,6 @@ fun _cbWavError=
 
 fun runEvalOneMsg i0=
 //	Secho "runEvalOneMsg ";Iecholn i0;
-	interactiveResetEarsTouched;
-
 	let listnth gCurrentMessageList i0 -> [key val] in
 	if (Secholn key)==nil then
 	(
