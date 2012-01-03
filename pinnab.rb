@@ -20,7 +20,7 @@ end
 
 get '/vl/bc.jsp' do
   puts "bootcode"
-  send_file File.join('public', 'bootcode', 'b3.bin')
+  send_file File.join('public', 'bootcode', 'bootcode.bin')
 end
 
 get '/vl/p4.jsp' do
