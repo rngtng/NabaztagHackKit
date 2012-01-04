@@ -38,6 +38,21 @@ fun dump s=
   );
   s;;
 
+fun dumpscan l0=
+  Secholn "## DUMPSCAN >>>>";
+  for l=l0;l!=nil;tl l do
+  let hd l->[ssid mac bssid rssi channel rateset encryption] in
+  (
+    Secho "## SCAN "; Secholn ssid;
+    Secho "mac:"; MACecho mac 0 1;
+    Secho "bssid:"; MACecho bssid 0 1;
+    Secho "rssi:"; Iecholn rssi;
+    Secho "channel:"; Iecholn channel;
+    Secho "rateset:"; Iecholn rateset;
+    Secho "encryption:"; Iecholn encryption
+  );
+  l0;;
+
 // ------------- ARP
 const ARPREQ=1;;
 const ARPANS=2;;

@@ -1,9 +1,59 @@
 // --------------- UTIL
-
+fun strstr s p i=strfind s i p 0 nil;;
 fun listlen l=if l==nil then 0 else 1+listlen tl l;;
 fun listrem l x=if l!=nil then if x==hd l then tl l else (hd l)::listrem tl l x;;
 
-fun strstr s p i=strfind s i p 0 nil;;
+fun listtostr l=
+  let strnew listlen l -> s in
+  let 0->i in
+  (
+    for p=l;p!=nil;tl p do
+    (
+      strset s i hd p;
+      set i=i+1
+    );
+  s
+  );;
+
+
+fun countpattern s p i=
+  let strstr s p i -> j in
+  if j==nil then 0
+  else 1+countpattern s p j+strlen p;;
+
+fun strreplace2 sn s p v i id=
+  if i<strlen s then
+  let strstr s p i -> j in
+  let if j==nil then strlen s else j -> k in
+  (
+    strcpy sn id s i k-i;
+    if j!=nil then strcpy sn id+k-i v 0 nil;
+    strreplace2 sn s p v k+strlen p id+k-i+strlen v
+  );;
+
+fun strreplace s p v=
+  let countpattern s p 0 -> i in
+  if !i then s
+  else let strnew (strlen s) + ((strlen v)-(strlen p))*i -> sn in
+  (
+    strreplace2 sn s p v 0 0;
+    sn
+  );;
+
+fun rev p q=if p==nil then q else rev tl p (hd p)::q;;
+
+fun remfromlist l t= if l!=nil then if t==hd l then tl l else (hd l)::remfromlist tl l t;;
+
+fun insert x l f=
+  if l==nil then x::nil
+  else let call f [x hd l] -> r in
+  if r>0 then (hd l)::insert x tl l f
+  else if r<0 then x::l
+  else insert x tl l f;;
+
+fun sort l f= if l!=nil then insert hd l sort tl l f f;;
+
+fun select l a f= if l!=nil then let hd l-> x in if call f [x a] then x::select tl l a f else select tl l a f;;
 
 fun _useparamip s i val j=
 	if i<4 then
@@ -19,9 +69,3 @@ fun useparamip val=
 		_useparamip ip 0 val 0;
 		ip
 	);;
-
-fun select l a f= if l!=nil then let hd l-> x in if call f [x a] then x::select tl l a f else select tl l a f;;
-
-fun rev p q=if p==nil then q else rev tl p (hd p)::q;;
-
-fun remfromlist l t= if l!=nil then if t==hd l then tl l else (hd l)::remfromlist tl l t;;

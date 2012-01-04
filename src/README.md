@@ -54,113 +54,122 @@ L’expression TypeMono définit les types monomorphes (non polymorphes): la seu
 
 ### Sources
 
-Metal  =  Definition*
-Definition  =  fun Function Args = Program ;;
- |  var Var( = Val) ;;
- |  proto Function Nbargs ;;
- |  proto Function = Type ;;
- |  type TypeName ;;
- |  type TypeName = [ Fields ] ;;
- |  type TypeName = TypeConstr ;;
+
+    Metal = Definition*
 
 
-Program  =  Expr |  Expr ; Program
-
-Expr  =  Arithm |  Arithm :: Expr
-
-Arithm  =  A1 |  A1 && Arithm |  A1 || Arithm
-
-A1  =  A2 |  !A1
-
-A2  =  A3 |  A3 == A3 |  A3 != A3
- |  A3 < A3 |  A3 > A3 |  A3 <= A3
- |  A3 >= A3 |  A3 =. A3 |  A3 !=. A3
- |  A3 <. A3 |  A3 >. A3 |  A3 <=. A3
- |  A3 >=. A3
-A3  =  A4 |  A4 + A3 |  A4 - A3
- |  A4 +. A3 |  A4 -. A3
-A4  =  A5 |  A5 * A4 |  A5 / A4
- |  A5 % A4 |  A5 *. A4 |  A5 /. A4
-A5  =  A6 |  A6 & A5 |  A6 | A5
- |  A6 ^A5 |  A6 << A5 |  A6 >> A5
-A6  =  Term |  -A6 |  ~A6
- |  -. A6 |  - int |  - float
- |  float
-
-Term  =  ( Program )
- |  int |  'char’ |  nil
- |  string |  Xml
- |  [  NameOfField : Expr (NameOfField : Expr)* ]
- |  [Expr* ] |  {Expr* }
+    Definition  =  fun Function Args = Program ;;
+     |  var Var( = Val) ;;
+     |  proto Function Nbargs ;;
+     |  proto Function = Type ;;
+     |  type TypeName ;;
+     |  type TypeName = [ Fields ] ;;
+     |  type TypeName = TypeConstr ;;
 
 
- |  Var(.Term)* |  set Var(.Term)* = Expr
- |  Var(.NameOfField)* |  set Var(.NameOfField)* = Expr
-
- |  Function  ArgsFunction |  #Function
- |  #{ Expr Expr Type}
-
- |    let Expr -> Locals in Expr
- |    if Expr then Expr else Expr
- |    while Expr do Expr
- |    for Local = Expr ; Expr ; Expr do Expr
- |    for Local = Expr ; Expr do Expr
- |    call Expr  Expr
- |    update Expr with [ {_ , Expr}* ]
-
- |  Constr  Expr |  Constr0 |  match Expr with Case
-
-ArgsF  =  Expr ...Expr   : autant de fois Expr que la fonction F a d’arguments
-Args  =  nothing |  Local Args
-Locals  =  Local |  (Locals’::Locals)
-Locals’  =  Local |  [ Locals’’ ]
-Locals’’  =  {_ , Locals}*
-
-Val  =  Val3 |  Val3 :: Val
-Val3  =  Val4 |  Val4 + Val3 |  Val4 - Val3
- |  Val4 +. Val3 |  Val4 -. Val3
-Val4  =  Val5 |  Val5 * Val4 |  Val5 / Val4
- |  Val5 % Val4 |  Val5 *. Val4 |  Val5 /. Val4
-Val5  =  Val6 |  Val6 & Val5 |  Val6 | Val5
- |  Val6 ^Val5 |  Val6 << Val5 |  Val6 >> Val5
-Val6  =  Val7 |  -Val6 |  ~Val6
- |  -. Val6 |  - int |  - float
- |  float
-Val7  =  int |  'char’ |  nil
- |  string |  Xml  |  [ Val* ]
- |  (Val) |  { Val* }
- |  itof Val |  ftoi Val
-
-Fields  =  Field |  Field, Fields
-Field  =   NameOfField |    NameOfField : TypeMono
-
-TypeConstr  =  TypeConstr’ |  TypeConstr’ | TypeConstr
-TypeConstr’  =  Constr  TypeMono |  Constr0
-
-Case  =  Case' |  Case' | Case |  ( _ -> Program)
-Case'  =  ( Constr  Local -> Program ) |  (Constr0 -> Program )
+    Program  =  Expr |  Expr ; Program
 
 
-Var  =  nom de variable
-Function  =  nom de fonction
-TypeName  =  nom de type |    nom de type( labels* )
+    Expr  =  Arithm |  Arithm :: Expr
 
-Local  =  variable locale (liée)
-NameOfField  =  nom de champ dans une structure
-Constr  =  constructeur de type
-Constr0  =  constructeur de type vide
 
-Xml  =  < Tag (Attribute*)>Sub</ Tag >
-Sub  =  nothing
-  |  Text
-  |  Xml Sub
-  |  Text Xml Sub
-Attribute  =  label = string
+    Arithm  =  A1 |  A1 && Arithm |  A1 || Arithm
 
-int  =  entier
-char  =  caractère
-string  =  chaîne
-float  =  flottant
+
+    A1  =  A2 |  !A1
+
+
+    A2  =  A3 |  A3 == A3 |  A3 != A3
+     |  A3 < A3 |  A3 > A3 |  A3 <= A3
+     |  A3 >= A3 |  A3 =. A3 |  A3 !=. A3
+     |  A3 <. A3 |  A3 >. A3 |  A3 <=. A3
+     |  A3 >=. A3
+    A3  =  A4 |  A4 + A3 |  A4 - A3
+     |  A4 +. A3 |  A4 -. A3
+    A4  =  A5 |  A5 * A4 |  A5 / A4
+     |  A5 % A4 |  A5 *. A4 |  A5 /. A4
+    A5  =  A6 |  A6 & A5 |  A6 | A5
+     |  A6 ^A5 |  A6 << A5 |  A6 >> A5
+    A6  =  Term |  -A6 |  ~A6
+     |  -. A6 |  - int |  - float
+     |  float
+
+
+    Term  =  ( Program )
+     |  int |  'char’ |  nil
+     |  string |  Xml
+     |  [  NameOfField : Expr (NameOfField : Expr)* ]
+     |  [Expr* ] |  {Expr* }
+
+
+     |  Var(.Term)* |  set Var(.Term)* = Expr
+     |  Var(.NameOfField)* |  set Var(.NameOfField)* = Expr
+
+     |  Function  ArgsFunction |  #Function
+     |  #{ Expr Expr Type}
+
+     |    let Expr -> Locals in Expr
+     |    if Expr then Expr else Expr
+     |    while Expr do Expr
+     |    for Local = Expr ; Expr ; Expr do Expr
+     |    for Local = Expr ; Expr do Expr
+     |    call Expr  Expr
+     |    update Expr with [ {_ , Expr}* ]
+
+     |  Constr  Expr |  Constr0 |  match Expr with Case
+
+
+    ArgsF  =  Expr ...Expr   : autant de fois Expr que la fonction F a d’arguments
+    Args  =  nothing |  Local Args
+    Locals  =  Local |  (Locals’::Locals)
+    Locals’  =  Local |  [ Locals’’ ]
+    Locals’’  =  {_ , Locals}*
+
+    Val  =  Val3 |  Val3 :: Val
+    Val3  =  Val4 |  Val4 + Val3 |  Val4 - Val3
+     |  Val4 +. Val3 |  Val4 -. Val3
+    Val4  =  Val5 |  Val5 * Val4 |  Val5 / Val4
+     |  Val5 % Val4 |  Val5 *. Val4 |  Val5 /. Val4
+    Val5  =  Val6 |  Val6 & Val5 |  Val6 | Val5
+     |  Val6 ^Val5 |  Val6 << Val5 |  Val6 >> Val5
+    Val6  =  Val7 |  -Val6 |  ~Val6
+     |  -. Val6 |  - int |  - float
+     |  float
+    Val7  =  int |  'char’ |  nil
+     |  string |  Xml  |  [ Val* ]
+     |  (Val) |  { Val* }
+     |  itof Val |  ftoi Val
+
+    Fields  =  Field |  Field, Fields
+    Field  =   NameOfField |    NameOfField : TypeMono
+
+    TypeConstr  =  TypeConstr’ |  TypeConstr’ | TypeConstr
+    TypeConstr’  =  Constr  TypeMono |  Constr0
+
+    Case  =  Case' |  Case' | Case |  ( _ -> Program)
+    Case'  =  ( Constr  Local -> Program ) |  (Constr0 -> Program )
+
+
+    Var  =  nom de variable
+    Function  =  nom de fonction
+    TypeName  =  nom de type |    nom de type( labels* )
+
+    Local  =  variable locale (liée)
+    NameOfField  =  nom de champ dans une structure
+    Constr  =  constructeur de type
+    Constr0  =  constructeur de type vide
+
+    Xml  =  < Tag (Attribute*)>Sub</ Tag >
+    Sub  =  nothing
+      |  Text
+      |  Xml Sub
+      |  Text Xml Sub
+    Attribute  =  label = string
+
+    int  =  entier
+    char  =  caractère
+    string  =  chaîne
+    float  =  flottant
 
 Les entiers peuvent être codés dans les bases suivantes:
 
@@ -379,7 +388,7 @@ On crée alors l’arbre de l’expression `1 + (2 * 3)` de la manière suivante
      Add [ Const 1 Mul [ Const 2 Const 3]]
 
 ###  Manipulation de fonctions
-Le langage permet la manipulation de fonctions ; pour obtenir une sorte de « pointeur » vers une fonction, on utilise l’opérateur #. On utilise alors l’opérateur « call » pour appeler une fonction à partir de son pointeur.
+Le langage permet la manipulation de fonctions ; pour obtenir une sorte de _pointeur_ vers une fonction, on utilise l’opérateur _#_. On utilise alors l’opérateur « call » pour appeler une fonction à partir de son pointeur.
 
     fun compare x y= x-y ;;
 
@@ -395,9 +404,7 @@ On peut fixer le dernier argument d’une fonction et obtenir ainsi une fonction
       let fixarg2 f 2 -> g in
       Iecholn call g [1] ;;
 
-Dans cet exemple, la fonction g est la fonction de comparaison avec l’entier ‘2’.
-On utilise l’opérateur fixargn, avec n=1, 2, 3, ...
-
+Dans cet exemple, la fonction g est la fonction de comparaison avec l’entier ‘2’. On utilise l’opérateur fixargn, avec n=1, 2, 3, ...
 
 
 ## Exemples simples

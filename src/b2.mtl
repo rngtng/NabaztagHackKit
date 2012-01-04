@@ -53,21 +53,34 @@ var i = 0;;
 
 //-------------------- LOOP
 fun loop=
-  //if ((time_ms - t) > 100) then
-  //(
-  //  set t = time_ms;
-  //  set i=i+1;
-  //  setleds i
-  //);
-  //controlrfid;
+  wifiRun;
+
+  if netState==RT2501_S_IDLE then
+  match wifi with
+  (initW -> nil)
+  |(_ ->
+    Secholn "######### wifi lost";
+    set wifi=reconnectW;
+    0
+  );
+
+  if ((time_ms - t) > 100) then
+  (
+    set t = time_ms;
+    set i=i+5;
+    setleds i
+  );
+
+  controlrfid;
   0;;
 
 //-------------------- MAIN
 fun main=
+  confInit;
   wifiInit 0;
   loopcb #loop; // 20 p. second
 
   netstart;
-  startdnsclient;
+  //startdnsclient;
   srand time_ms;
   0;;
