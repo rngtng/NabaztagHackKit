@@ -1,26 +1,26 @@
 // ------------- TCP
-var TFIN=0x01;;
-var TSYN=0x02;;
-var TRST=0x04;;
-var TPUSH=0x08;;
-var TACK=0x10;;
-var TURGE=0x20;;
+const TFIN=0x01;;
+const TSYN=0x02;;
+const TRST=0x04;;
+const TPUSH=0x08;;
+const TACK=0x10;;
+const TURGE=0x20;;
 
-var STOFF=-1;;
-var STSYN=0;;
-var STEST=1;;
-var STLISTEN=2;;
-var STFIN=3;;
+const STOFF=-1;;
+const STSYN=0;;
+const STEST=1;;
+const STLISTEN=2;;
+const STFIN=3;;
 
-var CLIENT_SEQ_START="\0\0\1\0";;
-var CLIENT_SEQ_NULL="\0\0\0\0";;
+const CLIENT_SEQ_START="\0\0\1\0";;
+const CLIENT_SEQ_NULL="\0\0\0\0";;
 
-var TCPWRITE=0;;
-var TCPREAD=1;;
-var TCPCLOSE=-1;;
-var TCPSTART=2;;
+const TCPWRITE=0;;
+const TCPREAD=1;;
+const TCPCLOSE=-1;;
+const TCPSTART=2;;
 
-var TCPMAX=1024;;
+const TCPMAX=1024;;
 
 type Tcp=[stateT locT dstT locpT dstpT seqT ackT cbT macT lastsentT retryT locksendT enableT];;
 

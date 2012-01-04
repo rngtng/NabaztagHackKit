@@ -1,12 +1,12 @@
 var http_prefurl="http://";;
 
-var HTTP_NORMAL=0;;
-var HTTP_STREAM=1;;
-var HTTP_DIRECT=2;;
+const HTTP_NORMAL=0;;
+const HTTP_STREAM=1;;
+const HTTP_DIRECT=2;;
 
-var HTTP_SOLVE=0;;
-var HTTP_REACH=1;;
-var HTTP_CONNECTED=2;;
+const HTTP_SOLVE=0;;
+const HTTP_REACH=1;;
+const HTTP_CONNECTED=2;;
 
 var lasthttpevent;;
 
