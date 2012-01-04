@@ -31,9 +31,22 @@ def split(file)
   _split(File.open(file))
 end
 
-def compile(lines, file)
-  write(line, "tmp.mtl")
-  `compiler/mtl_linux/mtl_comp tmp.mtl tmp.bin`
+
+def mcompile(file)
+  File.open("tmp.mtl", 'w') do |out|  
+    _merge(File.open(file), File.dirname(file), out)
+  end
+  puts compile("tmp.mtl")
+end
+
+def compile(file, filter = false)
+  filter_cmd = filter ? "| grep done" : ""
+  `../../.tmp/OpenJabNab/bootcode/compiler/mtl_linux/mtl_comp #{file} tmp.bin 2>&1 | grep -v "bytes" #{filter_cmd}`
+end
+
+def compiles?(lines)
+  write(lines, "tmp.mtl")
+  compile("tmp.mtl", true).include?("done !")
 end
 
 def write(lines, file)
@@ -43,17 +56,16 @@ def write(lines, file)
 end
 
 def optimize(file)
-  comment = "//AUTO "
   StringIO.new.tap do |out|
     _merge(File.open(file), File.dirname(file), out)
     out.pos = 0
 
     lines = _split(out)
     lines.size.times do |i|
-      removed = lines[i]
-      lines[i] = "\n"
-      if compile(lines)
-        lines[i] = "#{comment}#{removed.gsub("\n", "#{comment}\n")}"
+      removed = lines[i]      
+      lines[i] = "// MISSING \n"
+      if compiles?(lines)
+          lines[i] = "\n/*\n#{removed}\n*/\n"
       else
         lines[i] = removed
       end
