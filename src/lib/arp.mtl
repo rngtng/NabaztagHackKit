@@ -17,6 +17,8 @@ fun IPecho src i0 ln=
   for i=0;i<4 do (Iecho strget src i0+i; Secho ".");if ln then Secholn "";
   src;;
 
+fun itoh4 i = strcatlist (ctoh i>>24)::(ctoh i>>16)::(ctoh i>>8)::(ctoh i)::nil;;
+
 fun dump s=
   for i0=0;i0<strlen s;i0+16 do
   (
@@ -49,6 +51,8 @@ var mymac;;
 
 var macbroadcast="\$ff\$ff\$ff\$ff\$ff\$ff";;
 var ipbroadcast="\$ff\$ff\$ff\$ff";;
+
+var netip_empty="\0\0\0\0";;
 
 var larp;;
 var larpreq;;

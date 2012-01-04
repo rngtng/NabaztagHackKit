@@ -1,0 +1,85 @@
+type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW | reconnectW;;
+var wifi;;
+
+var wifitry;;
+var wifiscans;;
+
+fun _scanserialize l=
+  if l!=nil then
+  let hd l->[ssid mac bssid rssi channel rateset encryption] in
+  ssid::"\0"::mac::bssid::(itoh4 rssi)::(itoh4 channel)::(itoh4 rateset)::(itoh4 encryption)::
+  _scanserialize tl l;;
+
+fun scanserialize l=
+  (itoh4 listlen l)::_scanserialize l;;
+
+
+fun ssidlen s i=
+  if i>=strlen s then i
+  else if !strget s i then i
+  else ssidlen s i+1;;
+
+fun scanunserialize s n i0=
+  if n>0 then
+  let ssidlen s i0 -> j in
+  let j+1->i in
+  [
+    strsub s i0 j-i0
+    strsub s i 6
+    strsub s i+6 6
+    htoi strsub s i+12 8
+    htoi strsub s i+20 8
+    htoi strsub s i+28 8
+    htoi strsub s i+36 8
+  ]::scanunserialize s n-1 i+44;;
+
+
+fun envmake =
+  strcatlist netip::netmask::netgateway::netdns::scanserialize wifiscans;;
+
+fun envrestore s =
+  if s!=nil then
+  (
+    set netip=strsub s 0 4;
+    set netmask=strsub s 4 4;
+    set netgateway=strsub s 8 4;
+    set netdns=strsub s 12 4;
+    let htoi strsub s 16 8 -> nscan in
+    set wifiscans=scanunserialize s nscan 24;
+    0
+  );;
+
+fun scancmpssid a b=
+  let a->[sa _ _ _ _ _ _] in
+  let b->[sb _ _ _ _ _ _] in
+  strcmp sa sb;;
+    
+
+fun wifiInit rescan=
+  set wifitry=nil;
+  let envget -> env in
+  if env==nil then
+  (
+    setleds 0xff00ff;
+    set wifi=initW;
+    if rescan then set wifiscans=nil;
+    if confGetDhcp then  set netip=netip_empty
+    else
+    (
+      set netmask=confGetNetmask;
+      set netgateway=confGetNetgateway;
+      set netdns=confGetNetdns;
+      set netip=confGetNetip
+    );
+    0
+  )
+  else
+  (
+    setleds 0x00ff00;
+    set mymac=netMac;
+    set wifi=stationW;
+    envrestore env;
+    envset nil;
+    nil
+  );
+  0;;
