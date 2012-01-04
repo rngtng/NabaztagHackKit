@@ -1,6 +1,23 @@
 #! /usr/bin/env ruby
 require 'stringio'
 
+
+HOST   = "ssh-21560@warteschlange.de"
+REMOTE = "/kunden/warteschlange.de/.tmp/OpenJabNab/bootcode"
+TMP    = "tmp.mtl"
+OUT    = "bootcode.bin"
+FILTER = "| grep -v 'bytes' | grep -e'[a-z]'"
+
+def rcompile(file)
+  File.open(TMP, 'w') do |out|
+    _merge(File.open(file), File.dirname(file), out)
+  end
+  `scp #{TMP} #{HOST}:#{REMOTE}/#{TMP}`
+  `rm #{TMP}`
+  puts `ssh #{HOST} "cd #{REMOTE} && rm -f #{OUT} && compiler/mtl_linux/mtl_comp -s #{TMP} #{OUT} 2>&1 #{FILTER}"`
+  `scp #{HOST}:#{REMOTE}/#{OUT} #{OUT}`
+end
+
 def _merge(io, dir = ".", ch = STDOUT)
   io.each_line do |line|
     if line =~ /\/\/include "([^"]+)"/
@@ -33,7 +50,7 @@ end
 
 
 def mcompile(file)
-  File.open("tmp.mtl", 'w') do |out|  
+  File.open("tmp.mtl", 'w') do |out|
     _merge(File.open(file), File.dirname(file), out)
   end
   puts compile("tmp.mtl")
@@ -41,7 +58,7 @@ end
 
 def compile(file, filter = false)
   filter_cmd = filter ? "| grep done" : ""
-  `../../.tmp/OpenJabNab/bootcode/compiler/mtl_linux/mtl_comp #{file} tmp.bin 2>&1 | grep -v "bytes" #{filter_cmd}`
+  `../../.tmp/OpenJabNab/bootcode/compiler/mtl_linux/mtl_comp #{file} tmp.bin 2>&1 #{FILTER} #{filter_cmd}`
 end
 
 def compiles?(lines)
@@ -62,7 +79,7 @@ def optimize(file)
 
     lines = _split(out)
     lines.size.times do |i|
-      removed = lines[i]      
+      removed = lines[i]
       lines[i] = "// MISSING \n"
       if compiles?(lines)
           lines[i] = "\n/*\n#{removed}\n*/\n"
