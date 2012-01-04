@@ -1,27 +1,28 @@
+// ------------- Wifi
+
 type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW | reconnectW;;
 var wifi;;
-
 var wifitry;;
 var wifiscans;;
 
-var RT2501_S_BROKEN=0;;
-var RT2501_S_IDLE=1;;
-var RT2501_S_SCAN=2;;
-var RT2501_S_CONNECTING=3;;
-var RT2501_S_CONNECTED=4;;
-var RT2501_S_MASTER=5;;
+const RT2501_S_BROKEN=0;;
+const RT2501_S_IDLE=1;;
+const RT2501_S_SCAN=2;;
+const RT2501_S_CONNECTING=3;;
+const RT2501_S_CONNECTED=4;;
+const RT2501_S_MASTER=5;;
 
-var IEEE80211_CRYPT_NONE=0;;
-var IEEE80211_CRYPT_WEP64=1;;
-var IEEE80211_CRYPT_WEP128=2;;
-var IEEE80211_CRYPT_WPA=3;;
-var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
+const IEEE80211_CRYPT_NONE=0;;
+const IEEE80211_CRYPT_WEP64=1;;
+const IEEE80211_CRYPT_WEP128=2;;
+const IEEE80211_CRYPT_WPA=3;;
+const IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 
-var IEEE80211_M_MANAGED=0;;
-var IEEE80211_M_MASTER=1;;
+const IEEE80211_M_MANAGED=0;;
+const IEEE80211_M_MASTER=1;;
 
-var IEEE80211_AUTH_OPEN=0;;
-var IEEE80211_AUTH_SHARED=1;;
+const IEEE80211_AUTH_OPEN=0;;
+const IEEE80211_AUTH_SHARED=1;;
 
 fun _scanserialize l=
   if l!=nil then

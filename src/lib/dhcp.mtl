@@ -1,10 +1,10 @@
 // --------------- DHCP
 
-var DHCP_DISCOVER=1;;
-var DHCP_OFFER=2;;
-var DHCP_REQUEST=3;;
-var DHCP_DECLINE=4;;
-var DHCP_ACK=5;;
+const DHCP_DISCOVER=1;;
+const DHCP_OFFER=2;;
+const DHCP_REQUEST=3;;
+const DHCP_DECLINE=4;;
+const DHCP_ACK=5;;
 
 fun mkdhcp op netip hostip newip =
   let 236+16+14->n in

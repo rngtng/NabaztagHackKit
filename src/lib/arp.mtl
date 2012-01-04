@@ -1,4 +1,5 @@
 // ------------- IP
+
 fun strputchk s i w=
   strset s i ~(w>>8);
   strset s i+1 ~w;
