@@ -182,25 +182,25 @@ Ils sont codés sur 31 bits signés.
 
 Les char permettent de récupérer le code ascii d'un caractère: 'A est un entier qui vaut 65.
 
-Les chaînes de caractères sont entre guillemets. Le caractère \ permet d'accéder à certaines commandes:
+Les chaînes de caractères sont entre guillemets. Le caractère `\` permet d'accéder à certaines commandes:
 
-  \n - retour chariot
-  \z -  caractère NULL
-  \" -  guillemet
-  \\ -  \
-  \<nombre en décimal> - \132 est le caractère Ascii 132
+  - \n - retour chariot
+  - \z -  caractère NULL
+  - \" -  guillemet
+  - \\ -  \
+  - \<nombre en décimal> - \132 est le caractère Ascii 132
 
-Un \ en fin de ligne permet de signaler au compilateur de ne pas tenir compte du retour à la ligne.
+Un `\` en fin de ligne permet de signaler au compilateur de ne pas tenir compte du retour à la ligne.
 
-Les remarques sont, comme en C, entre /*...*/ et peuvent être imbriquées les unes dans les autres.
+Les remarques sont, comme en C, entre `/*...*/` et peuvent être imbriquées les unes dans les autres.
 
 ## Fondamentaux du langage
 
 ### Hello world
 
-On suppose l’existence d’une fonction Secholn de type ‘fun [S] S’, qui retourne l’argument, et qui, en effet de bord, affiche l’argument sur la sortie standard, suivi d’un retour à la ligne.
+On suppose l’existence d’une fonction Secholn de type `fun [S] S`, qui retourne l’argument, et qui, en effet de bord, affiche l’argument sur la sortie standard, suivi d’un retour à la ligne.
 
-On suppose également qu’au démarrage, le système évalue la fonction main  de type ‘fun[]I’.
+On suppose également qu’au démarrage, le système évalue la fonction main de type `fun[]I`.
 
 Dans ce cas l’exemple ‘Hello world’ s’écrit simplement:
 
@@ -216,7 +216,8 @@ Dans la suite on suppose l’existence des fonctions suivantes:
 
 ### Calcul et variables
 On peut définir une variable globale entière x initialisée avec la valeur ‘1’ de la manière suivante:
-var x=1;;
+
+     var x=1;;
 
 Dans l’exemple suivant, on veut calculer x+y, et (x+y)², en utilisant le premier résultat pour calculer le second, ce qui nécessite de créer une variable locale contenant x+y.
 
