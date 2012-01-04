@@ -1,9 +1,66 @@
-file = ARGV.first
-dir = File.dirname(file)
+#! /usr/bin/env ruby
+require 'stringio'
 
-File.open(ARGV.first).each_line do |line|
-  if line =~ /\/\/include "([^"]+)"/
-    line = `cat #{dir}/#{$1}.mtl`
+def _merge(io, dir = ".", ch = STDOUT)
+  io.each_line do |line|
+    if line =~ /\/\/include "([^"]+)"/
+      line = `cat #{dir}/#{$1}.mtl`
+    end
+    ch.puts line
   end
-  puts line
 end
+
+def merge(file)
+  _merge(File.open(file), File.dirname(file))
+end
+
+def _split(io)
+ [].tap do |blocks|
+   current = ""
+   io.each_line do |line|
+     current << line
+     if line.include?(";;")
+       blocks << current
+       current = ""
+     end
+   end
+  end
+end
+
+def split(file)
+  _split(File.open(file))
+end
+
+def compile(lines, file)
+  write(line, "tmp.mtl")
+  `compiler/mtl_linux/mtl_comp tmp.mtl tmp.bin`
+end
+
+def write(lines, file)
+  File.open(file, 'w') do |f2|
+    f2.puts lines.join
+  end
+end
+
+def optimize(file)
+  comment = "//AUTO "
+  StringIO.new.tap do |out|
+    _merge(File.open(file), File.dirname(file), out)
+    out.pos = 0
+
+    lines = _split(out)
+    lines.size.times do |i|
+      removed = lines[i]
+      lines[i] = "\n"
+      if compile(lines)
+        lines[i] = "#{comment}#{removed.gsub("\n", "#{comment}\n")}"
+      else
+        lines[i] = removed
+      end
+    end
+    write(lines, "optimized.mtl")
+  end
+end
+
+
+self.send(*ARGV)
