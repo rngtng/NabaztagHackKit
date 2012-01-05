@@ -1,0 +1,100 @@
+#! /usr/bin/env ruby
+require 'stringio'
+
+# http://rake.rubyforge.org/files/doc/rakefile_rdoc.html
+
+HOST   = "ssh-21560@warteschlange.de"
+REMOTE = "/kunden/warteschlange.de/.tmp/OpenJabNab/bootcode"
+COMP   = "compiler/mtl_linux/mtl_comp"
+SIMU   = "compiler/mtl_linux/mtl_simu"
+TMP    = "tmp.mtl"
+OUT    = "bootcode.bin"
+FILTER = "| grep -v 'bytes' | grep -e'[a-z]'"
+
+
+desc "Merge a file with its includes"
+task :merge, [:file] do |t, args|
+  file = ENV['FILE'] || args[:file]
+  dir = File.dirname(file)
+  `rm #{TMP}`
+  File.open(TMP, 'w') do |out|
+    File.open(file).each_line do |line|
+      if line =~ /#include "([^"]+)"/
+        line = `cat #{dir}/#{$1}.mtl`
+      end
+      out.puts line
+    end
+  end
+end
+
+desc "Merge and Compile a file"
+task :compile, [:file, :filter] => :merge do |t, args|
+  filter_cmd = ENV['FILTER'] || args[:filter]
+  `#{REMOTE}/#{COMP} #{file} tmp.bin 2>&1 #{FILTER} #{filter_cmd}`
+end
+
+namespace :remote do
+  desc "Merge and Compile a file remotely"
+  task :compile => :merge do |t|
+    `scp #{TMP} #{HOST}:#{REMOTE}/#{TMP}`
+    `rm #{TMP}` unless ENV['KEEP']
+    puts `ssh #{HOST} "cd #{REMOTE} && rm -f #{OUT} && #{COMP} -s #{TMP} #{OUT} 2>&1 #{FILTER}"`
+    `scp #{HOST}:#{REMOTE}/#{OUT} #{OUT}`
+  end
+
+  desc "Merge and Run a file remotely"
+  task :run => :merge do |t|
+    `scp #{TMP} #{HOST}:#{REMOTE}/#{TMP}`
+    `rm #{TMP}` unless ENV['KEEP']
+    puts `ssh #{HOST} "cd #{REMOTE} && #{SIMU} --source #{TMP} < #{TMP} 1>&2"`
+  end
+end
+
+###########################################################################
+
+desc "Check for any non used code"
+task :optimize => :merge do |t, args|
+  file = ENV['FILE'] || args[:file]
+  StringIO.new.tap do |out|
+    lines = Helper.split(File.open(TMP))
+    lines.size.times do |i|
+      removed = lines[i]
+      lines[i] = "// MISSING \n"
+      _write(lines, "tmp2.mtl")
+      if Helper.compiles?("tmp2.mtl")
+          lines[i] = "\n/*\n#{removed}\n*/\n"
+      else
+        lines[i] = removed
+      end
+    end
+    Helper.write(lines, "optimized.mtl")
+  end
+end
+
+class Helper
+  def self.split(io)
+   [].tap do |blocks|
+     current = ""
+     io.each_line do |line|
+       current << line
+       if line.include?(";;")
+         blocks << current
+         current = ""
+       end
+     end
+    end
+  end
+
+  def self.write(lines, file)
+    File.open(file, 'w') do |f2|
+      f2.puts lines.join
+    end
+  end
+
+  def self.compiles?(file)
+    ENV['FILE']   = file
+    ENV['FILTER'] = "| grep done"
+    Rake::Task[:compile].execute
+    #.include?("done !")
+  end
+end

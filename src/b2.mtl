@@ -53,8 +53,9 @@ fun evalTrame res=
             //set t = val
             //setleds strget val 0 + strget val 1 + strget val 2
             // let itoa strget val 0 -> v in
-            let rfidurl2 -> url in
-            httprequest "GET" url nil #_cbrfidhttp2 HTTP_NORMAL
+            //let rfidurl2 -> url in
+            //httprequest "GET" url nil #_cbrfidhttp2 HTTP_NORMAL
+            setleds 0xFF00FF
           )
           else if code == 9 then
           (
