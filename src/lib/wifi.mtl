@@ -228,3 +228,16 @@ fun wifiRun=
 fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
 
 fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
+
+fun wifiCheck=
+  if (netState == RT2501_S_IDLE) then
+  match wifi with
+  (initW -> nil)
+  |(_ ->
+    Secholn "######### wifi lost";
+    set wifi=reconnectW;
+    0
+  )
+;;
+
+

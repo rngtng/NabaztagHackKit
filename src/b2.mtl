@@ -3,21 +3,22 @@
 
 proto main 0;;
 
-//var confGetServerUrl = "192.168.1.104/vl";;
+#include "lib/var"
+#include "lib/util"
+#include "lib/cfg"
+#include "lib/arp"
+#include "lib/udp"
+#include "lib/tcp"
+#include "lib/dns"
+#include "lib/http"
+#include "lib/dhcp"
 
-//include "lib/var"
-//include "lib/util"
-//include "lib/cfg"
-//include "lib/arp"
-//include "lib/udp"
-//include "lib/tcp"
-//include "lib/dns"
-//include "lib/http"
-//include "lib/dhcp"
+fun setleds col=
+  for i = 0; i < 5 do
+    led i col
+;;
 
-fun setleds col= for i=0;i<5 do led i col;;
-
-//include "lib/wifi"
+#include "lib/wifi"
 
 fun _webmac key i=
   if i < strlen key then (ctoh strget key i)::_webmac key i+1;;
@@ -25,54 +26,74 @@ fun _webmac key i=
 fun webmac key=
   strcatlist _webmac key 0;;
 
+var t;;
 
 //-------------------- RFID
 fun rfidurl tag=
-  strcatlist confGetServerUrl::"/rfid.jsp?t="::(webmac tag)::nil;;
+  strcatlist confGetServerUrl::"/rfid?tag="::(webmac tag)::nil;;
+
+fun rfidurl2=
+  strcatlist confGetServerUrl::"/rfid?tag="::nil;;
+
+
+
+fun _cbrfidhttp2 http res=
+  0
+;;
+
+fun evalTrame res=
+  let pingextract httpgetcontent res -> framelist in
+    if framelist != nil then
+    (
+      for l = framelist; l != nil; tl l do
+        let hd l -> [code val] in
+          if code == 2 then
+          (
+            //let webmac val -> c in
+            //set t = val
+            //setleds strget val 0 + strget val 1 + strget val 2
+            // let itoa strget val 0 -> v in
+            let rfidurl2 -> url in
+            httprequest "GET" url nil #_cbrfidhttp2 HTTP_NORMAL
+          )
+          else if code == 9 then
+          (
+            reboot 0x0407FE58 0x13fb6754
+          )
+    )
+;;
+
 
 fun _cbrfidhttp http res=
-  Secholn res;
-  //evalTrame res;
-  0;;
+  evalTrame res;
+  0
+;;
 
+var c = 10;;
 var RFIDlast = 0;;
 fun controlrfid=
   if ((time_ms - RFIDlast) > 500) then
-  (
+  ( 
+    set RFIDlast = time_ms;
     let rfidGet -> rfid in
-    if rfid != nil then
-    (
-      set RFIDlast = time_ms;
-      httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
-    )
+      if (rfid != nil) then
+      (
+        let strget rfid 1 -> c in
+        setleds c;
+        httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
+      )
   );
-  0;;
-
-var t = 0;;
-var i = 0;;
+  0
+;;
 
 //-------------------- LOOP
 fun loop=
   wifiRun;
-
-  if netState==RT2501_S_IDLE then
-  match wifi with
-  (initW -> nil)
-  |(_ ->
-    Secholn "######### wifi lost";
-    set wifi=reconnectW;
-    0
-  );
-
-  if ((time_ms - t) > 100) then
-  (
-    set t = time_ms;
-    set i=i+5;
-    setleds i
-  );
+  wifiCheck;
 
   controlrfid;
-  0;;
+  0
+;;
 
 //-------------------- MAIN
 fun main=
@@ -81,6 +102,6 @@ fun main=
   loopcb #loop; // 20 p. second
 
   netstart;
-  //startdnsclient;
   srand time_ms;
-  0;;
+  0
+;;

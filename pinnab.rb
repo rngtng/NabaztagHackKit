@@ -1,15 +1,26 @@
 require 'sinatra'
 
+@color = []
+
 def full_message(data)
   [0x7F] + Array(data) + [0xFF, 0x0A]
 end
 
+def message(cmd, *data)
+  data = data.flatten.compact
+  full_message [cmd] + [0x00, 0x00, data.size] + data
+end
+
 def ping(seconds = 30)
-  full_message [0x03, 0x00, 0x00, 0x01, seconds]
+  message 3, seconds
+end
+
+def color
+  message 2, @color
 end
 
 def reboot
-  full_message [0x09, 0x00, 0x00, 0x00]
+  message 9
 end
 
 def send_byte_array(byte_array)
@@ -18,26 +29,21 @@ end
 
 ##################################
 
+get '/color' do
+  if params.any?
+    @color = [params["r"].to_i, params["g"].to_i, params["b"].to_i]
+  end
+
+  color.map { |t| t.to_s(16) }.join("-")
+end
+
 get '/vl/bc.jsp' do
   puts "bootcode"
   send_file File.join('public', 'bootcode', 'bootcode.bin')
 end
 
-get '/vl/p4.jsp' do
-  puts "ping"
-  send_byte_array ping
-end
-
-get '/vl/locate.jsp' do
-  puts "conf"
-  "ping #{ENV['HOST']}\nbroad #{ENV['HOST']}"
-end
-
-get '/vl/rfid.jsp' do
-  msg = (params["t"][0] == "d0021a0352d64cec") ? reboot : ping
+get '/vl/rfid' do
+  puts params["tag"]
+  msg = (params["tag"] == "d0021a0352d64cec") ? reboot : color
   send_byte_array(msg)
-end
-
-get '/*' do
-  puts params.inspect
 end

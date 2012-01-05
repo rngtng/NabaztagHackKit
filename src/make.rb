@@ -13,14 +13,14 @@ def rcompile(file)
     _merge(File.open(file), File.dirname(file), out)
   end
   `scp #{TMP} #{HOST}:#{REMOTE}/#{TMP}`
-  `rm #{TMP}`
+  # `rm #{TMP}`
   puts `ssh #{HOST} "cd #{REMOTE} && rm -f #{OUT} && compiler/mtl_linux/mtl_comp -s #{TMP} #{OUT} 2>&1 #{FILTER}"`
   `scp #{HOST}:#{REMOTE}/#{OUT} #{OUT}`
 end
 
 def _merge(io, dir = ".", ch = STDOUT)
   io.each_line do |line|
-    if line =~ /\/\/include "([^"]+)"/
+    if line =~ /#include "([^"]+)"/
       line = `cat #{dir}/#{$1}.mtl`
     end
     ch.puts line
