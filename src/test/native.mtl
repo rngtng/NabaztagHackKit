@@ -1,0 +1,28 @@
+//-------- test for native function
+
+let test "listlen" -> t in
+(
+  assert_equalI 0        listlen nil ;
+  assert_equalI 1        listlen "test"::nil
+);
+
+let test "listtostr" -> t in
+(
+  assert_equalS "\49"  listtostr 49::nil;
+  assert_equalS "\51\52\53"  listtostr 51::52::53::nil
+);
+
+let test "strcatlist" -> t in
+(
+  assert_equalS "\54"  strcatlist "\54"::nil;
+  assert_equalS "313233"  strcatlist "31"::"32"::"33"::nil
+);
+
+// remfromlist same as  listrem!!!
+//let test "remfromlist" -> t in
+//(
+//  let "asd"::"a"::nil -> l in
+//  Lecho (remfromlist l (listlen l) - 1)
+//  //assert_equalS "0A000"
+//    assert_equalL 48::49::50::nil listrem 48::49::50::nil 49
+//);

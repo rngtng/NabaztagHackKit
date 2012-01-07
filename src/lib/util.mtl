@@ -42,6 +42,7 @@ fun strreplace s p v=
 
 fun rev p q=if p==nil then q else rev tl p (hd p)::q;;
 
+// remfromlist same as  listrem!!!
 fun remfromlist l t= if l!=nil then if t==hd l then tl l else (hd l)::remfromlist tl l t;;
 
 fun insert x l f=

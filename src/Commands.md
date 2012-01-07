@@ -20,12 +20,14 @@ List of commands supported by the VM
 | core | strcpy | fun[S I S I I]S | copie d'une sous-chaîne de caractère : chaîne destination, index destination, chaîne source, index source, longeur |
 | core | vstrcmp | fun[S I S I I]I | comparaison d'une sous-chaîne de caractère : chaîne destination, index destination, chaîne source, index source, longeur |
 | core | strfind | fun[S I S I I]I | recherche d'une sous-chaîne dans une chaîne : chaîne, index, sous-chaîne, index, taille ; retourne l'index dans la chaîne (nil si non trouvé) |
+| custom| strstr | fun[S S I]I | fin substring string, needle, start; returns pos
 | core | strfindrev | fun[S I S I I]I | recherche inversée d'une sous-chaîne dans une chaîne : chaîne, index, sous-chaîne, index, taille ; retourne l'index dans la chaîne (nil si non trouvé) |
 | core | strlen | fun[S]I | taille d'une chaîne de caractères |
 | core | strget | fun[S I]I | retourne le n-ième caractères d'une chaîne (entier entre 0 et 255) |
 | core | strsub | fun[S I I]S | calcul d'une sous-chaîne : chaîne source, index source, taille |
 | core | strcat | fun[S S]S | concaténation de deux chaînes |
 | core | strcatlist | fun[list S]S | concaténation d'une liste de chaînes |
+| custom| listtostr | fun[list I]S | integer list to string
 | core | atoi | fun[S]I | Conversion d'une chaîne en base 10 vers un entier |
 | core | htoi | fun[S]I | Conversion d'une chaîne hexadécimale vers un entier |
 | core | itoa | fun[I]S | Conversion d'un entier vers une chaîne en base 10 |
@@ -95,6 +97,10 @@ List of commands supported by the VM
 | sound | alaw2wav | fun[S I S I I I]S | Conversion alaw/mulaw vers wav : chaîne destination, index destination, chaîne source, index source, longueur, type (xxx) |
 | sound | wav2alaw | fun[S I S I I I]S | Conversion alaw/mulaw vers wav : chaîne destination, index destination, chaîne source, index source, longueur, type (xxx) |
 | sys | Secholn | fun[S]S | affichage d'une chaîne de caractères sur la sortie standard, suivie d'un retour à la ligne |
+| custom | SLecho | fun[list S]S | echo string list
+| custom | SLecholn | fun[list S]S | echo string list
+| custom | ILecho | fun[list I]S | echo string list
+| custom | ILecholn | fun[list I]S | echo string list
 | sys | Secho | fun[S]S | affichage d'une chaîne de caractères sur la sortie standard |
 | sys | Iecholn | fun[u0]u0 | affichage d'un entier en décimal sur la sortie standard, suivie d'un retour à la ligne |
 | sys | Iecho | fun[u0]u0 | affichage d'un entier en décimal sur la sortie standard |

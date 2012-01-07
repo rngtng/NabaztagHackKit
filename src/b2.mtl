@@ -12,6 +12,7 @@ proto main 0;;
 #include "lib/dns"
 #include "lib/http"
 #include "lib/dhcp"
+#include "pinnab"
 
 fun setleds col=
   for i = 0; i < 5 do
@@ -20,72 +21,76 @@ fun setleds col=
 
 #include "lib/wifi"
 
-fun _webmac key i=
-  if i < strlen key then (ctoh strget key i)::_webmac key i+1;;
-
-fun webmac key=
-  strcatlist _webmac key 0;;
-
-var t;;
+const API_SCORE_URI = "/games/1/scores";;
 
 //-------------------- RFID
 fun rfidurl tag=
-  strcatlist confGetServerUrl::"/rfid?tag="::(webmac tag)::nil;;
+  strcatlist confGetServerUrl::"/rfid?t="::(webmac tag)::nil;;
 
-fun rfidurl2=
-  strcatlist confGetServerUrl::"/rfid?tag="::nil;;
-
-
-
-fun _cbrfidhttp2 http res=
-  0
-;;
+fun scoreurl tag=
+  strcatlist confGetServerUrl::API_SCORE_URI::"?event[data]="::tag::nil;;
 
 fun evalTrame res=
   let pingextract httpgetcontent res -> framelist in
     if framelist != nil then
     (
       for l = framelist; l != nil; tl l do
+      (
         let hd l -> [code val] in
-          if code == 2 then
-          (
-            //let webmac val -> c in
-            //set t = val
-            //setleds strget val 0 + strget val 1 + strget val 2
-            // let itoa strget val 0 -> v in
-            //let rfidurl2 -> url in
-            //httprequest "GET" url nil #_cbrfidhttp2 HTTP_NORMAL
-            setleds 0xFF00FF
-          )
-          else if code == 9 then
-          (
-            reboot 0x0407FE58 0x13fb6754
-          )
+        if code == 2 then
+        (
+          0
+        )
+        else if code == 9 then
+        (
+          exit //reboot
+        )
+      )
     )
 ;;
-
 
 fun _cbrfidhttp http res=
   evalTrame res;
   0
 ;;
 
-var c = 10;;
-var RFIDlast = 0;;
+//--------- RFID
+const RFID_CHECK_FQ = 500;;
+const RFID_STOP_BIT = 0xFF;;
+
+var rfid_last_check = 0;;
+var data = "";;
+
 fun controlrfid=
-  if ((time_ms - RFIDlast) > 500) then
-  ( 
-    set RFIDlast = time_ms;
+  if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
+  (
+    set rfid_last_check = time_ms;
     let rfidGet -> rfid in
-      if (rfid != nil) then
+    if (rfid != nil) then
+    (
+      set_led 0 rfid;
+      SLecholn "rfid "::rfid::nil;
+      httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL;
+
+      let strlen rfid -> len in
+      for index = 0; index < len; len + 1 do
       (
-        let strget rfid 1 -> c in
-        setleds c;
-        httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL
+        let strget rfid index -> data_bit in
+        (
+          if (data_bit != RFID_STOP_BIT) then
+            set data = strcat data ctoh data_bit
+          else if ((strlen data) > 0) then
+          (
+            httprequest "GET" scoreurl data nil #_cbrfidhttp HTTP_NORMAL;
+            set data = ""
+          )
+        )
       )
+    )
   );
-  0
-;;
+0;;
+
+
 
 //-------------------- LOOP
 fun loop=
@@ -93,16 +98,15 @@ fun loop=
   wifiCheck;
 
   controlrfid;
-  0
-;;
+0;;
 
 //-------------------- MAIN
 fun main=
   confInit;
   wifiInit 0;
+
   loopcb #loop; // 20 p. second
 
   netstart;
   srand time_ms;
-  0
-;;
+0;;

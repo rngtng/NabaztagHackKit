@@ -1,0 +1,78 @@
+proto main 0;;
+
+#include "lib/util"
+#include "pinnab"
+
+#include "test/helper"
+
+//-------------------- MAIN
+fun main=
+  //include "test/native"
+  //include "test/pinnab"
+
+  let test "webmac" -> t in
+  (
+    assert_equalS "0100"  webmac "\1\0";
+    assert_equalS "0A000"  webmac "\10\0";
+    assert_equalS "00FF"   webmac "\0\255";
+    assert_equalS "FF00"   webmac "\255\0"
+  );
+
+  let test "ILcmplen" -> t in
+  (
+    assert_equalI 3 ILcmplen  48::49::50::nil 48::49::50::nil;
+    assert_equalI 1 ILcmplen  48::49::50::nil 48::50::50::nil;
+    assert_equalI 1 ILcmplen  48::nil 48::49::nil;
+    assert_equalI 0 ILcmplen  48::49::50::nil 49::49::nil
+  );
+
+  let test "ILcmp" -> t in
+  (
+    assert_equal ILcmp  48::49::50::nil 48::49::50::nil;
+    assert_not_equal ILcmp  48::49::50::nil 48::50::50::nil;
+    assert_not_equal ILcmp  48::49::50::nil 48::49::nil;
+    assert_not_equal ILcmp  48::49::nil 48::49::50::nil
+  );
+
+  //let test "SLcmp" -> t in
+  //(
+  //  assert_equalI 2 SLcmp  "48"::"49"::nil "48"::"49"::nil;
+  //  assert_not_equal SLcmp  "48"::"49"::nil "48"::"49"::"50"::nil;
+  //  assert_not_equal SLcmp  "48"::"49"::"51"::nil "48"::"49"::"50"::nil
+  //);
+
+  let test "StoI3" -> t in
+  (
+    assert_equalI 0        StoI3 "\0\0\0asdas" ;
+    assert_equalI 0        StoI3 "\0\0\0" ;
+    assert_equalI 255      StoI3 "\0\0\255";
+    assert_equalI 65280    StoI3 "\0\255\0";
+    assert_equalI 6579300  StoI3 "\100\100\100";
+    assert_equalI 16711680 StoI3 "\255\0\0";
+    assert_equalI 16777215 StoI3 "\255\255\255"
+  );
+
+  let test "StoI2" -> t in
+  (
+    assert_equalI 0        StoI2 "\0\0\0" ;
+    assert_equalI 0        StoI2 "\0\0\255";
+    assert_equalI 255      StoI2 "\0\255\0"
+  );
+
+  let test "StoI" -> t in
+  (
+    assert_equalI 0        StoI2 "\0\0\0" ;
+    assert_equalI 255      StoI "\0\0\255";
+    assert_equalI 65280    StoI "\0\255\0"
+  );
+
+  let test "str_find_end" -> t in
+  (
+    assert_equalI nil      str_find_end "" ;
+    assert_equalI 0        str_find_end "\255\0\0" ;
+    assert_equalI 2        str_find_end "AB\255";
+    assert_equalI 10       str_find_end "0123456789\255"
+  );
+
+  exit;
+0;;

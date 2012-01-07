@@ -1,0 +1,98 @@
+
+//----------- Data Dump
+
+// echo a string list as string
+fun SLecho list=
+  Secho strcatlist list
+;;
+
+fun SLecholn list=
+  SLecho list;
+  Secholn ""
+;;
+
+// echo a integer list as string
+fun ILecho list=
+  Secho listtostr list
+;;
+
+fun ILecholn list=
+  ILecho list;
+  Secholn ""
+;;
+
+//----------- Data Comparison
+fun ILcmplen l1 l2=
+  let hd l1 -> hd1 in
+  if l1 != nil && l2 != nil && (hd1 == hd l2) then
+    1 + (ILcmplen tl l1 tl l2)
+  else
+    0
+;;
+
+fun ILcmp l1 l2=
+  //TODO optmize: compare list len right away!
+  let (ILcmplen l1 l2) -> len in
+  if ((listlen l1) == len && (listlen l2) == len) then
+    1
+  else
+    nil
+;;
+
+fun SLcmp l1 l2=
+  if l1 == nil && l2 == nil then
+    1
+  else
+    let strcat hd l1 "\v" -> hd1 in
+    let strcat hd l2 "\v" -> hd2 in
+    (
+      if strcmp hd1 hd2 then
+        SLcmp tl l1 tl l2
+    )
+;;
+
+//----------- Data Transformation
+
+// string to list of hex chars
+fun _webmac key i=
+  if i < strlen key then (ctoh strget key i)::_webmac key i+1;;
+fun webmac key=
+  strcatlist _webmac key 0;;
+
+//convert chars into int (there is a limit!!!)
+fun _StoI val pos len=
+  let strget val pos -> v in
+  if(len >= 0) then
+    v << (8 * len) + _StoI val (pos + 1) (len - 1)
+  else
+    0
+;;
+fun StoI val=
+  _StoI val 0 (strlen val) - 1
+;;
+
+//convert first 3 chars into int (perfect to set led color)
+fun StoI3 val=
+  _StoI val 0 2
+;;
+
+//convert first 2 chars into int (perfect to set led color)
+fun StoI2 val=
+  _StoI val 0 1
+;;
+
+
+//-----------------------------------------------------
+fun set_led led_nr val=
+  led led_nr StoI3 val
+;;
+
+
+fun str_find_end val=
+  strstr val "\255" 0
+;;
+
+fun exit=
+  Secholn "\n";
+  reboot 0x0407FE58 0x13fb6754
+;;

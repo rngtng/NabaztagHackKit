@@ -198,7 +198,7 @@ Les remarques sont, comme en C, entre `/*...*/` et peuvent être imbriquées les
 
 ### Hello world
 
-On suppose l’existence d’une fonction Secholn de type `fun [S] S`, qui retourne l’argument, et qui, en effet de bord, affiche l’argument sur la sortie standard, suivi d’un retour à la ligne.
+On suppose l’existence d’une fonction `Secholn` de type `fun [S] S`, qui retourne l’argument, et qui, en effet de bord, affiche l’argument sur la sortie standard, suivi d’un retour à la ligne.
 
 On suppose également qu’au démarrage, le système évalue la fonction main de type `fun[]I`.
 
@@ -217,19 +217,19 @@ Dans la suite on suppose l’existence des fonctions suivantes:
 ### Calcul et variables
 On peut définir une variable globale entière x initialisée avec la valeur ‘1’ de la manière suivante:
 
-     var x=1;;
+     var x = 1;;
 
 Dans l’exemple suivant, on veut calculer x+y, et (x+y)², en utilisant le premier résultat pour calculer le second, ce qui nécessite de créer une variable locale contenant x+y.
 
-    var x=123 ;;
-    var y=456 ;;
+    var x = 123;;
+    var y = 456;;
     fun main=
-      let x+y->z in
+      let x + y -> z in
       (
-        Secho "x+y=" ; Iecholn z ;
-        Secho "(x+y)²=" ; Iecholn z*z
-      ) ;
-      0 ;;
+        Secho "x+y="; Iecholn z;
+        Secho "(x+y)²="; Iecholn z*z
+      );
+      0;;
 
 L’opérateur `let ... -> ... in ...` permet de créer une variable locale dont le scope est uniquement l’expression qui suit le `in`.
 
@@ -381,7 +381,7 @@ Le caractère ‘undescore’ indique qu’un paramètre est associé au type so
     fun eval z=
       match z with
       ( Zero -> 0)
-      ( Const a -> a)
+     |( Const a -> a)
      |( Add [x y] -> (eval x)+(eval y))
      |( Mul [x y] -> (eval x)*(eval y)) ;;
 
