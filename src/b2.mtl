@@ -21,14 +21,15 @@ fun setleds col=
 
 #include "lib/wifi"
 
-const API_SCORE_URI = "/games/1/scores";;
+const API_PLAYER_URI = "/player";;
+const API_EVENT_URI = "/event";;
 
 //-------------------- RFID
-fun rfidurl tag=
-  strcatlist confGetServerUrl::"/rfid?t="::(webmac tag)::nil;;
+fun playerUrl tag=
+  strcatlist confGetServerUrl::API_PLAYER_URI::"?id="::(webmac tag)::nil;;
 
-fun scoreurl tag=
-  strcatlist confGetServerUrl::API_SCORE_URI::"?event[data]="::tag::nil;;
+fun eventUrl tag=
+  strcatlist confGetServerUrl::API_EVENT_URI::"?event[data]="::tag::nil;;
 
 fun evalTrame res=
   let pingextract httpgetcontent res -> framelist in
@@ -55,8 +56,9 @@ fun _cbrfidhttp http res=
 ;;
 
 //--------- RFID
-const RFID_CHECK_FQ = 500;;
-const RFID_STOP_BIT = 0xFF;;
+const RFID_CHECK_FQ = 500;; //ms
+const RFID_STOP_BYTE = 0xFF;;
+const RFID_ID_START = "\208\2\26";; //0xd0 0x02 0x1a;;
 
 var rfid_last_check = 0;;
 var data = "";;
@@ -64,29 +66,40 @@ var data = "";;
 fun controlrfid=
   if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
   (
-    set rfid_last_check = time_ms;
     let rfidGet -> rfid in
     if (rfid != nil) then
     (
       set_led 0 rfid;
-      SLecholn "rfid "::rfid::nil;
-      httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL;
+      //SLecholn "rfid "::rfid::nil;
+      //httprequest "GET" rfidurl rfid nil #_cbrfidhttp HTTP_NORMAL;
 
-      let strlen rfid -> len in
-      for index = 0; index < len; len + 1 do
+      let strstr rfid RFID_ID_START 0 -> is_rfid_id in
+      if (is_rfid_id == 0) then
       (
-        let strget rfid index -> data_bit in
-        (
-          if (data_bit != RFID_STOP_BIT) then
-            set data = strcat data ctoh data_bit
-          else if ((strlen data) > 0) then
-          (
-            httprequest "GET" scoreurl data nil #_cbrfidhttp HTTP_NORMAL;
-            set data = ""
-          )
-        )
+        httprequest "GET" playerUrl "AS" nil #_cbrfidhttp HTTP_NORMAL;
+        0
       )
-    )
+      else
+      (
+        let strlen rfid -> len in
+        for index = 0; index < len; index + 1 do
+        (
+          let strget rfid index -> data_byte in
+          (
+            if (data_byte != RFID_STOP_BYTE) then
+              set data = strcat data ctoh data_byte
+            else if ((strlen data) > 0) then
+            (
+              httprequest "GET" eventUrl data nil #_cbrfidhttp HTTP_NORMAL;
+              set data = ""
+            )
+          )
+        );
+        0
+      )
+    );
+    //all done
+    set rfid_last_check = time_ms
   );
 0;;
 

@@ -43,7 +43,7 @@ fun main=
 
   let test "StoI3" -> t in
   (
-    assert_equalI 0        StoI3 "\0\0\0asdas" ;
+    assert_equalI 0        StoI3 "\0\0\0dummy" ;
     assert_equalI 0        StoI3 "\0\0\0" ;
     assert_equalI 255      StoI3 "\0\0\255";
     assert_equalI 65280    StoI3 "\0\255\0";
@@ -61,7 +61,7 @@ fun main=
 
   let test "StoI" -> t in
   (
-    assert_equalI 0        StoI2 "\0\0\0" ;
+    assert_equalI 0        StoI "\0\0\0" ;
     assert_equalI 255      StoI "\0\0\255";
     assert_equalI 65280    StoI "\0\255\0"
   );
@@ -73,6 +73,15 @@ fun main=
     assert_equalI 2        str_find_end "AB\255";
     assert_equalI 10       str_find_end "0123456789\255"
   );
+
+  let test "find RIFID id" -> t in
+  (
+    assert_equalI 0   strstr "\208\2\26\1\1\1\1\1" "\208\2\26" 0;
+    assert_equalI 1   strstr "\1\208\2\26\1\1\1\1" "\208\2\26" 0;
+    assert_equalI nil strstr "\1\208\1\26\1\1\1\1" "\208\2\26" 0
+    //assert_equalI nil strstr "\1\208\1\26\1\1\1\1" 0xd0021a 0
+  );
+
 
   exit;
 0;;
