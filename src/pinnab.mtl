@@ -1,4 +1,12 @@
 
+fun TLtoS tlist=
+  if tlist == nil then
+    ""
+  else
+    let hd tlist -> [a b] in
+    strcatlist (itoa a)::b::(TLtoS tl tlist)::nil
+;;
+
 //----------- Data Dump
 
 // echo a string list as string
@@ -21,35 +29,47 @@ fun ILecholn list=
   Secholn ""
 ;;
 
+fun TLecho tlist=
+  Secho TLtoS tlist
+;;
+
 //----------- Data Comparison
-fun ILcmplen l1 l2=
-  let hd l1 -> hd1 in
-  if l1 != nil && l2 != nil && (hd1 == hd l2) then
-    1 + (ILcmplen tl l1 tl l2)
-  else
-    0
-;;
-
-fun ILcmp l1 l2=
-  //TODO optmize: compare list len right away!
-  let (ILcmplen l1 l2) -> len in
-  if ((listlen l1) == len && (listlen l2) == len) then
-    1
-  else
-    nil
-;;
-
-fun SLcmp l1 l2=
-  if l1 == nil && l2 == nil then
-    1
-  else
-    let strcat hd l1 "\v" -> hd1 in
-    let strcat hd l2 "\v" -> hd2 in
-    (
-      if strcmp hd1 hd2 then
-        SLcmp tl l1 tl l2
-    )
-;;
+// fun ILcmplen l1 l2=
+//   let hd l1 -> hd1 in
+//   let hd l2 -> hd2 in
+//   if l1 != nil && l2 != nil && (hd1 == hd2) then
+//     1 + (ILcmplen tl l1 tl l2)
+//   else
+//     0
+// ;;
+//
+// fun ILcmp l1 l2=
+//   //TODO optmize: compare list len right away!
+//   let (ILcmplen l1 l2) -> len in
+//   if ((listlen l1) == len && (listlen l2) == len) then
+//     1
+//   else
+//     nil
+// ;;
+//
+// fun SLcmplen l1 l2=
+//   let hd l1 -> hd1 in
+//   let hd l2 -> hd2 in
+//   if l1 != nil && l2 != nil && (strcmp hd1 hd2) == 0 then
+//     1 + (SLcmplen tl l1 tl l2)
+//   else
+//     0
+// ;;
+//
+// fun SLcmp l1 l2=
+//   //TODO optmize: compare list len right away!
+//   //TODO: convert to string and compare
+//   let (SLcmplen l1 l2) -> len in
+//   if ((listlen l1) == len && (listlen l2) == len) then
+//     1
+//   else
+//     nil
+// ;;
 
 //----------- Data Transformation
 
@@ -81,8 +101,33 @@ fun StoI2 val=
   _StoI val 0 1
 ;;
 
+var  buffers;;
 
+fun fillBuffer t val=
+  let strlen val -> len in
+  (
+    set buffers.t = tabnew 0 len;
+    for index = 0; index < len; index + 1 do
+    let buffers.t -> buffer in
+    set buffer.index = strget val index
+  )
+;;
 //-----------------------------------------------------
+var palette = {0 90 130 170 215 255 255 255};;  // 0x00 0x5a 0x82 0xaa 0xd7 0xFF
+
+fun COtoI r g b=
+  r * 36 + g * 6 + b
+;;
+
+fun ItoCO val=
+  if val == nil then set val = 0;
+  if val > 215 then set val = 215;
+  let val / 36 -> r in
+  let (val % 36) / 6 -> g in
+  let (val % 36) % 6 -> b in
+  palette.r << 16 + palette.g << 8 + palette.b
+;;
+
 fun set_led led_nr val=
   led led_nr StoI3 val
 ;;
@@ -90,6 +135,36 @@ fun set_led led_nr val=
 
 fun str_find_end val=
   strstr val "\255" 0
+;;
+
+//-----------------------------------------------------
+const RESPONSE_HEADER = 0x7f;;
+
+fun BintoI3 s offset=
+  (strget s offset) << 16 + (strget s offset+1) << 8 + strget s offset+2
+;;
+
+fun parseResponse_ s i res=
+  if (i < strlen s) then
+  (
+    let (strget s i) -> code in
+    let (BintoI3 s i+1) -> len in
+    (
+      if len >= 0 then
+      (
+        let strsub s i+4 len -> data in
+        parseResponse_ s i+4+len [code data]::res
+      )
+    )
+  )
+  else (
+    res
+  )
+;;
+// messages will be reveresed!
+fun parseResponse s=
+  if (strget s 0) == RESPONSE_HEADER then
+    parseResponse_ s 1 nil
 ;;
 
 fun exit=

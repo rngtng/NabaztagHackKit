@@ -1,3 +1,5 @@
+fun setleds col= for i=0;i<5 do led i col;;
+
 // --------------- UTIL
 fun strstr s p i=strfind s i p 0 nil;;
 fun listlen l=if l==nil then 0 else 1+listlen tl l;;

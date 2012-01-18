@@ -13,38 +13,46 @@ proto main 0;;
 #include "lib/http"
 #include "lib/dhcp"
 #include "pinnab"
-
-fun setleds col=
-  for i = 0; i < 5 do
-    led i col
-;;
-
 #include "lib/wifi"
-
-const API_PLAYER_URI = "/players";;
-const API_EVENT_URI = "/events";;
 
 //-------------------- RFID
 fun playerUrl tag=
-  strcatlist confGetServerUrl::API_PLAYER_URI::"?id="::(webmac tag)::nil;;
+  strcatlist confGetServerUrl::"/players/"::(webmac tag)::".jsp"::nil;;
 
 fun eventUrl tag=
-  strcatlist confGetServerUrl::API_EVENT_URI::"?event[data]="::tag::nil;;
+  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::tag::nil;;
+
+fun debugUrl tag=
+  strcatlist confGetServerUrl::"/debug.jsp?t="::tag::nil;;
+
+fun _cbdummyhttp http res=
+  0
+;;
 
 fun evalTrame res=
-  let pingextract httpgetcontent res -> framelist in
-    if framelist != nil then
+  let parseResponse httpgetcontent res -> bufferlist in
+    if bufferlist != nil then
     (
-      for l = framelist; l != nil; tl l do
+      for l = bufferlist; l != nil; tl l do
       (
         let hd l -> [code val] in
-        if code == 2 then
+        if code == 1 then
         (
           0
         )
         else if code == 9 then
         (
           exit //reboot
+        )
+        // short buffers 20-24 && loop buffers  25 - 29
+        else if code >= 20 && code <= 29 then
+        (
+          fillBuffer (code-20) val
+        )
+        else
+        (
+          httprequest "GET" debugUrl itoa code nil #_cbdummyhttp HTTP_NORMAL;
+          0
         )
       )
     )
@@ -56,10 +64,11 @@ fun _cbrfidhttp http res=
 ;;
 
 //--------- RFID
-const RFID_CHECK_FQ = 100;; //ms MIN 50ms
+const RFID_CHECK_FQ = 500;; //ms MIN 50ms
 const RFID_STOP_BYTE = 0xFF;;
-const RFID_ID_START = "\208\2\26";; //0xd0 0x02 0x1a;;
+const RFID_ID_START = "\208\2\26";; // 0xd0 0x02 0x1a
 const RFID_ID_FALSE = "\0\0\0\0\0\0\0\0\v";;
+const RFID_ID_ERROR = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
 
 var rfid_last_check = 0;;
 var data = "";;
@@ -70,11 +79,12 @@ fun controlrfid=
     let rfidGet -> rfid in
     if (rfid != nil) then
     (
-      set_led 0 rfid;
+      //set_led 0 rfid;
+      // httprequest "GET" debugUrl rfid nil #_cbrfidhttp HTTP_NORMAL;
 
       if ((strstr rfid RFID_ID_START 0) == 0) then
       (
-        httprequest "POST" playerUrl rfid "" #_cbrfidhttp HTTP_NORMAL;
+        httprequest "PUT" playerUrl rfid "" #_cbrfidhttp HTTP_NORMAL;
         0
       )
       else if ((strstr rfid RFID_ID_FALSE 0) == 0) then
@@ -105,7 +115,39 @@ fun controlrfid=
   );
 0;;
 
+//--------- LED
+const LED_CHECK_FQ = 500;; //ms MIN 50ms
+var led_last_check = 0;;
+var globalIndex = 0;;
 
+fun setLeds=
+   //LED_CHECK_FQ
+  let (button3 + 1) * 3 -> led_check_fq in
+  if ((time_ms - led_last_check) > led_check_fq) then
+  (
+    for index = 0; index < 5; index + 1 do
+    (
+      let buffers.index -> buffer in
+      led index ItoCO buffer.(globalIndex % tablen buffer)
+    );
+    set globalIndex = globalIndex + 1;
+    set led_last_check = time_ms
+  )
+;;
+
+//--------- LED
+const BUTTON_CHECK_FQ = 500;; //ms MIN 50ms
+var button_last_check = 0;;
+fun checkButton=
+  if ((time_ms - button_last_check) > BUTTON_CHECK_FQ) then
+  (
+    if (button2 > 0) then
+    (
+      httprequest "GET" debugUrl "" "" #_cbrfidhttp HTTP_NORMAL
+    );
+    set button_last_check = time_ms
+  )
+;;
 
 //-------------------- LOOP
 fun loop=
@@ -113,6 +155,8 @@ fun loop=
   wifiCheck;
 
   controlrfid;
+  setLeds;
+  checkButton;
 0;;
 
 //-------------------- MAIN
@@ -123,5 +167,7 @@ fun main=
   loopcb #loop; // 20 p. second
 
   netstart;
+  startdnsclient;
+  set buffers = tabnew {} 10;
   srand time_ms;
 0;;
