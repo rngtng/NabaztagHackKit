@@ -112,6 +112,12 @@ fun fillBuffer t val=
     set buffer.index = strget val index
   )
 ;;
+
+fun fillBuffers from to val=
+  for index = from; index <= to; index + 1 do
+  fillBuffer index val
+;;
+
 //-----------------------------------------------------
 var palette = {0 90 130 170 215 255 255 255};;  // 0x00 0x5a 0x82 0xaa 0xd7 0xFF
 

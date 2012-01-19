@@ -45,20 +45,19 @@ fun evalTrame res=
           exit //reboot
         )
         // short buffers 20-24 && loop buffers  25 - 29
-        else if code >= 20 && code <= 29 then
+        else if code >= 20 && code <= 26 then
         (
           fillBuffer (code-20) val
         )
-        else
+        else if code >= 30 && code <= 36 then
         (
-          httprequest "GET" debugUrl itoa code nil #_cbdummyhttp HTTP_NORMAL;
-          0
+          fillBuffer (code-23) (strcat (ctoa strlen val) val)
         )
       )
     )
 ;;
 
-fun _cbrfidhttp http res=
+fun _cbHttp http res=
   evalTrame res;
   0
 ;;
@@ -79,12 +78,9 @@ fun controlrfid=
     let rfidGet -> rfid in
     if (rfid != nil) then
     (
-      //set_led 0 rfid;
-      // httprequest "GET" debugUrl rfid nil #_cbrfidhttp HTTP_NORMAL;
-
       if ((strstr rfid RFID_ID_START 0) == 0) then
       (
-        httprequest "PUT" playerUrl rfid "" #_cbrfidhttp HTTP_NORMAL;
+        httprequest "PUT" playerUrl rfid "" #_cbHttp HTTP_NORMAL;
         0
       )
       else if ((strstr rfid RFID_ID_FALSE 0) == 0) then
@@ -102,7 +98,7 @@ fun controlrfid=
               set data = strcat data ctoh data_byte
             else if ((strlen data) > 0) then
             (
-              httprequest "POST" eventUrl data "" #_cbrfidhttp HTTP_NORMAL;
+              httprequest "POST" eventUrl data "" #_cbHttp HTTP_NORMAL;
               set data = ""
             )
           )
@@ -119,7 +115,6 @@ fun controlrfid=
 const LED_CHECK_FQ = 500;; //ms MIN 50ms
 var led_last_check = 0;;
 var globalIndex = 0;;
-
 fun setLeds=
    //LED_CHECK_FQ
   let (button3 + 1) * 3 -> led_check_fq in
@@ -127,25 +122,88 @@ fun setLeds=
   (
     for index = 0; index < 5; index + 1 do
     (
-      let buffers.index -> buffer in
-      led index ItoCO buffer.(globalIndex % tablen buffer)
+      let buffers.(index + 7) -> shortBuffer in
+      let if (shortBuffer.0 > 0) then
+      (
+        set shortBuffer.0 = shortBuffer.0 - 1;
+        shortBuffer.(-shortBuffer.0 - 1 + tablen shortBuffer)
+      ) else (
+        let buffers.index -> buffer in
+        buffer.(globalIndex % tablen buffer)
+      ) -> color in
+      led index ItoCO color
     );
     set globalIndex = globalIndex + 1;
     set led_last_check = time_ms
   )
 ;;
 
-//--------- LED
-const BUTTON_CHECK_FQ = 500;; //ms MIN 50ms
-var button_last_check = 0;;
-fun checkButton=
-  if ((time_ms - button_last_check) > BUTTON_CHECK_FQ) then
+//--------- EAR
+const EAR_CHECK_FQ = 500;; //ms MIN 50ms
+var ear_last_check = 0;;
+var globalEarIndex = 0;;
+fun setEars=
+  if ((time_ms - ear_last_check) > EAR_CHECK_FQ) then
   (
-    if (button2 > 0) then
+    for index = 0; index <= 1; index + 1 do
     (
-      httprequest "GET" debugUrl "" "" #_cbrfidhttp HTTP_NORMAL
+      let buffers.(index + 5 + 7) -> shortBuffer in
+      let if (shortBuffer.0 > 0) then
+      (
+        set shortBuffer.0 = shortBuffer.0 - 1;
+        shortBuffer.(-shortBuffer.0 - 1 + tablen shortBuffer)
+      ) else (
+        let buffers.(index + 5) -> buffer in
+        buffer.(globalEarIndex % tablen buffer)
+      ) -> pos in
+      motorset index (-1 + pos)
     );
-    set button_last_check = time_ms
+    set globalEarIndex = globalEarIndex + 1;
+    set ear_last_check = time_ms
+  )
+;;
+
+//--------- Button
+const BUTTON_REBOOT = 30;; //ms MIN 50ms
+var button_pressed = 0;;
+fun checkButton=
+  if (button2 > 0) then
+  (
+    set button_pressed = button_pressed + 1;
+    if (button_pressed == 1) then
+    (
+      let itoa motorget 0 -> m0 in
+      let itoa motorget 1 -> m1 in
+      let strcatlist m0::" - "::m1::nil -> data in
+      httprequest "GET" debugUrl data "" #_cbHttp HTTP_NORMAL;
+      0
+    ) else if (button_pressed > BUTTON_REBOOT) then
+    (
+      fillBuffers 0 4 "\0\255\0\255\0\255\255\255"
+    )
+  )
+  //reboot only when button not pressed, otherwise we get into setup mode
+  else if (button_pressed > BUTTON_REBOOT) then
+  (
+    exit
+  )
+  else (
+    set button_pressed = 0
+  )
+;;
+
+//--------- EAR
+var earPosL = 0;;
+var earPosR = 0;;
+fun checkEars=
+  if(earPosL != motorget 0 || earPosR != motorget 1) then
+  (
+    let itoa motorget 0 -> m0 in
+    let itoa motorget 1 -> m1 in
+    let (strcatlist m0::"-"::m1::nil) -> data in
+    httprequest "GET" debugUrl data "" #_cbHttp HTTP_NORMAL;
+    set earPosL = motorget 0;
+    set earPosR = motorget 1
   )
 ;;
 
@@ -154,9 +212,11 @@ fun loop=
   wifiRun;
   wifiCheck;
 
-  controlrfid;
+  //controlrfid;
   setLeds;
+  setEars;
   checkButton;
+  //checkEars;
 0;;
 
 //-------------------- MAIN
@@ -168,6 +228,7 @@ fun main=
 
   netstart;
   startdnsclient;
-  set buffers = tabnew {} 10;
+  set buffers = tabnew {} 14;
+  sndVol 0;
   srand time_ms;
 0;;
