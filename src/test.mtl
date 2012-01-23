@@ -10,20 +10,14 @@ fun main=
   //include "test/native"
   //include "test/pinnab"
 
-  //let test "tl" -> t in
-  //(
-  //  assert_equalS "0"     tl "90";
-  //  assert_equalS "09"    tl "909";
-  //0);
-
   let test "strcmp" -> t in
   (
-    assert_equalI 0 strcmp "" "";
-    assert_equalI 0 strcmp "T" "T";
+    assert_equalI  0 strcmp "" "";
+    assert_equalI  0 strcmp "T" "T";
     assert_equalI -1 strcmp "T" "To";
     assert_equalI -1 strcmp "T" "t";
-    assert_equalI 1 strcmp "t" "T";
-    assert_equalI 1 strcmp "To" "Tb";
+    assert_equalI  1 strcmp "t" "T";
+    assert_equalI  1 strcmp "To" "Tb";
   0);
 
   let test "itoa" -> t in
@@ -42,44 +36,22 @@ fun main=
     assert_equalS "3e517" itoh 255255; // 255255 -> hex == 3e517
   0);
 
-  let test "webmac" -> t in
+  let test "ctoa" -> t in
   (
-    assert_equalS "0100"   webmac "\1\0";
-    assert_equalS "0a00"  webmac "\10\0";
-    assert_equalS "00ff"   webmac "\0\255";
-    assert_equalS "ff00"   webmac "\255\0";
+    assert_equalS "\0"     ctoa 0;
+    assert_equalS "\51"    ctoa 51;
+    assert_equalS "\255"   ctoa 255;
+    //assert_equalS "\1\0"   ctoa 256;  // max char is 255
+    //assert_equalS "\255\00" ctoa 25500;
   0);
 
-  // let test "ILcmplen" -> t in
-  // (
-  //   assert_equalI 3 ILcmplen  48::49::50::nil 48::49::50::nil;
-  //   assert_equalI 1 ILcmplen  48::49::50::nil 48::50::50::nil;
-  //   assert_equalI 1 ILcmplen  48::nil 48::49::nil;
-  //   assert_equalI 0 ILcmplen  48::49::50::nil 49::49::nil;
-  // 0);
-//
-  // let test "ILcmp" -> t in
-  // (
-  //   assert_equal ILcmp  48::49::50::nil 48::49::50::nil;
-  //   assert_not_equal ILcmp  48::49::50::nil 48::50::50::nil;
-  //   assert_not_equal ILcmp  48::49::50::nil 48::49::nil;
-  //   assert_not_equal ILcmp  48::49::nil 48::49::50::nil;
-  // 0);
-//
-  // let test "SLcmplen" -> t in
-  // (
-  //   assert_equalI 3 SLcmplen  "48"::"49"::"50"::nil "48"::"49"::"50"::nil;
-  //   assert_equalI 1 SLcmplen  "48"::"49"::"50"::nil "48"::"59"::"50"::nil;
-  //   assert_equalI 1 SLcmplen  "48"::nil "48"::"49"::nil;
-  //   assert_equalI 0 SLcmplen  "48"::"49"::"50"::nil "49"::"49"::nil;
-  // 0);
-//
-  // let test "SLcmp" -> t in
-  // (
-  //   assert_equal SLcmp      "48"::"49"::nil "48"::"49"::nil;
-  //   assert_not_equal SLcmp  "48"::"49"::nil "48"::"49"::"50"::nil;
-  //   assert_not_equal SLcmp  "48"::"49"::"51"::nil "48"::"49"::"50"::nil
-  // );
+  let test "webmac" -> t in
+  (
+    assert_equalS "0100"  webmac "\1\0";
+    assert_equalS "0a00"  webmac "\10\0";
+    assert_equalS "00ff"  webmac "\0\255";
+    assert_equalS "ff00"  webmac "\255\0";
+  0);
 
   let test "StoI3" -> t in
   (
@@ -119,7 +91,6 @@ fun main=
     assert_equalI 0   strstr "\208\2\26\1\1\1\1\1" "\208\2\26" 0;
     assert_equalI 1   strstr "\1\208\2\26\1\1\1\1" "\208\2\26" 0;
     assert_equalI nil strstr "\1\208\1\26\1\1\1\1" "\208\2\26" 0;
-    //assert_equalI nil strstr "\1\208\1\26\1\1\1\1" 0xd0021a 0;
   0);
 
   let test "COtoI" -> t in
@@ -140,12 +111,12 @@ fun main=
     assert_equalI 0xFFFFFF  ItoCO 255;
   0);
 
-  let test "BintoI3" -> t in
+  let test "CtoI3" -> t in
   (
-    assert_equalI 0         BintoI3 "\0\0\0" 0;
-    assert_equalI 255       BintoI3 "\0\0\255" 0;
-    assert_equalI 65535     BintoI3 "\0\255\255" 0;
-    assert_equalI 16776959  BintoI3 "\0\255\255" 1;
+    assert_equalI 0         CtoI3 "\0\0\0" 0;
+    assert_equalI 255       CtoI3 "\0\0\255" 0;
+    assert_equalI 65535     CtoI3 "\0\255\255" 0;
+    assert_equalI 16776959  CtoI3 "\0\255\255" 1;
   0);
 
   let test "parseResponse" -> t in
@@ -158,30 +129,105 @@ fun main=
     //TODO check last ending byte
   0);
 
-  set buffers = tabnew {} 5;
-  let test "fillBuffer" -> t in
+  buffersInit 1;
+  let test "bufferFill" -> t in
   (
-    fillBuffer 0 "\12\255";
+    bufferFill 0 "\0\255";
+
     let buffers.0 -> buffer in
     (
-      assert_equalI 12 buffer.0;
-      assert_equalI 255 buffer.1;
-      assert_equalI nil buffer.2;
-      assert_equalI 2 tablen buffer;
+      assert_equalS "\0\255" buffer.valB;
+      assert_equalI 2 buffer.lenB;
+      assert_equalI 1 buffer.stepB;
+      assert_equalI 0 buffer.posB;
+      assert_equalI 0 buffer.loopB;
     0);
-
-    fillBuffer 1 "1234567890123456789012345678901234567890\255";
-    let buffers.1 -> buffer in
-    (
-      assert_equalI StoI "1" buffer.30;
-      assert_equalI 255 buffer.40;
-      assert_equalI 41 tablen buffer;
-    0);
-
-    fillBuffer 3 "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890";
-    let buffers.3 -> buffer in
-    assert_equalI 300 tablen buffer;
   0);
+
+  let test "bufferRead" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0;
+    assert_nil             bufferRead 0;
+  0);
+
+  let test "bufferFill3" -> t in
+  (
+    bufferFill3 0 "\0\0\0\255\255\255";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalS "\0\0\0\255\255\255" buffer.valB;
+      assert_equalI 6 buffer.lenB;
+      assert_equalI 3 buffer.stepB;
+      assert_equalI 0 buffer.posB;
+      assert_equalI 0 buffer.loopB;
+    0);
+  0);
+
+  let test "bufferRead3" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0;
+    assert_nil             bufferRead 0;
+  0);
+
+  //-------- Loop
+  let test "loopBufferFill" -> t in
+  (
+    loopBufferFill 0 "\0\255\32";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalI 0 buffer.posB;
+      assert_equalI 1 buffer.loopB;
+    0);
+  0);
+
+  let test "loopBufferRead" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0;
+    assert_equalI 0x20     bufferRead 0;
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0;
+  0);
+
+  let test "bufferFill3" -> t in
+  (
+    loopBufferFill3 0 "\0\0\0\255\255\255";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalI 0 buffer.posB;
+      assert_equalI 1 buffer.loopB;
+    0);
+  0);
+
+  let test "bufferRead3" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0;
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0;
+  0);
+
+
+  for code = 20; code <= 39; code + 1 do
+  (
+    let code % 10 -> index in
+    let 2 * (code / 30) + 1 -> step in
+    let index / 5 -> loop in
+    (
+      Iecho code;
+      Secho " ";
+      Iecho index;
+      Secho " ";
+      Iecho step;
+      Secho " ";
+      Iecholn loop
+    )
+  );
 
   exit;
 0;;

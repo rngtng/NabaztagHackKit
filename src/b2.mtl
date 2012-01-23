@@ -44,14 +44,23 @@ fun evalTrame res=
         (
           exit //reboot
         )
-        // short buffers 20-24 && loop buffers  25 - 29
-        else if code >= 20 && code <= 26 then
+        // led buffers: short 20-24 loop 25-29; 3Byte: short 30-34 loop 35-39
+        else if code >= 20 && code <= 39 then
         (
-          fillBuffer (code-20) val
+          let code % 10 -> index in
+          let 2 * (code / 30) + 1 -> step in
+          let index / 5 -> loop in
+          _bufferFill index step loop val;
+          0
         )
-        else if code >= 30 && code <= 36 then
+        // ear buffers: short 40-41, loop 42-43
+        else if code >= 40 && code <= 43 then
         (
-          fillBuffer (code-23) (strcat (ctoa strlen val) val)
+          let code % 10 -> index in
+          let 1 -> step in
+          let index / 2 -> loop in
+          _bufferFill index+10 step loop val;
+          0
         )
       )
     )
@@ -72,7 +81,7 @@ const RFID_ID_ERROR = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 
 var rfid_last_check = 0;;
 var data = "";;
 
-fun controlrfid=
+fun checkRFID=
   if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
   (
     let rfidGet -> rfid in
@@ -114,7 +123,6 @@ fun controlrfid=
 //--------- LED
 const LED_CHECK_FQ = 500;; //ms MIN 50ms
 var led_last_check = 0;;
-var globalIndex = 0;;
 fun setLeds=
    //LED_CHECK_FQ
   let (button3 + 1) * 3 -> led_check_fq in
@@ -122,18 +130,14 @@ fun setLeds=
   (
     for index = 0; index < 5; index + 1 do
     (
-      let buffers.(index + 7) -> shortBuffer in
-      let if (shortBuffer.0 > 0) then
+      let colorBufferRead index+5 -> loopColor in
+      let colorBufferRead index -> color in
       (
-        set shortBuffer.0 = shortBuffer.0 - 1;
-        shortBuffer.(-shortBuffer.0 - 1 + tablen shortBuffer)
-      ) else (
-        let buffers.index -> buffer in
-        buffer.(globalIndex % tablen buffer)
-      ) -> color in
-      led index ItoCO color
+        if color == nil then set color = loopColor;
+        if color == nil then set color = 0;
+        led index color
+      )
     );
-    set globalIndex = globalIndex + 1;
     set led_last_check = time_ms
   )
 ;;
@@ -145,20 +149,15 @@ var globalEarIndex = 0;;
 fun setEars=
   if ((time_ms - ear_last_check) > EAR_CHECK_FQ) then
   (
-    for index = 0; index <= 1; index + 1 do
+    for index = 0; index < 2; index + 1 do
     (
-      let buffers.(index + 5 + 7) -> shortBuffer in
-      let if (shortBuffer.0 > 0) then
+      let earBufferRead index+10 -> earPos in
       (
-        set shortBuffer.0 = shortBuffer.0 - 1;
-        shortBuffer.(-shortBuffer.0 - 1 + tablen shortBuffer)
-      ) else (
-        let buffers.(index + 5) -> buffer in
-        buffer.(globalEarIndex % tablen buffer)
-      ) -> pos in
-      motorset index (-1 + pos)
+        if earPos == nil then set earPos = earBufferRead index+10+2;
+        if earPos == nil then set earPos = 0;
+        motorset index earPos
+      )
     );
-    set globalEarIndex = globalEarIndex + 1;
     set ear_last_check = time_ms
   )
 ;;
@@ -179,7 +178,9 @@ fun checkButton=
       0
     ) else if (button_pressed > BUTTON_REBOOT) then
     (
-      fillBuffers 0 4 "\0\255\0\255\0\255\255\255"
+      buffersFill 0 4 "\0\255\0\255\0\255\255\255";
+      0
+      //buffersFill3 0 4 "\0\0\0\255\255\255\255\0\0\0\255\255\255\0\0\0\255\255\255\255\255\255\255\255\255"
     )
   )
   //reboot only when button not pressed, otherwise we get into setup mode
@@ -212,9 +213,9 @@ fun loop=
   wifiRun;
   wifiCheck;
 
-  //controlrfid;
   setLeds;
   setEars;
+  //checkRFID;
   checkButton;
   //checkEars;
 0;;
@@ -223,12 +224,13 @@ fun loop=
 fun main=
   confInit;
   wifiInit 0;
+  buffersInit 14;
 
   loopcb #loop; // 20 p. second
 
   netstart;
   startdnsclient;
-  set buffers = tabnew {} 14;
+
   sndVol 0;
   srand time_ms;
 0;;
