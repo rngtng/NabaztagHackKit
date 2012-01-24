@@ -23,7 +23,7 @@ fun eventUrl tag=
   strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::tag::nil;;
 
 fun debugUrl tag=
-  strcatlist confGetServerUrl::"/debug.jsp?t="::tag::nil;;
+  strcatlist confGetServerUrl::"/debug.jsp?"::tag::nil;;
 
 fun _cbdummyhttp http res=
   0
@@ -143,7 +143,7 @@ fun setLeds=
 ;;
 
 //--------- EAR
-const EAR_CHECK_FQ = 500;; //ms MIN 50ms
+const EAR_CHECK_FQ = 200;; //ms MIN 50ms
 var ear_last_check = 0;;
 var globalEarIndex = 0;;
 fun setEars=
@@ -173,7 +173,7 @@ fun checkButton=
     (
       let itoa motorget 0 -> m0 in
       let itoa motorget 1 -> m1 in
-      let strcatlist m0::" - "::m1::nil -> data in
+      let strcatlist "b=1&e1="::m0::"&e2="::m1::nil -> data in
       httprequest "GET" debugUrl data "" #_cbHttp HTTP_NORMAL;
       0
     ) else if (button_pressed > BUTTON_REBOOT) then
@@ -201,7 +201,7 @@ fun checkEars=
   (
     let itoa motorget 0 -> m0 in
     let itoa motorget 1 -> m1 in
-    let (strcatlist m0::"-"::m1::nil) -> data in
+    let strcatlist "b=0&e1="::m0::"&e2="::m1::nil -> data in
     httprequest "GET" debugUrl data "" #_cbHttp HTTP_NORMAL;
     set earPosL = motorget 0;
     set earPosR = motorget 1
@@ -217,7 +217,7 @@ fun loop=
   setEars;
   //checkRFID;
   checkButton;
-  //checkEars;
+  checkEars;
 0;;
 
 //-------------------- MAIN
