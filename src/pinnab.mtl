@@ -1,3 +1,16 @@
+var logs = "";;
+
+fun log t tab=
+  let "|"::nil -> all in
+  (
+    for i = tablen tab; i > 0 ; i - 1 do
+    (
+      let itoa tab.(i - 1) -> data in
+      set all =  data::","::all
+    );
+  set logs = strcatlist logs::t::","::(itoa time_ms)::","::all
+  )
+;;
 
 fun TLtoS tlist=
   if tlist == nil then
@@ -80,8 +93,8 @@ fun buffersInit len=
 
 fun _bufferFill index step loop val=
   let strlen val -> len in
-  set buffers.index = [valB:val stepB:step lenB:len posB:0 loopB:loop]
-;;
+  set buffers.index = [valB:val stepB:step lenB:len posB:0 loopB:loop];
+0;;
 
 fun bufferFill index val=
   _bufferFill index 1 0 val

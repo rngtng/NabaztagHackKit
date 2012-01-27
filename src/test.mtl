@@ -212,6 +212,13 @@ fun main=
     assert_equalI 0xFFFFFF bufferRead 0;
   0);
 
+  let test "log" -> t in
+  (
+    log {1};
+    assert_equalS "1 \n" logs;
+    log {56 67 90};
+    assert_equalS "1 \n56 67 90\n" logs;
+  0);
 
   for code = 20; code <= 39; code + 1 do
   (
