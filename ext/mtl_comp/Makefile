@@ -11,27 +11,28 @@ CFLAGS=-DVSIMU -g3  # -std=c99
 
 CC=gcc
 CXX=g++
+OS=$(shell uname)
+TARGET_OS=Linux
 
 all : mtl_simu mtl_comp
 
 .PHONY : vcomp/libvcomp.a
 
 vcomp/libvcomp.a :
+ifeq ($(OS),$(TARGET_OS))
 	$(MAKE) -C vcomp libvcomp.a
+endif
 
 mtl_comp : vcomp/libvcomp.a $(COMMON_OBJS) $(COMP_OBJS)
+ifeq ($(OS),$(TARGET_OS))
 	g++  $^ -o $@ vcomp/libvcomp.a
-#	g++  $^ -o $@ vcomp/*.o
+endif
 
 mtl_simu : vcomp/libvcomp.a $(COMMON_OBJS) $(SIMU_OBJS)
+ifeq ($(OS),$(TARGET_OS))
 	g++  $^ -o $@ vcomp/libvcomp.a
-#	g++  $^ -o $@ vcomp/*.o
+endif
 
-# .c.o:
-# 	g++ -c $<
-
-# .cpp.o:
-# 	g++ -c -I/usr/include/wine/windows -I/usr/include/wine/msvcrt
 clean :
 	$(MAKE) -C vcomp clean
 	rm -f $(COMMON_OBJS) $(COMP_OBJS) $(SIMU_OBJS)
