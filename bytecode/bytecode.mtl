@@ -3,17 +3,17 @@
 proto main 0;;
 proto earsInit 0;;
 
-#include "vendor/bytecode/lib/var"
-#include "vendor/bytecode/lib/util"
-#include "vendor/bytecode/lib/cfg"
-#include "vendor/bytecode/lib/arp"
-#include "vendor/bytecode/lib/udp"
-#include "vendor/bytecode/lib/tcp"
-#include "vendor/bytecode/lib/dns"
-#include "vendor/bytecode/lib/http"
-#include "lib/dode"
-#include "./lib/openNabaztag"
-#include "vendor/bytecode/lib/"
+#include "../ext/bytecode/lib/var"
+#include "../ext/bytecode/lib/util"
+#include "../ext/bytecode/lib/cfg"
+#include "../ext/bytecode/lib/arp"
+#include "../ext/bytecode/lib/udp"
+#include "../ext/bytecode/lib/tcp"
+#include "../ext/bytecode/lib/dns"
+#include "../ext/bytecode/lib/http"
+#include "../ext/bytecode/lib/dhcp"
+#include "lib/openNabaztag"
+#include "../ext/bytecode/lib/wifi"
 
 //-------------------- RFID
 fun playerUrl tag=

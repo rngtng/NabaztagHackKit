@@ -3,7 +3,7 @@ require 'stringio'
 # http://rake.rubyforge.org/files/doc/rakefile_rdoc.html
 
 HOST   = "ssh-21560@warteschlange.de"
-REMOTE = "/kunden/warteschlange.de/.tmp/OpenJabNab/bytecode"
+REMOTE = "/kunden/warteschlange.de/.tmp/OpenJabNab/bootcode"
 COMP   = "compiler/mtl_linux/mtl_comp"
 SIMU   = "compiler/mtl_linux/mtl_simu"
 TMP    = "tmp.mtl"
@@ -32,5 +32,14 @@ namespace :bytecode do
     `#{REMOTE}/#{COMP} #{file} tmp.bin 2>&1 #{FILTER} #{filter_cmd}`
   end
 
+  desc "cleanup temporary files"
+  task :clean do
+    `rm -rf *.mtl *.bin`
+  end
+
+  desc "instal compiled files"
+  task :install do
+    `mv *.bin public/`
+  end
   ###########################################################################
 end
