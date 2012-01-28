@@ -214,27 +214,11 @@ fun main=
 
   let test "log" -> t in
   (
-    log {1};
-    assert_equalS "1 \n" logs;
-    log {56 67 90};
-    assert_equalS "1 \n56 67 90\n" logs;
+    log "test" {1};
+    assert_equalS "test,0,1,|" logs;
+    log "test" {56 67 90};
+    assert_equalS "test,0,1,|test,0,56,67,90,|" logs;
   0);
-
-  for code = 20; code <= 39; code + 1 do
-  (
-    let code % 10 -> index in
-    let 2 * (code / 30) + 1 -> step in
-    let index / 5 -> loop in
-    (
-      Iecho code;
-      Secho " ";
-      Iecho index;
-      Secho " ";
-      Iecho step;
-      Secho " ";
-      Iecholn loop
-    )
-  );
 
   exit;
 0;;

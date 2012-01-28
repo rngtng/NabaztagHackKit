@@ -2,7 +2,6 @@
 // Nabaztag Code cleanup
 
 proto main 0;;
-
 proto earsInit 0;;
 
 #include "lib/var"
@@ -83,15 +82,16 @@ fun _cbHttp http res=
   0
 ;;
 
-//--------- RFID
-const RFID_CHECK_FQ = 500;; //ms MIN 50ms
+//###############################################
+//--------------- RFID ------------------------
+const RFID_CHECK_FQ  = 500;; //ms MIN 50ms
 const RFID_STOP_BYTE = 0xFF;;
-const RFID_ID_START = "\208\2\26";; // 0xd0 0x02 0x1a
-const RFID_ID_FALSE = "\0\0\0\0\0\0\0\0\v";;
-const RFID_ID_ERROR = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
+const RFID_ID_START  = "\208\2\26";; // 0xd0 0x02 0x1a
+const RFID_ID_FALSE  = "\0\0\0\0\0\0\0\0\v";;
+const RFID_ID_ERROR  = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
 
-var rfid_last_check = 0;;
-var data = "";;
+var rfid_last_check  = 0;;
+var rfid_data        = "";;
 
 fun checkRFID=
   if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
@@ -116,11 +116,11 @@ fun checkRFID=
           let strget rfid index -> data_byte in
           (
             if (data_byte != RFID_STOP_BYTE) then
-              set data = strcat data ctoh data_byte
-            else if ((strlen data) > 0) then
+              set rfid_data = strcat rfid_data ctoh data_byte
+            else if ((strlen rfid_data) > 0) then
             (
-              httprequest "POST" eventUrl data "" #_cbHttp HTTP_NORMAL;
-              set data = ""
+              httprequest "POST" eventUrl rfid_data "" #_cbHttp HTTP_NORMAL;
+              set rfid_data = ""
             )
           )
         );
@@ -132,9 +132,20 @@ fun checkRFID=
   );
 0;;
 
-//--------- LED
+//###############################################
+//------------------ LED ----------------------
 const LED_CHECK_FQ = 500;; //ms MIN 50ms
 var led_last_check = 0;;
+
+fun ledBufferRead index=
+  let bufferRead index -> color in
+  let buffers.index -> buffer in
+  if color != nil && buffer.stepB == 1 then
+    ItoCO color
+  else
+    color
+;;
+
 fun setLeds=
    //LED_CHECK_FQ
   let (button3 + 1) * 3 -> led_check_fq in
@@ -142,8 +153,8 @@ fun setLeds=
   (
     for index = 0; index < 5; index + 1 do
     (
-      let colorBufferRead index+5 -> loopColor in
-      let colorBufferRead index -> color in
+      let ledBufferRead index+5 -> loopColor in
+      let ledBufferRead index -> color in
       (
         if color == nil then set color = loopColor;
         if color == nil then set color = 0;
@@ -154,9 +165,10 @@ fun setLeds=
   )
 ;;
 
-//--------- Button
+//###############################################
+//------------------- Button --------------------
 const BUTTON_REBOOT = 30;; //ms MIN 50ms
-var button_pressed = 0;;
+var button_pressed  = 0;;
 fun checkButton=
   if (button2 > 0) then
   (
@@ -180,15 +192,29 @@ fun checkButton=
   )
 ;;
 
-//--------- EAR
+//###############################################
+//------------------- EAR -----------------------
 var ears;;
-const EAR_INIT = nil;;
-const EAR_STOP = 0;;
-const EAR_FORWARD = 1;;
+const EAR_INIT     = nil;;
+const EAR_STOP     = 0;;
+const EAR_FORWARD  = 1;;
 const EAR_BACKWARD = -1;;
-const EAR_TICKS = 17;;
+const EAR_TICKS    = 17;;
 
 type EAR=[dir pos shouldPos lastOffset lastTime lastTime2 lastRead];;
+
+fun earNorm norm=
+  (EAR_TICKS + norm) % EAR_TICKS
+;;
+
+fun earBufferRead index=
+  let bufferRead index+10 -> earPos in
+  (
+  if earPos != nil then
+    set earPos = earNorm earPos;
+  earPos
+  )
+;;
 
 fun earRead index=
   let ears.index -> ear in
@@ -204,15 +230,15 @@ fun earRead index=
         let ear.dir -> direction in
         (
           if direction == 0 then set direction = 1; //manual moved!!
-          set ear.pos = (EAR_TICKS + ear.pos + direction * diff) % EAR_TICKS
+          set ear.pos = earNorm ear.pos + direction * diff
         );
 
         // check for reset Reset
         let currentTime - ear.lastTime -> lastDuration in
         let currentTime - ear.lastTime2 -> totalDuration in
-        if ear.dir != EAR_STOP && lastDuration > 1000 && totalDuration < 1400 then
+        if ear.dir != EAR_STOP && lastDuration > 1000 && totalDuration < 1450 then
         (
-           set ear.pos = (EAR_TICKS + (ear.dir - 1) / 2) % EAR_TICKS; // either 0  or  -1
+           set ear.pos = earNorm (ear.dir - 1) / 2; // either 0 or 16
            bufferFill 0 "\100";
            log "reset" {index lastDuration totalDuration ear.dir ear.pos}
         );
@@ -227,14 +253,16 @@ fun earRead index=
     // check  & read new value
     if (ear.pos != EAR_INIT) && (ear.pos == ear.shouldPos) && (currentTime - ear.lastRead) > 270 then
     (
-      let bufferRead index+10 -> earPos in
+      let earBufferRead index -> earPos in
       (
-        if earPos == nil then set earPos = bufferRead index+10+2;
+        if earPos == nil then set earPos = earBufferRead index+2;
         if earPos == nil then set earPos = ear.pos;
         set ear.shouldPos = earPos;
-        let ear.pos - ear.shouldPos -> posDiff in
-        set ear.dir = posDiff / posDiff;
+        set ear.dir = earNorm ear.shouldPos - ear.pos;
+        if ear.dir > 8 then set ear.dir = -1;
+        if ear.dir > 0 then set ear.dir = 1;
         motorset index ear.dir;
+
         set ear.lastRead = currentTime
 
         // log "ear read" {index time_ms earPos ear.pos ear.shouldPos}
@@ -249,12 +277,13 @@ fun earsInit=
     set ears = tabnew nil 2;
     set ears.0 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
     set ears.1 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
-    motorset 0 1
+    motorset 0 1;
     motorset 1 1
   );
 0;;
 
-//-------------------- LOOP
+//###############################################
+//-------------------- LOOP ---------------------
 fun loop=
   wifiRun;
   wifiCheck;
@@ -263,10 +292,11 @@ fun loop=
   //checkRFID;
   checkButton;
   earRead 0;
-  // earRead 1;
+  earRead 1;
 0;;
 
-//-------------------- MAIN
+//###############################################
+//-------------------- MAIN ---------------------
 fun main=
   confInit;
   wifiInit 0;

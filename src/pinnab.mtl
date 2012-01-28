@@ -157,29 +157,7 @@ fun ItoCO val=
   palette.r << 16 + palette.g << 8 + palette.b
 ;;
 
-fun colorBufferRead index=
-  let bufferRead index -> color in
-  let buffers.index -> buffer in
-  if color != nil && buffer.stepB == 1 then
-    ItoCO color
-  else
-    color
-;;
-
-fun earBufferRead index=
-  let bufferRead index -> earPos in
-  if earPos != nil && earPos > 1 then
-    -1
-  else
-    earPos
-;;
-
-
-fun set_led led_nr val=
-  led led_nr StoI3 val
-;;
-
-
+// returns number of chars before char \255
 fun str_find_end val=
   strstr val "\255" 0
 ;;
