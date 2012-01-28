@@ -5,9 +5,9 @@ require "open_nabaztag/version"
 Gem::Specification.new do |s|
   s.name        = "open_nabaztag"
   s.version     = OpenNabaztag::VERSION
-  s.authors     = ["Tobias Bielohlawek"]
+  s.authors     = ["RngTng - Tobias Bielohlawek"]
   s.email       = ["tobi@soundcloud.com"]
-  s.homepage    = ""
+  s.homepage    = "https://github.com/rngtng/open_nabaztag"
   s.summary     = %q{Sinatra server to run custom Nabaztag bytecode}
   s.description = %q{Sinatra server for Nabaztag v1/v2 to run your custom Nabaztag version. Sources + Compiler included (linux only)}
 
@@ -16,8 +16,8 @@ Gem::Specification.new do |s|
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.executables   = `git ls-files -- bin/*`.split("\n").map{ |f| File.basename(f) }
-  #s.extensions    = ['ext/hola/extconf.rb']
-  #s.executables = ['hola']
+  s.extensions    = ['ext/mtl_comp/extconf.rb']
+  s.executables   = ['mtl_comp', 'mtl_simu']
 
   s.require_paths = ["lib"]
 
