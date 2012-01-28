@@ -1,0 +1,312 @@
+// VLISP - Jan 2012
+
+proto main 0;;
+proto earsInit 0;;
+
+#include "vendor/bytecode/lib/var"
+#include "vendor/bytecode/lib/util"
+#include "vendor/bytecode/lib/cfg"
+#include "vendor/bytecode/lib/arp"
+#include "vendor/bytecode/lib/udp"
+#include "vendor/bytecode/lib/tcp"
+#include "vendor/bytecode/lib/dns"
+#include "vendor/bytecode/lib/http"
+#include "lib/dode"
+#include "./lib/openNabaztag"
+#include "vendor/bytecode/lib/"
+
+//-------------------- RFID
+fun playerUrl tag=
+  strcatlist confGetServerUrl::"/players/"::(webmac tag)::".jsp"::nil;;
+
+fun eventUrl data=
+  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::data::nil;;
+
+fun buttonUrl data=
+  strcatlist confGetServerUrl::"/vl/button.jsp?"::data::nil;;
+
+fun logUrl=
+  strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
+
+fun _cbdummyhttp http res=
+  0
+;;
+
+fun evalTrame res=
+  let parseResponse httpgetcontent res -> bufferlist in
+    if bufferlist != nil then
+    (
+      for l = bufferlist; l != nil; tl l do
+      (
+        let hd l -> [code val] in
+        if code == 1 then
+        (
+          earsInit;
+          0
+        )
+        else if code == 2 then
+        (
+          httprequest "POST" logUrl (strcat "logs=" logs) #_cbdummyhttp HTTP_NORMAL;
+          set logs = "";
+          0
+        )
+        else if code == 9 then
+        (
+          exit //reboot
+        )
+        // led buffers: short 20-24 loop 25-29; 3Byte: short 30-34 loop 35-39
+        else if code >= 20 && code <= 39 then
+        (
+          let code % 10 -> index in
+          let 2 * (code / 30) + 1 -> step in
+          let index / 5 -> loop in
+          _bufferFill index step loop val;
+          0
+        )
+        // ear buffers: short 40-41, loop 42-43
+        else if code >= 40 && code <= 43 then
+        (
+          let code % 10 -> index in
+          let 1 -> step in
+          let index / 2 -> loop in
+          _bufferFill index+10 step loop val;
+          0
+        )
+      )
+    )
+;;
+
+fun _cbHttp http res=
+  evalTrame res;
+  0
+;;
+
+//###############################################
+//--------------- RFID ------------------------
+const RFID_CHECK_FQ  = 500;; //ms MIN 50ms
+const RFID_STOP_BYTE = 0xFF;;
+const RFID_ID_START  = "\208\2\26";; // 0xd0 0x02 0x1a
+const RFID_ID_FALSE  = "\0\0\0\0\0\0\0\0\v";;
+const RFID_ID_ERROR  = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
+
+var rfid_last_check  = 0;;
+var rfid_data        = "";;
+
+fun checkRFID=
+  if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
+  (
+    let rfidGet -> rfid in
+    if (rfid != nil) then
+    (
+      if ((strstr rfid RFID_ID_START 0) == 0) then
+      (
+        httprequest "PUT" playerUrl rfid "" #_cbHttp HTTP_NORMAL;
+        0
+      )
+      else if ((strstr rfid RFID_ID_FALSE 0) == 0) then
+      (
+        0
+      )
+      else
+      (
+        let strlen rfid -> len in //usually that's 8
+        for index = 0; index < len; index + 1 do
+        (
+          let strget rfid index -> data_byte in
+          (
+            if (data_byte != RFID_STOP_BYTE) then
+              set rfid_data = strcat rfid_data ctoh data_byte
+            else if ((strlen rfid_data) > 0) then
+            (
+              httprequest "POST" eventUrl rfid_data "" #_cbHttp HTTP_NORMAL;
+              set rfid_data = ""
+            )
+          )
+        );
+        0
+      )
+    );
+    //all done
+    set rfid_last_check = time_ms
+  );
+0;;
+
+//###############################################
+//------------------ LED ----------------------
+const LED_CHECK_FQ = 500;; //ms MIN 50ms
+var led_last_check = 0;;
+
+fun ledBufferRead index=
+  let bufferRead index -> color in
+  let buffers.index -> buffer in
+  if color != nil && buffer.stepB == 1 then
+    ItoCO color
+  else
+    color
+;;
+
+fun setLeds=
+   //LED_CHECK_FQ
+  let (button3 + 1) * 3 -> led_check_fq in
+  if ((time_ms - led_last_check) > led_check_fq) then
+  (
+    for index = 0; index < 5; index + 1 do
+    (
+      let ledBufferRead index+5 -> loopColor in
+      let ledBufferRead index -> color in
+      (
+        if color == nil then set color = loopColor;
+        if color == nil then set color = 0;
+        led index color
+      )
+    );
+    set led_last_check = time_ms
+  )
+;;
+
+//###############################################
+//------------------- Button --------------------
+const BUTTON_REBOOT = 30;; //ms MIN 50ms
+var button_pressed  = 0;;
+fun checkButton=
+  if (button2 > 0) then
+  (
+    set button_pressed = button_pressed + 1;
+    if button_pressed == 1 then
+    (
+      httprequest "GET" buttonUrl (itoa time_ms) "" #_cbHttp HTTP_NORMAL;
+      0
+    ) else if button_pressed == BUTTON_REBOOT then
+    (
+      buffersFill 0 4 "\0\255\0\255\0\255\255\255"
+    )
+  )
+  //reboot only when button not pressed, otherwise we get into setup mode
+  else if button_pressed > BUTTON_REBOOT then
+  (
+    exit
+  )
+  else (
+    set button_pressed = 0
+  )
+;;
+
+//###############################################
+//------------------- EAR -----------------------
+var ears;;
+const EAR_INIT     = nil;;
+const EAR_STOP     = 0;;
+const EAR_FORWARD  = 1;;
+const EAR_BACKWARD = -1;;
+const EAR_TICKS    = 17;;
+
+type EAR=[dir pos shouldPos lastOffset lastTime lastTime2 lastRead];;
+
+fun earNorm norm=
+  (EAR_TICKS + norm) % EAR_TICKS
+;;
+
+fun earBufferRead index=
+  let bufferRead index+10 -> earPos in
+  (
+  if earPos != nil then
+    set earPos = earNorm earPos;
+  earPos
+  )
+;;
+
+fun earRead index=
+  let ears.index -> ear in
+  let time_ms -> currentTime in
+  (
+    let motorget index -> currentOffset in
+    let (currentOffset - ear.lastOffset) -> diff in
+    (
+      if diff > 0 then //ear moved
+      (
+        // update pos
+        if ear.pos != EAR_INIT then
+        let ear.dir -> direction in
+        (
+          if direction == 0 then set direction = 1; //manual moved!!
+          set ear.pos = earNorm ear.pos + direction * diff
+        );
+
+        // check for reset Reset
+        let currentTime - ear.lastTime -> lastDuration in
+        let currentTime - ear.lastTime2 -> totalDuration in
+        if ear.dir != EAR_STOP && lastDuration > 1000 && totalDuration < 1450 then
+        (
+           set ear.pos = earNorm (ear.dir - 1) / 2; // either 0 or 16
+           bufferFill 0 "\100";
+           log "reset" {index lastDuration totalDuration ear.dir ear.pos}
+        );
+        log "moved" {index ear.lastTime ear.lastTime2 ear.lastRead ear.pos ear.shouldPos ear.dir };
+
+        set ear.lastTime2 = ear.lastTime;
+        set ear.lastTime = currentTime
+      );
+      set ear.lastOffset = currentOffset
+    );
+
+    // check  & read new value
+    if (ear.pos != EAR_INIT) && (ear.pos == ear.shouldPos) && (currentTime - ear.lastRead) > 270 then
+    (
+      let earBufferRead index -> earPos in
+      (
+        if earPos == nil then set earPos = earBufferRead index+2;
+        if earPos == nil then set earPos = ear.pos;
+        set ear.shouldPos = earPos;
+        set ear.dir = earNorm ear.shouldPos - ear.pos;
+        if ear.dir > 8 then set ear.dir = -1;
+        if ear.dir > 0 then set ear.dir = 1;
+        motorset index ear.dir;
+
+        set ear.lastRead = currentTime
+
+        // log "ear read" {index time_ms earPos ear.pos ear.shouldPos}
+      )
+    )
+  )
+;;
+
+fun earsInit=
+  let time_ms -> currentT in
+  (
+    set ears = tabnew nil 2;
+    set ears.0 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
+    set ears.1 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
+    motorset 0 1;
+    motorset 1 1
+  );
+0;;
+
+//###############################################
+//-------------------- LOOP ---------------------
+fun loop=
+  wifiRun;
+  wifiCheck;
+
+  setLeds;
+  //checkRFID;
+  checkButton;
+  earRead 0;
+  earRead 1;
+0;;
+
+//###############################################
+//-------------------- MAIN ---------------------
+fun main=
+  confInit;
+  wifiInit 0;
+  buffersInit 14;
+  earsInit;
+
+  loopcb #loop; // 20 p. second
+
+  netstart;
+  startdnsclient;
+
+  sndVol 0;
+  srand time_ms;
+0;;

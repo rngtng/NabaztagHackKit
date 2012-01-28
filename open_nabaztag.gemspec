@@ -8,7 +8,7 @@ Gem::Specification.new do |s|
   s.authors     = ["Tobias Bielohlawek"]
   s.email       = ["tobi@soundcloud.com"]
   s.homepage    = ""
-  s.summary     = %q{Sinatra server to run custom Nabaztag bootcode}
+  s.summary     = %q{Sinatra server to run custom Nabaztag bytecode}
   s.description = %q{Sinatra server for Nabaztag v1/v2 to run your custom Nabaztag version. Sources + Compiler included (linux only)}
 
   # s.rubyforge_project = "open_nabaztag"

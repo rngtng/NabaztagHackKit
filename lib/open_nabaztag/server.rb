@@ -1,3 +1,5 @@
+require 'sinatra/base'
+
 module OpenNabaztag
   class Server < Sinatra::Base
 

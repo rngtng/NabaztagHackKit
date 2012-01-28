@@ -1,0 +1,89 @@
+// --------------- DNS 
+fun parsequ s i= let strfind s i "\0" 0 nil -> j in  j+5;;
+
+fun parsequs s i n=  if n<=0 then i else parsequs s parsequ s i n-1;;
+
+fun skipname s i=
+  let strgetword s i -> x in
+  if (x&0xc000)==0xc000 then i+2
+  else (strfind s i "\0" 0 nil)+1;;
+
+fun parseans s i n=
+  if n<=0 then nil
+  else let skipname s i -> j in
+  let strgetword s j -> typ in
+  if typ==1 then
+    strcatlist (itoa strget s j+10)::"."::(itoa strget s j+11)::"."::
+    (itoa strget s j+12)::"."::(itoa strget s j+13)::nil
+  else parseans s (j+10+strgetword s j+8) n-1;;
+
+fun parsemsg s=
+  let strgetword s 0 -> id in
+  let strgetword s 2 -> code in
+  let strgetword s 4 -> nbqu in
+  let strgetword s 6 -> nbans in
+  if nbans==0 then nil
+  else let parsequs s 12 nbqu -> i in
+  parseans s i nbans;;
+
+fun filterdns src=
+  let strfind src 0 "." 0 nil ->i in
+  if i!=nil then
+    strcat
+      strcat ctoa i strsub src 0 i
+      filterdns strsub src i+1 nil
+  else strcat ctoa strlen src src;;
+
+fun question id dns=
+  strcatlist (itobin2 id)::"\$01\$00\$00\$01\$00\$00\$00\$00\$00\$00"::(filterdns dns)::"\$00\$00\$01\$00\$01"::nil;;
+
+var dnsid=0;;
+
+type Dns=[idD domainD reqD timeoutD cbD];;
+var ldnsreq;;
+var ldns;;
+
+fun dnsreq domain cb=
+  set dnsid=if dnsid==nil then time_ms else dnsid+1;
+  let listswitchstr ldns domain -> ip in
+  if ip!=nil then call cb[ip]
+  else let dump question dnsid domain -> tramedns in
+  (
+    udpsend netip DNSLOCAL netdns 53 tramedns nil;
+    set ldnsreq=[idD:dnsid domainD:domain reqD:tramedns timeoutD:time+5 cbD:cb]::ldnsreq;
+    nil
+  );
+  0;;
+
+fun selectbyid d v= d.idD==v;;
+
+fun cbnetdns msg mac ipfrom=
+  let strgetword msg 0 -> id in
+  let parsemsg msg -> ip in
+  let hd select ldnsreq id #selectbyid -> x in
+  if x!=nil then
+  (
+    set ldnsreq=listrem ldnsreq x;
+    if ip!=nil then set ldns=[x.domainD ip]::ldns;  // ### attention à la taille de la liste
+    call x.cbD [ip]
+  );
+  0;;
+
+fun filterdnsdead l=if l!=nil then let hd l-> d in if d.timeoutD==nil then filterdnsdead tl l else (hd l)::filterdnsdead tl l;;
+
+fun dnstime=
+  for l=ldnsreq;l!=nil;tl l do let hd l-> d in
+  if time-d.timeoutD>=0 then
+  (
+    set d.timeoutD=nil;
+    call d.cbD [nil]
+  );
+  set ldnsreq=filterdnsdead ldnsreq;
+  0;;
+
+
+fun startdnsclient=
+  regudp DNSLOCAL #cbnetdns;
+  set ldnsreq=nil;
+  set ldns=nil;
+  0;;
