@@ -9,3 +9,5 @@ Simlie run `make`
 ## Disclamier
 
 Sources copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab/tree/master/bootcode/compiler/mtl_linux)
+
+Dummy task 'make install' added to enable gem inline install

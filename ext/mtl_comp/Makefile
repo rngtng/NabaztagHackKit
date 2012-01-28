@@ -7,7 +7,7 @@ SIMU_SRC=main_simu.c linux_simu.c linux_simuaudio.c linux_simunet.c vmem.c vload
 SIMU_OBJS=$(SIMU_SRC:.c=.o)
 
 CXXFLAGS=-DVSIMU -g3
-CFLAGS=-DVSIMU -g3  # -std=c99 
+CFLAGS=-DVSIMU -g3  # -std=c99
 
 CC=gcc
 CXX=g++
@@ -27,12 +27,15 @@ mtl_simu : vcomp/libvcomp.a $(COMMON_OBJS) $(SIMU_OBJS)
 	g++  $^ -o $@ vcomp/libvcomp.a
 #	g++  $^ -o $@ vcomp/*.o
 
-# .c.o:	
+# .c.o:
 # 	g++ -c $<
 
 # .cpp.o:
 # 	g++ -c -I/usr/include/wine/windows -I/usr/include/wine/msvcrt
-
 clean :
 	$(MAKE) -C vcomp clean
 	rm -f $(COMMON_OBJS) $(COMP_OBJS) $(SIMU_OBJS)
+
+install :
+	#nothing to do
+
