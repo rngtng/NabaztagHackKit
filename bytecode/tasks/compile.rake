@@ -2,17 +2,15 @@ require 'stringio'
 
 # http://rake.rubyforge.org/files/doc/rakefile_rdoc.html
 
-HOST   = "ssh-21560@warteschlange.de"
-REMOTE = "/kunden/warteschlange.de/.tmp/OpenJabNab/bootcode"
-COMP   = "compiler/mtl_linux/mtl_comp"
-SIMU   = "compiler/mtl_linux/mtl_simu"
-TMP    = "tmp.mtl"
-OUT    = "bytecode.bin"
-FILTER = "| grep -v 'bytes' | grep -e'[a-z]'"
+COMP       = "mtl_comp"
+SIMU       = "mtl_simu"
+TMP        = "tmp.mtl"
+OUT        = "bytecode.bin"
+FILTER     = "| grep -v 'bytes' | grep -e'[a-z]'"
 
 namespace :bytecode do
-  desc "Merge a file with its includes"
-  task :merge, [:file] do |t, args|
+  desc "Merge a file with its includes, pass filename via FILE="
+  task :merge do
     file = ENV['FILE'] || args[:file]
     dir = File.dirname(file)
     `rm #{TMP}`
@@ -26,10 +24,10 @@ namespace :bytecode do
     end
   end
 
-  desc "Merge and Compile a file"
-  task :compile, [:file, :filter] => :merge do |t, args|
+  desc "Merge and Compile a file, pass filename via FILE="
+  task :compile => :merge do
     filter_cmd = ENV['FILTER'] || args[:filter]
-    `#{REMOTE}/#{COMP} #{file} tmp.bin 2>&1 #{FILTER} #{filter_cmd}`
+    `#{COMP} #{file} #{OUT} 2>&1 #{FILTER} #{filter_cmd}`
   end
 
   desc "cleanup temporary files"
