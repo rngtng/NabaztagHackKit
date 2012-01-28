@@ -9,9 +9,7 @@ Gem::Specification.new do |s|
   s.email       = ["tobi@soundcloud.com"]
   s.homepage    = "https://github.com/rngtng/open_nabaztag"
   s.summary     = %q{Sinatra server to run custom Nabaztag bytecode}
-  s.description = %q{Sinatra server for Nabaztag v1/v2 to run your custom Nabaztag version. Sources + Compiler included (linux only)}
-
-  # s.rubyforge_project = "open_nabaztag"
+  s.description = %q{Sinatra server api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)}
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
@@ -21,7 +19,5 @@ Gem::Specification.new do |s|
 
   s.require_paths = ["lib"]
 
-  # specify any dependencies here; for example:
-  # s.add_development_dependency "rspec"
   s.add_runtime_dependency "sinatra"
 end

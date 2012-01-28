@@ -1,7 +1,6 @@
-# Simple Nabaztag Server Endpoint
+# Open Nabaztag
 
-Sinatra server for Nabaztag v1/v2 to run your custom Nabaztag version. Sources + Compiler included (linux only)
-
+Sinatra server api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)
 
 ## Nabaztag
 
