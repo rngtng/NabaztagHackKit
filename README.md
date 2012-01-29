@@ -1,6 +1,6 @@
-# Open Nabaztag
+# Nabaztag Hack Kit
 
-Sinatra server api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)
+Everything you need to hack the Rabbit: a sinatra server including simple api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)
 
 ## Nabaztag
 
@@ -22,23 +22,28 @@ As example and for my own purposes I implemented a simple API to deal with RFID,
 ### Input Devices
 
 #### RFID
+NabaztagInjector
+
 
 #### BUTTON
-
+Current Button has very basic functionality: a short press send HTTP Request of type `Log` to server, a long
+press foreces the bunny to restart.
 
 ### Output Devices
-For all outputdevices
+Data for all output devices are stored in buffers. Each device has two: one for ontime, imediate playback, another for permanet loops.
 
 #### LEDS
+Buffers 0 - 9, where 0-4 are used for onetime, and 5-9 for loop playback.
 
 #### EARS
-
+Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playback.
 
 
 
 ## Disclamer
 
-The server party was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb). Thanks!
+The server party was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from OpenJabNab.
+Thanks!
 
 
 ### Protocol

@@ -1,0 +1,22 @@
+#!/usr/bin/env ruby
+
+# Merge a file with its includes, pass filename as first argument
+
+TMP = ENV['TMP'] || '.tmp.mtl'
+
+unless ARGV.size == 1
+  puts "usage: #{File.basename(__FILE__)} [filename]"
+  abort
+end
+
+file = ARGV.first
+
+dir = File.dirname(file)
+File.open(TMP, 'w') do |out|
+  File.open(file).each_line do |line|
+    if line =~ /#include "([^"]+)"/
+      line = `cat #{dir}/#{$1}.mtl`
+    end
+    out.puts line
+  end
+end

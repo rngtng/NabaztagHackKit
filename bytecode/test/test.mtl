@@ -1,9 +1,10 @@
 proto main 0;;
 
-#include "lib/util"
-#include "pinnab"
+#include "../../ext/bytecode/lib/util"
+#include "../lib/data_helper"
+#include "../lib/buffer"
 
-#include "test/helper"
+#include "./helper"
 
 //-------------------- MAIN
 fun main=
