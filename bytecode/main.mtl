@@ -40,20 +40,28 @@ fun evalTrame res=
       for l = bufferlist; l != nil; tl l do
       (
         let hd l -> [code val] in
-        if code == 1 then
+        if code == 12 then // OK
+        (
+          0
+        )
+        else if code == 16 then // (RE) INIT
         (
           earsInit;
           0
         )
-        else if code == 2 then
+        else if code == 17 then // LOG
         (
           httprequest "POST" logUrl (strcat "logs=" logs) #_cbdummyhttp HTTP_NORMAL;
           set logs = "";
           0
         )
-        else if code == 9 then
+        else if code == 18 then // ERROR
         (
-          exit //reboot
+          0
+        )
+        else if code == 19 then // REBOOT
+        (
+          exit
         )
         // led buffers: short 20-24 loop 25-29; 3Byte: short 30-34 loop 35-39
         else if code >= 20 && code <= 39 then

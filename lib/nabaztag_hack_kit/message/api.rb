@@ -1,11 +1,13 @@
 module NabaztagHackKit
   module Message
     module Api
-      OK     = 2
-      INIT   = 6
-      LOG    = 7
-      ERROR  = 8
-      REBOOT = 9
+      # 0 - 10 reserved for violet backwards compatibility
+
+      OK     = 12
+      INIT   = 16
+      LOG    = 17
+      ERROR  = 18
+      REBOOT = 19
 
       LED_0  = 20
       LED_1  = 21
@@ -27,7 +29,11 @@ module NabaztagHackKit
       B = 2
 
       def rgb(values)
+        values.map do |value|
+          Message.to_3b(value)
+        end.flatten
       end
+
     end
   end
 end

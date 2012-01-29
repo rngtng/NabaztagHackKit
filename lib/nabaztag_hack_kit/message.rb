@@ -17,7 +17,7 @@ module NabaztagHackKit
     module_function(:build)
 
     def to_3b(int)
-      [int >> 16, (int >> 8) & 0xFF, int & 0xFF]
+      [int >> 16, int >> 8, int].map { |i| i & 0xFF }
     end
     module_function(:to_3b)
 

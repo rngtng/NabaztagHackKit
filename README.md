@@ -4,18 +4,67 @@ Everything you need to hack the Rabbit: a sinatra server including simple api fr
 
 ![](http://travis-ci.org/rngtng/NabaztagHackKit.png)
 
-## Nabaztag
+## Getting Started
 
-### Compile
+### Compile & Run
 
-### Custom bytecode
+The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. On a linux machine those binaries are compiled on instalation of the gem. Following three binaries are available:
 
- - doc
- - command list
+#### mtl_merge
 
-### Test
+Merges multiple `*.mtl` files into one. Files are included like in C: `#include "<relative path to file>"`. Output is temporary file `.tmp.mtl`.
+
+#### mtl_comp
+
+Compiles a `*.mtl` file. It calls `mtl_merge` before, and fallbacks to remote compiler in case binary is not found and `HOST` is given.
+
+#### mtl_simu
+
+Runs a `*.mtl` file. It calls `mtl_merge` before, and fallbacks to remote simulator in case binary is not found and `HOST` is given.
+
+
+### Understanding the Bytecode
+
+The bytecode is written in a custom language by Sylvain Huet. Its referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Check directory `ext/bytecode/` which contains a basic overview & documentaion as well as a list of (common) commands. A good reference is the original bytecode, included in the directory as well. Major parts got extracted into seperate files, found in `lib/` directory and ready to be included in your code.
+
+### Testing
+
+The kit includes a simple test framework to test custom bytecode. See `test/bytecode/test.mtl`. A typical test looks like this:
+
+```c
+ let test "<test name>" -> t in
+  (
+    //assertions
+    assert_equalI 0   10 - (2* 5);
+  0);
+```
+
+The framework offers assertions similar to ruby tunit stile. Mind that the variable type has to be given
+explicit. Convertion is:
+
+  * I = interger
+  * S = string
+  * L = list
+  * T = tab
+
+Following assertions are available:
+
+  * assert_equalI I I
+  * assert_equalI S S
+  * assert_nil I
+  * assert_equalIL
+  * assert_equalSL
+  * assert_equalTL
+
 
 ## Server
+
+The Server is the communication endpoint for the rabbit. Its two main purposes are:
+
+  1. serving the bytecode on bootup
+  2. receive and respond to HTTP requests in a defined format.
+
+To start the server, run shortcut `rake run` or, as it's based on rack, `rackup -p <portnumer>`.
 
 
 ## API

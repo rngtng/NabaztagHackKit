@@ -1,10 +1,19 @@
 require 'sinatra/base'
 
+require 'nabaztag_hack_kit/message'
+require 'nabaztag_hack_kit/message/api'
+
 module NabaztagHackKit
   class Server < Sinatra::Base
+    include Message::Api
+
+    def initialize(bytecode_path = nil)
+      super
+      @bytecode_path = bytecode_path || File.join('public', 'bytecode.bin')
+    end
 
     def send_nabaztag(*data)
-      NabaztagHackKit::Message.build(*data)
+      Message.build(*data)
     end
 
     def parse_log(logs)
@@ -20,17 +29,16 @@ module NabaztagHackKit
       end
     end
 
-    get '/vl/bc.jsp' do
-      #recompile
-      puts "bootcode #{@@reboot}"
-      send_file File.join('public', 'bootcode', 'bootcode.bin')
+    get '/bc.jsp' do
+      # TODO recompile if changed
+      send_file @bytecode_path
     end
 
     get '/vl/button.jsp' do
       send_nabaztag EAR_L => [12,0,16,0,16,0,16,0]
     end
 
-    get '/vl/log.jsp' do
+    post '/vl/log.jsp' do
       @logs = parse_log params[:logs]
       puts "#########################"
       puts @logs.join("\n")

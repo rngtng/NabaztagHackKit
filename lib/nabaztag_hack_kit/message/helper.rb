@@ -13,11 +13,25 @@ module NabaztagHackKit
       alias_method :sl, :rp #sleep
 
       #knight rider
-      def kr(color = 0xFF, led1 = LED_L1, led2 = LED_L2, led3 = LED_L3)
+      def kr(color = 0xFF, led1 = Api::LED_L1, led2 = Api::LED_L2, led3 = Api::LED_L3)
         {
           led1 => [color,0,0,0],
           led2 => [0,color],
           led3 => [0,0,color,0]
+        }
+      end
+
+      def fire(color = 0x110000, led1 = Api::LED_L1, led2 = Api::LED_L2, led3 = Api::LED_L3)
+        data = Array.new(16) do |i|
+          Message.to_3b(i * color)
+        end + Array.new(8) do |i|
+          Message.to_3b((15-i) * 2 * color)
+        end
+
+        {
+          (led1+10) => data + [0,0,0] + [0,0,0],
+          (led2+10) => [0,0,0] + data + [0,0,0],
+          (led3+10) => [0,0,0] + [0,0,0] + data
         }
       end
     end

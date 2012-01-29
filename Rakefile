@@ -5,6 +5,13 @@ RSpec::Core::RakeTask.new("unit") do |t|
   t.pattern = "./test/**/*_spec.rb" # don't need this, it's default.
 end
 
+namespace :test do
+  desc "Test bytcode"
+  task :bytecode do
+    puts `bin/mtl_simu test/bytecode/test.mtl`
+  end
+end
+
 task :test => [:unit]
 task :default => :test
 
