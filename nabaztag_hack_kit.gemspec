@@ -19,5 +19,11 @@ Gem::Specification.new do |s|
 
   s.require_paths = ["lib"]
 
-  s.add_runtime_dependency "sinatra"
+  ["sinatra"].each do |gem|
+    s.add_dependency *gem.split(' ')
+  end
+
+  ["rake", "rspec"].each do |gem|
+    s.add_development_dependency *gem.split(' ')
+  end
 end

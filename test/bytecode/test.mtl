@@ -1,15 +1,13 @@
 proto main 0;;
 
 #include "../../ext/bytecode/lib/util"
-#include "../lib/data_helper"
-#include "../lib/buffer"
+#include "../../bytecode/lib/data_helper"
+#include "../../bytecode/lib/buffer"
 
 #include "./helper"
 
 //-------------------- MAIN
 fun main=
-  //include "test/native"
-  //include "test/pinnab"
 
   let test "strcmp" -> t in
   (
@@ -42,8 +40,6 @@ fun main=
     assert_equalS "\0"     ctoa 0;
     assert_equalS "\51"    ctoa 51;
     assert_equalS "\255"   ctoa 255;
-    //assert_equalS "\1\0"   ctoa 256;  // max char is 255
-    //assert_equalS "\255\00" ctoa 25500;
   0);
 
   let test "webmac" -> t in
