@@ -1,0 +1,33 @@
+//###############################################
+//------------------ LED ----------------------
+
+const LED_CHECK_FQ = 500;; //ms MIN 50ms
+var led_last_check = 0;;
+
+fun ledBufferRead index=
+  let bufferRead index -> color in
+  let buffers.index -> buffer in
+  if color != nil && buffer.stepB == 1 then
+    ItoCO color
+  else
+    color
+;;
+
+fun setLeds=
+   //LED_CHECK_FQ
+  let (button3 + 1) * 3 -> led_check_fq in
+  if ((time_ms - led_last_check) > led_check_fq) then
+  (
+    for index = 0; index < 5; index + 1 do
+    (
+      let ledBufferRead index+5 -> loopColor in
+      let ledBufferRead index -> color in
+      (
+        if color == nil then set color = loopColor;
+        if color == nil then set color = 0;
+        led index color
+      )
+    );
+    set led_last_check = time_ms
+  )
+;;

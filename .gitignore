@@ -3,6 +3,5 @@
 Gemfile.lock
 pkg/*
 .rvmrc
-*.mtl
 *.bin
 *.o

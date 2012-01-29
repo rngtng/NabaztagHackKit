@@ -1,10 +1,10 @@
 require 'sinatra/base'
 
-module OpenNabaztag
+module NabaztagHackKit
   class Server < Sinatra::Base
 
     def send_nabaztag(*data)
-      OpenNabaztag::Message.build(*data)
+      NabaztagHackKit::Message.build(*data)
     end
 
     def parse_log(logs)

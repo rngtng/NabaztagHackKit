@@ -1,4 +1,4 @@
-module OpenNabaztag
+module NabaztagHackKit
   module Message
     module Api
       OK     = 2

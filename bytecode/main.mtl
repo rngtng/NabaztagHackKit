@@ -1,0 +1,121 @@
+// VLISP - Jan 2012
+
+proto main 0;;
+proto earsInit 0;;
+
+#include "../ext/bytecode/lib/var"
+#include "../ext/bytecode/lib/util"
+#include "../ext/bytecode/lib/cfg"
+#include "../ext/bytecode/lib/arp"
+#include "../ext/bytecode/lib/udp"
+#include "../ext/bytecode/lib/tcp"
+#include "../ext/bytecode/lib/dns"
+#include "../ext/bytecode/lib/http"
+#include "../ext/bytecode/lib/dhcp"
+#include "lib/data_helper"
+#include "lib/buffer"
+#include "../ext/bytecode/lib/wifi"
+
+//-------------------- HTTP
+fun playerUrl tag=
+  strcatlist confGetServerUrl::"/players/"::(webmac tag)::".jsp"::nil;;
+
+fun eventUrl data=
+  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::data::nil;;
+
+fun buttonUrl data=
+  strcatlist confGetServerUrl::"/vl/button.jsp?"::data::nil;;
+
+fun logUrl=
+  strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
+
+fun _cbdummyhttp http res=
+  0
+;;
+
+fun evalTrame res=
+  let parseResponse httpgetcontent res -> bufferlist in
+    if bufferlist != nil then
+    (
+      for l = bufferlist; l != nil; tl l do
+      (
+        let hd l -> [code val] in
+        if code == 1 then
+        (
+          earsInit;
+          0
+        )
+        else if code == 2 then
+        (
+          httprequest "POST" logUrl (strcat "logs=" logs) #_cbdummyhttp HTTP_NORMAL;
+          set logs = "";
+          0
+        )
+        else if code == 9 then
+        (
+          exit //reboot
+        )
+        // led buffers: short 20-24 loop 25-29; 3Byte: short 30-34 loop 35-39
+        else if code >= 20 && code <= 39 then
+        (
+          let code % 10 -> index in
+          let 2 * (code / 30) + 1 -> step in
+          let index / 5 -> loop in
+          _bufferFill index step loop val;
+          0
+        )
+        // ear buffers: short 40-41, loop 42-43
+        else if code >= 40 && code <= 43 then
+        (
+          let code % 10 -> index in
+          let 1 -> step in
+          let index / 2 -> loop in
+          _bufferFill index+10 step loop val;
+          0
+        )
+      )
+    )
+;;
+
+fun _cbHttp http res=
+  evalTrame res;
+  0
+;;
+
+//inputs
+#include "lib/rfid"
+#include "lib/button"
+
+//outputs
+#include "lib/led"
+#include "lib/ear"
+
+//###############################################
+//-------------------- LOOP ---------------------
+fun loop=
+  wifiRun;
+  wifiCheck;
+
+  //checkRFID;
+  checkButton;
+  setLeds;
+  earRead 0;
+  earRead 1;
+0;;
+
+//###############################################
+//-------------------- MAIN ---------------------
+fun main=
+  confInit;
+  wifiInit 0;
+  buffersInit 14;
+  earsInit;
+
+  loopcb #loop; // 20 p. second
+
+  netstart;
+  startdnsclient;
+
+  sndVol 0;
+  srand time_ms;
+0;;

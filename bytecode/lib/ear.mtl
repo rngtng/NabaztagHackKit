@@ -1,0 +1,90 @@
+//###############################################
+//------------------- EAR -----------------------
+
+var ears;;
+const EAR_INIT     = nil;;
+const EAR_STOP     = 0;;
+const EAR_FORWARD  = 1;;
+const EAR_BACKWARD = -1;;
+const EAR_TICKS    = 17;;
+
+type EAR=[dir pos shouldPos lastOffset lastTime lastTime2 lastRead];;
+
+fun earNorm norm=
+  (EAR_TICKS + norm) % EAR_TICKS
+;;
+
+fun earBufferRead index=
+  let bufferRead index+10 -> earPos in
+  (
+  if earPos != nil then
+    set earPos = earNorm earPos;
+  earPos
+  )
+;;
+
+fun earRead index=
+  let ears.index -> ear in
+  let time_ms -> currentTime in
+  (
+    let motorget index -> currentOffset in
+    let (currentOffset - ear.lastOffset) -> diff in
+    (
+      if diff > 0 then //ear moved
+      (
+        // update pos
+        if ear.pos != EAR_INIT then
+        let ear.dir -> direction in
+        (
+          if direction == 0 then set direction = 1; //manual moved!!
+          set ear.pos = earNorm ear.pos + direction * diff
+        );
+
+        // check for reset Reset
+        let currentTime - ear.lastTime -> lastDuration in
+        let currentTime - ear.lastTime2 -> totalDuration in
+        if ear.dir != EAR_STOP && lastDuration > 1000 && totalDuration < 1450 then
+        (
+           set ear.pos = earNorm (ear.dir - 1) / 2; // either 0 or 16
+           bufferFill 0 "\100";
+           log "reset" {index lastDuration totalDuration ear.dir ear.pos}
+        );
+        log "moved" {index ear.lastTime ear.lastTime2 ear.lastRead ear.pos ear.shouldPos ear.dir };
+
+        set ear.lastTime2 = ear.lastTime;
+        set ear.lastTime = currentTime
+      );
+      set ear.lastOffset = currentOffset
+    );
+
+    // check  & read new value
+    if (ear.pos != EAR_INIT) && (ear.pos == ear.shouldPos) && (currentTime - ear.lastRead) > 270 then
+    (
+      let earBufferRead index -> earPos in
+      (
+        if earPos == nil then set earPos = earBufferRead index+2;
+        if earPos == nil then set earPos = ear.pos;
+        set ear.shouldPos = earPos;
+        set ear.dir = earNorm ear.shouldPos - ear.pos;
+        if ear.dir > 8 then set ear.dir = -1;
+        if ear.dir > 0 then set ear.dir = 1;
+        motorset index ear.dir;
+
+        set ear.lastRead = currentTime
+
+        // log "ear read" {index time_ms earPos ear.pos ear.shouldPos}
+      )
+    )
+  )
+;;
+
+fun earsInit=
+  let time_ms -> currentT in
+  (
+    set ears = tabnew nil 2;
+    set ears.0 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
+    set ears.1 = [dir:EAR_FORWARD pos:EAR_INIT shouldPos:0 lastTime:currentT lastTime2:currentT];
+    motorset 0 1;
+    motorset 1 1
+  );
+0;;

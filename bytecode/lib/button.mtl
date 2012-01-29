@@ -1,0 +1,27 @@
+//###############################################
+//------------------- Button --------------------
+
+const BUTTON_REBOOT = 30;; //ms MIN 50ms
+var button_pressed  = 0;;
+fun checkButton=
+  if (button2 > 0) then
+  (
+    set button_pressed = button_pressed + 1;
+    if button_pressed == 1 then
+    (
+      httprequest "GET" buttonUrl (itoa time_ms) "" #_cbHttp HTTP_NORMAL;
+      0
+    ) else if button_pressed == BUTTON_REBOOT then
+    (
+      buffersFill 0 4 "\0\255\0\255\0\255\255\255"
+    )
+  )
+  //reboot only when button not pressed, otherwise we get into setup mode
+  else if button_pressed > BUTTON_REBOOT then
+  (
+    exit
+  )
+  else (
+    set button_pressed = 0
+  )
+;;

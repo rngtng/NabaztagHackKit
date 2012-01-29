@@ -1,0 +1,50 @@
+//###############################################
+//--------------- RFID ------------------------
+
+const RFID_CHECK_FQ  = 500;; //ms MIN 50ms
+const RFID_STOP_BYTE = 0xFF;;
+const RFID_ID_START  = "\208\2\26";; // 0xd0 0x02 0x1a
+const RFID_ID_FALSE  = "\0\0\0\0\0\0\0\0\v";;
+const RFID_ID_ERROR  = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
+
+var rfid_last_check  = 0;;
+var rfid_data        = "";;
+
+fun checkRFID=
+  if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
+  (
+    let rfidGet -> rfid in
+    if (rfid != nil) then
+    (
+      if ((strstr rfid RFID_ID_START 0) == 0) then
+      (
+        httprequest "PUT" playerUrl rfid "" #_cbHttp HTTP_NORMAL;
+        0
+      )
+      else if ((strstr rfid RFID_ID_FALSE 0) == 0) then
+      (
+        0
+      )
+      else
+      (
+        let strlen rfid -> len in //usually that's 8
+        for index = 0; index < len; index + 1 do
+        (
+          let strget rfid index -> data_byte in
+          (
+            if (data_byte != RFID_STOP_BYTE) then
+              set rfid_data = strcat rfid_data ctoh data_byte
+            else if ((strlen rfid_data) > 0) then
+            (
+              httprequest "POST" eventUrl rfid_data "" #_cbHttp HTTP_NORMAL;
+              set rfid_data = ""
+            )
+          )
+        );
+        0
+      )
+    );
+    //all done
+    set rfid_last_check = time_ms
+  );
+0;;
