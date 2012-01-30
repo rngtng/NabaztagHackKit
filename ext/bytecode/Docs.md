@@ -435,16 +435,15 @@ Random notes of stuff I came accross while developing
 ### Leds
 Thank god it's RGB: Led 0 - 4, Color RGB
 
-```
-  led 0 0x000000; //black
-  led 0 0x0000FF; //blue
-  led 0 0x00FF00; //green
-  led 0 0xFF0000; //red
-  led 0 0xFFFF00; //yellow
-  led 0 0xFF00FF; //lila
-  led 0 0x00FFFF; //cyan
-  led 0 0xFFFFFF; //white
-```
+    led 0 0x000000; //black
+    led 0 0x0000FF; //blue
+    led 0 0x00FF00; //green
+    led 0 0xFF0000; //red
+    led 0 0xFFFF00; //yellow
+    led 0 0xFF00FF; //lila
+    led 0 0x00FFFF; //cyan
+    led 0 0xFFFFFF; //white
+
 
 ### Ears
 
@@ -457,32 +456,33 @@ Thank god it's RGB: Led 0 - 4, Color RGB
 `proto main 0;;` needs to be declared on top
 
 Minimal func:
-```
-  fun main=
-    confInit;
-    wifiInit 0;
-    loopcb #loop; // 20 p. second
 
-    netstart;
-    srand time_ms;
-    0
-  ;;
-```
+
+    fun main=
+      confInit;
+      wifiInit 0;
+      loopcb #loop; // 20 p. second
+
+      netstart;
+      srand time_ms;
+      0
+    ;;
+
 
 ### Metal Examples
+
 Example:
 
-```
-  type MySum= Zero | Const _ | Add _ | Mul _ ;;
+    type MySum= Zero | Const _ | Add _ | Mul _ ;;
 
-  fun eval z=
-    match z with
-    ( Zero -> 0)
-   |( Const a -> a)
-   |( Add [x y] -> (eval x)+(eval y))
-   |( Mul [x y] -> (eval x)*(eval y)) ;;
+    fun eval z=
+      match z with
+      ( Zero -> 0)
+     |( Const a -> a)
+     |( Add [x y] -> (eval x)+(eval y))
+     |( Mul [x y] -> (eval x)*(eval y)) ;;
 
-  Iecholn eval Add [Const 1 Mul [Const 2 Const 3]]; // -> 1 + 2 * 3 -> 7
-```
+    Iecholn eval Add [Const 1 Mul [Const 2 Const 3]]; // -> 1 + 2 * 3 -> 7
+
 
 See test for more.
