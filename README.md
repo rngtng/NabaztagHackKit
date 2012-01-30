@@ -25,7 +25,7 @@ Runs a `*.mtl` file. It calls `mtl_merge` before, and fallbacks to remote simula
 
 ### Understanding the Bytecode
 
-The bytecode is written in a custom language by Sylvain Huet. Its referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Check directory `ext/bytecode/` which contains a basic overview & documentaion as well as a list of (common) commands. A good reference is the original bytecode, included in the directory as well. Major parts got extracted into seperate files, found in `lib/` directory and ready to be included in your code.
+The bytecode is written in a custom language by Sylvain Huet. It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Check directory `ext/bytecode/` which contains a basic overview & documentaion as well as a list of (common) commands. A good reference is the original bytecode, included in the directory as well. Major parts got extracted into seperate files, found in `lib/` directory and ready to be included in your code.
 
 ### Testing
 
@@ -39,8 +39,8 @@ The kit includes a simple test framework to test custom bytecode. See `test/byte
   0);
 ```
 
-The framework offers assertions similar to ruby tunit stile. Mind that the variable type has to be given
-explicit. Convertion is:
+The framework offers assertions similar to [Ruby Test::Unit](http://ruby-doc.org/stdlib-1.9.3/libdoc/test/unit/rdoc/Test/Unit.html) style. Mind that the variable type has to be given
+explicit. Convention is:
 
   * I = interger
   * S = string
@@ -93,7 +93,7 @@ Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playba
 
 ## Disclamer
 
-The server party was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from OpenJabNab.
+The server part was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from OpenJabNab.
 Thanks!
 
 
