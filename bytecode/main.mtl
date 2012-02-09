@@ -104,7 +104,7 @@ fun loop=
   wifiRun;
   wifiCheck;
 
-  //checkRFID;
+  checkRFID;
   checkButton;
   setLeds;
   earRead 0;
