@@ -1,7 +1,7 @@
 //###############################################
 //--------------- RFID ------------------------
 
-const RFID_CHECK_FQ  = 500;; //ms MIN 50ms
+const RFID_CHECK_FQ  = 200;; //ms MIN 50ms
 const RFID_STOP_BYTE = 0xFF;;
 const RFID_ID_START  = "\208\2\26";; // 0xd0 0x02 0x1a
 const RFID_ID_FALSE  = "\0\0\0\0\0\0\0\0\v";;
