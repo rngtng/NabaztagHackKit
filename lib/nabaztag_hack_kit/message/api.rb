@@ -25,6 +25,11 @@ module NabaztagHackKit
       EAR_LL = 42
       EAR_LR = 43
 
+      REC_START = 50
+      REC_STOP  = 51
+
+      BMP = 60
+
       F = 1
       B = 2
 

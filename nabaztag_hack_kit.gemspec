@@ -23,7 +23,7 @@ Gem::Specification.new do |s|
     s.add_dependency *gem.split(' ')
   end
 
-  ["rake", "rspec"].each do |gem|
+  ["rake", "rspec", "rack-test"].each do |gem|
     s.add_development_dependency *gem.split(' ')
   end
 end

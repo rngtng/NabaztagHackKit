@@ -1,6 +1,12 @@
 //###############################################
 //---------------------- Buffer -------------------------------
 
+// #### LEDS
+//  Buffers 0 - 9, where 0-4 are used for onetime, and 5-9 for loop playback.
+
+// #### EARS
+// Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playback.
+
 var buffers;;
 type BUFFER=[valB stepB lenB posB loopB];;
 

@@ -1,0 +1,74 @@
+var lrec;;
+var recording=0;;
+
+fun sqrt_ i i0 i1=
+  let (i0+i1)>>1 -> m in
+  if m==i0 then i0
+  else if m*m>i then sqrt_ i i0 m else sqrt_ i m i1;;
+fun sqrt i=sqrt_ i 0 256;;
+
+var buff;;
+var buffx;;
+var buffy;;
+
+fun _cbrec s=
+  let 255-(Iecholn sqrt recVol s 0) -> vol in
+  let 255-((vol*vol)>>8) -> vol in
+  let vol<<16 -> vol in
+  (
+    led 1 vol; led 2 vol; led 3 vol
+  );
+  set lrec=s::lrec;
+  0;;
+
+fun itobin4 i=
+  let strnew 4 -> s in
+  (
+    strset s 0 i;
+    strset s 1 i>>8;
+    strset s 2 i>>16;
+    strset s 3 i>>24;
+    s
+  );;
+
+fun liststrlen l r= if l==nil then r else liststrlen tl l r+strlen hd l;;
+
+fun mkriff ldata=
+  // Secho "mkriff len=";
+  let Iecholn liststrlen ldata 0 -> len in
+  (strcatlist "RIFF"::(itobin4 len+52)::"WAVEfmt \$14\0\0\0\$11\0\1\0\$40\$1f\0\0\$d7\$0f\0\0\0\1\4\0\2\0\$f9\01"::
+  "fact\4\0\0\0"::(itobin4 (len>>8)*505)::"data"::(itobin4 len)::nil)::ldata
+;;
+
+fun recriff =
+  // rev -> reverse list
+  let mkriff rev lrec nil -> res in
+  (
+    set lrec=nil;
+    res
+  )
+;;
+
+fun recordingStart =
+  recStop;
+  loopBufferFill 9 "\0\200";
+  set recording = 1;
+  set lrec = nil;
+  recStart 8000 0 #_cbrec
+;;
+
+fun httprequestBinary url postdata cb type=
+  httprequestRaw "POST" url "Content-Type:application/octet-stream\13\nContent-Disposition: attachment;filename=recording\13\nContent-Transfer-Encoding: binary\13\n" postdata cb type
+;;
+
+fun recordingStop =
+  set recording = 0;
+  recStop;
+  loopBufferFill 9 "\0";
+  let recriff -> wavfile in
+  (
+    httprequestBinary recordUrl strcatlist wavfile #_cbHttp HTTP_NORMAL;
+    0
+  )
+;;
+

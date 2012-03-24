@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+
+$LOAD_PATH.unshift ::File.expand_path(::File.dirname(__FILE__) + '/lib')
+require './server'
+
+use Rack::Reloader, 0
+
+ECHONEST_CFG = {
+  :key => "",
+}
+
+SOUNDCLOUD_CFG = {
+  :client_id      => "",
+  :client_secret  => "",
+  :username       => "",
+  :password       => "",
+}
+
+run Record::Server.new(ECHONEST_CFG, SOUNDCLOUD_CFG)

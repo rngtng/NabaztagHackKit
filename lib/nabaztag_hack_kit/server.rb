@@ -3,6 +3,7 @@ require 'sinatra/base'
 require 'nabaztag_hack_kit/message'
 require 'nabaztag_hack_kit/message/api'
 
+
 module NabaztagHackKit
   class Server < Sinatra::Base
     include Message::Api
@@ -29,14 +30,26 @@ module NabaztagHackKit
       end
     end
 
+    def callback(action, params, request)
+      if callback = @callbacks[:action]
+        send(callback, params, request)
+      else
+
+        send_nabaztag OK
+      end
+    end
+
     get '/bc.jsp' do
       # TODO recompile if changed
       send_file @bytecode_path
     end
 
-    get '/vl/button.jsp' do
-      send_nabaztag EAR_L => [12,0,16,0,16,0,16,0]
-    end
+    # post '/vl/recording.jsp' do
+    #   File.open("rec.wav", "w+") do |f|
+    #     f.write request.body.read
+    #   end
+    #   callback('recording', :file => "rec.wav")
+    # end
 
     post '/vl/log.jsp' do
       @logs = parse_log params[:logs]
@@ -44,6 +57,14 @@ module NabaztagHackKit
       puts @logs.join("\n")
       puts "#########################"
       send_nabaztag OK
+    end
+
+    get '/vl/:action.jsp' do
+      callback(params[:action], params, request)
+    end
+
+    post '/vl/:action.jsp' do
+      callback(params[:action], params, request)
     end
   end
 

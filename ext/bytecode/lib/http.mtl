@@ -30,7 +30,9 @@ fun httpsendreq ip x=
  	);
  	0;;
 
-fun httprequest verb url postdata cb type=
+fun httprequestRaw verb url header postdata cb type=
+  //set postdata = strcatlist "--AaB03x\13\ncontent-disposition: form-dataContent-Transfer-Encoding: binary\13\n\13\n"::postdata::"\13\n--AaB03x--"::nil;
+  // Content-Type:application/octet-stream\13\nContent-Disposition: attachment;filename=recording\13\nContent-Transfer-Encoding: binary\13\n
   let cuturl url ->[host port path] in
   //let if confGetProxy then strcatlist "http://"::host::":"::(itoa port)::path::nil else path -> path in //Icy-MetaData:1\13\n
   //let if confGetProxy then webip confGetProxyip else host -> host in
@@ -38,12 +40,11 @@ fun httprequest verb url postdata cb type=
 
   let strcatlist verb::" "::path::" HTTP/1.0\13\nUser-Agent: MTL\13\nPragma: no-cache\13\nIcy-MetaData:1\13\nHost: "::host::"\13\n"::
       if postdata==nil then "\13\n"::nil
-      else "Content-length: "::(itoa strlen postdata)::"\13\n\13\n"::postdata::nil
+      else header::"Content-length: "::(itoa strlen postdata)::"\13\n\13\n"::postdata::nil
     -> request in  // création de la chaîne requête
 
   let [outputH:request indexH:0 cbH:cb typeH:type stateH:HTTP_SOLVE aliveH:time_ms] -> httpreq in  // création de la structure requête
   (
-//    Secho "HTTPREQUEST host =";Secholn host;
     if isip host 0 then httpsendreq host [port httpreq]
     else
     (
@@ -53,6 +54,9 @@ fun httprequest verb url postdata cb type=
     httpreq  // on retourne la structure requête pour pouvoir éventuellement l'interrompre en cours de route
   );;
 
+fun httprequest verb url postdata cb type=
+  httprequestRaw verb url "" postdata cb type
+;;
 
 var http_sep="\13\n\13\n";;  // séparateur entre l'en-tête et le corps de la réponse à une requête
 

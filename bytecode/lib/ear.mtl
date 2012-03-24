@@ -46,10 +46,10 @@ fun earRead index=
         if ear.dir != EAR_STOP && lastDuration > 1000 && totalDuration < 1450 then
         (
            set ear.pos = earNorm (ear.dir - 1) / 2; // either 0 or 16
-           bufferFill 0 "\100";
-           log "reset" {index lastDuration totalDuration ear.dir ear.pos}
+           bufferFill 0 "\100"
+           // log "reset" {index lastDuration totalDuration ear.dir ear.pos}
         );
-        log "moved" {index ear.lastTime ear.lastTime2 ear.lastRead ear.pos ear.shouldPos ear.dir };
+        // log "moved" {index ear.lastTime ear.lastTime2 ear.lastRead ear.pos ear.shouldPos ear.dir };
 
         set ear.lastTime2 = ear.lastTime;
         set ear.lastTime = currentTime

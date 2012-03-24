@@ -19,7 +19,9 @@ fun checkButton=
   //reboot only when button not pressed, otherwise we get into setup mode
   else if button_pressed > BUTTON_REBOOT then
   (
-    exit
+    httprequest "GET" startUrl "" #_cbHttp HTTP_NORMAL;
+    set button_pressed = 0;
+    0
   )
   else (
     set button_pressed = 0

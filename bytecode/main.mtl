@@ -2,6 +2,7 @@
 
 proto main 0;;
 proto earsInit 0;;
+proto evalTrame 1;;
 
 #include "../ext/bytecode/lib/var"
 #include "../ext/bytecode/lib/util"
@@ -16,6 +17,10 @@ proto earsInit 0;;
 #include "lib/buffer"
 #include "../ext/bytecode/lib/wifi"
 
+var recordingStartedAt = 0;;
+var bmp = 0;;
+var recSeconds = 0;;
+
 //-------------------- HTTP
 fun playerUrl tag=
   strcatlist confGetServerUrl::"/players/"::(webmac tag)::".jsp"::nil;;
@@ -29,9 +34,25 @@ fun buttonUrl data=
 fun logUrl=
   strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
 
+fun recordUrl =
+  strcatlist confGetServerUrl::"/vl/recording.jsp"::nil
+;;
+
+fun startUrl =
+  strcatlist confGetServerUrl::"/vl/start.jsp"::nil
+;;
+
+
 fun _cbdummyhttp http res=
   0
 ;;
+
+fun _cbHttp http res=
+  evalTrame res;
+  0
+;;
+
+#include "lib/record"
 
 fun evalTrame res=
   let parseResponse httpgetcontent res -> bufferlist in
@@ -81,22 +102,41 @@ fun evalTrame res=
           _bufferFill index+10 step loop val;
           0
         )
+        // recodring
+        else if code == 50 then
+        (
+          set recSeconds = strget val 0;
+          set recSeconds = 1000 * recSeconds;
+          recordingStart;
+          set recordingStartedAt = time_ms
+        )
+        else if code == 51 then
+        (
+          recordingStop
+        )
+        else if code == 60 then
+        (
+          led 0 0;
+          set bmp = strget val 0;
+          if bmp > 0 then
+          (
+            set bmp = 60000 / bmp
+          )
+        )
       )
     )
 ;;
 
-fun _cbHttp http res=
-  evalTrame res;
-  0
-;;
-
 //inputs
-#include "lib/rfid"
+// #include "lib/rfid"
 #include "lib/button"
 
 //outputs
 #include "lib/led"
 #include "lib/ear"
+
+var n = 0;;
+var last = 0;;
 
 //###############################################
 //-------------------- LOOP ---------------------
@@ -104,11 +144,37 @@ fun loop=
   wifiRun;
   wifiCheck;
 
-  checkRFID;
+  // checkRFID;
   checkButton;
+
   setLeds;
   earRead 0;
   earRead 1;
+
+  if button3 > 254 then
+  (
+    exit
+  );
+
+  if recording == 1 && recSeconds > 0 && (time_ms - recordingStartedAt) > recSeconds  then
+  (
+    recordingStop
+  );
+
+  if bmp > 0 && time_ms - last > bmp then
+  (
+    if n > 10 then
+    (
+      set n = 0
+    )
+    else
+    (
+      set n = 255
+    );
+    led 0 n;
+    set last = time_ms;
+    0
+  );
 0;;
 
 //###############################################
