@@ -9,7 +9,7 @@ fun checkButton=
     set button_pressed = button_pressed + 1;
     if button_pressed == 1 then
     (
-      httprequest "GET" buttonUrl (itoa time_ms) "" #_cbHttp HTTP_NORMAL;
+      httprequest "GET" buttonPressedUrl button_pressed "" #_cbHttp HTTP_NORMAL;
       0
     ) else if button_pressed == BUTTON_REBOOT then
     (
@@ -19,8 +19,9 @@ fun checkButton=
   //reboot only when button not pressed, otherwise we get into setup mode
   else if button_pressed > BUTTON_REBOOT then
   (
-    httprequest "GET" startUrl "" #_cbHttp HTTP_NORMAL;
-    set button_pressed = 0;
+    // httprequest "GET" startUrl "" #_cbHttp HTTP_NORMAL;
+    //set button_pressed = 0;
+    exit;
     0
   )
   else (

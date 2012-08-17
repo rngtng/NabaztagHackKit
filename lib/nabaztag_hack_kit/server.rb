@@ -14,6 +14,7 @@ module NabaztagHackKit
     def initialize(bytecode_path = nil)
       super
       @bytecode_path = bytecode_path || File.join('public', 'bytecode.bin')
+      @@callbacks    = {}
       puts "Serving Bytecode from #{@bytecode_path}"
     end
 
@@ -34,11 +35,11 @@ module NabaztagHackKit
       end
     end
 
-    def callback(action, params, request)
-      if callback = @callbacks[:action]
-        send(callback, params, request)
+    def callback(action, data, request)
+      if callback = @@callbacks[action.to_s]
+        send(callback, data, request)
       else
-
+        puts "no callback found for #{action}"
         send_nabaztag OK
       end
     end
@@ -52,17 +53,6 @@ module NabaztagHackKit
       send_file @bytecode_path
     end
 
-    post "#{PREFIX}/recording-finished.jsp" do
-      File.open(REC_FILE, "w+") do |f|
-        f.write request.body.read
-      end
-      callback('recording-finished', REC_FILE)
-    end
-
-    get "#{PREFIX}/rfid.jsp" do
-      callback('rfid', params[:id])
-    end
-
     post "#{PREFIX}/log.jsp" do
       @logs = parse_log params[:logs]
       puts "#########################"
@@ -71,13 +61,26 @@ module NabaztagHackKit
       send_nabaztag OK
     end
 
-    get "#{PREFIX}/:action.jsp" do
-      callback(params[:action], params, request)
+    post "#{PREFIX}/recording-finished.jsp" do
+      file_name = REC_FILE # TODO add timestamp??
+      File.open(file_name, "w+") do |f|
+        f.write request.body.read
+      end
+      callback('recording-finished', file_name, request)
     end
 
-    post "#{PREFIX}/:action.jsp" do
-      callback(params[:action], params, request)
+    get "#{PREFIX}/rfid.jsp" do
+      callback('rfid', params[:id], request)
+    end
+
+    get "#{PREFIX}/button-pressed.jsp" do
+      callback('button-pressed', params[:duration], request)
+    end
+
+    %w(get post).each do |method|
+      send(method, "#{PREFIX}/:action.jsp" do
+        callback(params[:action], params, request)
+      end
     end
   end
-
 end

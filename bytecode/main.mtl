@@ -21,38 +21,27 @@ var recordingStartedAt = 0;;
 var bmp = 0;;
 var recSeconds = 0;;
 
-//-------------------- HTTP
+//-------------------- HTTP Endpoints
 fun logUrl=
-  strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
+  strcatlist confGetServerUrl::"/api/log.jsp"::nil;;
 
-fun buttonUrl data=
-  strcatlist confGetServerUrl::"/vl/button.jsp?"::data::nil;;
+fun buttonPressedUrl data=
+  strcatlist confGetServerUrl::"/api/button-pressed.jsp?duration="::(itoa data)::nil;;
 
 fun recordingFinishedUrl =
-  strcatlist confGetServerUrl::"/vl/recording-finished.jsp"::nil
-;;
+  strcatlist confGetServerUrl::"/api/recording-finished.jsp"::nil;;
 
 fun rfidUrl tag=
-  strcatlist confGetServerUrl::"/vl/rfid"::(webmac tag)::".jsp"::nil;;
+  strcatlist confGetServerUrl::"/api/rfid.jsp?id="::(webmac tag)::nil;;
 
-fun eventUrl data=
-  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::data::nil;;
-
-
-
-fun startUrl =
-  strcatlist confGetServerUrl::"/vl/start.jsp"::nil
-;;
-
+//-------------------- HTTP
 
 fun _cbdummyhttp http res=
-  0
-;;
+  0;;
 
 fun _cbHttp http res=
   evalTrame res;
-  0
-;;
+  0;;
 
 #include "lib/record"
 

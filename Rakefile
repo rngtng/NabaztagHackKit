@@ -8,7 +8,7 @@ end
 namespace :test do
   desc "Test bytcode"
   task :bytecode do
-    puts `bin/mtl_simu test/bytecode/test.mtl`
+    puts `bin/mtl_simu spec/bytecode/test.mtl`
   end
 end
 

@@ -6,3 +6,4 @@ pkg/*
 *.bin
 *.o
 examples/record/config.ru
+.mtlrc

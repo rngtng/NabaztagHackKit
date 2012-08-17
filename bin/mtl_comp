@@ -1,5 +1,10 @@
 #!/usr/bin/env ruby
 
+File.read(".mtlrc").split("\n").each do |line|
+  var, *data = line.split("=")
+  ENV[var] = data.join
+end
+
 BIN_NAME    = File.basename(__FILE__)
 BIN_PATH    = File.dirname(__FILE__)
 BIN         = File.join( File.expand_path("../ext/mtl", BIN_PATH), BIN_NAME)
