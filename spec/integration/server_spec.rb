@@ -1,55 +1,50 @@
 require "spec_helper"
 
-#require "rubygems"
-#require "bundler/setup"
-
 require "nabaztag_hack_kit/server"
 require "rack/test"
 
-# Add an app method for RSpec
-def app
-  NabaztagHackKit::Server
+shared_examples_for :successful_route do
+  it "returns 200" do
+    get route
+    last_response.should be_ok
+  end
 end
 
 describe NabaztagHackKit::Server do
   include Rack::Test::Methods
 
-  context "/bc.jsp" do
+  let(:app) { NabaztagHackKit::Server.new }
+
+  describe "/bc.jsp" do
     let(:route) { "/bc.jsp" }
 
-    it "returns 200" do
-      get route
-      last_response.should be_ok
-    end
-
-    it "reads from public/bin" do
-    end
-
-    context "with custom bin code route" do
-      it "reads from" do
-      end
-    end
+    it_behaves_like :successful_route
   end
 
-  context "/vl/log.jsp" do
-    let(:route) { "/vl/log.jsp" }
+  describe "/api/log.jsp" do
+    let(:route) { "/api/log.jsp" }
 
-    it "returns 200" do
-      get route
-      last_response.should be_ok
-    end
+    it_behaves_like :successful_route
   end
 
-  context "catch all route" do
-    it "returns 200" do
-    end
+  describe "/api/rfid.jsp" do
+    let(:route) { "/api/rfid.jsp" }
+
+    it_behaves_like :successful_route
+  end
+
+  describe "/api/recording-finished.jsp" do
+    let(:route) { "/api/recording-finished.jsp" }
+
+    it_behaves_like :successful_route
+  end
+
+  describe "catch all route" do
+    let(:route) { "/api/custom.jsp" }
+
+    it_behaves_like :successful_route
 
     it "execute callback" do
-    end
-  end
-
-  context "callbacks" do
-    it "accepts" do
     end
   end
 end

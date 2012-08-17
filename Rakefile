@@ -2,7 +2,7 @@ require "bundler/gem_tasks"
 
 require 'rspec/core/rake_task'
 RSpec::Core::RakeTask.new("unit") do |t|
-  t.pattern = "./test/**/*_spec.rb" # don't need this, it's default.
+  t.pattern = "./spec/**/*_spec.rb" # don't need this, it's default.
 end
 
 namespace :test do
@@ -12,8 +12,8 @@ namespace :test do
   end
 end
 
-task :test => [:unit]
-task :default => :test
+task :spec => [:unit]
+task :default => :spec
 
 desc "start server on port 9090"
 task :run do

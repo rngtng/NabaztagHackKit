@@ -22,21 +22,23 @@ var bmp = 0;;
 var recSeconds = 0;;
 
 //-------------------- HTTP
-fun playerUrl tag=
-  strcatlist confGetServerUrl::"/players/"::(webmac tag)::".jsp"::nil;;
-
-fun eventUrl data=
-  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::data::nil;;
+fun logUrl=
+  strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
 
 fun buttonUrl data=
   strcatlist confGetServerUrl::"/vl/button.jsp?"::data::nil;;
 
-fun logUrl=
-  strcatlist confGetServerUrl::"/vl/log.jsp"::nil;;
-
-fun recordUrl =
-  strcatlist confGetServerUrl::"/vl/recording.jsp"::nil
+fun recordingFinishedUrl =
+  strcatlist confGetServerUrl::"/vl/recording-finished.jsp"::nil
 ;;
+
+fun rfidUrl tag=
+  strcatlist confGetServerUrl::"/vl/rfid"::(webmac tag)::".jsp"::nil;;
+
+fun eventUrl data=
+  strcatlist confGetServerUrl::"/events.jsp"::"?event[data]="::data::nil;;
+
+
 
 fun startUrl =
   strcatlist confGetServerUrl::"/vl/start.jsp"::nil

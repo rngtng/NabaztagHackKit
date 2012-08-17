@@ -80,7 +80,7 @@ class Server < NabaztagHackKit::Server
     })
   end
 
-  on :button do
+  on "button-pressed" do
     send_nabaztag if @@recording
       @@recording = false
       {
@@ -98,7 +98,7 @@ class Server < NabaztagHackKit::Server
     end
   end
 
-  on :recording_finished do |file_name|
+  on "recording-finished" do |file_name|
     @@recording = false
     send_nabaztag if @@dance
       dance

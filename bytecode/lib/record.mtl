@@ -67,7 +67,7 @@ fun recordingStop =
   loopBufferFill 9 "\0";
   let recriff -> wavfile in
   (
-    httprequestBinary recordUrl strcatlist wavfile #_cbHttp HTTP_NORMAL;
+    httprequestBinary recordingFinishedUrl strcatlist wavfile #_cbHttp HTTP_NORMAL;
     0
   )
 ;;
