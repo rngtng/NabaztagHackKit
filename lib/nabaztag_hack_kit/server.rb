@@ -15,7 +15,7 @@ module NabaztagHackKit
       super
       @bytecode_path = bytecode_path || File.join('public', 'bytecode.bin')
       @@callbacks    = {}
-      puts "Serving Bytecode from #{@bytecode_path}"
+      # puts "Serving Bytecode from #{@bytecode_path}"
     end
 
     def send_nabaztag(*data)
@@ -39,7 +39,7 @@ module NabaztagHackKit
       if callback = @@callbacks[action.to_s]
         send(callback, data, request)
       else
-        puts "no callback found for #{action}"
+        # puts "no callback found for #{action}"
         send_nabaztag OK
       end
     end
@@ -78,7 +78,7 @@ module NabaztagHackKit
     end
 
     %w(get post).each do |method|
-      send(method, "#{PREFIX}/:action.jsp" do
+      send(method, "#{PREFIX}/:action.jsp") do
         callback(params[:action], params, request)
       end
     end
