@@ -1,30 +1,33 @@
 //###############################################
 //------------------- Button --------------------
 
-const BUTTON_REBOOT = 30;; //ms MIN 50ms
+const BUTTON_REBOOT = 3000;; //ms MIN 50ms
 var button_pressed  = 0;;
+
 fun checkButton=
   if (button2 > 0) then
   (
-    set button_pressed = button_pressed + 1;
-    if button_pressed == 1 then
+    if button_pressed == 0 then
     (
-      httprequest "GET" buttonPressedUrl button_pressed "" #_cbHttp HTTP_NORMAL;
-      0
-    ) else if button_pressed == BUTTON_REBOOT then
+      set button_pressed = time_ms
+    )
+    else if (time_ms - button_pressed) > BUTTON_REBOOT then
     (
-      buffersFill 0 4 "\0\255\0\255\0\255\255\255"
+      buffersFill 0 4 "\255"
     )
   )
   //reboot only when button not pressed, otherwise we get into setup mode
-  else if button_pressed > BUTTON_REBOOT then
+  else if button_pressed > 0 then
   (
-    // httprequest "GET" startUrl "" #_cbHttp HTTP_NORMAL;
-    //set button_pressed = 0;
-    exit;
-    0
-  )
-  else (
-    set button_pressed = 0
+    if (time_ms - button_pressed) > BUTTON_REBOOT then
+    (
+      exit;
+      set button_pressed = 0
+    )
+    else
+    (
+      httprequest "GET" buttonPressedUrl (time_ms - button_pressed) "" #_cbHttp HTTP_NORMAL;
+      set button_pressed = 0
+    )
   )
 ;;

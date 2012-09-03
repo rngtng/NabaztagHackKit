@@ -28,8 +28,6 @@ module NabaztagHackKit
       REC_START = 50
       REC_STOP  = 51
 
-      BMP = 60
-
       F = 1
       B = 2
 

@@ -1,6 +1,8 @@
 module NabaztagHackKit
   module Message
     module Helper
+      extend self
+
       #blink
       def bl(loops = 1, color_on = 0xFF, color_off = 0x00)
         repeat(loops, [color_on, color_off])

@@ -11,9 +11,18 @@ module NabaztagHackKit
 
     def initialize(bytecode_path = nil)
       super
-      @bytecode_path = bytecode_path || File.join('public', 'bytecode.bin')
-      @@callbacks    = {}
-      # puts "Serving Bytecode from #{@bytecode_path}"
+      @bytecode_path = bytecode_path || File.expand_path("../../../" + File.join('public', 'bytecode.bin'), __FILE__)
+      puts "Serving Bytecode from #{@bytecode_path}"
+    end
+
+    class << self
+      def callbacks
+        @@callbacks ||= {}
+      end
+
+      def on(callback, &block)
+        callbacks[callback] = block
+      end
     end
 
     def send_nabaztag(*data)
@@ -35,7 +44,7 @@ module NabaztagHackKit
 
     def callback(action, data, request)
       if callback = @@callbacks[action.to_s]
-        send(callback, data, request)
+        instance_exec data, request, &callback
       else
         # puts "no callback found for #{action}"
         send_nabaztag OK

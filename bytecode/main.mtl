@@ -4,21 +4,20 @@ proto main 0;;
 proto earsInit 0;;
 proto evalTrame 1;;
 
-#include "../ext/bytecode/lib/var"
-#include "../ext/bytecode/lib/util"
-#include "../ext/bytecode/lib/cfg"
-#include "../ext/bytecode/lib/arp"
-#include "../ext/bytecode/lib/udp"
-#include "../ext/bytecode/lib/tcp"
-#include "../ext/bytecode/lib/dns"
-#include "../ext/bytecode/lib/http"
-#include "../ext/bytecode/lib/dhcp"
+#include "src/bytecode/lib/var"
+#include "src/bytecode/lib/util"
+#include "src/bytecode/lib/cfg"
+#include "src/bytecode/lib/arp"
+#include "src/bytecode/lib/udp"
+#include "src/bytecode/lib/tcp"
+#include "src/bytecode/lib/dns"
+#include "src/bytecode/lib/http"
+#include "src/bytecode/lib/dhcp"
 #include "lib/data_helper"
 #include "lib/buffer"
-#include "../ext/bytecode/lib/wifi"
+#include "src/bytecode/lib/wifi"
 
 var recordingStartedAt = 0;;
-var bmp = 0;;
 var recSeconds = 0;;
 
 //-------------------- HTTP Endpoints
@@ -34,6 +33,9 @@ fun recordingFinishedUrl =
 fun rfidUrl tag=
   strcatlist confGetServerUrl::"/api/rfid.jsp?id="::(webmac tag)::nil;;
 
+fun pingUrl =
+  strcatlist confGetServerUrl::"/api/ping.jsp"::nil;;
+
 //-------------------- HTTP
 
 fun _cbdummyhttp http res=
@@ -44,6 +46,7 @@ fun _cbHttp http res=
   0;;
 
 #include "lib/record"
+#include "lib/ping"
 
 fun evalTrame res=
   let parseResponse httpgetcontent res -> bufferlist in
@@ -93,7 +96,7 @@ fun evalTrame res=
           _bufferFill index+10 step loop val;
           0
         )
-        // recodring
+        // recording start
         else if code == 50 then
         (
           set recSeconds = strget val 0;
@@ -101,18 +104,10 @@ fun evalTrame res=
           recordingStart;
           set recordingStartedAt = time_ms
         )
+        // recording stop
         else if code == 51 then
         (
           recordingStop
-        )
-        else if code == 60 then
-        (
-          led 0 0;
-          set bmp = strget val 0;
-          if bmp > 0 then
-          (
-            set bmp = 60000 / bmp
-          )
         )
       )
     )
@@ -125,9 +120,6 @@ fun evalTrame res=
 //outputs
 #include "lib/led"
 #include "lib/ear"
-
-var n = 0;;
-var last = 0;;
 
 //###############################################
 //-------------------- LOOP ---------------------
@@ -142,29 +134,11 @@ fun loop=
   earRead 0;
   earRead 1;
 
-  if button3 > 254 then
-  (
-    exit
-  );
+  pingCheck;
 
   if recording == 1 && recSeconds > 0 && (time_ms - recordingStartedAt) > recSeconds  then
   (
     recordingStop
-  );
-
-  if bmp > 0 && time_ms - last > bmp then
-  (
-    if n > 10 then
-    (
-      set n = 0
-    )
-    else
-    (
-      set n = 255
-    );
-    led 0 n;
-    set last = time_ms;
-    0
   );
 0;;
 
