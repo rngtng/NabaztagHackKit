@@ -3,13 +3,11 @@ require 'sinatra/base'
 require 'nabaztag_hack_kit/message'
 require 'nabaztag_hack_kit/message/api'
 
-
 module NabaztagHackKit
   class Server < Sinatra::Base
     include Message::Api
 
-    REC_FILE = "rec.wav"
-    PREFIX   = "/api"
+    PREFIX = "/api"
 
     def initialize(bytecode_path = nil)
       super
@@ -77,6 +75,7 @@ module NabaztagHackKit
       callback('button-pressed', params[:duration], request)
     end
 
+    # generic callback
     %w(get post).each do |method|
       send(method, "#{PREFIX}/:action.jsp") do
         callback(params[:action], params, request)

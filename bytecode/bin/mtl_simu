@@ -1,8 +1,12 @@
 #!/usr/bin/env ruby
 
-File.read(".mtlrc").split("\n").each do |line|
-  var, *data = line.split("=")
-  ENV[var] = data.join
+MTL_FILE = ".mtlrc"
+
+if File.exists?(MTL_FILE)
+  File.read(MTL_FILE).split("\n").each do |line|
+    var, *data = line.split("=")
+    ENV[var] = data.join
+  end
 end
 
 BIN_NAME    = File.basename(__FILE__)
@@ -27,7 +31,7 @@ end
 # merge
 `TMP='#{TMP}' #{MERGE} #{FILE}`
 
-# compile
+# simu
 out = nil
 if File.exists?(BIN)
   out = `#{BIN} -s #{FILE} #{OUT} 2>&1 #{FILTER}`
@@ -38,8 +42,7 @@ end
 if HOST
   puts " - falling back to remote"
   `scp #{TMP} #{HOST}:#{REMOTE_PATH}#{TMP}`
-  out = `ssh #{HOST} "cd #{REMOTE_PATH} && rm -f #{TMP}.bin && #{REMOTE_BIN}#{BIN_NAME} -s #{TMP} #{TMP}.bin 2>&1 #{FILTER}"`
-  `scp #{HOST}:#{REMOTE_PATH}#{TMP}.bin #{OUT}`
+  out = `ssh #{HOST} "cd #{REMOTE_PATH} && #{REMOTE_BIN}#{BIN_NAME} --source #{TMP} < #{TMP} 1>&2"`
 end
 
 puts out
