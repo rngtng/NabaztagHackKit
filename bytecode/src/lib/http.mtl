@@ -73,6 +73,14 @@ fun httpgetcontent res =
   if i==nil then nil
   else strsub res i+strlen http_sep strlen res;;
 
+fun httpabort httpreq=
+  closetcp httpreq.cnxH;; // on ferme la socket de la requête
+
+fun httpenable httpreq v=
+  enabletcp httpreq.cnxH v;;
+fun httpenabledP httpreq=
+  enabledtcpP httpreq.cnxH;;
+
 // Cryptage des trames
 fun bintoi3 s x=((strget s x)<<16)+((strget s x+1)<<8)+(strget s x+2);;
 

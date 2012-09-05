@@ -2,6 +2,7 @@ module NabaztagHackKit
   module Message
     module Helper
       extend self
+      include Api
 
       #blink
       def bl(loops = 1, color_on = 0xFF, color_off = 0x00)
@@ -15,7 +16,7 @@ module NabaztagHackKit
       alias_method :sl, :rp #sleep
 
       #knight rider
-      def kr(color = 0xFF, led1 = Api::LED_L1, led2 = Api::LED_L2, led3 = Api::LED_L3)
+      def kr(color = 0xFF, led1 = LED_L1, led2 = LED_L2, led3 = LED_L3)
         {
           led1 => [color,0,0,0],
           led2 => [0,color],
@@ -23,7 +24,7 @@ module NabaztagHackKit
         }
       end
 
-      def fire(color = 0x110000, led1 = Api::LED_L1, led2 = Api::LED_L2, led3 = Api::LED_L3)
+      def fire(color = 0x110000, led1 = LED_L1, led2 = LED_L2, led3 = LED_L3)
         data = Array.new(16) do |i|
           Message.to_3b(i * color)
         end + Array.new(8) do |i|
@@ -34,6 +35,22 @@ module NabaztagHackKit
           (led1+10) => data + [0,0,0] + [0,0,0],
           (led2+10) => [0,0,0] + data + [0,0,0],
           (led3+10) => [0,0,0] + [0,0,0] + data
+        }
+      end
+
+      def wink(s = 1, e = 4, times = 2)
+        {
+          EAR_L => ([s,e] * times) + [s],
+          EAR_R => [s] + ([s,e] * times)
+        }
+      end
+
+      def circle(times = 5)
+        {
+          LED_0 => [r,0,0,0] * times,
+          LED_1 => [0,r,0,0] * times,
+          LED_4 => [0,0,r,0] * times,
+          LED_3 => [0,0,0,r] * times,
         }
       end
 
@@ -54,6 +71,11 @@ module NabaztagHackKit
           EAR_LL => 0,
           EAR_LR => 0,
         }
+      end
+
+      private
+      def r
+        rand(255)
       end
     end
   end

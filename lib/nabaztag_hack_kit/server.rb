@@ -11,7 +11,7 @@ module NabaztagHackKit
 
     def initialize(bytecode_path = nil)
       super
-      @bytecode_path = bytecode_path || File.expand_path("../../../" + File.join('public', 'bytecode.bin'), __FILE__)
+      @bytecode_path = bytecode_path || File.expand_path(File.join('../', 'public', 'bytecode.bin'), __FILE__)
       puts "Serving Bytecode from #{@bytecode_path}"
     end
 
@@ -43,7 +43,7 @@ module NabaztagHackKit
     end
 
     def callback(action, data, request)
-      if callback = @@callbacks[action.to_s]
+      if callback = self.class.callbacks[action.to_s]
         instance_exec data, request, &callback
       else
         # puts "no callback found for #{action}"
@@ -52,7 +52,9 @@ module NabaztagHackKit
     end
 
     get "/" do
-      File.read(File.join('public', 'index.html'))
+      path = File.expand_path(File.join('../', 'public', 'index.html'), __FILE__)
+      puts path
+      File.read(path)
     end
 
     get "/bc.jsp" do

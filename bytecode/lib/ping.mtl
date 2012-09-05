@@ -1,7 +1,7 @@
 //###############################################
 //------------------ PING ----------------------
 
-const PING_CHECK_FQ = 3000;; //ms MIN 50ms
+const PING_CHECK_FQ = 5000;; //ms -> 5s
 var ping_last_check = 0;;
 
 fun pingCheck=

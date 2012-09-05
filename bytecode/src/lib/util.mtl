@@ -4,6 +4,7 @@ fun setleds col= for i=0;i<5 do led i col;;
 fun strstr s p i=strfind s i p 0 nil;;
 fun listlen l=if l==nil then 0 else 1+listlen tl l;;
 fun listrem l x=if l!=nil then if x==hd l then tl l else (hd l)::listrem tl l x;;
+fun slistlen l= if l==nil then 0 else (strlen hd l)+slistlen tl l;;
 
 fun listtostr l=
   let strnew listlen l -> s in
@@ -72,3 +73,5 @@ fun useparamip val=
 		_useparamip ip 0 val 0;
 		ip
 	);;
+
+fun conc p q=if p==nil then q else (hd p)::conc tl p q;;

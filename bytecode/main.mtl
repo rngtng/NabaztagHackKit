@@ -4,18 +4,19 @@ proto main 0;;
 proto earsInit 0;;
 proto evalTrame 1;;
 
-#include "src/bytecode/lib/var"
-#include "src/bytecode/lib/util"
-#include "src/bytecode/lib/cfg"
-#include "src/bytecode/lib/arp"
-#include "src/bytecode/lib/udp"
-#include "src/bytecode/lib/tcp"
-#include "src/bytecode/lib/dns"
-#include "src/bytecode/lib/http"
-#include "src/bytecode/lib/dhcp"
+#include "src/lib/var"
+#include "src/lib/util"
+#include "src/lib/cfg"
+#include "src/lib/arp"
+#include "src/lib/udp"
+#include "src/lib/tcp"
+#include "src/lib/dns"
+#include "src/lib/http"
+#include "src/lib/dhcp"
+#include "src/lib/wav"
 #include "lib/data_helper"
 #include "lib/buffer"
-#include "src/bytecode/lib/wifi"
+#include "src/lib/wifi"
 
 var recordingStartedAt = 0;;
 var recSeconds = 0;;

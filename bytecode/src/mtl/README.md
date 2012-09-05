@@ -4,7 +4,7 @@ Nabaztag V1/V2 Compiler for linux
 
 ## Install
 
-Simlie run `make`
+Simply run `make`
 
 ## Disclamier
 
