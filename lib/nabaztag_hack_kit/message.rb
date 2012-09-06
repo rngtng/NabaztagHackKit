@@ -12,12 +12,21 @@ module NabaztagHackKit
       end
 
       pack full_message commands.map { |cmd, *data|
-        [cmd] + to_3b(data.flatten.size) + data.flatten
+        data = convert_data(data)
+        [cmd] + to_3b(data.size) + data
       }
     end
 
     def to_3b(int)
       [int >> 16, int >> 8, int].map { |i| i & 0xFF }
+    end
+
+    def convert_data(data)
+      if data.first.is_a?(String)
+        data.first.each_byte.to_a
+      else
+        data.flatten
+      end
     end
 
     private

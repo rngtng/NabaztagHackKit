@@ -4,7 +4,7 @@ require 'json'
 
 module GraphiteStats
   URL  = "https://graphite.s-cloud.net/render/?rawData=true&format=json&target=%s&from=-1minutes"
-  KEY  = "stats_counts.payments.buckster-test.order.shipped"
+  KEY  = "stats_counts.payments.buckster-test.orders.gift_orders.shipped"
   USER = "admin"
 
   def get_stats(key, password)

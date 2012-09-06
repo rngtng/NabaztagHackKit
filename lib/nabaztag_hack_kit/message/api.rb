@@ -28,6 +28,11 @@ module NabaztagHackKit
       REC_START = 50
       REC_STOP  = 51
 
+      PLAY_START  = 60
+      PLAY_STOP   = 61
+      PLAY_LOAD   = 62
+      PLAY_STREAM = 63
+
       F = 1
       B = 2
 

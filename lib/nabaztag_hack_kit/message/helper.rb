@@ -38,14 +38,14 @@ module NabaztagHackKit
         }
       end
 
-      def wink(s = 1, e = 4, times = 2)
+      def wink(s = 1, e = 4, times = 5)
         {
           EAR_L => ([s,e] * times) + [s],
           EAR_R => [s] + ([s,e] * times)
         }
       end
 
-      def circle(times = 5)
+      def circle(times = 15)
         {
           LED_0 => [r,0,0,0] * times,
           LED_1 => [0,r,0,0] * times,

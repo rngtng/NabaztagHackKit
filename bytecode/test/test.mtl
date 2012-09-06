@@ -1,8 +1,8 @@
 proto main 0;;
 
-#include "../../ext/bytecode/lib/util"
-#include "../../bytecode/lib/data_helper"
-#include "../../bytecode/lib/buffer"
+#include "../src/lib/util"
+#include "../lib/data_helper"
+#include "../lib/buffer"
 
 #include "./helper"
 
