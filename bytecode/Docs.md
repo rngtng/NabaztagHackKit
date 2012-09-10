@@ -433,7 +433,7 @@ On suppose l’existence d’une fonction ‘rand’ qui retourne un nombre alé
 Random notes of stuff I came accross while developing
 
 ### Leds
-Thank god it's RGB: Led 0 - 4, Color RGB
+Thank good it's RGB: Led 0 - 4, Color RGB
 
     led 0 0x000000; //black
     led 0 0x0000FF; //blue
@@ -446,6 +446,7 @@ Thank god it's RGB: Led 0 - 4, Color RGB
 
 
 ### Ears
+One loop is 15 ticks
 
 ### Custom functions
 

@@ -26,8 +26,8 @@ fun unforcevol=
 const WAV_IDLE=0;;
 const WAV_RUN=1;;
 const WAV_EOF=2;;
-const WAV_BUFFER_STARTSIZE=80000;;
-const WAV_BUFFER_MAXSIZE=400000;;
+const WAV_BUFFER_STARTSIZE= 80000;;
+const WAV_BUFFER_MAXSIZE  =400000;;
 const WAV_END_TIMEOUT=500;;
 const WAV_NET_TIMEOUT=15000;;
 
@@ -43,7 +43,6 @@ var wav_index;;
 var wav_lasttime;;
 var wav_lastnet;;
 var wav_zeros;;
-var wav_curplayedbytes=0;;
 
 fun wavgetzeros=
   if wav_zeros==nil then
@@ -66,7 +65,7 @@ fun wavstop =
 
 fun wavrunning =
   if wav_state==WAV_IDLE then 0
-  else if wav_fifo==nil && wav_state==WAV_EOF && (time_ms-wav_lasttime>wav_end_timeout) then
+  else if wav_fifo==nil && wav_state==WAV_EOF && (time_ms-wav_lasttime > wav_end_timeout) then
   (
     Secholn "###wav detected end";
     wavstop;
@@ -106,9 +105,7 @@ fun _wavplaycb i =
         // send some bytes to the VM buffer.
         let (playFeed sample /*Iecho*/ wav_index nil) -> pushedbytes in (
           // this is how many bytes we sent.
-          set wav_index=wav_index+pushedbytes;
-          // compute wav_curplayedbytes
-          set wav_curplayedbytes = wav_curplayedbytes + pushedbytes
+          set wav_index=wav_index+pushedbytes
         )
       );
       if wav_index>=len then
@@ -133,7 +130,6 @@ fun _wavstartnow =
   set wav_index=0;
   set wav_buffering=1;
   set wav_buffering_since = time_ms;
-  set wav_curplayedbytes=0;
   playStart 1024 #_wavplaycb;;
 
 fun wavstartlocalEx l timeout=

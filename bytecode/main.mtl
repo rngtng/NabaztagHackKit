@@ -18,9 +18,6 @@ proto evalTrame 1;;
 #include "lib/buffer"
 #include "src/lib/wifi"
 
-var recordingStartedAt = 0;;
-var recSeconds = 0;;
-
 //-------------------- HTTP Endpoints
 fun logUrl=
   strcatlist confGetServerUrl::"/api/log.jsp"::nil;;
@@ -31,11 +28,20 @@ fun buttonPressedUrl data=
 fun recordingFinishedUrl =
   strcatlist confGetServerUrl::"/api/recording-finished.jsp"::nil;;
 
+fun playbackFinishedUrl =
+  strcatlist confGetServerUrl::"/api/playback-finished.jsp"::nil;;
+
+fun playbackLoadFinishedUrl =
+  strcatlist confGetServerUrl::"/api/playback-load-finished.jsp"::nil;;
+
 fun rfidUrl tag=
   strcatlist confGetServerUrl::"/api/rfid.jsp?id="::(webmac tag)::nil;;
 
-fun pingUrl =
-  strcatlist confGetServerUrl::"/api/ping.jsp"::nil;;
+fun pingUrl params=
+  strcatlist confGetServerUrl::"/api/ping.jsp?"::params::nil;;
+
+fun streamUrl filename=
+  strcatlist confGetServerUrl::"/streams/"::filename::nil;;
 
 //-------------------- HTTP
 
@@ -100,15 +106,36 @@ fun evalTrame res=
         // recording start
         else if code == 50 then
         (
-          set recSeconds = strget val 0;
-          set recSeconds = 1000 * recSeconds;
-          recordingStart;
-          set recordingStartedAt = time_ms
+          recordingStart 1000 * (strget val 0) //TODO only 1 - 9 possible??
         )
         // recording stop
         else if code == 51 then
         (
           recordingStop
+        )
+        // play start
+        else if code == 60 then
+        (
+          // playbackStart
+          0
+        )
+        // play stop
+        else if code == 61 then
+        (
+          //  playbackStop
+          0
+        )
+        // play load
+        else if code == 62 then
+        (
+          // playbackLoad val
+          0
+        )
+        // play stream
+        else if code == 63 then
+        (
+          // playbackStream val
+          0
         )
       )
     )
@@ -136,11 +163,9 @@ fun loop=
   earRead 1;
 
   pingCheck;
+  // wavtime;
 
-  if recording == 1 && recSeconds > 0 && (time_ms - recordingStartedAt) > recSeconds  then
-  (
-    recordingStop
-  );
+  recordingCheck;
 0;;
 
 //###############################################

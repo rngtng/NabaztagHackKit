@@ -23,6 +23,11 @@ let test "rev" -> t in
   assert_equalL 3::2::1::nil rev 1::2::3::nil nil
 );
 
+let test "rev" -> t in
+(
+  assert_equalS "ABC" "\65\66\67"
+);
+
 // remfromlist same as  listrem!!!
 //let test "remfromlist" -> t in
 //(

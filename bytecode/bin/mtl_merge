@@ -14,7 +14,7 @@ file = ARGV.first
 dir = File.dirname(file)
 File.open(TMP, 'w') do |out|
   File.open(file).each_line do |line|
-    if line =~ /#include "([^"]+)"/
+    if line =~ /\A#include "([^"]+)"/
       line = `cat #{dir}/#{$1}.mtl`
     end
     out.puts line

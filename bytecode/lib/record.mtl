@@ -1,15 +1,21 @@
 var lrec;;
-var recording=0;;
+var recording = 0;;
+var recordingStartedAt = 0;;
+var recSeconds = 0;;
+
+var buff;;
+var buffx;;
+var buffy;;
+
+//-------------------------------------------------------------
 
 fun sqrt_ i i0 i1=
   let (i0+i1)>>1 -> m in
   if m==i0 then i0
   else if m*m>i then sqrt_ i i0 m else sqrt_ i m i1;;
-fun sqrt i=sqrt_ i 0 256;;
 
-var buff;;
-var buffx;;
-var buffy;;
+fun sqrt i=
+  sqrt_ i 0 256;;
 
 fun _cbrec s=
   let 255-(Iecholn sqrt recVol s 0) -> vol in
@@ -34,7 +40,6 @@ fun itobin4 i=
 fun liststrlen l r= if l==nil then r else liststrlen tl l r+strlen hd l;;
 
 fun mkriff ldata=
-  // Secho "mkriff len=";
   let Iecholn liststrlen ldata 0 -> len in
   (strcatlist "RIFF"::(itobin4 len+52)::"WAVEfmt \$14\0\0\0\$11\0\1\0\$40\$1f\0\0\$d7\$0f\0\0\0\1\4\0\2\0\$f9\01"::
   "fact\4\0\0\0"::(itobin4 (len>>8)*505)::"data"::(itobin4 len)::nil)::ldata
@@ -49,11 +54,13 @@ fun recriff =
   )
 ;;
 
-fun recordingStart =
+fun recordingStart sec=
   recStop;
   loopBufferFill 9 "\0\200";
   set recording = 1;
+  set recSeconds =sec;
   set lrec = nil;
+  set recordingStartedAt = time_ms;
   recStart 8000 0 #_cbrec
 ;;
 
@@ -72,3 +79,9 @@ fun recordingStop =
   )
 ;;
 
+fun recordingCheck =
+  if recording == 1 && recSeconds > 0 && (time_ms - recordingStartedAt) > recSeconds  then
+  (
+    recordingStop
+  )
+;;
