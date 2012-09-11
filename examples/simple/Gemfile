@@ -1,6 +1,11 @@
 # A sample Gemfile
 source "http://rubygems.org"
 
-gem "foreman"
-gem "heroku"
+gem "nabaztag_hack_kit", {
+  :path => "../../"
+}
 
+group :development do
+  gem "heroku"
+  gem "foreman"
+end
