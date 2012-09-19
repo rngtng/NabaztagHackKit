@@ -10,12 +10,26 @@ unless ARGV.size == 1
 end
 
 file = ARGV.first
+BASE_DIR = File.dirname(file)
+BASE_DIR_LIB = File.dirname(File.dirname(__FILE__))
 
-dir = File.dirname(file)
+def mtl_file(name)
+  "#{name}.mtl"
+end
+
+def src_file(name)
+  [BASE_DIR, BASE_DIR_LIB].each do |dir|
+    if (path = File.join(dir, name)) && File.exists?(path)
+      return path
+    end
+  end
+  raise "LIB FILE #{name} not found"
+end
+
 File.open(TMP, 'w') do |out|
   File.open(file).each_line do |line|
     if line =~ /\A#include "([^"]+)"/
-      line = `cat #{dir}/#{$1}.mtl`
+      line = `cat #{src_file(mtl_file($1))}`
     end
     out.puts line
   end
