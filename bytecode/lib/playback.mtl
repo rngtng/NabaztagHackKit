@@ -1,0 +1,33 @@
+//###############################################
+//------------------- Playback --------------------
+
+fun playbackFinishedUrl =
+  strcatlist confGetServerUrl::apiPath::"/playback-finished.jsp?"::nil;;
+
+fun playbackLoadFinishedUrl =
+  strcatlist confGetServerUrl::apiPath::"/playback-load-finished.jsp?"::nil;;
+
+fun streamUrl filename=
+  strcatlist confGetServerUrl::"/streams/"::filename::nil;;
+
+// var playback_fifo = nil;;
+
+// fun playbackStart =
+// ;;
+
+// fun playbackStop =
+// ;;
+
+// fun _playbackLoadCB httpreq req=
+//   if req != nil then
+//   (
+//     set wav_fifo=conc playback_fifo req::nil;
+//   )
+// ;;
+
+
+// fun playbackLoad val=
+//   httprequest "GET" (streamUrl val) nil #_playbackLoadCB HTTP_NORMAL //HTTP_STREAM
+// ;;
+
+// fun playbackStream val=

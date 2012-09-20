@@ -4,7 +4,12 @@
 const BUTTON_REBOOT = 3000;; //ms MIN 50ms
 var button_pressed  = 0;;
 
-fun checkButton=
+fun buttonPressedUrl data=
+  strcatlist confGetServerUrl::apiPath::"/button-pressed.jsp?duration="::(itoa data)::nil;;
+
+//-------------------------------------------------------------
+
+fun buttonCheck =
   if (button2 > 0) then
   (
     if button_pressed == 0 then

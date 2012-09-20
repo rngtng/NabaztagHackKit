@@ -1,9 +1,15 @@
 //###############################################
 //------------------ PING ----------------------
+
 const PING_CHECK_FQ = 5000;; //ms -> 5s
 const PING_PARAMS   = "";;
 
 var ping_last_check = 0;;
+
+fun pingUrl params=
+  strcatlist confGetServerUrl::apiPath::"/ping.jsp?"::params::nil;;
+
+//-------------------------------------------------------------
 
 fun pingCheck=
   let PING_CHECK_FQ -> ping_check_fq in

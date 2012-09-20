@@ -7,7 +7,7 @@ module NabaztagHackKit
   class Server < Sinatra::Base
     include Message::Api
 
-    PREFIX = "/api"
+    PREFIX = "/api/:bunnyid"
 
     def initialize(bytecode_path = nil)
       super
@@ -91,6 +91,12 @@ module NabaztagHackKit
       send(method, "#{PREFIX}/:action.jsp") do
         callback(params[:action], params, request)
       end
+    end
+
+    # generic catchall
+    get "/*" do
+      logger.warn "no route found for #{params[:splat]}"
+      status 404
     end
   end
 end

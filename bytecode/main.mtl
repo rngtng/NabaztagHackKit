@@ -14,46 +14,39 @@ proto evalTrame 1;;
 #include "src/lib/http"
 #include "src/lib/dhcp"
 #include "src/lib/wav"
-#include "lib/data_helper"
-#include "lib/buffer"
 #include "src/lib/wifi"
 
+#include "lib/data_helper"
+
 //-------------------- HTTP Endpoints
-fun logUrl=
-  strcatlist confGetServerUrl::"/api/log.jsp"::nil;;
+fun bunnyId =
+  netMac;;
 
-fun buttonPressedUrl data=
-  strcatlist confGetServerUrl::"/api/button-pressed.jsp?duration="::(itoa data)::nil;;
-
-fun recordingFinishedUrl =
-  strcatlist confGetServerUrl::"/api/recording-finished.jsp"::nil;;
-
-fun playbackFinishedUrl =
-  strcatlist confGetServerUrl::"/api/playback-finished.jsp"::nil;;
-
-fun playbackLoadFinishedUrl =
-  strcatlist confGetServerUrl::"/api/playback-load-finished.jsp"::nil;;
-
-fun rfidUrl tag=
-  strcatlist confGetServerUrl::"/api/rfid.jsp?id="::(webmac tag)::nil;;
-
-fun pingUrl params=
-  strcatlist confGetServerUrl::"/api/ping.jsp?"::params::nil;;
-
-fun streamUrl filename=
-  strcatlist confGetServerUrl::"/streams/"::filename::nil;;
+fun apiPath =
+ strcatlist "/api/"::(webmac bunnyId)::nil;;
 
 //-------------------- HTTP
 
-fun _cbdummyhttp http res=
+fun _cbDummyHttp http res=
   0;;
 
 fun _cbHttp http res=
   evalTrame res;
   0;;
 
-#include "lib/record"
+#include "lib/buffer"
 #include "lib/ping"
+#include "lib/logger"
+
+//inputs
+// #include "lib/rfid"
+#include "lib/record"
+#include "lib/button"
+
+//outputs
+#include "lib/playback"
+#include "lib/led"
+#include "lib/ear"
 
 fun evalTrame res=
   let parseResponse httpgetcontent res -> bufferlist in
@@ -73,8 +66,7 @@ fun evalTrame res=
         )
         else if code == 17 then // LOG
         (
-          httprequest "POST" logUrl (strcat "logs=" logs) #_cbdummyhttp HTTP_NORMAL;
-          set logs = "";
+          sendLogs;
           0
         )
         else if code == 18 then // ERROR
@@ -141,29 +133,21 @@ fun evalTrame res=
     )
 ;;
 
-//inputs
-// #include "lib/rfid"
-#include "lib/button"
-
-//outputs
-#include "lib/led"
-#include "lib/ear"
-
 //###############################################
 //-------------------- LOOP ---------------------
 fun loop=
   wifiRun;
   wifiCheck;
 
-  // checkRFID;
-  checkButton;
+  // rfidCheck;
+  buttonCheck;
 
   setLeds;
   earRead 0;
   earRead 1;
 
   pingCheck;
-  // wavtime;
+  wavtime;
 
   recordingCheck;
 0;;

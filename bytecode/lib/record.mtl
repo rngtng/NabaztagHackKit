@@ -1,3 +1,6 @@
+//###############################################
+//------------------- Record --------------------
+
 var lrec;;
 var recording = 0;;
 var recordingStartedAt = 0;;
@@ -6,6 +9,9 @@ var recSeconds = 0;;
 var buff;;
 var buffx;;
 var buffy;;
+
+fun recordingFinishedUrl =
+  strcatlist confGetServerUrl::apiPath::"/recording-finished.jsp?"::nil;;
 
 //-------------------------------------------------------------
 

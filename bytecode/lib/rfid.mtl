@@ -10,7 +10,10 @@ const RFID_ID_ERROR  = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00
 var rfid_last_check  = 0;;
 var rfid_data        = "";;
 
-fun checkRFID=
+fun rfidUrl tag=
+  strcatlist confGetServerUrl::apiPath::"/rfid.jsp?id="::(webmac tag)::nil;;
+
+fun rfidCheck=
   if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
   (
     let rfidGet -> rfid in

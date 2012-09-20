@@ -1,16 +1,3 @@
-var logs = "";;
-
-fun log t tab=
-  let "|"::nil -> all in
-  (
-    for i = tablen tab; i > 0 ; i - 1 do
-    (
-      let itoa tab.(i - 1) -> data in
-      set all =  data::","::all
-    );
-  set logs = strcatlist logs::t::","::(itoa time_ms)::","::all
-  )
-;;
 
 fun TLtoS tlist=
   if tlist == nil then
