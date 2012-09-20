@@ -7,12 +7,15 @@ module NabaztagHackKit
   class Server < Sinatra::Base
     include Message::Api
 
+    configure :production, :development do
+      enable :logging
+    end
+
     PREFIX = "/api/:bunnyid"
 
     def initialize(bytecode_path = nil)
       super
       @bytecode_path = bytecode_path || File.expand_path(File.join('../', 'public', 'bytecode.bin'), __FILE__)
-      puts "Serving Bytecode from #{@bytecode_path}"
     end
 
     class << self
@@ -52,13 +55,11 @@ module NabaztagHackKit
     end
 
     get "/" do
-      path = File.expand_path(File.join('../', 'public', 'index.html'), __FILE__)
-      puts path
-      File.read(path)
+      File.read File.expand_path(File.join('../', 'public', 'index.html'), __FILE__)
     end
 
     get "/bc.jsp" do
-      # TODO recompile if changed
+      logger.info "Serving Bytecode from #{@bytecode_path}"
       send_file @bytecode_path
     end
 

@@ -21,26 +21,26 @@ describe NabaztagHackKit::Server do
     it_behaves_like :successful_route
   end
 
-  describe "/api/log.jsp" do
-    let(:route) { "/api/log.jsp" }
+  describe "log.jsp" do
+    let(:route) { "/api/bunnyid/log.jsp" }
 
     it_behaves_like :successful_route
   end
 
-  describe "/api/rfid.jsp" do
-    let(:route) { "/api/rfid.jsp" }
+  describe "rfid.jsp" do
+    let(:route) { "/api/bunnyid/rfid.jsp" }
 
     it_behaves_like :successful_route
   end
 
-  describe "/api/recording-finished.jsp" do
-    let(:route) { "/api/recording-finished.jsp" }
+  describe "recording-finished.jsp" do
+    let(:route) { "/api/bunnyid/recording-finished.jsp" }
 
     it_behaves_like :successful_route
   end
 
   describe "catch all route" do
-    let(:route) { "/api/custom.jsp" }
+    let(:route) { "/api/bunnyid/custom.jsp" }
 
     it_behaves_like :successful_route
 

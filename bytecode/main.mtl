@@ -26,7 +26,6 @@ fun apiPath =
  strcatlist "/api/"::(webmac bunnyId)::nil;;
 
 //-------------------- HTTP
-
 fun _cbDummyHttp http res=
   0;;
 
