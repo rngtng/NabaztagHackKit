@@ -11,11 +11,12 @@ module NabaztagHackKit
       enable :logging
     end
 
+    REC_FILE = "rec.wav"
     PREFIX = "/api/:bunnyid"
 
     def initialize(bytecode_path = nil)
       super
-      @bytecode_path = bytecode_path || File.expand_path(File.join('../', 'public', 'bytecode.bin'), __FILE__)
+      @bytecode_path = bytecode_path || public_file('bytecode.bin')
     end
 
     class << self
@@ -49,13 +50,13 @@ module NabaztagHackKit
       if callback = self.class.callbacks[action.to_s]
         instance_exec data, request, &callback
       else
-        # puts "no callback found for #{action}"
+        logger.warn "no callback found for #{action}"
         send_nabaztag OK
       end
     end
 
     get "/" do
-      File.read File.expand_path(File.join('../', 'public', 'index.html'), __FILE__)
+      File.read public_file("index.html")
     end
 
     get "/bc.jsp" do
@@ -64,10 +65,11 @@ module NabaztagHackKit
     end
 
     post "#{PREFIX}/log.jsp" do
-      @logs = parse_log params[:logs]
-      puts "#########################"
-      puts @logs.join("\n")
-      puts "#########################"
+      parse_log(params[:logs]).tap do |logs|
+        logger.info "#########################"
+        logger.info logs.join("\n")
+        logger.info "#########################"
+      end
       send_nabaztag OK
     end
 
@@ -87,6 +89,10 @@ module NabaztagHackKit
       callback('button-pressed', params[:duration], request)
     end
 
+    get "/streams/:file.mp3" do
+      File.read public_file("#{params[:file]}.mp3")
+    end
+
     # generic callback
     %w(get post).each do |method|
       send(method, "#{PREFIX}/:action.jsp") do
@@ -98,6 +104,11 @@ module NabaztagHackKit
     get "/*" do
       logger.warn "no route found for #{params[:splat]}"
       status 404
+    end
+
+    protected
+    def public_file(name)
+      File.expand_path(File.join('..', 'public', name), __FILE__)
     end
   end
 end

@@ -5,8 +5,6 @@ require "echonest"
 
 class Server < NabaztagHackKit::Server
 
-  REC_FILE = "rec.wav"
-
   def initialize(echonest_cfg, soundcloud_cfg)
     super('bytecode.bin')
     @@echonest   = Echonest(echonest_cfg[:key])
