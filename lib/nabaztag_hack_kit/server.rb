@@ -11,12 +11,15 @@ module NabaztagHackKit
       enable :logging
     end
 
+    # set :public_folder, File.dirname(__FILE__) + '../public'
+
     REC_FILE = "rec.wav"
     PREFIX = "/api/:bunnyid"
 
-    def initialize(bytecode_path = nil)
+    def initialize(opts = {})
       super
-      @bytecode_path = bytecode_path || public_file('bytecode.bin')
+      @base_file     = opts.fetch(:base_file, __FILE__)
+      @bytecode_file = opts.fetch(:bytecode_file, public_file('bytecode.bin'))
     end
 
     class << self
@@ -60,8 +63,12 @@ module NabaztagHackKit
     end
 
     get "/bc.jsp" do
-      logger.info "Serving Bytecode from #{@bytecode_path}"
-      send_file @bytecode_path
+      if File.exists?(@bytecode_file)
+        logger.info "Serving Bytecode from #{@bytecode_file}"
+        send_file @bytecode_file
+      else
+        status 404
+      end
     end
 
     post "#{PREFIX}/log.jsp" do
@@ -90,7 +97,11 @@ module NabaztagHackKit
     end
 
     get "/streams/:file.mp3" do
-      File.read public_file("#{params[:file]}.mp3")
+      if (file = public_file("#{params[:file]}.mp3")) && File.exists?(file)
+        File.read file
+      else
+        status 404
+      end
     end
 
     # generic callback
@@ -108,7 +119,7 @@ module NabaztagHackKit
 
     protected
     def public_file(name)
-      File.expand_path(File.join('..', 'public', name), __FILE__)
+      File.expand_path(File.join('..', 'public', name), @base_file)
     end
   end
 end

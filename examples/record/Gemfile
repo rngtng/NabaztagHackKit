@@ -3,3 +3,8 @@ source "http://rubygems.org"
 
 gem "nabaztag_hack_kit"
 gem "ruby-echonest"
+
+group :development do
+  gem "heroku"
+  gem "foreman"
+end

@@ -6,7 +6,7 @@ require "echonest"
 class Server < NabaztagHackKit::Server
 
   def initialize(echonest_cfg, soundcloud_cfg)
-    super('bytecode.bin')
+    super
     @@echonest   = Echonest(echonest_cfg[:key])
     @@soundcloud = Soundcloud.new(soundcloud_cfg)
   end

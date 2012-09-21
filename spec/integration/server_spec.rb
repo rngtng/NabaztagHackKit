@@ -13,7 +13,7 @@ end
 describe NabaztagHackKit::Server do
   include Rack::Test::Methods
 
-  let(:app) { NabaztagHackKit::Server.new }
+  let(:app) { NabaztagHackKit::Server.new(:bytecode_file => __FILE__) }
 
   describe "/bc.jsp" do
     let(:route) { "/bc.jsp" }
