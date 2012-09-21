@@ -97,7 +97,7 @@ module NabaztagHackKit
     end
 
     get "/streams/:file.mp3" do
-      if (file = public_file("#{params[:file]}.mp3")) && File.exists?(file)
+      if file = public_file("#{params[:file]}.mp3")
         File.read file
       else
         status 404
@@ -119,7 +119,14 @@ module NabaztagHackKit
 
     protected
     def public_file(name)
-      File.expand_path(File.join('..', 'public', name), @base_file)
+      public_file_path(name) || public_file_path(name, __FILE__)
+    end
+
+    def public_file_path(name, base = @base_file)
+      File.expand_path(File.join('..', 'public', name), base).tap do |file|
+        return file if File.exists?(file)
+      end
+      nil
     end
   end
 end
