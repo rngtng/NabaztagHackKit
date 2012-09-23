@@ -10,7 +10,9 @@ fun playbackLoadFinishedUrl =
 fun streamUrl filename=
   strcatlist confGetServerUrl::"/streams/"::filename::nil;;
 
-// var playback_fifo = nil;;
+var wav_http;;
+var playback_fifo;;
+var playback_state = 0;;
 
 // fun playbackStart =
 // ;;
@@ -18,16 +20,45 @@ fun streamUrl filename=
 // fun playbackStop =
 // ;;
 
-// fun _playbackLoadCB httpreq req=
-//   if req != nil then
-//   (
-//     set wav_fifo=conc playback_fifo req::nil;
-//   )
-// ;;
+fun playbackStop =
+  if playback_state != WAV_IDLE then
+  (
+    playStop;
+    if wav_http != nil then httpabort wav_http;
+    set wav_http       = nil;
+    set wav_buffering  = 0;
+    set playback_state = WAV_IDLE
+  );;
 
+fun _playbackStart =
+  set wav_index           = 0;
+  set wav_buffering       = 1;
+  set wav_buffering_since = time_ms;
+  playStart 1024 #_wavplaycb;;
 
-// fun playbackLoad val=
-//   httprequest "GET" (streamUrl val) nil #_playbackLoadCB HTTP_NORMAL //HTTP_STREAM
-// ;;
+fun _playbackStart l timeout=
+  playbackStop;
+  set wav_end_timeout = timeout;
+  set wav_fifo        = conc l (wavgetzeros)::nil;
+  set playback_state  = WAV_EOF;
+  set wav_lasttime    = time_ms;
+  set wav_http        = nil;
+  _wavstartnow
+  ;;
+
+fun playbackStart l=
+  _playbackStart l WAV_END_TIMEOUT;;
+
+fun _playbackLoadCB httpreq req=
+  if req != nil then
+  (
+    set playback_fifo = conc playback_fifo req::nil
+  );
+0;;
+
+fun playbackLoad val=
+  set playback_fifo = nil;
+  set wav_http = httprequest "GET" (streamUrl val) nil #_playbackLoadCB HTTP_STREAM;
+  0;;
 
 // fun playbackStream val=

@@ -107,25 +107,26 @@ fun evalTrame res=
         // play start
         else if code == 60 then
         (
-          // playbackStart
+          wavstartlocal playback_fifo;
+          // playbackStart;
           0
         )
         // play stop
         else if code == 61 then
         (
-          //  playbackStop
+          //  playbackStop;
           0
         )
         // play load
         else if code == 62 then
         (
-          // playbackLoad val
+          playbackLoad val;
           0
         )
         // play stream
         else if code == 63 then
         (
-          // playbackStream val
+          // playbackStream val;
           0
         )
       )
