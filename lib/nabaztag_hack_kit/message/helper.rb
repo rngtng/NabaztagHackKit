@@ -38,7 +38,7 @@ module NabaztagHackKit
         }
       end
 
-      def wink(s = 1, e = 4, times = 5)
+      def wink(s = 1, e = 4, times = 3)
         {
           EAR_L => ([s,e] * times) + [s],
           EAR_R => [s] + ([s,e] * times)

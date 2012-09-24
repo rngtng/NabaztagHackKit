@@ -107,26 +107,23 @@ fun evalTrame res=
         // play start
         else if code == 60 then
         (
-          wavstartlocal playback_fifo;
-          // playbackStart;
-          0
+          playbackStart
         )
         // play stop
         else if code == 61 then
         (
-          //  playbackStop;
-          0
+          playbackStop
         )
         // play load
         else if code == 62 then
         (
-          playbackLoad val;
-          0
+          playbackLoad val
         )
         // play stream
         else if code == 63 then
         (
           // playbackStream val;
+          wavstarthttp (streamUrl val) nil;
           0
         )
       )
@@ -136,6 +133,8 @@ fun evalTrame res=
 //###############################################
 //-------------------- LOOP ---------------------
 fun loop=
+  initCheck;
+
   wifiRun;
   wifiCheck;
 
@@ -147,7 +146,7 @@ fun loop=
   earRead 1;
 
   pingCheck;
-  wavtime;
+  //wavtime;
 
   recordingCheck;
 0;;
