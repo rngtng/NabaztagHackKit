@@ -21,23 +21,23 @@ describe NabaztagHackKit::Server do
     it_behaves_like :successful_route
   end
 
-  describe "log.jsp" do
-    let(:route) { "/api/bunnyid/log.jsp" }
+  # describe "log.jsp" do
+  #   let(:route) { "/api/bunnyid/log.jsp" }
 
-    it_behaves_like :successful_route
-  end
+  #   it_behaves_like :successful_route
+  # end
 
-  describe "rfid.jsp" do
-    let(:route) { "/api/bunnyid/rfid.jsp" }
+  # describe "rfid.jsp" do
+  #   let(:route) { "/api/bunnyid/rfid.jsp" }
 
-    it_behaves_like :successful_route
-  end
+  #   it_behaves_like :successful_route
+  # end
 
-  describe "recording-finished.jsp" do
-    let(:route) { "/api/bunnyid/recording-finished.jsp" }
+  # describe "recording-finished.jsp" do
+  #   let(:route) { "/api/bunnyid/recording-finished.jsp" }
 
-    it_behaves_like :successful_route
-  end
+  #   # it_behaves_like :successful_route
+  # end
 
   describe "catch all route" do
     let(:route) { "/api/bunnyid/custom.jsp" }
@@ -45,6 +45,8 @@ describe NabaztagHackKit::Server do
     it_behaves_like :successful_route
 
     it "execute callback" do
+      get route
+      last_response.body.should == "\x7F\f\x00\x00\x00\xFF\n"
     end
   end
 end

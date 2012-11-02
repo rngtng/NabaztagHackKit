@@ -70,7 +70,7 @@ class Server < NabaztagHackKit::Server
     }
   end
 
-  on :start do
+  on "start" do
     @@dance = true
     if @@recording
       @@recording = false
