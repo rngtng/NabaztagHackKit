@@ -1,3 +1,6 @@
+
+require 'nabaztag_hack_kit/message/api'
+
 module NabaztagHackKit
   module Mods
     module Callback
@@ -12,7 +15,7 @@ module NabaztagHackKit
               callback(action, data, request, run+1)
             end
           else
-            logger.warn "no callback found for #{action}/#{run}"
+            logger.warn "no callback found for #{action}-#{run}"
             send_nabaztag OK
           end
         end
@@ -27,7 +30,7 @@ module NabaztagHackKit
         app.helpers Callback::Helpers
 
         app.on "button-pressed" do |data, request, run|
-          callback('button-pressed', params[:duration], request, run+1)
+          callback("button-pressed", params[:duration], request, run+1)
         end
 
         # generic api callback

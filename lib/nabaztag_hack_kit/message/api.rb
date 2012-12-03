@@ -1,3 +1,5 @@
+require 'nabaztag_hack_kit/message'
+
 module NabaztagHackKit
   module Message
     module Api
@@ -35,6 +37,10 @@ module NabaztagHackKit
 
       F = 1
       B = 2
+
+      def send_nabaztag(*data)
+         Message.build(*data)
+      end
 
       def rgb(values)
         values.map do |value|

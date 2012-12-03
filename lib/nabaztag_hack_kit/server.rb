@@ -1,15 +1,11 @@
 require 'sinatra/base'
 
-require 'nabaztag_hack_kit/message'
-require 'nabaztag_hack_kit/message/api'
-
 require 'nabaztag_hack_kit/mods/callback'
 # require 'nabaztag_hack_kit/mods/logger'
 require 'nabaztag_hack_kit/mods/playground'
 
 module NabaztagHackKit
   class Server < Sinatra::Base
-    include Message::Api
     register Mods::Callback
     # register Mods::Logger
     register Mods::Playground
@@ -51,10 +47,6 @@ module NabaztagHackKit
     ####################################################################
 
     protected
-    def send_nabaztag(*data)
-       Message.build(*data)
-    end
-
     def public_file(name)
       public_file_path(name) || public_file_path(name, __FILE__)
     end

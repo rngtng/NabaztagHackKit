@@ -1,0 +1,57 @@
+<html>
+  <head>
+    <title>Nabaztag Hack Kit</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script src="//timeago.yarp.com/jquery.timeago.js"></script>
+  </head>
+  <body>
+    <h1>Welcome to Nabaztag Hack Kit</h1>
+
+    Hurray, your server is successful running! Now point your bunny to this url and you're ready to go!
+
+    Check the <a href="https://github.com/rngtng/NabaztagHackKit">Docs</a> how to integrate...
+
+    <h2>Playground</h2>
+
+    <form action="/commands" method="post">
+      <select name="bunny">
+        <option value="*">All</option>
+      </select>
+
+      <select name="command">
+        <option value="*">All</option>
+        <% commands.each do |cmd, value| %>
+          <option value="<%= value %>"><%= cmd %></option>
+        <% end %>
+      </select>
+
+      <input name="values">
+
+      <input type="submit">
+    </form>
+
+    <h2>Bunnies</h2>
+    <table id="bunnies">
+      <thead>
+        <tr><th>Serial No</th><th>Last seen</th><th>Pipe</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script>
+      jQuery(document).ready(function() {
+        getBunnies = function()
+        {
+          $.getJSON('/bunnies', function(data) {
+            $('#bunnies tbody').empty();
+            $.each(data, function(key, bunny) {
+              $('#bunnies tbody').append('<tr><td>' + bunny.id + '</td><td>'+ $.timeago(bunny.last_seen) + '</td><td>'+ bunny.last_seen + '</td></tr>');
+            });
+          });
+        }
+        setInterval( getBunnies, 1000);
+      });
+     </script>
+  </body>
+</html>
+

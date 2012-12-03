@@ -1,18 +1,13 @@
+require "json"
+require 'nabaztag_hack_kit/bunny'
+
 module NabaztagHackKit
   module Mods
     module Playground
 
       module Helpers
-        def bunnies
-          @@bunnies ||= {}
-        end
-
         def cmds
           @@cmds ||= {}
-        end
-
-        def bunny_seen(sn)
-          bunnies[sn] = Time.now
         end
 
         def add_commands(bunny_sn, command, values)
@@ -21,15 +16,6 @@ module NabaztagHackKit
               cmds[sn] ||= {}
               cmds[sn][command] = values
             end
-          end
-        end
-
-        def commands
-          Message::Api.constants.sort.inject({}) do |hash, constant|
-            if constant.to_s.length > 2
-              hash[constant] = Message::Api.const_get(constant)
-            end
-            hash
           end
         end
 
@@ -52,26 +38,43 @@ module NabaztagHackKit
         app.helpers Playground::Helpers
 
         app.get "/" do
-          erb File.read(public_file("index.html.erb"))
+          File.read(public_file("index.html"))
+        end
+
+        #API
+        app.get "/bunnies" do
+          # return list of bunnies
+          Bunny.all.to_json
+        end
+
+        app.post "/bunnies/:bunnyid/command" do
+          if bunny = Bunny.find(params[:bunnyid])
+            bunny.queue_command(params[:command], params[:values])
+          end
         end
 
         app.post "/commands" do
-          add_commands(params[:bunny], params[:command].to_i, params[:values].to_s.split(",").map(&:to_i) )
-          redirect "/"
+          # return list of available commands
+          Message::Api.constants.sort.inject({}) do |hash, constant|
+            if constant.to_s.length > 2
+              hash[constant] = Message::Api.const_get(constant)
+            end
+            hash
+          end
         end
 
         ##################################################################
 
         app.on "ping" do |data, request, run|
-          if cmd = cmds.delete(params[:bunnyid])
-            send_nabaztag cmd
-          else
-            callback('ping', data, request, run+1)
+          if (bunny = Bunny.find(data[:bunnyid])) && bunny.queued_commands.any?
+            send_nabaztag bunny.queued_commands.pop
           end
         end
 
-        app.on 'request' do
-          bunny_seen(params[:bunnyid])
+        app.on 'request' do |data, request, run|
+          if bunny = Bunny.find_or_initialize_by_id(data[:bunnyid])
+            bunny.seen
+          end
           nil #pass it own
         end
       end
