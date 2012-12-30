@@ -20,6 +20,10 @@ describe NabaztagHackKit::Message do
 
   describe ".build" do
     it "accepts single input" do
+      NabaztagHackKit::Message.build(*[["40"], ["40", "2", "3", "4"]]).should == [[40, 0, 0, 0], [40, 0, 0, 1, 50]]
+    end
+
+    it "accepts single input" do
       NabaztagHackKit::Message.build(CMD).should == [[CMD, 0, 0, 0]]
     end
 
@@ -37,6 +41,12 @@ describe NabaztagHackKit::Message do
 
     it "accepts hash input" do
       NabaztagHackKit::Message.build(CMD => data, CMD1 => data).should == [[CMD, *size, *data], [CMD1, *size, *data]]
+    end
+
+    context "as string" do
+      it "accepts hash input" do
+        NabaztagHackKit::Message.build(CMD.to_s => data.map(&:to_s), CMD1.to_s => data).should == [[CMD, *size, *data], [CMD1, *size, *data]]
+      end
     end
   end
 

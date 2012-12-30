@@ -10,6 +10,13 @@ shared_examples_for :successful_route do
   end
 end
 
+shared_examples_for :notfound_route do
+  it "returns 404" do
+    get route
+    last_response.status.should == 404
+  end
+end
+
 describe NabaztagHackKit::Server do
   include Rack::Test::Methods
 
@@ -42,11 +49,11 @@ describe NabaztagHackKit::Server do
   describe "catch all route" do
     let(:route) { "/api/bunnyid/custom.jsp" }
 
-    it_behaves_like :successful_route
+    it_behaves_like :notfound_route
 
     it "execute callback" do
       get route
-      last_response.body.should == "\x7F\f\x00\x00\x00\xFF\n"
+      last_response.body.should == ""
     end
   end
 end

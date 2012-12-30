@@ -4,19 +4,11 @@ require 'nabaztag_hack_kit/message/api'
 module NabaztagHackKit
   module Mods
     module Callback
-      PREFIX  = "/api/:bunnyid"
 
       module Helpers
-        include Message::Api
-
-        def callback(action, data, request, run = 0)
+        def callback(action, bunny, data, request, run = 0)
           if (cb = self.class.callbacks[action.to_s]) && (callback = cb[run])
-            unless instance_exec(data, request, run, &callback)
-              callback(action, data, request, run+1)
-            end
-          else
-            logger.warn "no callback found for #{action}-#{run}"
-            send_nabaztag OK
+            instance_exec(bunny, data, request, run, &callback) || callback(action, bunny, data, request, run+1)
           end
         end
       end
@@ -29,15 +21,18 @@ module NabaztagHackKit
       def self.registered(app)
         app.helpers Callback::Helpers
 
-        app.on "button-pressed" do |data, request, run|
-          callback("button-pressed", params[:duration], request, run+1)
-        end
-
         # generic api callback
         %w(get post).each do |method|
-          app.send(method, "#{PREFIX}/:action.jsp") do
-            callback('request', params, request)
-            callback(params[:action], params, request)
+          app.send(method, "/api/:bunnyid/:action.jsp") do
+            bunny = Bunny.find(params[:bunnyid])
+            callback('request', bunny, params, request)
+            callback(params[:action], bunny, params, request).tap do |response|
+              unless response
+                logger.warn "no successful callback found for #{params[:action]}"
+                status 404
+                return
+              end
+            end
           end
         end
       end

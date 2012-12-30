@@ -1,14 +1,7 @@
 require 'sinatra/base'
 
-require 'nabaztag_hack_kit/mods/callback'
-# require 'nabaztag_hack_kit/mods/logger'
-require 'nabaztag_hack_kit/mods/playground'
-
 module NabaztagHackKit
   class Server < Sinatra::Base
-    register Mods::Callback
-    # register Mods::Logger
-    register Mods::Playground
 
     configure :production, :development do
       enable :logging

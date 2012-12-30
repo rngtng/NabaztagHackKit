@@ -1,5 +1,9 @@
 require 'open-uri'
 
+# a rack middleware to redirect(Proxy through) certain request to another service
+#
+# it's the prefered solution for developing, so your bunny still points to live server but any request
+# get forwarded to dev machine
 module NabaztagHackKit
   class Redirect
     def initialize(app)
@@ -26,8 +30,8 @@ module NabaztagHackKit
     end
 
     private
-    def render(body)
-      [200, {"Content-Type" => "text/html"}, Array(body)]
+    def render(response)
+      [response.status.first.to_i, {"Content-Type" => response.content_type}, Array(response)]
     end
   end
 end
