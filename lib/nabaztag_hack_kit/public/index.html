@@ -1,57 +1,123 @@
 <html>
   <head>
     <title>Nabaztag Hack Kit</title>
-    <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
-    <script src="//timeago.yarp.com/jquery.timeago.js"></script>
+    <!-- <script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script> -->
+    <!-- <script src="//timeago.yarp.com/jquery.timeago.js"></script>  -->
+    <script src="jquery.min.js"></script>
+    <script src="jquery.timeago.js"></script>
+    <script>
+      var bunnies = { "0019db9c2daf": {id: "0019db9c2daf", last_seen: "2013-01-02 22:38:16 +0100"}};
+      var bunnies = new Object();
+
+      jQuery(document).ready(function() {
+        updateBunnies = function() {
+          $.each(bunnies, function(key, bunny) {
+            if($('#bunnies tr#' + bunny.id).size() == 0) {
+              $('#bunnies tbody').append(' \
+                <tr id="' + bunny.id + '" data-url="/playground/bunnies/' + bunny.id + '"> \
+                  <td><input value="' + bunny.id + '" name="bunny[]" type="checkbox" checked></td> \
+                  <td>' + bunny.id + '</td> \
+                  <td class="last_seen"></td> \
+                  <td class="pipe"></td> \
+                </tr>');
+            }
+            $('#bunnies tbody tr#' + bunny.id + ' .last_seen')
+              .html($.timeago(bunny.last_seen))
+              .attr("title", bunny.last_seen);
+            $('#bunnies tbody tr#' + bunny.id + ' .pipe')
+              .html(bunny.queued_commands_size);
+          });
+        };
+
+        getBunnies = function() {
+          $.getJSON('/playground/bunnies', function(data) {
+            $.each(data, function(key, bunny) {
+              bunnies[bunny.id] = bunny;
+            });
+            updateBunnies();
+          });
+        };
+
+        getCommands = function() {
+          $.getJSON('/playground/commands', function(data) {
+            $.each(data, function(command, value ) {
+              $('#commands select').append('<option value="' + value + '">' + command + '</option>');
+            });
+          });
+        };
+
+        getCommands();
+        setInterval(getBunnies, 5000);
+        getBunnies();
+
+        $("#submit").click(function(event){
+          event.preventDefault();
+          var command    = $("#commands select").map(function() { return $(this).val() } ).get(),
+          command_values = $("#commands input").map(function() { return $(this).val() } ).get();
+          console.log(command);
+          selectedIds = $('#bunnies tbody input:checked').map(function(){
+            $.post($(this).parents("tr").data("url"), { command: command, command_values: command_values })
+              // .done(function() {
+              //   alert("done");
+              // });
+          }).get();
+        });
+
+        $("a.dup").click(function(event){
+          event.preventDefault();
+          $(this).parents("li").after( $(this).parents("li").clone(true) );
+        });
+
+        $("a.del").click(function(event){
+          event.preventDefault();
+          $(this).parents("li").remove();
+        });
+
+      });
+    </script>
+    <style>
+      #commands li:first-child a.del {
+        display: none;
+      }
+    </style>
   </head>
   <body>
     <h1>Welcome to Nabaztag Hack Kit</h1>
 
     Hurray, your server is successful running! Now point your bunny to this url and you're ready to go!
 
-    Check the <a href="https://github.com/rngtng/NabaztagHackKit">Docs</a> how to integrate...
+    Check the <a href="https://github.com/rngtng/NabaztagHackKit">Docs</a> for further help...
 
-    <h2>Playground</h2>
+    <form action="/playground/bunnies" method="post">
+      <h2>Bunny Playground</h2>
+      Select Bunnies and commands to send:
+      <table id="bunnies" width="500">
+        <thead>
+          <tr><th></th><th>Serial No</th><th>Last seen</th><th>Command Pipe</th></tr>
+        </thead>
+        <tbody>
 
-    <form action="/commands" method="post">
-      <select name="bunny">
-        <option value="*">All</option>
-      </select>
+<!--      <tr id="0019db9c2daf">
+            <td><input value="0019db9c2daf" name="bunny[]" type="checkbox"></td>
+            <td>0019db9c2daf</td>
+            <td class="last_seen"></td>
+            <td class="pipe"></td>
+          </tr> -->
 
-      <select name="command">
-        <option value="*">All</option>
-        <% commands.each do |cmd, value| %>
-          <option value="<%= value %>"><%= cmd %></option>
-        <% end %>
-      </select>
+        </tbody>
+      </table>
 
-      <input name="values">
+      <ul id="commands">
+        <li>
+          <select name="command[]"></select>
+          <input name="command_values[]">
+          <a class="dup" href="#">dup</a> <a class="del" href="#">del</a>
+        </li>
+      </ul>
 
-      <input type="submit">
+      <input id="submit" type="submit" >
     </form>
 
-    <h2>Bunnies</h2>
-    <table id="bunnies">
-      <thead>
-        <tr><th>Serial No</th><th>Last seen</th><th>Pipe</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-
-    <script>
-      jQuery(document).ready(function() {
-        getBunnies = function()
-        {
-          $.getJSON('/bunnies', function(data) {
-            $('#bunnies tbody').empty();
-            $.each(data, function(key, bunny) {
-              $('#bunnies tbody').append('<tr><td>' + bunny.id + '</td><td>'+ $.timeago(bunny.last_seen) + '</td><td>'+ bunny.last_seen + '</td></tr>');
-            });
-          });
-        }
-        setInterval( getBunnies, 1000);
-      });
-     </script>
   </body>
 </html>
 

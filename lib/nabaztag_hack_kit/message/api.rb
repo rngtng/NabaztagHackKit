@@ -38,15 +38,11 @@ module NabaztagHackKit
       F = 1
       B = 2
 
-      def send_nabaztag(*data)
-         Message.build(*data)
-      end
-
-      def rgb(values)
-        values.map do |value|
-          Message.to_3b(value)
-        end.flatten
-      end
+      # def rgb(values)
+      #   values.map do |value|
+      #     Message.to_3b(value)
+      #   end.flatten
+      # end
 
     end
   end

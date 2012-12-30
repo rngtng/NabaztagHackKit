@@ -13,7 +13,7 @@ module NabaztagHackKit
 
       pack full_message commands.map { |cmd, *data|
         data = convert_data(data)
-        [cmd] + to_3b(data.size) + data
+        [cmd.to_i] + to_3b(data.size) + data.map(&:to_i)
       }
     end
 

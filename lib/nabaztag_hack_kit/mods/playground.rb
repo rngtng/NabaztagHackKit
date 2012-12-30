@@ -1,81 +1,69 @@
 require "json"
 require 'nabaztag_hack_kit/bunny'
+require 'nabaztag_hack_kit/message/helper'
 
 module NabaztagHackKit
   module Mods
     module Playground
 
-      module Helpers
-        def cmds
-          @@cmds ||= {}
-        end
-
-        def add_commands(bunny_sn, command, values)
-          bunnies.each do |sn, value|
-            if params[:bunny] == "*" || params[:bunny] == sn
-              cmds[sn] ||= {}
-              cmds[sn][command] = values
-            end
-          end
-        end
-
-        ########
-
-        def distance_of_time(from_time, to_time = Time.now)
-          hours   = ( to_time - from_time) / 3600
-          minutes = ((to_time - from_time) % 3600) / 60
-          seconds = ((to_time - from_time) % 3600) % 60
-
-          "".tap do |diff_in_words|
-            diff_in_words << "%2dh,&nbsp;"   % hours   if hours.floor   > 0
-            diff_in_words << "%2dmin,&nbsp;" % minutes if minutes.floor > 0
-            diff_in_words << "%2dsec"        % seconds
-          end
-        end
-      end
-
       def self.registered(app)
-        app.helpers Playground::Helpers
 
         app.get "/" do
+          redirect "/playground"
+        end
+
+        app.get "/playground" do
           File.read(public_file("index.html"))
         end
 
         #API
-        app.get "/bunnies" do
-          # return list of bunnies
-          Bunny.all.to_json
-        end
-
-        app.post "/bunnies/:bunnyid/command" do
-          if bunny = Bunny.find(params[:bunnyid])
-            bunny.queue_command(params[:command], params[:values])
-          end
-        end
-
-        app.post "/commands" do
-          # return list of available commands
+        app.get "/playground/commands" do # return list of commands
           Message::Api.constants.sort.inject({}) do |hash, constant|
             if constant.to_s.length > 2
               hash[constant] = Message::Api.const_get(constant)
             end
             hash
+          end.to_json
+        end
+
+        app.get "/playground/bunnies" do # return list of bunnies
+          Bunny.all.to_json
+        end
+
+        app.post "/playground/bunnies/:bunnyid" do #  {"command"=>["40"], "command_values"=>[["1,2,3,4"],[]]}
+          if bunny = Bunny.find(params[:bunnyid])
+            bunny.queue_commands(Array(params[:command]).zip(params[:command_values]).map do |command, values|
+              [command, *values.split(",")]
+            end)
+            bunny.to_json
           end
+        end
+
+        app.post "/playground/bunnies" do #  {"bunny"=>["0019db9c2daf"], "command"=>["40"], "command_values"=>[["1,2,3,4"],[]]}
+          Array(params[:bunny]).uniq.each do |bunnyid|
+            if bunny = Bunny.find(bunnyid)
+              bunny.queue_commands(Array(params[:command]).zip(params[:command_values]).map do |command, values|
+                [command, *values.split(",")]
+              end)
+            end
+          end
+
+          redirect "/playground"
         end
 
         ##################################################################
 
-        app.on "ping" do |data, request, run|
-          if (bunny = Bunny.find(data[:bunnyid])) && bunny.queued_commands.any?
-            send_nabaztag bunny.queued_commands.pop
+        app.on "ping" do |bunny|
+          if bunny
+            bunny.next_message!
           end
         end
 
-        app.on 'request' do |data, request, run|
+        app.on 'request' do |bunny, data|
           if bunny = Bunny.find_or_initialize_by_id(data[:bunnyid])
-            bunny.seen
+            bunny.seen!
           end
-          nil #pass it own
+          nil # pass it on
         end
       end
 

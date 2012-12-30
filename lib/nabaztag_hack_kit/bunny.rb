@@ -1,45 +1,54 @@
-class Bunny
-  @bunnies = {}
+require 'nabaztag_hack_kit/message'
 
-  attr_reader :id, :last_seen, :queued_commands
+module NabaztagHackKit
+  class Bunny
+    @bunnies = {}
 
-  class << self
-    def all
-      @bunnies.values
+    attr_reader :id, :last_seen, :queued_commands
+
+    class << self
+      def all
+        @bunnies.values
+      end
+
+      def find(id)
+        @bunnies[id]
+      end
+
+      def find_or_initialize_by_id(id)
+        find(id) || Bunny.new(id)
+      end
+
+      def add(bunny)
+        @bunnies[bunny.id] = bunny
+      end
     end
 
-    def find(id)
-      @bunnies[id]
+    def initialize(id)
+      @id              = id
+      @queued_commands = []
+
+      Bunny.add(self)
     end
 
-    def find_or_initialize_by_id(id)
-      find(id) || Bunny.new(id)
+    def seen!
+      @last_seen = Time.now
     end
 
-    def add(bunny)
-      @bunnies[bunny.id] = bunny
+    def queue_commands(commands)
+      @queued_commands << commands
     end
-  end
 
-  def initialize(id)
-    @id              = id
-    @queued_commands = []
+    def next_message!
+      Message.build(*@queued_commands.shift || Message::Api::OK)
+    end
 
-    Bunny.add(self)
-  end
-
-  def seen
-    @last_seen = Time.now
-  end
-
-  def queue_command(command, value)
-    @queued_commands << (Array(command) << value)
-  end
-
-  def to_json(a,b)
-    {
-      :id        => id,
-      :last_seen => last_seen,
-    }.to_json
+    def to_json(state = nil, deepth = nil)
+      {
+        :id                   => id,
+        :last_seen            => last_seen,
+        :queued_commands_size => queued_commands.size,
+      }.to_json
+    end
   end
 end
