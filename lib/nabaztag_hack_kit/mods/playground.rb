@@ -32,9 +32,7 @@ module NabaztagHackKit
 
         app.post "/playground/bunnies/:bunnyid" do #  {"command"=>["40"], "command_values"=>[["1,2,3,4"],[]]}
           if bunny = Bunny.find(params[:bunnyid])
-            bunny.queue_commands(Array(params[:command]).zip(params[:command_values]).map do |command, values|
-              [command, *values.split(",")]
-            end)
+            bunny.queue_commands commands(params[:command], params[:command_values])
             bunny.to_json
           end
         end
@@ -42,9 +40,7 @@ module NabaztagHackKit
         app.post "/playground/bunnies" do #  {"bunny"=>["0019db9c2daf"], "command"=>["40"], "command_values"=>[["1,2,3,4"],[]]}
           Array(params[:bunny]).uniq.each do |bunnyid|
             if bunny = Bunny.find(bunnyid)
-              bunny.queue_commands(Array(params[:command]).zip(params[:command_values]).map do |command, values|
-                [command, *values.split(",")]
-              end)
+              bunny.queue_commands commands(params[:command], params[:command_values])
             end
           end
 
@@ -67,6 +63,22 @@ module NabaztagHackKit
         end
       end
 
+      private
+      def commands(commands, command_values)
+        Array(commands).zip(command_values).map do |command, values|
+          [command] + int_array(values.split(","))
+        end
+      end
+
+      def int_array(array)
+        array.map do |entry|
+          if entry.to_i.to_s == entry
+            entry.to_i
+          else
+            entry
+          end
+        end
+      end
     end
   end
 end
