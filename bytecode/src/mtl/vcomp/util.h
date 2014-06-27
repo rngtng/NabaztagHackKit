@@ -18,14 +18,14 @@ class Interpreter;
 class Util
 {
 private :
-	Memory* m;
+    Memory* m;
 public:
-	Util(Memory* mem);
-	~Util();
-	int start();
-	void stop();
+    Util(Memory* mem);
+    ~Util();
+    int start();
+    void stop();
 
-	Compiler* compiler;
-	Interpreter* interpreter;
+    Compiler* compiler;
+    Interpreter* interpreter;
 };
 #endif

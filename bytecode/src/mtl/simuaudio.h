@@ -13,28 +13,28 @@
 // Global variables & type defs
 typedef struct WaveOutBuffer
 {
-  WORD Rate;
-  BYTE nChannels;
-  LONG dwDataSize;
-  BYTE Resolution;
-  HWND hwnd;
-  HGLOBAL hWaveHdr;
-  LPWAVEHDR lpWaveHdr;
-  HANDLE hData;  // handle of waveform data memory 
-  HPSTR  lpData;  // pointer to waveform data memory 
+    WORD Rate;
+    BYTE nChannels;
+    LONG dwDataSize;
+    BYTE Resolution;
+    HWND hwnd;
+    HGLOBAL hWaveHdr;
+    LPWAVEHDR lpWaveHdr;
+    HANDLE hData;  // handle of waveform data memory
+    HPSTR  lpData;  // pointer to waveform data memory
 } WaveOutBuffer;
 
 typedef struct WaveInBuffer
 {
-  WORD Rate;
-  BYTE nChannels;
-  LONG dwDataSize;
-  BYTE Resolution;
-  HWND hwnd;
-  HGLOBAL hWaveHdr;
-  LPWAVEHDR lpWaveHdr;
-  HANDLE hData;  // handle of waveform data memory 
-  HPSTR  lpData;  // pointer to waveform data memory 
+    WORD Rate;
+    BYTE nChannels;
+    LONG dwDataSize;
+    BYTE Resolution;
+    HWND hwnd;
+    HGLOBAL hWaveHdr;
+    LPWAVEHDR lpWaveHdr;
+    HANDLE hData;  // handle of waveform data memory
+    HPSTR  lpData;  // pointer to waveform data memory
 } WaveInBuffer;
 
 // audio

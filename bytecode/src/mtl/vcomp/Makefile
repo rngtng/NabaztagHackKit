@@ -23,7 +23,7 @@ libvcomp.a : $(OBJS)
 # %.o : %.cpp
 # 	g++ -c $^ -o $@
 
-CPPFLAGS=-fpermissive
+CPPFLAGS=-fpermissive -m32
 
 clean :
-	rm -f $(OBJS)
+	rm -f $(OBJS) libcomp.a

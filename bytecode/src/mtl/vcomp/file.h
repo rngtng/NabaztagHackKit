@@ -19,21 +19,21 @@ class FileSystem;
 class File
 {
 private :
-	FileSystem *filesystem;
-	FILE *file;
-	char* internalbuffer;
-	int	sizeinternalbuffer;
+    FileSystem *filesystem;
+    FILE *file;
+    char* internalbuffer;
+    int	sizeinternalbuffer;
 public:
-	File(FileSystem *fs);
-	~File();
+    File(FileSystem *fs);
+    ~File();
 
-	int openread(const char* name);
-	char* getcontent(int *size);
+    int openread(const char* name);
+    char* getcontent(int *size);
 
-	int openwrite(const char* name);
-	int write(const char* outbuf,int size);
+    int openwrite(const char* name);
+    int write(const char* outbuf,int size);
 
-	int close();
+    int close();
 
 };
 #endif

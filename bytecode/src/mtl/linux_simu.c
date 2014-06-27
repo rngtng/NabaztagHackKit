@@ -36,10 +36,16 @@ void checkAllEvents(void);
 #endif
 
 #ifdef VMICROCHIP
-int simuInit(){ return 0;}
-int simuDoLoop(){ return 0;}
-void simuSetLed(vub i,vub val){}
-void simuSetMotor(vub i,vub val){}
+int simuInit()
+{
+    return 0;
+}
+int simuDoLoop()
+{
+    return 0;
+}
+void simuSetLed(vub i,vub val) {}
+void simuSetMotor(vub i,vub val) {}
 
 #else
 #include<stdio.h>
@@ -77,17 +83,17 @@ uchar colormul[256*256];
 // initialisation des tables de couleur
 void colortabInit()
 {
-	int i,j,k;
+    int i,j,k;
 
-	for(i=0;i<256;i++)
-		for(j=0;j<256;j++)
-		{
-			k=i+j;
-			coloradd[i+(j<<8)]=(k<=255)?k:255;
+    for(i=0; i<256; i++)
+        for(j=0; j<256; j++)
+        {
+            k=i+j;
+            coloradd[i+(j<<8)]=(k<=255)?k:255;
 
-			k=i*j/255;
-			colormul[i+(j<<8)]=k;
-		}
+            k=i*j/255;
+            colormul[i+(j<<8)]=k;
+        }
 }
 
 // définition physique des leds
@@ -111,70 +117,87 @@ int lastmovex=0;
 int lastmovey=0;
 
 #ifdef PROTORABBIT
-int diodex[NBLED]={80,80,80,40,40,40,80,80,80,120,120,120,80,80,80};
-int diodey[NBLED]={40,40,40,90,90,90,90,90,90,90,90,90,130,130,130};
+int diodex[NBLED]= {80,80,80,40,40,40,80,80,80,120,120,120,80,80,80};
+int diodey[NBLED]= {40,40,40,90,90,90,90,90,90,90,90,90,130,130,130};
 int diodergb[NBLED]=
-{0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000
+{
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000
 };
 #endif
 
 #ifdef PROTODAL
-int diodex[NBLED]={40,40,40,80,80,80,120,120,120,40,40,40,80,80,80,120,120,120,40,40,40,80,80,80,120,120,120};
-int diodey[NBLED]={40,40,40,40,40,40,40,40,40,80,80,80,80,80,80,80,80,80,120,120,120,120,120,120,120,120,120};
+int diodex[NBLED]= {40,40,40,80,80,80,120,120,120,40,40,40,80,80,80,120,120,120,40,40,40,80,80,80,120,120,120};
+int diodey[NBLED]= {40,40,40,40,40,40,40,40,40,80,80,80,80,80,80,80,80,80,120,120,120,120,120,120,120,120,120};
 int diodergb[NBLED]=
-{0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000,
-0x0000ff,0x00ff00,0xff0000
+{
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000,
+    0x0000ff,0x00ff00,0xff0000
 };
 #endif
 
 
 // TODO
-int getButton() { return 0; }
+int getButton()
+{
+    return 0;
+}
 
 // fonction d'affichage des diodes
 int simuDisplay(int* intensity)
 {
-	// TODO afficher l'état du lapin
-	return 0;
+    // TODO afficher l'état du lapin
+    return 0;
 }
 
 
 // initialisation du simulateur
 vsd simuInit()
 {
-	int i;
-	colortabInit();
+    int i;
+    colortabInit();
 
-	for(i=0;i<NBLED;i++) diodeval[i]=255;
-	srand(clock());
+    for(i=0; i<NBLED; i++)
+    {
+        diodeval[i]=255;
+    }
+    srand(clock());
 #ifdef VL_MOTORS
-	for(i=0;i<NBMOTOR;i++)
-	{
-		motorval[i]=60;//(rand()&255)*MAXMOTORVAL/256;
-		motorcount[i]=motordir[i]=0; 
-	}
-	for(i=0;i<256;i++) motorwheel[i]=0;
-	for(i=0;i<MAXMOTORVAL;i++)
-	{
-		if ((i*2*NBHOLES/MAXMOTORVAL)&1) motorwheel[i]=1;
-		if (i*NBHOLES/MAXMOTORVAL>=NBHOLES-MASKEDHOLES) motorwheel[i]=1;
-	}
+    for(i=0; i<NBMOTOR; i++)
+    {
+        motorval[i]=60;//(rand()&255)*MAXMOTORVAL/256;
+        motorcount[i]=motordir[i]=0;
+    }
+    for(i=0; i<256; i++)
+    {
+        motorwheel[i]=0;
+    }
+    for(i=0; i<MAXMOTORVAL; i++)
+    {
+        if ((i*2*NBHOLES/MAXMOTORVAL)&1)
+        {
+            motorwheel[i]=1;
+        }
+        if (i*NBHOLES/MAXMOTORVAL>=NBHOLES-MASKEDHOLES)
+        {
+            motorwheel[i]=1;
+        }
+    }
 #endif
 //	setButton(1);
-	simuaudioinit();
-	simunetinit();
-	return 0;
+    simuaudioinit();
+    simunetinit();
+    return 0;
 }
 
 
@@ -183,23 +206,35 @@ vsd simuInit()
 vsd simuDoLoop()
 {
 #ifdef VL_MOTORS
-	int i,last;
+    int i,last;
 #endif
 
-	checkAllEvents();
+    checkAllEvents();
 
 #ifdef VL_MOTORS
-	for(i=0;i<NBMOTOR;i++)
-	{
-		last=motorwheel[motorval[i]];
-		if (1) motorval[i]+=motordir[i];
-		if (motorval[i]<0) motorval[i]+=MAXMOTORVAL;
-		if (motorval[i]>=MAXMOTORVAL) motorval[i]-=MAXMOTORVAL;
-		if (last<motorwheel[motorval[i]]) motorcount[i]++;
-	}
+    for(i=0; i<NBMOTOR; i++)
+    {
+        last=motorwheel[motorval[i]];
+        if (1)
+        {
+            motorval[i]+=motordir[i];
+        }
+        if (motorval[i]<0)
+        {
+            motorval[i]+=MAXMOTORVAL;
+        }
+        if (motorval[i]>=MAXMOTORVAL)
+        {
+            motorval[i]-=MAXMOTORVAL;
+        }
+        if (last<motorwheel[motorval[i]])
+        {
+            motorcount[i]++;
+        }
+    }
 #endif
-	simuDisplay(diodeval);
-	return 0;
+    simuDisplay(diodeval);
+    return 0;
 }
 
 
@@ -208,64 +243,67 @@ vsd simuDoLoop()
  */
 void checkAllEvents(void)
 {
-	checkNetworkEvents();
+    checkNetworkEvents();
 }
 
 
 // réglagle d'une led
 void simuSetLed(int i,int val)
 {
-	i*=3;
-	if ((i<0)||(i>=NBLED)) return;
-	diodeval[i]=(val>>16)&255;
-	diodeval[i+1]=(val>>8)&255;
-	diodeval[i+2]=(val)&255;
+    i*=3;
+    if ((i<0)||(i>=NBLED))
+    {
+        return;
+    }
+    diodeval[i]=(val>>16)&255;
+    diodeval[i+1]=(val>>8)&255;
+    diodeval[i+2]=(val)&255;
 
-	my_printf(LOG_SIMULEDS, "Setting led %d: [%d %d %d]\n", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
-	my_printf(LOG_SIMULEDS, "All leds state:", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
-	for (i=0; i<NBLED/3; ++i)
-		{
-			my_printf(LOG_SIMULEDS, " [%3d %3d %3d]", diodeval[3*i], diodeval[3*i+1], diodeval[3*i+2]);
-		}
-	my_printf(LOG_SIMULEDS, "\n");
+    my_printf(LOG_SIMULEDS, "Setting led %d: [%d %d %d]\n", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
+    my_printf(LOG_SIMULEDS, "All leds state:", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
+    for (i=0; i<NBLED/3; ++i)
+    {
+        my_printf(LOG_SIMULEDS, " [%3d %3d %3d]", diodeval[3*i], diodeval[3*i+1], diodeval[3*i+2]);
+    }
+    my_printf(LOG_SIMULEDS, "\n");
 }
 
 #ifdef VL_MOTORS
 // réglagle d'un moteur
 void set_motor_dir(int num_motor, int sens)
 {
-	int tmp_num, tmp_sens;
-	tmp_num = num_motor?1:0;
-	tmp_sens = (sens==0)?0:((sens==1)?1:-1);
-	motordir[tmp_num]=tmp_sens;
+    int tmp_num, tmp_sens;
+    tmp_num = num_motor?1:0;
+    tmp_sens = (sens==0)?0:((sens==1)?1:-1);
+    motordir[tmp_num]=tmp_sens;
 
-	my_printf(LOG_SIMUMOTORS, "Setting motor %d, direction %d (pos: %d)\n", tmp_num, tmp_sens);
+    my_printf(LOG_SIMUMOTORS, "Setting motor %d, direction %d (pos: %d)\n", tmp_num, tmp_sens);
 }
 
 int get_motor_val(int i)
 {
-	int tmp_num = i?1:0;
-	my_printf(LOG_SIMUMOTORS, "Getting value for motor %d: %d\n", tmp_num, motorcount[tmp_num]);
-	return motorcount[tmp_num];
+    int tmp_num = i?1:0;
+    my_printf(LOG_SIMUMOTORS, "Getting value for motor %d: %d\n", tmp_num, motorcount[tmp_num]);
+    return motorcount[tmp_num];
 }
 #else
 int get_motor_val(int i)
 {
-	return 128;
+    return 128;
 }
 #endif
 
 int get_button3()
 {
-	// TODO
-	return 0;
+    // TODO
+    return 0;
 }
 
 char buf_rfid[256];
 
 char* get_rfid()
 {
-	// TODO
-	return NULL;
+    // TODO
+    return NULL;
 }
 #endif

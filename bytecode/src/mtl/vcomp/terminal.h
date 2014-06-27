@@ -15,16 +15,16 @@ class Memory;
 class Terminal
 {
 private:
-	char* internalbuffer;
-	int	sizeinternalbuffer;
+    char* internalbuffer;
+    int	sizeinternalbuffer;
 public:
-	Memory* m;
-	Terminal();
-	~Terminal();
+    Memory* m;
+    Terminal();
+    ~Terminal();
 
-	void echo(int mask,char *s);
-	void echo(int mask,char *s,int size);
-	void printf(int mask,const char *format, ...);
+    void echo(int mask,char *s);
+    void echo(int mask,char *s,int size);
+    void printf(int mask,const char *format, ...);
 };
 
 #endif

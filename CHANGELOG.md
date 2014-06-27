@@ -1,5 +1,14 @@
 # Changes
 
+## v0.2.1 - 28-06-2014
+
+  * added Mac OSX support by @ztalbot2000
+  * fixed all compile warnings
+  * Added -m32 compile option
+  * fixed segfault when running mtl_comp with invalid args
+  * Changed output so size is CAPITAL hex value to make absolutely no
+    differences when comparing compiled .mtl file and original bc.jsp file
+
 ## v0.1.1 - xx-09-2016
 
   * file cleanup fix spelling

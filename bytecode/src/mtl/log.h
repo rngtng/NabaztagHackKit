@@ -1,13 +1,14 @@
 #ifndef _LOG_H_
 # define _LOG_H_
 
-typedef enum {
-	LOG_INIT = 1,         // les messages écrits pendant l'init
-	LOG_VM = 2,           // les messages écrits par le lapin
-	LOG_SIMUNET = 4,      // les logs de simulation réseau
-	LOG_SIMUAUDIO = 8,    // les logs de simulation audio
-	LOG_SIMULEDS = 16,    // les logs de simulation des leds
-	LOG_SIMUMOTORS = 32   // les messages écrits pendant l'init
+typedef enum
+{
+    LOG_INIT = 1,         // les messages écrits pendant l'init
+    LOG_VM = 2,           // les messages écrits par le lapin
+    LOG_SIMUNET = 4,      // les logs de simulation réseau
+    LOG_SIMUAUDIO = 8,    // les logs de simulation audio
+    LOG_SIMULEDS = 16,    // les logs de simulation des leds
+    LOG_SIMUMOTORS = 32   // les messages écrits pendant l'init
 } e_logtypes;
 
 void my_printf(e_logtypes t, const char *fmt, ...);
