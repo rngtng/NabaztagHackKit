@@ -26,12 +26,12 @@ endif
 
 mtl_comp : vcomp/libvcomp.a $(COMMON_OBJS) $(COMP_OBJS)
 ifeq ($(OS),$(TARGET_OS))
-	$(CXX) $(CXXFLAGS) $^ -o /tmp/$@ vcomp/libvcomp.a
+	$(CXX) $(CXXFLAGS) $^ -o $@ vcomp/libvcomp.a
 endif
 
 mtl_simu : vcomp/libvcomp.a $(COMMON_OBJS) $(SIMU_OBJS)
 ifeq ($(OS),$(TARGET_OS))
-	$(CXX) $(CXXFLAGS) -lresolv $^ -o /tmp/$@ vcomp/libvcomp.a
+	$(CXX) $(CXXFLAGS) -lresolv $^ -o $@ vcomp/libvcomp.a
 endif
 
 clean :
