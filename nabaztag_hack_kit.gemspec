@@ -13,18 +13,16 @@ Gem::Specification.new do |s|
 
   s.files         = `git ls-files`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
-  s.extensions    = ['bytecode/src/mtl/extconf.rb']
+  s.extensions    = ['compiler/extconf.rb']
 
-  s.bindir        = 'bytecode/bin'
+  s.bindir        = 'compiler/bin'
   s.executables   = ['mtl_comp', 'mtl_simu', 'mtl_merge']
 
   s.require_paths = ["lib"]
 
-  ["sinatra"].each do |gem|
-    s.add_dependency *gem.split(' ')
-  end
+  s.add_dependency 'sinatra'
 
-  ["rake", "rspec", "rack-test"].each do |gem|
-    s.add_development_dependency *gem.split(' ')
-  end
+  s.add_development_dependency 'rake'
+  s.add_development_dependency 'rspec'
+  s.add_development_dependency 'rack-test'
 end
