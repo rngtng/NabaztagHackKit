@@ -23,7 +23,8 @@ int Compiler::parseprogram()
 
 	while(1)
 	{
-		if (k=parseexpression()) return k;
+		k=parseexpression();
+		if (k) return k;
 		if (!parser->next(0)) return 0;
 		if (strcmp(parser->token,";"))
 		{
@@ -39,7 +40,8 @@ int Compiler::parseexpression()
 {
 	int k;
 	
-	if (k=parsearithm()) return k;
+	k=parsearithm();
+	if (k) return k;
 	
 	if (!parser->next(0)) return 0;
 	if (strcmp(parser->token,"::"))
@@ -47,11 +49,15 @@ int Compiler::parseexpression()
 		parser->giveback();
 		return 0;
     }
-	if (k=parseexpression()) return k;	// récursion
+	k=parseexpression();
+	if (k) return k;	// récursion
 
-	if (k=createnodetuple(2)) return k;
-	if (k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__u0_list_u0__list_u0)))) return k;
-	if (k=unif_argfun()) return k;
+	k=createnodetuple(2);
+	if (k) return k;
+	k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__u0_list_u0__list_u0)));
+	if (k) return k;
+	k=unif_argfun();
+	if (k) return k;
 
 	bc->addchar(OPdeftabb);
 	bc->addchar(2);
@@ -64,7 +70,8 @@ int Compiler::parsearithm()
 {
 	int k;
 	
-	if (k=parsea1()) return k;
+	k=parsea1();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -79,12 +86,15 @@ int Compiler::parsearithm()
 		int bc_i=bc->getsize();
 		bc->addshort(0);	// on prépare le champ pour le saut
 		bc->addchar(OPdrop);
-		if (k=parsea1()) return k;
+		k=parsea1();
+		if (k) return k;
 		bc->setshort(bc_i,bc->getsize());	// on règle le saut
 
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
 		STACKDROP(m);
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
     }
 }
 
@@ -95,9 +105,11 @@ int Compiler::parsea1()
 	
 	if ((parser->next(0))&&(!strcmp(parser->token,"!")))
     {
-		if (k=parsea1()) return k;
+		k=parsea1();
+		if (k) return k;
 		bc->addchar(OPnon);
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
 		return 0;
 	}
 	parser->giveback();
@@ -108,7 +120,8 @@ int Compiler::parsea2()
 {
 	int k,op,typ;
 	
-	if (k=parsea3()) return k;
+	k=parsea3();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -123,14 +136,17 @@ int Compiler::parsea2()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parsea3()) return k;
+		k=parsea3();
+		if (k) return k;
 		bc->addchar(op);
 
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+		if (k) return k;
 		STACKDROP(m);
 		if (typ==1)
 		{
-			if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+			k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+			if (k) return k;
 		}
 		STACKSET(m,0,TABGET(stdtypes,STDTYPE_I));
     }
@@ -140,7 +156,8 @@ int Compiler::parsea3()
 {
 	int k,op,typ;
 	
-	if (k=parsea4()) return k;
+	k=parsea4();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -151,14 +168,17 @@ int Compiler::parsea3()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parsea4()) return k;
+		k=parsea4();
+		if (k) return k;
 		bc->addchar(op);
 
 		int* ptyp;
 		if (typ==1) ptyp=VALTOPNT(TABGET(stdtypes,STDTYPE_I));
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
 		STACKDROP(m);
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
     }
 }
 
@@ -166,7 +186,8 @@ int Compiler::parsea4()
 {
 	int k,op,typ;
 	
-	if (k=parsea5()) return k;
+	k=parsea5();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -178,14 +199,17 @@ int Compiler::parsea4()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parsea5()) return k;
+		k=parsea5();
+		if (k) return k;
 		bc->addchar(op);
 
 		int* ptyp;
 		if (typ==1) ptyp=VALTOPNT(TABGET(stdtypes,STDTYPE_I));
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
 		STACKDROP(m);
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
     }
 }
 
@@ -193,7 +217,8 @@ int Compiler::parsea5()
 {
 	int k,op;
 	
-	if (k=parsea6()) return k;
+	k=parsea6();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -207,12 +232,15 @@ int Compiler::parsea5()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parsea6()) return k;
+		k=parsea6();
+		if (k) return k;
 		bc->addchar(op);
 
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
 		STACKDROP(m);
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
     }
 }
 
@@ -233,13 +261,15 @@ int Compiler::parsea6()
 			return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 		}
 		parser->giveback();
-		if (k=parsea6()) return k;
+		k=parsea6();
+		if (k) return k;
 		bc->addchar(OPneg);
 		return unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
 	}
 	else if (!strcmp(parser->token,"~"))
 	{
-		if (k=parsea6()) return k;
+		k=parsea6();
+		if (k) return k;
 		bc->addchar(OPnot);
 		return unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
 	}

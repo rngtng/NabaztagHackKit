@@ -41,8 +41,10 @@ void Util::stop()
 int Util::start()
 {
 	int k;
-	if (k=compiler->start()) return k;
-	if (k=interpreter->start()) return k;
+	k=compiler->start();
+	if (k) return k;
+	k=interpreter->start();
+	if (k) return k;
 	return 0;
 }
 

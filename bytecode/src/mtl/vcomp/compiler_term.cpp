@@ -58,7 +58,8 @@ int Compiler::parseterm()
 	}
 	if (!strcmp(parser->token,"("))	// gestion des parenthèses
 	{
-		if (k=parseprogram()) return k;
+		k=parseprogram();
+		if (k) return k;
 		return parser->parsekeyword(")");
 	}
 	else if (!strcmp(parser->token,"["))	// gestion des tuples
@@ -88,15 +89,18 @@ int Compiler::parseterm()
 				return createnodetuple(nval);
 			}
 			parser->giveback();
-			if (k=parseexpression()) return k;
+			k=parseexpression();
+			if (k) return k;
 			nval++;
 		}
 	}
 	else if (!strcmp(parser->token,"{"))	// gestion des tableaux
 	{
 		int nval=0;
-		if (k=createnodetype(TYPENAME_TAB)) return k;
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_TAB);
+		if (k) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 		int* p=VALTOPNT(STACKPULL(m));
 
@@ -113,8 +117,10 @@ int Compiler::parseterm()
 				return 0;
 			}
 			parser->giveback();
-			if (k=parseexpression()) return k;
-			if (k=unif(VALTOPNT(STACKGET(m,0)),p)) return k;
+			k=parseexpression();
+			if (k) return k;
+			k=unif(VALTOPNT(STACKGET(m,0)),p);
+			if (k) return k;
 			STACKDROP(m);
 			nval++;
 		}
@@ -148,7 +154,8 @@ int Compiler::parseterm()
 			return MTLERR_SN;
 		}
 		bcint_byte_or_int(parser->token[0]&255);
-		if (k=parser->parsekeyword("'")) return k;
+		k=parser->parsekeyword("'");
+		if (k) return k;
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 	}
 	else if (islabel(parser->token))	// gestion des appels de fonctions ou références
@@ -168,9 +175,11 @@ int Compiler::parseterm()
 	}
 	else if (parser->token[0]=='"')	// gestion des chaines
 	{
-		if (k=parser->getstring(m,'"')) return k;
+		k=parser->getstring(m,'"');
+		if (k) return k;
 		int val=INTTOVAL(nblabels(globals));
-		if (k=addlabel(globals,"",val,STACKGET(m,0))) return k;	// enregistrement d'une nouvelle globale
+		k=addlabel(globals,"",val,STACKGET(m,0));
+		if (k) return k;	// enregistrement d'une nouvelle globale
 		STACKDROP(m);
 		bc_byte_or_int(VALTOINT(val),OPgetglobalb,OPgetglobal);
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_S));
@@ -192,19 +201,25 @@ int Compiler::parsefields(int* p)
 	int* type=VALTOPNT(TABGET(VALTOPNT(TABGET(p,REF_VAL)),FIELD_TYPE));
 	int n=VALTOINT(TABGET(type,REF_VAL));
 	bc_byte_or_int(n,OPmktabb,OPmktab);	// création de la structure
-	if (k=copytype(VALTOPNT(TABGET(type,REF_TYPE)))) return k;	// création du type
+	k=copytype(VALTOPNT(TABGET(type,REF_TYPE)));	// création du type
+	if (k) return k;
 
 	int loop=1;
 	while(loop)
 	{
-		if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;	// création du type du champ
-		if (k=unif(VALTOPNT(STACKGET(m,1)),
-			VALTOPNT(TABGET(argsfromfun(VALTOPNT(STACKGET(m,0))),TYPEHEADER_LENGTH)) )) return k;
+		k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));	// création du type du champ
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,1)),
+			VALTOPNT(TABGET(argsfromfun(VALTOPNT(STACKGET(m,0))),TYPEHEADER_LENGTH)) );
+		if (k) return k;
 		STACKSET(m,0,TABGET(VALTOPNT(STACKGET(m,0)),TYPEHEADER_LENGTH+1));
 		
-		if (k=parser->parsekeyword(":")) return k;
-		if (k=parseexpression()) return k;
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+		k=parser->parsekeyword(":");
+		if (k) return k;
+		k=parseexpression();
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+		if (k) return k;
 		STACKDROPN(m,2);
 		bc_byte_or_int( VALTOINT(TABGET(VALTOPNT(TABGET(p,REF_VAL)),FIELD_NUM)), OPsetstructb,OPsetstruct);
 
@@ -241,13 +256,15 @@ int Compiler::parseref()
 	if (!searchlabel_byname(locals,parser->token,&val,&ref))	// recherche dans les variables locales
 	{
 		bc_byte_or_int(VALTOINT(val),OPgetlocalb,OPgetlocal);
-		if (k=STACKPUSH(m,ref)) return k;
+		k=STACKPUSH(m,ref);
+		if (k) return k;
 		return parsegetpoint();
 	}
 	val=-1;
 
 	int *p;
-	if (p=searchref(PNTTOVAL(newpackage),parser->token))	// recherche dans les autres globales
+	p=searchref(PNTTOVAL(newpackage),parser->token);	// recherche dans les autres globales
+	if (p)	// recherche dans les autres globales
 	{
 		ref=PNTTOVAL(p);
 		int code=VALTOINT(TABGET(p,REF_CODE));
@@ -261,11 +278,14 @@ int Compiler::parseref()
 		else if (code==CODE_CONS)
 		{
 			bcint_byte_or_int(VALTOINT(TABGET(p,REF_VAL)));
-			if (k=parseexpression()) return k;
+			k=parseexpression();
+			if (k) return k;
 			bc->addchar(OPdeftabb);
 			bc->addchar(2);
-			if (k=createnodetuple(1)) return k;
-			if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
+			k=createnodetuple(1);
+			if (k) return k;
+			k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+			if (k) return k;
 			return unif_argfun();
 		}
 		val=0;
@@ -278,11 +298,16 @@ int Compiler::parseref()
 
 		if (code>=0)	// appel d'une fonction
 		{
-			int i; for(i=0;i<code;i++) if (k=parseexpression())
+			int i;
+			for(i=0;i<code;i++)
 			{
-				char * name=STRSTART(VALTOPNT(TABGET(p,REF_NAME)));
-				PRINTF(m)(LOG_COMPILER,"Compiler : function %s requires %d arguments\n",name, code);
-				return k;
+				k=parseexpression();
+				if (k)
+				{
+					char * name=STRSTART(VALTOPNT(TABGET(p,REF_NAME)));
+					PRINTF(m)(LOG_COMPILER,"Compiler : function %s requires %d arguments\n",name, code);
+					return k;
+				}
 			}
 			if ((TABGET(p,REF_VAL)!=NIL)&&(TABGET(VALTOPNT(TABGET(p,REF_VAL)),FUN_NBLOCALS)==NIL))
 			{	// appel natif
@@ -293,18 +318,24 @@ int Compiler::parseref()
 				bcint_byte_or_int(VALTOINT(TABGET(p,REF_PACKAGE)));
 				bc->addchar(OPexec);
 			}
-			if (k=createnodetuple(code)) return k;
+			k=createnodetuple(code);
+			if (k) return k;
 			if (p!=newref)
 			{
-				if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
+				k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+				if (k) return k;
+			} else
+			{
+				k=STACKPUSH(m,TABGET(p,REF_TYPE));
+				if (k) return k;
 			}
-			else if (k=STACKPUSH(m,TABGET(p,REF_TYPE))) return k;
 			return unif_argfun();
 		}
 		else if (code==CODE_VAR || code==CODE_CONST)	// lecture d'une référence
 		{
 			bc_byte_or_int(VALTOINT(TABGET(p,REF_PACKAGE)),OPgetglobalb,OPgetglobal);
-			if (k=STACKPUSH(m,TABGET(p,REF_TYPE))) return k;
+			k=STACKPUSH(m,TABGET(p,REF_TYPE));
+			if (k) return k;
 			return parsegetpoint();
 		}
 	}
@@ -337,18 +368,25 @@ int Compiler::parsegetpoint()
 			&&(VALTOINT(TABGET(p,REF_CODE))==CODE_FIELD))
 		{
 			bc_byte_or_int(VALTOINT(TABGET(VALTOPNT(TABGET(p,REF_VAL)),FIELD_NUM)),OPfetchb,OPfetch);
-			if (k=createnodetuple(1)) return k;
-			if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
-			if (k=unif_argfun()) return k;
+			k=createnodetuple(1);
+			if (k) return k;
+			k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+			if (k) return k;
+			k=unif_argfun();
+			if (k) return k;
 		}
 		else
 		{
 			parser->giveback();
-			if (k=parseterm()) return k;
+			k=parseterm();
+			if (k) return k;
 			bc->addchar(OPfetch);
-			if (k=createnodetuple(2)) return k;
-			if (k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__tab_u0_I__u0)))) return k;
-			if (k=unif_argfun()) return k;
+			k=createnodetuple(2);
+			if (k) return k;
+			k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__tab_u0_I__u0)));
+			if (k) return k;
+			k=unif_argfun();
+			if (k) return k;
 		}
 	}
 }
@@ -359,17 +397,21 @@ int Compiler::parseif()
 {
 	int k;
 	
-	if (k=parseexpression()) return k;	// lire la condition
+	k=parseexpression();	// lire la condition
+	if (k) return k;
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+	if (k) return k;
 	STACKDROP(m);
-	if (k=parser->parsekeyword("then")) return k;
+	k=parser->parsekeyword("then");
+	if (k) return k;
 
 	bc->addchar(OPelse);
 	int bc_else=bc->getsize();
 	bc->addshort(0);	// on prépare le champ pour le saut 'else'
 
-	if (k=parseexpression()) return k;	// lire l'expression 'then'
+	k=parseexpression();	// lire l'expression 'then'
+	if (k) return k;
 
 	bc->addchar(OPgoto);
 	int bc_goto=bc->getsize();
@@ -379,17 +421,20 @@ int Compiler::parseif()
 
 	if ((parser->next(0))&&(!strcmp(parser->token,"else")))
 	{
-		if (k=parseexpression()) return k;	// lire l'expression 'else'
+		k=parseexpression();	// lire l'expression 'else'
+		if (k) return k;
 	}
 	else	// pas de else, on remplace par nil
 	{
 		parser->giveback();
 		bc->addchar(OPnil);
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 	}
 	bc->setshort(bc_goto,bc->getsize());	// on règle le saut du 'goto'
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+	if (k) return k;
 	STACKDROP(m);
 	return 0;
 
@@ -403,17 +448,21 @@ int Compiler::parsewhile()
 	bc->addchar(OPnil);	// on empile le premier résultat
 
 	int bc_while=bc->getsize();		// on retient la position pour le saut 'while'
-	if (k=parseexpression()) return k;	// lire la condition
+	k=parseexpression();	// lire la condition
+	if (k) return k;
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+	if (k) return k;
 	STACKDROP(m);
-	if (k=parser->parsekeyword("do")) return k;
+	k=parser->parsekeyword("do");
+	if (k) return k;
 	bc->addchar(OPelse);
 	int bc_end=bc->getsize();
 	bc->addshort(0);	// on prépare le champ pour le saut 'end'
 	bc->addchar(OPdrop);	// on ignore le résultat précédent
 
-	if (k=parseexpression()) return k;	// lire l'expression 'do'
+	k=parseexpression();	// lire l'expression 'do'
+	if (k) return k;
 
 	bc->addchar(OPgoto);
 	bc->addshort(bc_while);	// on retourne à la condition
@@ -439,25 +488,32 @@ int Compiler::parsefor()
 		PRINTF(m)(LOG_COMPILER,"Compiler : label expected (found '%s')\n",parser->token);
 		return MTLERR_SN;
 	}
-	if (k=STRPUSH(m,parser->token)) return k;
+	k=STRPUSH(m,parser->token);
+	if (k) return k;
 	// [name_it]
-	if (k=parser->parsekeyword("=")) return k;
-	if (k=parseexpression()) return k;	// lire la valeur d'initialisation
+	k=parser->parsekeyword("=");
+	if (k) return k;
+	k=parseexpression();	// lire la valeur d'initialisation
+	if (k) return k;
 	// [type_init name_it]
 	int i=nblabels(locals);
-	if (k=addlabel(locals,STRSTART(VALTOPNT(STACKGET(m,1))),INTTOVAL(i),STACKGET(m,0))) return k;
+	k=addlabel(locals,STRSTART(VALTOPNT(STACKGET(m,1))),INTTOVAL(i),STACKGET(m,0));
+	if (k) return k;
 	if (i+1>nblocals) nblocals=i+1;	// nombre maximum de variables locales
 
 	// [type_init name_it]
 	bc_byte_or_int(i,OPsetlocalb,OPsetlocal);
 
-	if (k=parser->parsekeyword(";")) return k;
+	k=parser->parsekeyword(";");
+	if (k) return k;
 
 	bc->addchar(OPnil);	// on empile le premier résultat
 
 	int bc_cond=bc->getsize();		// on retient la position pour le saut 'while'
-	if (k=parseexpression()) return k;	// lire la condition
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
+	k=parseexpression();	// lire la condition
+	if (k) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+	if (k) return k;
 	STACKDROP(m);
 
 	bc->addchar(OPelse);
@@ -476,28 +532,35 @@ int Compiler::parsefor()
 		bc->addshort(0);	// on prépare le champ pour le saut 'expr'
 
 		int bc_next=bc->getsize();
-		if (k=parseexpression()) return k;	// lire la valeur next
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+		k=parseexpression();	// lire la valeur next
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+		if (k) return k;
 		STACKDROP(m);
 		bc_byte_or_int(i,OPsetlocalb,OPsetlocal);	// mise à jour de l'itérateur
 		bc->addchar(OPgoto);
 		bc->addshort(bc_cond);
 
-		if (k=parser->parsekeyword("do")) return k;
+		k=parser->parsekeyword("do");
+		if (k) return k;
 
 		bc->setshort(bc_expr,bc->getsize());
 		bc->addchar(OPdrop);	// on ignore le résultat précédent
-		if (k=parseexpression()) return k;	// lire la valeur itérée
+		k=parseexpression();	// lire la valeur itérée
+		if (k) return k;
 		bc->addchar(OPgoto);
 		bc->addshort(bc_next);	// on retourne à l'itérateur
 	}
 	else
 	{
 		parser->giveback();
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)))) return k;
-		if (k=parser->parsekeyword("do")) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
+		if (k) return k;
+		k=parser->parsekeyword("do");
+		if (k) return k;
 		bc->addchar(OPdrop);	// on ignore le résultat précédent
-		if (k=parseexpression()) return k;	// lire la valeur itérée
+		k=parseexpression();	// lire la valeur itérée
+		if (k) return k;
 		bc_byte_or_int(i,OPgetlocalb,OPgetlocal);	// i+1
 		bc->addchar(OPintb);
 		bc->addchar(1);
@@ -521,14 +584,18 @@ int Compiler::parsematch()
 {
 	int k;
 
-	if (k=parseexpression()) return k;	// lire l'objet
-	if (k=createnodetype(TYPENAME_UNDEF)) return k;	// préparer le type du résultat
+	k=parseexpression();	// lire l'objet
+	if (k) return k;
+	k=createnodetype(TYPENAME_UNDEF);	// préparer le type du résultat
+	if (k) return k;
 	// [result src]
 
-	if (k=parser->parsekeyword("with")) return k;
+	k=parser->parsekeyword("with");
+	if (k) return k;
 
 	int end;
-	if (k=parsematchcons(&end)) return k;
+	k=parsematchcons(&end);
+	if (k) return k;
 	STACKSET(m,1,STACKGET(m,0));
 	STACKDROP(m);
 	return 0;
@@ -537,7 +604,8 @@ int Compiler::parsematch()
 int Compiler::parsematchcons(int* end)
 {
 	int k;
-	if (k=parser->parsekeyword("(")) return k;
+	k=parser->parsekeyword("(");
+	if (k) return k;
 	if (!parser->next(0))
 	{
 		PRINTF(m)(LOG_COMPILER,"Compiler : constructor expected (found EOF)\n");
@@ -547,13 +615,17 @@ int Compiler::parsematchcons(int* end)
 	if (!strcmp(parser->token,"_"))	// cas par défaut
 	{
 		bc->addchar(OPdrop);
-		if (k=parser->parsekeyword("->")) return k;
-		if (k=parseprogram()) return k;	// lire le résultat
+		k=parser->parsekeyword("->");
+		if (k) return k;
+		k=parseprogram();	// lire le résultat
+		if (k) return k;
 		// [type_result result src]
-		if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+		if (k) return k;
 		STACKDROP(m);
 		// [result src]
-		if (k=parser->parsekeyword(")")) return k;
+		k=parser->parsekeyword(")");
+		if (k) return k;
 		*end=bc->getsize();
 		return 0;
 	}
@@ -576,40 +648,51 @@ int Compiler::parsematchcons(int* end)
 			{
 				bc->addchar(OPfetchb);
 				bc->addchar(1);
-				if (k=parselocals()) return k;
-				if (k=createnodetuple(1)) return k;
+				k=parselocals();
+				if (k) return k;
+				k=createnodetuple(1);
+				if (k) return k;
 			}
 			else
 			{
 				bc->addchar(OPdrop);
-				if (k=createnodetuple(0)) return k;
+				k=createnodetuple(0);
+				if (k) return k;
 			}
 			// [[locals] result src]
 			int newnloc=nblabels(locals);	// on sauvegarde le nombre de locales
 			if (newnloc>nblocals) nblocals=newnloc;	// nombre maximum de variables locales
 			int nloctodelete=newnloc-nloc;	// combien de variables locales ont été crées ?
 
-			if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
-			if (k=unif_argfun()) return k;
+			k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+			if (k) return k;
+			k=unif_argfun();
+			if (k) return k;
 			// [type_src result src]
-			if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,2)))) return k;
+			k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,2)));
+			if (k) return k;
 			STACKDROP(m);
 			// [result src]
-			if (k=parser->parsekeyword("->")) return k;
-			if (k=parseprogram()) return k;	// lire le résultat
+			k=parser->parsekeyword("->");
+			if (k) return k;
+			k=parseprogram();	// lire le résultat
+			if (k) return k;
 			// [type_result result src]
-			if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+			k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+			if (k) return k;
 			STACKDROP(m);
 			// [result src]
 			removenlabels(locals,nloctodelete);
-			if (k=parser->parsekeyword(")")) return k;
+			k=parser->parsekeyword(")");
+			if (k) return k;
 			bc->addchar(OPgoto);
 			int bc_goto=bc->getsize();		// on retient la position pour le saut 'else'
 			bc->addshort(0);
 			bc->setshort(bc_else,bc->getsize());
 			if ((parser->next(0))&&(!strcmp(parser->token,"|")))
 			{
-				if (k=parsematchcons(end)) return k;
+				k=parsematchcons(end);
+				if (k) return k;
 				bc->setshort(bc_goto,*end);
 				return 0;
 			}
@@ -631,22 +714,28 @@ int Compiler::parselet()
 {
 	int k;
 	
-	if (k=parseexpression()) return k;	// lire la source
-	if (k=parser->parsekeyword("->")) return k;
+	k=parseexpression();	// lire la source
+	if (k) return k;
+	k=parser->parsekeyword("->");
+	if (k) return k;
 
 	int nloc=nblabels(locals);	// on sauvegarde le nombre de locales
 
-	if (k=parselocals()) return k;
+	k=parselocals();
+	if (k) return k;
 
 	int newnloc=nblabels(locals);	// on sauvegarde le nombre de locales
 	if (newnloc>nblocals) nblocals=newnloc;	// nombre maximum de variables locales
 	int nloctodelete=newnloc-nloc;	// combien de variables locales ont été crées ?
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+	if (k) return k;
 	STACKDROPN(m,2);
-	if (k=parser->parsekeyword("in")) return k;
+	k=parser->parsekeyword("in");
+	if (k) return k;
 
-	if (k=parseexpression()) return k;	// lire l'expression du let
+	k=parseexpression();	// lire l'expression du let
+	if (k) return k;
 	removenlabels(locals,nloctodelete);
 	return 0;
 }
@@ -679,7 +768,8 @@ int Compiler::parselocals()
 			}
 			else if (!strcmp(parser->token,"_"))
             {
-				if (k=createnodetype(TYPENAME_UNDEF)) return k;
+				k=createnodetype(TYPENAME_UNDEF);
+				if (k) return k;
 				n++;
 			}
 			else
@@ -687,16 +777,19 @@ int Compiler::parselocals()
 				parser->giveback();
 				bc->addchar(OPdup);
 				bc_byte_or_int(n,OPfetchb,OPfetch);
-				if (k=parselocals()) return k;
+				k=parselocals();
+				if (k) return k;
 				n++;
 			}
 		}
 	}
 	else if (!strcmp(parser->token,"("))
     {
-		if (k=createnodetype(TYPENAME_LIST)) return k;
+		k=createnodetype(TYPENAME_LIST);
+		if (k) return k;
 		int* plist=VALTOPNT(STACKGET(m,0));
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		int* pval=VALTOPNT(STACKGET(m,0));
 		TABSET(m,plist,TYPEHEADER_LENGTH,STACKGET(m,0));
 
@@ -716,27 +809,33 @@ int Compiler::parselocals()
 			else if (islabel(parser->token))
 			{
 				int i=nblabels(locals);
-				if (k=createnodetype(TYPENAME_UNDEF)) return k;
-				if (k=addlabel(locals,parser->token,INTTOVAL(i),STACKGET(m,0))) return k;
+				k=createnodetype(TYPENAME_UNDEF);
+				if (k) return k;
+				k=addlabel(locals,parser->token,INTTOVAL(i),STACKGET(m,0));
+				if (k) return k;
 				if ((parser->next(0))&&(!strcmp(parser->token,")")))
 				{
 					bc_byte_or_int(i,OPsetlocalb,OPsetlocal);
-					if (k=unif(VALTOPNT(STACKGET(m,0)),plist)) return k;
+					k=unif(VALTOPNT(STACKGET(m,0)),plist);
+					if (k) return k;
 					STACKDROPN(m,2);
 					return 0;
 				}
 				parser->giveback();
 				bc->addchar(OPfirst);
 				bc_byte_or_int(i,OPsetlocalb,OPsetlocal);
-				if (k=unif(VALTOPNT(STACKGET(m,0)),pval)) return k;
+				k=unif(VALTOPNT(STACKGET(m,0)),pval);
+				if (k) return k;
 				STACKDROP(m);
 			}
 			else
 			{
 				parser->giveback();
 				bc->addchar(OPfirst);
-				if (k=parselocals()) return k;
-				if (k=unif(VALTOPNT(STACKGET(m,0)),pval)) return k;
+				k=parselocals();
+				if (k) return k;
+				k=unif(VALTOPNT(STACKGET(m,0)),pval);
+				if (k) return k;
 				STACKDROP(m);
 			}
 			if (!parser->next(0))
@@ -758,17 +857,20 @@ int Compiler::parselocals()
 	}
 	else if (!strcmp(parser->token,"_"))
 	{
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		bc->addchar(OPdrop);
 		return 0;
 	}
 	else if (islabel(parser->token))
 	{
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		int i=nblabels(locals);
 		bc_byte_or_int(i,OPsetlocalb,OPsetlocal);
 
-		if (k=addlabel(locals,parser->token,INTTOVAL(i),STACKGET(m,0))) return k;
+		k=addlabel(locals,parser->token,INTTOVAL(i),STACKGET(m,0));
+		if (k) return k;
 		return 0;
 	}
 	PRINTF(m)(LOG_COMPILER,"Compiler : unexpected term '%s'\n",parser->token);
@@ -780,13 +882,18 @@ int Compiler::parseupdate()
 {
 	int k;
 	
-	if (k=parseexpression()) return k;	// lire la source
-	if (k=parser->parsekeyword("with")) return k;
-	if (k=parser->parsekeyword("[")) return k;
+	k=parseexpression();	// lire la source
+	if (k) return k;
+	k=parser->parsekeyword("with");
+	if (k) return k;
+	k=parser->parsekeyword("[");
+	if (k) return k;
 
-	if (k=parseupdatevals()) return k;
+	k=parseupdatevals();
+	if (k) return k;
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+	if (k) return k;
 	STACKDROP(m);
 	return 0;
 }
@@ -818,13 +925,15 @@ int Compiler::parseupdatevals()
 		}
 		else if (!strcmp(parser->token,"_"))
         {
-			if (k=createnodetype(TYPENAME_UNDEF)) return k;
+			k=createnodetype(TYPENAME_UNDEF);
+			if (k) return k;
 			n++;
 		}
 		else
 		{
 			parser->giveback();
-			if (k=parseexpression()) return k;
+			k=parseexpression();
+			if (k) return k;
 			bc_byte_or_int(n,OPsetstructb,OPsetstruct);
 			n++;
 		}
@@ -853,18 +962,21 @@ int Compiler::parseset()
 
 	if (!searchlabel_byname(locals,parser->token,&val,&ref))	// recherche dans les variables locales
 	{
-		if (k=STACKPUSH(m,ref)) return k;
-		if (k=parsesetpoint(1,VALTOINT(val),&opstore)) return k;
+		k=STACKPUSH(m,ref);
+		if (k) return k;
+		k=parsesetpoint(1,VALTOINT(val),&opstore);
+		if (k) return k;
 	}
 	else
 	{
 		val=-1;
-			int *p;
-			if (p=searchref(PNTTOVAL(newpackage),parser->token))	// recherche dans les autres globales
-			{
-				ref=PNTTOVAL(p);
-				val=0;
-			}
+		int *p;
+		p=searchref(PNTTOVAL(newpackage),parser->token);	// recherche dans les autres globales
+		if (p)	// recherche dans les autres globales
+		{
+			ref=PNTTOVAL(p);
+			val=0;
+		}
 		if (val!=-1)
 		{
 			int* p=VALTOPNT(ref);
@@ -872,8 +984,10 @@ int Compiler::parseset()
 
 			if (code==CODE_VAR)	// variable
 			{
-				if (k=STACKPUSH(m,TABGET(p,REF_TYPE))) return k;
-				if (k=parsesetpoint(0,VALTOINT(TABGET(p,REF_PACKAGE)),&opstore)) return k;
+				k=STACKPUSH(m,TABGET(p,REF_TYPE));
+				if (k) return k;
+				k=parsesetpoint(0,VALTOINT(TABGET(p,REF_PACKAGE)),&opstore);
+				if (k) return k;
 
 				// la variable a été settée au moins une fois maintenant
 				TABSET(m,p,REF_SET,INTTOVAL(2));
@@ -890,11 +1004,14 @@ int Compiler::parseset()
 		PRINTF(m)(LOG_COMPILER,"Compiler : reference expected (found '%s')\n",parser->token);
 		return MTLERR_SN;
 	}
-	if (k=parser->parsekeyword("=")) return k;
-	if (k=parseexpression()) return k;	// lire la source
+	k=parser->parsekeyword("=");
+	if (k) return k;
+	k=parseexpression();	// lire la source
+	if (k) return k;
 	bc->addchar(opstore);
 
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)))) return k;
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,1)));
+	if (k) return k;
 	STACKDROP(m);
 	return 0;
 }
@@ -931,18 +1048,25 @@ int Compiler::parsesetpoint(int local,int ind,int* opstore)
 			&&(VALTOINT(TABGET(p,REF_CODE))==CODE_FIELD))
 		{
 			ind=VALTOINT(TABGET(VALTOPNT(TABGET(p,REF_VAL)),FIELD_NUM));
-			if (k=createnodetuple(1)) return k;
-			if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
-			if (k=unif_argfun()) return k;
+			k=createnodetuple(1);
+			if (k) return k;
+			k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+			if (k) return k;
+			k=unif_argfun();
+			if (k) return k;
 		}
 		else
 		{
 			parser->giveback();
 
-			if (k=parseterm()) return k;
-			if (k=createnodetuple(2)) return k;
-			if (k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__tab_u0_I__u0)))) return k;
-			if (k=unif_argfun()) return k;
+			k=parseterm();
+			if (k) return k;
+			k=createnodetuple(2);
+			if (k) return k;
+			k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__tab_u0_I__u0)));
+			if (k) return k;
+			k=unif_argfun();
+			if (k) return k;
 		}
 		if (!parser->next(0)) return 0;
 		if (strcmp(parser->token,"."))
@@ -974,7 +1098,8 @@ int Compiler::parsepntfun()
 	}
 	val=-1;
 		int *p;
-		if (p=searchref(PNTTOVAL(newpackage),parser->token))	// recherche dans les autres globales
+		p=searchref(PNTTOVAL(newpackage),parser->token);	// recherche dans les autres globales
+		if (p)	// recherche dans les autres globales
 		{
 			ref=PNTTOVAL(p);
 			val=0;
@@ -997,9 +1122,11 @@ int Compiler::parsepntfun()
 			bcint_byte_or_int(v);
 			if (p!=newref)
 			{
-				if (k=copytype(VALTOPNT(TABGET(p,REF_TYPE)))) return k;
+				k=copytype(VALTOPNT(TABGET(p,REF_TYPE)));
+				if (k) return k;
 			}
-			else if (k=STACKPUSH(m,TABGET(p,REF_TYPE))) return k;
+			else k=STACKPUSH(m,TABGET(p,REF_TYPE));
+			if (k) return k;
 			return 0;
 		}
 	}
@@ -1014,7 +1141,8 @@ int Compiler::parsecall()
 {
 	int k;
 	
-	if (k=parseexpression()) return k;	// lire la fonction
+	k=parseexpression();	// lire la fonction
+	if (k) return k;
 
 	if ((parser->next(0))&&(!strcmp(parser->token,"[")))
 	{
@@ -1029,24 +1157,31 @@ int Compiler::parsecall()
 			if (!strcmp(parser->token,"]"))
 			{
 				bc_byte_or_int(nval,OPcallrb,OPcallr);
-				if (k=createnodetuple(nval)) return k;
-				if (k=createnodetuple(2)) return k;
-				if (k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__fun_u0_u1_u0__u1)))) return k;
+				k=createnodetuple(nval);
+				if (k) return k;
+				k=createnodetuple(2);
+				if (k) return k;
+				k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__fun_u0_u1_u0__u1)));
+				if (k) return k;
 				return unif_argfun();
 			}
 			parser->giveback();
-			if (k=parseexpression()) return k;
+			k=parseexpression();
+			if (k) return k;
 			nval++;
 		}		
 	}
 	else
 	{
 		parser->giveback();
-		if (k=parseexpression()) return k;	// lire les arguments
+		k=parseexpression();	// lire les arguments
+		if (k) return k;
 
 		bc->addchar(OPcall);
-		if (k=createnodetuple(2)) return k;
-		if (k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__fun_u0_u1_u0__u1)))) return k;
+		k=createnodetuple(2);
+		if (k) return k;
+		k=copytype(VALTOPNT(TABGET(stdtypes,STDTYPE_fun__fun_u0_u1_u0__u1)));
+		if (k) return k;
 		return unif_argfun();
 	}
 }

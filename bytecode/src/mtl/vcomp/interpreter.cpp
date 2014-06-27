@@ -28,7 +28,7 @@ void displaybc(Memory* m,char* p)
 	{
 		int i=*p;
 		if ((i<0)||(i>=MaxOpcode)) PRINTF(m)(LOG_DEVCORE,"%4d   ??\n",ind);
-		else if ((i==OPint))
+		else if (i==OPint)
 		{
 			p++;
 			int v=(p[0]&255)+((p[1]&255)<<8)+((p[2]&255)<<16)+((p[3]&255)<<24);

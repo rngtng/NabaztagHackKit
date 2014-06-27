@@ -279,13 +279,16 @@ void sysStrputword(unsigned char *src,int len,int ind,int val)
 // lecture d'une chaîne décimale (s'arrête au premier caractère incorrect)
 int sysAtoi(char* src)
 {
-  int x,c,s;
+  int x,s;
   x=s=0;
   if ((*src)=='-') { s=1; src++; }
-  while(c=*src++)
+  int c=*src;
+  while(c)
   {
     if ((c>='0')&&(c<='9')) x=(x*10)+c-'0';
     else return (s?(-x):x);
+
+    src++;c=*src;
   }
   return (s?(-x):x);
 }
@@ -293,14 +296,16 @@ int sysAtoi(char* src)
 // lecture d'une chaîne hexadécimale (s'arrête au premier caractère incorrect)
 int sysHtoi(char* src)
 {
-	int x,c;
-	x=0;
-	while(c=*src++)
+	int x=0;
+	int c=*src;
+	while(c)
 	{
 		if ((c>='0')&&(c<='9')) x=(x<<4)+c-'0';
 		else if ((c>='A')&&(c<='F')) x=(x<<4)+c-'A'+10;
 		else if ((c>='a')&&(c<='f')) x=(x<<4)+c-'a'+10;
 		else return x;
+
+		src++;c=*src;
 	}
 	return x;
 }

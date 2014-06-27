@@ -6,12 +6,13 @@ COMP_OBJS=main_compiler.o
 SIMU_SRC=main_simu.c linux_simu.c linux_simuaudio.c linux_simunet.c vmem.c vloader.c vlog.c vinterp.c vaudio.c vnet.c
 SIMU_OBJS=$(SIMU_SRC:.c=.o)
 
-CXXFLAGS=-DVSIMU -g3
-CFLAGS=-DVSIMU -g3  # -std=c99
+CXXFLAGS=-DVSIMU -g3 -m32
+CFLAGS=-DVSIMU -g3  -m32 # -std=c99
 
 CC=gcc
 CXX=g++
 OS=$(shell uname)
+OS=Linux
 TARGET_OS=Linux
 
 all : mtl_simu mtl_comp
@@ -25,12 +26,12 @@ endif
 
 mtl_comp : vcomp/libvcomp.a $(COMMON_OBJS) $(COMP_OBJS)
 ifeq ($(OS),$(TARGET_OS))
-	g++  $^ -o $@ vcomp/libvcomp.a
+	$(CXX) $(CXXFLAGS) $^ -o /tmp/$@ vcomp/libvcomp.a
 endif
 
 mtl_simu : vcomp/libvcomp.a $(COMMON_OBJS) $(SIMU_OBJS)
 ifeq ($(OS),$(TARGET_OS))
-	g++  $^ -o $@ vcomp/libvcomp.a
+	$(CXX) $(CXXFLAGS) -lresolv $^ -o /tmp/$@ vcomp/libvcomp.a
 endif
 
 clean :

@@ -37,23 +37,34 @@ int Compiler::start()
 	int k;
 
 	// création du package systeme
-	if (k=createpackage("system",8)) return k;
+	k=createpackage("system",8);
+	if (k) return k;
 	systempackage=STACKGET(m,0);
 	m->addroot(VALTOPNT(systempackage));	// le package systeme devient une racine
-	if (k=addstdlibcore()) return k;
+	k=addstdlibcore();
+	if (k) return k;
 	int pck=STACKREF(m);
 
 	// création du tableau des types utilisés par le compilateur
-	if (k=creategraph("I",systempackage,0)) return k;
-	if (k=creategraph("F",systempackage,0)) return k;
-	if (k=creategraph("S",systempackage,0)) return k;
-	if (k=creategraph("Env",systempackage,0)) return k;
-	if (k=creategraph("Xml",systempackage,0)) return k;
+	k=creategraph("I",systempackage,0);
+	if (k) return k;
+	k=creategraph("F",systempackage,0);
+	if (k) return k;
+	k=creategraph("S",systempackage,0);
+	if (k) return k;
+	k=creategraph("Env",systempackage,0);
+	if (k) return k;
+	k=creategraph("Xml",systempackage,0);
+	if (k) return k;
 
-	if (k=creategraph("fun[u0 list u0]list u0",systempackage,0)) return k;
-	if (k=creategraph("fun[tab u0 I]u0",systempackage,0)) return k;
-	if (k=creategraph("fun[fun u0 u1 u0]u1",systempackage,0)) return k;
-	if (k=DEFTAB(m,STDTYPE_LENGTH)) return k;
+	k=creategraph("fun[u0 list u0]list u0",systempackage,0);
+	if (k) return k;
+	k=creategraph("fun[tab u0 I]u0",systempackage,0);
+	if (k) return k;
+	k=creategraph("fun[fun u0 u1 u0]u1",systempackage,0);
+	if (k) return k;
+	k=DEFTAB(m,STDTYPE_LENGTH);
+	if (k) return k;
 	stdtypes=VALTOPNT(STACKPULL(m));
 	m->addroot(stdtypes);
 
@@ -74,13 +85,16 @@ int Compiler::getsystempackage()
 int Compiler::createpackage(const char* name,int loghach)
 {
 	int k;
-	if (k=PUSHMALLOCCLEAR(m,PACK_LENGTH)) return k;
+	k=PUSHMALLOCCLEAR(m,PACK_LENGTH);
+	if (k) return k;
 	int* p=VALTOPNT(STACKGET(m,0));
 
-	if (k=STRPUSH(m,name)) return k;
+	k=STRPUSH(m,name);
+	if (k) return k;
 	TABSET(m,p,PACK_NAME,STACKPULL(m));
 
-	if (k=PUSHMALLOCCLEAR(m,1+(1<<loghach))) return k;
+	k=PUSHMALLOCCLEAR(m,1+(1<<loghach));
+	if (k) return k;
 	TABSET(m,p,PACK_HACH,STACKPULL(m));
 
 	return 0;
@@ -215,7 +229,8 @@ int Compiler::fillproto(int env,int* fun)
 				if (  (!strcmp(STRSTART(VALTOPNT(TABGET(fun,REF_NAME))),STRSTART(VALTOPNT(TABGET(ref,REF_NAME)))))
 					&&(TABGET(ref,REF_VAL)==NIL) )
 				{
-					if (k=unifbigger(VALTOPNT(TABGET(fun,REF_TYPE)),VALTOPNT(TABGET(ref,REF_TYPE))))
+					k=unifbigger(VALTOPNT(TABGET(fun,REF_TYPE)),VALTOPNT(TABGET(ref,REF_TYPE)));
+					if (k)
 					{
 						PRINTF(m)(LOG_COMPILER,"Compiler : prototype does not match\n");
 						return k;
@@ -315,7 +330,8 @@ int Compiler::addlabel(int base,const char* name,int val,int ref)
 	TABSET(m,p,LABELLIST_NEXT,STACKGETFROMREF(m,base,0));
 	STACKSETFROMREF(m,base,0,PNTTOVAL(p));
 
-	if (k=STRPUSH(m,name)) return k;
+	k=STRPUSH(m,name);
+	if (k) return k;
 	TABSET(m,p,LABELLIST_NAME,STACKPULL(m));
 	TABSET(m,p,LABELLIST_VAL,val);
 	TABSET(m,p,LABELLIST_REF,ref);
@@ -407,11 +423,13 @@ int Compiler::addnative(int nref, const char** nameref, int* valref
     {
 		int* p=MALLOCCLEAR(m,REF_LENGTH);
 		if (!p) return MTLERR_OM;
-		if (k=STACKPUSH(m,PNTTOVAL(p))) return MTLERR_OM;
+		k=STACKPUSH(m,PNTTOVAL(p));
+		if (k) return MTLERR_OM;
 
 		if (nameref[i])
 		{
-			if (k=STRPUSH(m,nameref[i])) return k;
+			k=STRPUSH(m,nameref[i]);
+			if (k) return k;
 			TABSET(m,p,REF_NAME,STACKPULL(m));
 		}
 
@@ -419,11 +437,14 @@ int Compiler::addnative(int nref, const char** nameref, int* valref
 
 		if (coderef[i]>=0)
 		{
-			if (k=creategraph(typeref[i],systempackage,0)) return k;
+			k=creategraph(typeref[i],systempackage,0);
+			if (k) return k;
 			TABSET(m,p,REF_TYPE,STACKPULL(m));
 
-//			if (k=PUSHPNT(m,(int*)valref[i])) return k;
-			if (k=STACKPUSH(m,INTTOVAL(valref[i]))) return k;
+//			k=PUSHPNT(m,(int*)valref[i]);
+			if (k) return k;
+			k=STACKPUSH(m,INTTOVAL(valref[i]));
+			if (k) return k;
 
 			int* fun=MALLOCCLEAR(m,FUN_LENGTH);
 			if (!fun) return MTLERR_OM;
@@ -440,24 +461,30 @@ int Compiler::addnative(int nref, const char** nameref, int* valref
 		else if ((coderef[i]==CODE_VAR)
 			||(coderef[i]==CODE_CONS)||(coderef[i]==CODE_CONS0))
 		{
-			if (k=creategraph(typeref[i],systempackage,0)) return k;
+			k=creategraph(typeref[i],systempackage,0);
+			if (k) return k;
 			TABSET(m,p,REF_TYPE,STACKPULL(m));
 			TABSET(m,p,REF_VAL,(int)valref[i]);
 		}
 		else if (coderef[i]==CODE_FIELD)
 		{
-			if (k=creategraph(typeref[i],systempackage,0)) return k;
-			if (k=STACKPUSH(m,(int)valref[i])) return k;
+			k=creategraph(typeref[i],systempackage,0);
+			if (k) return k;
+			k=STACKPUSH(m,(int)valref[i]);
+			if (k) return k;
 			int vtype=searchbytype(systempackage,
 				TABGET(argsfromfun(VALTOPNT(STACKGET(m,1))),TYPEHEADER_LENGTH));
-			if (k=STACKPUSH(m,vtype)) return k;
-			if (k=DEFTAB(m,2)) return k;
+			k=STACKPUSH(m,vtype);
+			if (k) return k;
+			k=DEFTAB(m,2);
+			if (k) return k;
 			TABSET(m,p,REF_VAL,STACKPULL(m));
 			TABSET(m,p,REF_TYPE,STACKPULL(m));
 		}
 		else if ((coderef[i]==CODE_TYPE)||(coderef[i]==CODE_SUM)||(coderef[i]==CODE_STRUCT))
 		{
-			if (k=createnodetypecore(typeref[i])) return k;
+			k=createnodetypecore(typeref[i]);
+			if (k) return k;
 			TABSET(m,p,REF_TYPE,STACKPULL(m));
 			TABSET(m,p,REF_VAL,(int)valref[i]);
 		}

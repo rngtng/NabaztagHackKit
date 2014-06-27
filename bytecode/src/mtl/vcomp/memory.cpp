@@ -71,9 +71,9 @@ int Stack::bigger(Memory* m)
 // ajout d'une racine
 int Memory::addroot(int *p)
 {
-	int k;
+	int k=push(PNTTOVAL(p));
+	if (k) return k;
 
-	if (k=push(PNTTOVAL(p))) return k;
 	int* r=malloc(LIST_LENGTH,TYPE_TAB);
 	TABSET(this,r,LIST_VAL,PNTTOVAL(p));
 	TABSET(this,r,LIST_NEXT,root);
@@ -174,8 +174,10 @@ int* Memory::mallocExternal(void* pnt,FORGET fun)
 {
 	int* p=malloc(2,TYPE_EXT);
 	if (!p) return p;
-	TABSET(this,p,0,(int)pnt);
-	TABSET(this,p,1,(int)fun);
+	//zarf TABSET(this,p,0,(int)pnt);
+	TABSET(this,p,0,*(int*)pnt);
+	//TABSET(this,p,1,(int)fun);
+	TABSET(this,p,1,*(int*)fun);
 	return p;
 }
 

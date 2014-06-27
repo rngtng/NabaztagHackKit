@@ -57,14 +57,17 @@ void fileReleaseBuffer(char* buffer)
 // lecture d'une chaîne hexadécimale (s'arrête au premier caractère incorrect)
 int htoi(const char* src)
 {
-	int x,c;
-	x=0;
-	while(c=*src++)
+	int x=0;
+	int c=*src;
+
+	while(c)
 	{
 		if ((c>='0')&&(c<='9')) x=(x<<4)+c-'0';
 		else if ((c>='A')&&(c<='F')) x=(x<<4)+c-'A'+10;
 		else if ((c>='a')&&(c<='f')) x=(x<<4)+c-'a'+10;
 		else return x;
+
+		c=*src++;
 	}
 	return x;
 }

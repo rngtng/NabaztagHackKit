@@ -49,13 +49,15 @@ int StartMetal(const char *starter, const char* output, bool inSign)
 	Memory* m=new Memory(32*1024,t,NULL);
 	t->m=m;
 
-	if (k=m->start())
+	k=m->start();
+	if (k)
 	{
 		t->printf(LOG_RUNTIME,"Launcher : erreur d'initialisation Memory\n");
 		return -1;
 	}
 	STRPUSH(m, (char*) starter);
-	if (!(k=m->util->compiler->gocompile(COMPILE_FROMFILE)))
+	k=m->util->compiler->gocompile(COMPILE_FROMFILE);
+	if (!k)
 	{
 		t->printf(LOG_RUNTIME,"\nCompiler : done !\n");
 		File* f=new File(NULL);
@@ -63,7 +65,10 @@ int StartMetal(const char *starter, const char* output, bool inSign)
 		if (inSign) {
 			f->write("amber", 5);
 			char sizeStr[9];
-			sprintf(sizeStr, "%.8x", m->util->compiler->brelease->getsize());
+			// If you are wondering why I changed this, I found that
+			// the only difference between my bc.jsp and the
+			// original was the size was in upper case.
+			sprintf(sizeStr, "%.8X", m->util->compiler->brelease->getsize());
 			f->write(sizeStr, 8);
 		}
 		f->write(m->util->compiler->brelease->getstart(),m->util->compiler->brelease->getsize());

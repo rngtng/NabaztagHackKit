@@ -139,7 +139,8 @@ int Compiler::gocompile(int type)
 		PRINTF(m)(LOG_COMPILER,"Compiler : compiling string buffer\n");
 	}
 
-	if (k=createpackage(name,4)) return k;	// [package nom_fichier env]
+	k=createpackage(name,4);
+	if (k) return k;	// [package nom_fichier env]
 	TABSET(m,VALTOPNT(STACKGET(m,0)),PACK_NEXT,STACKGET(m,2));
 	STACKSET(m,2,STACKGET(m,0));	// [newenv nom_fichier newenv]
 	STACKDROPN(m,2);	// [newenv]
@@ -148,7 +149,8 @@ int Compiler::gocompile(int type)
 
 //### ici on doit pouvoir ajouter la liste des globales et la liste des fonctions
 //### c'est ici également qu'on va réinitialiser la structure bc
-	if (k=STACKPUSH(m,NIL)) return k; // GLOBALS
+	k=STACKPUSH(m,NIL); // GLOBALS
+	if (k) return k;
 	globals=STACKREF(m);
 	ifuns=0;
 
@@ -189,111 +191,123 @@ int Compiler::parsefile(int ifdef)
 	int k;
 	
 	while(parser->next(0))
-    {
-			if (!strcmp(parser->token,"fun"))
-        {
-					if ((!parser->next(0))||(!islabel(parser->token)))
-            {
-							if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found '%s')\n",parser->token);
-							else  PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found EOF)\n");
-							return MTLERR_SN;
-            }
-					if (k=STRPUSH(m,parser->token)) return k;
-					int* s=VALTOPNT(STACKGET(m,0));
-					if (k=parsefun())
-						{
-							PRINTF(m)(LOG_COMPILER,"Compiler : error compiling function '%s'\n",STRSTART(s));
-							return k;
-						}
-        }
-			else if (!strcmp(parser->token,"type"))
-        {
-					if ((!parser->next(0))||(!islabel(parser->token)))
-            {
-							if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of type expected (found '%s')\n",parser->token);
-							else  PRINTF(m)(LOG_COMPILER,"Compiler : name of type expected (found EOF)\n");
-							return MTLERR_SN;
-            }
-					if (k=STRPUSH(m,parser->token)) return k;
-					int* s=VALTOPNT(STACKGET(m,0));
+	{
+		if (!strcmp(parser->token,"fun"))
+		{
+			if ((!parser->next(0))||(!islabel(parser->token)))
+			{
+				if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found '%s')\n",parser->token);
+				else  PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found EOF)\n");
+				return MTLERR_SN;
+			}
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
+			int* s=VALTOPNT(STACKGET(m,0));
+			k=parsefun();
+			if (k)
+			{
+				PRINTF(m)(LOG_COMPILER,"Compiler : error compiling function '%s'\n",STRSTART(s));
+				return k;
+			}
+	        }
+		else if (!strcmp(parser->token,"type"))
+		{
+			if ((!parser->next(0))||(!islabel(parser->token)))
+			{
+				if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of type expected (found '%s')\n",parser->token);
+				else  PRINTF(m)(LOG_COMPILER,"Compiler : name of type expected (found EOF)\n");
+				return MTLERR_SN;
+			}
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
+			int* s=VALTOPNT(STACKGET(m,0));
 
-					if (k=parsetype())
-						{
-							PRINTF(m)(LOG_COMPILER,"Compiler : error compiling type '%s'\n",STRSTART(s));
-							return k;
-						}
-        }
-			else if (!strcmp(parser->token,"var"))
-        {
-					if ((!parser->next(0))||(!islabel(parser->token)))
-            {
-							if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found '%s')\n",parser->token);
-							else  PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found EOF)\n");
-							return MTLERR_SN;
-            }
-					if (k=STRPUSH(m,parser->token)) return k;
-					int* s=VALTOPNT(STACKGET(m,0));
+			k=parsetype();
+			if (k)
+			{
+				PRINTF(m)(LOG_COMPILER,"Compiler : error compiling type '%s'\n",STRSTART(s));
+				return k;
+			}
+        	}
+		else if (!strcmp(parser->token,"var"))
+	        {
+			if ((!parser->next(0))||(!islabel(parser->token)))
+			{
+				if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found '%s')\n",parser->token);
+				else  PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found EOF)\n");
+				return MTLERR_SN;
+            		}
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
+			int* s=VALTOPNT(STACKGET(m,0));
 
-					if (k=parsevar())
-						{
-							PRINTF(m)(LOG_COMPILER,"Compiler : error compiling var '%s'\n",STRSTART(s));
-							return k;
-						}
-        }
-			else if (!strcmp(parser->token,"const"))
-				{
-					if ((!parser->next(0))||(!islabel(parser->token)))
-					{
-						if (parser->token)
-							PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found '%s')\n",parser->token);
-						else
-							PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found EOF)");
-						return MTLERR_SN;
-					}
-					if (k=STRPUSH(m,parser->token)) return k;
-					int *s=VALTOPNT(STACKGET(m,0));
-					if (k=parseconst())
-						{
-							PRINTF(m)(LOG_COMPILER,"Compiler : error compiling const '%s'\n",STRSTART(s));
-							return k;
-						}
-				}
-			else if (!strcmp(parser->token,"proto"))
-        {
-					if ((!parser->next(0))||(!islabel(parser->token)))
-            {
-							if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found '%s')\n",parser->token);
-							else  PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found EOF)\n");
-							return MTLERR_SN;
-            }
-					if (k=STRPUSH(m,parser->token)) return k;
-					int* s=VALTOPNT(STACKGET(m,0));
+			k=parsevar();
+			if (k)
+			{
+				PRINTF(m)(LOG_COMPILER,"Compiler : error compiling var '%s'\n",STRSTART(s));
+				return k;
+			}
+        	}
+		else if (!strcmp(parser->token,"const"))
+		{
+			if ((!parser->next(0))||(!islabel(parser->token)))
+			{
+				if (parser->token)
+					PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found '%s')\n",parser->token);
+				else
+					PRINTF(m)(LOG_COMPILER,"Compiler : name of reference expected (found EOF)");
+				return MTLERR_SN;
+			}
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
+			int *s=VALTOPNT(STACKGET(m,0));
+			k=parseconst();
+			if (k)
+			{
+				PRINTF(m)(LOG_COMPILER,"Compiler : error compiling const '%s'\n",STRSTART(s));
+				return k;
+			}
+		}
+		else if (!strcmp(parser->token,"proto"))
+	        {
+			if ((!parser->next(0))||(!islabel(parser->token)))
+			{
+				if (parser->token) PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found '%s')\n",parser->token);
+				else  PRINTF(m)(LOG_COMPILER,"Compiler : name of function expected (found EOF)\n");
+				return MTLERR_SN;
+            		}
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
+			int* s=VALTOPNT(STACKGET(m,0));
 
-					if (k=parseproto())
-						{
-							PRINTF(m)(LOG_COMPILER,"Compiler : error compiling proto '%s'\n",STRSTART(s));
-							return k;
-						}
-        }
-			else if (!strcmp(parser->token,"ifdef"))
-				{
-					if (k=parseifdef(0)) return k;
-				}
-			else if (!strcmp(parser->token,"ifndef"))
-				{
-					if (k=parseifdef(1)) return k;
-				}
-			else if ((ifdef)&&(!strcmp(parser->token,"}")))
-				{
-					parser->giveback();
-					return 0;
-				}
-			else
-				{
-					PRINTF(m)(LOG_COMPILER,"Compiler : unknown token %s\n",parser->token);
-					return MTLERR_SN;
-				}
-    }
+			k=parseproto();
+			if (k)
+			{
+				PRINTF(m)(LOG_COMPILER,"Compiler : error compiling proto '%s'\n",STRSTART(s));
+				return k;
+			}
+        	}
+		else if (!strcmp(parser->token,"ifdef"))
+		{
+			k=parseifdef(0);
+			if (k) return k;
+		}
+		else if (!strcmp(parser->token,"ifndef"))
+		{
+			k=parseifdef(1);
+			if (k) return k;
+		}
+		else if ((ifdef)&&(!strcmp(parser->token,"}")))
+		{
+			parser->giveback();
+			return 0;
+		}
+		else
+		{
+			PRINTF(m)(LOG_COMPILER,"Compiler : unknown token %s\n",parser->token);
+			return MTLERR_SN;
+		}
+	}
 	return 0;
 }
 
@@ -338,19 +352,25 @@ int Compiler::parseifdef(int ifndef)
 	// valeur - ou aussi autre part - dans ce cas elle a besoin d'être
 	// settée au moins une fois.
 	if (ref)
-		{
-			int curval = VALTOINT(TABGET(ref,REF_USED_IN_IFDEF));
-			TABSET(m,ref,REF_USED_IN_IFDEF,INTTOVAL(curval+1));
-		}
+	{
+		int curval = VALTOINT(TABGET(ref,REF_USED_IN_IFDEF));
+		TABSET(m,ref,REF_USED_IN_IFDEF,INTTOVAL(curval+1));
+	}
 
 	if (ifndef) first=!first;
-	if (k=parser->parsekeyword("{")) return k;
+	k=parser->parsekeyword("{");
+	if (k) return k;
 	if (first)
 	{
 		parsefile(1);
-		if (k=parser->parsekeyword("}")) return k;
+		k=parser->parsekeyword("}");
+		if (k) return k;
 	}
-	else if (k=skipifdef()) return k;
+	else
+	{
+		k=skipifdef();
+		if (k) return k;
+	}
 	if (!parser->next(0)) return 0;
 	if (strcmp(parser->token,"else"))
 	{
@@ -359,13 +379,16 @@ int Compiler::parseifdef(int ifndef)
 	}
 	else
 	{
-		if (k=parser->parsekeyword("{")) return k;
+		k=parser->parsekeyword("{");
+		if (k) return k;
 		if (!first)
 		{
 			parsefile(1);
-			if (k=parser->parsekeyword("}")) return k;
+			k=parser->parsekeyword("}");
+			if (k) return k;
 		}
-		else if (k=skipifdef()) return k;
+		else k=skipifdef();
+		if (k) return k;
 	}
 	return 0;
 }
@@ -383,10 +406,12 @@ int Compiler::parsefun()
 
 	char* name=STRSTART(VALTOPNT(STACKGET(m,0)));
 	// création des variables de travail
-	if (k=STACKPUSH(m,NIL)) return k; // LOCALS
+	k=STACKPUSH(m,NIL);
+	if (k) return k; // LOCALS
 	locals=STACKREF(m);
 
-	if (k=createnodetype(TYPENAME_FUN)) return k;
+	k=createnodetype(TYPENAME_FUN);
+	if (k) return k;
 
 	// recherche des arguments
 	int narg=0;
@@ -399,8 +424,10 @@ int Compiler::parsefun()
 		}
 		if (islabel(parser->token))
 		{
-			if (k=createnodetype(TYPENAME_UNDEF)) return k;
-			if (k=addlabel(locals,parser->token,INTTOVAL(narg++),STACKGET(m,0))) return k;
+			k=createnodetype(TYPENAME_UNDEF);
+			if (k) return k;
+			k=addlabel(locals,parser->token,INTTOVAL(narg++),STACKGET(m,0));
+			if (k) return k;
 		}
 		else if (strcmp(parser->token,"="))
 		{
@@ -409,11 +436,13 @@ int Compiler::parsefun()
 		}
 	} while(strcmp(parser->token,"="));
 	// construction du type initial de la fonction
-	if (k=createnodetuple(narg)) return k;
+	k=createnodetuple(narg);
+	if (k) return k;
 	TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));	// attachement du noeud tuple au noeud fun
 	STACKDROP(m);
 
-	if (k=createnodetype(TYPENAME_UNDEF)) return k;	// noeud résultat
+	k=createnodetype(TYPENAME_UNDEF);
+	if (k) return k;	// noeud résultat
 	TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH+1,STACKGET(m,0));	// attachement du noeud resultat au noeud fun
 	type_result=VALTOPNT(STACKPULL(m));	// on garde en mémoire le type du résultat
 	// ici : [type local global name]
@@ -432,7 +461,8 @@ int Compiler::parsefun()
 
 	TABSET(m,newref,REF_PACKAGE,(k!=NIL)?k:INTTOVAL(ifuns++));
 
-	if (k=STACKPUSH(m,PNTTOVAL(newref))) return MTLERR_OM;	// [newref local global name]
+	k=STACKPUSH(m,PNTTOVAL(newref));	// [newref local global name]
+	if (k) return MTLERR_OM;
 	addreftopackage(newref,newpackage);
 	STACKDROP(m);
 	// [local global name]
@@ -445,14 +475,17 @@ int Compiler::parsefun()
 	// [locals globals]
 
 	// parsing
-	if (k=parseprogram()) return k;
+	k=parseprogram();
+	if (k) return k;
 
 	// [type locals globals]
 //	la pile contient le type du résultat de la fonction
-	if (k=parser->parsekeyword(";;")) return k;
+	k=parser->parsekeyword(";;");
+	if (k) return k;
 
 	// unifier le type résultat
-	if (k=unif(type_result,VALTOPNT(STACKGET(m,0)))) return k;
+	k=unif(type_result,VALTOPNT(STACKGET(m,0)));
+	if (k) return k;
 	STACKDROP(m);
 	// [locals globals name]
 	// créer le bloc programme
@@ -466,7 +499,8 @@ int Compiler::parsefun()
 	// stocker le bytecode
 	bc->addchar(OPret);
 
-	if (k=STRPUSHBINARY(m,bc->getstart(),bc->getsize())) return k;
+	k=STRPUSHBINARY(m,bc->getstart(),bc->getsize());
+	if (k) return k;
 	TABSET(m,fun,FUN_BC,STACKPULL(m));
 
 	if (!strcmp(name,"awcConnect"))
@@ -483,7 +517,8 @@ int Compiler::parsefun()
 	// []
 
 	// chercher d'éventuels prototypes
-	if (k=fillproto(PNTTOVAL(newpackage),newref)) return k;
+	k=fillproto(PNTTOVAL(newpackage),newref);
+	if (k) return k;
 
 	outputbuf->reinit();
 	outputbuf->printf("Compiler : %s : ",STRSTART(VALTOPNT(TABGET(newref,REF_NAME))));
@@ -507,20 +542,25 @@ int Compiler::parsevar()
 	}
 	if (!strcmp(parser->token,"="))
 	{
-		if (k=parseval()) return k;
+		k=parseval();
+		if (k) return k;
 		hasvalue = 1;
 	}
 	else
 	{
 		parser->giveback();
-		if (k=STACKPUSH(m,NIL)) return k;
-		if (k=createnodetype(TYPENAME_WEAK)) return k;
+		k=STACKPUSH(m,NIL);
+		if (k) return k;
+		k=createnodetype(TYPENAME_WEAK);
+		if (k) return k;
 	}
 	// [val type name]
-	if (k=parser->parsekeyword(";;")) return k;
+	k=parser->parsekeyword(";;");
+	if (k) return k;
 
 	int val=INTTOVAL(nblabels(globals));
-	if (k=addlabel(globals,STRSTART(VALTOPNT(STACKGET(m,2))),val,STACKGET(m,1))) return k;	// enregistrement d'une nouvelle globale
+	k=addlabel(globals,STRSTART(VALTOPNT(STACKGET(m,2))),val,STACKGET(m,1));
+	if (k) return k;	// enregistrement d'une nouvelle globale
 
 	// on crée le bloc fonction
 	newref=MALLOCCLEAR(m,REF_LENGTH);
@@ -537,7 +577,8 @@ int Compiler::parsevar()
 
 	TABSET(m,newref,REF_PACKAGE,val);
 
-	if (k=STACKPUSH(m,PNTTOVAL(newref))) return MTLERR_OM;	// [newref]
+	k=STACKPUSH(m,PNTTOVAL(newref));	// [newref]
+	if (k) return MTLERR_OM;
 	addreftopackage(newref,newpackage);
 	STACKDROP(m);
 
@@ -555,12 +596,16 @@ int Compiler::parseconst()
 {
 	int k;
 
-	if (k=parser->parsekeyword("=")) return k;
-	if (k=parseval()) return k;
-	if (k=parser->parsekeyword(";;")) return k;
+	k=parser->parsekeyword("=");
+	if (k) return k;
+	k=parseval();
+	if (k) return k;
+	k=parser->parsekeyword(";;");
+	if (k) return k;
 
 	int val=INTTOVAL(nblabels(globals));
-	if (k=addlabel(globals,STRSTART(VALTOPNT(STACKGET(m,2))),val,STACKGET(m,1))) return k;	// enregistrement d'une nouvelle globale
+	k=addlabel(globals,STRSTART(VALTOPNT(STACKGET(m,2))),val,STACKGET(m,1));
+	if (k) return k;	// enregistrement d'une nouvelle globale
 
 	// on crée le bloc fonction
 	newref=MALLOCCLEAR(m,REF_LENGTH);
@@ -577,7 +622,8 @@ int Compiler::parseconst()
 
 	TABSET(m,newref,REF_PACKAGE,val);
 
-	if (k=STACKPUSH(m,PNTTOVAL(newref))) return MTLERR_OM;	// [newref]
+	k=STACKPUSH(m,PNTTOVAL(newref));	// [newref]
+	if (k) return MTLERR_OM;
 	addreftopackage(newref,newpackage);
 	STACKDROP(m);
 
@@ -603,7 +649,8 @@ int Compiler::parseproto()
 	int nbarg=-1;
 	if (!strcmp(parser->token,"="))
 	{
-		if (k=creategraph(parser,PNTTOVAL(newpackage),0)) return k;
+		k=creategraph(parser,PNTTOVAL(newpackage),0);
+		if (k) return k;
 		int vp=STACKGET(m,0);
 		if (vp!=NIL)
 		{
@@ -631,15 +678,19 @@ int Compiler::parseproto()
 	{
 		nbarg=mtl_atoi(parser->token);
 		
-		if (k=createnodetype(TYPENAME_FUN)) return k;
+		k=createnodetype(TYPENAME_FUN);
+		if (k) return k;
 		
-		int i;for(i=0;i<nbarg;i++) if (k=createnodetype(TYPENAME_WEAK)) return k;
-		if (k=createnodetuple(nbarg)) return k;
+		int i;for(i=0;i<nbarg;i++) k=createnodetype(TYPENAME_WEAK);
+		if (k) return k;
+		k=createnodetuple(nbarg);
+		if (k) return k;
 
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));	// attachement du noeud tuple au noeud fun
 		STACKDROP(m);
 		
-		if (k=createnodetype(TYPENAME_WEAK)) return k;	// noeud résultat
+		k=createnodetype(TYPENAME_WEAK);
+		if (k) return k;	// noeud résultat
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH+1,STACKGET(m,0));	// attachement du noeud resultat au noeud fun
 		STACKDROP(m);		
 	}
@@ -648,7 +699,8 @@ int Compiler::parseproto()
 		PRINTF(m)(LOG_COMPILER,"Compiler : integer or '=' expected (found '%s')\n",parser->token);
 		return MTLERR_SN;
 	}
-	if (k=parser->parsekeyword(";;")) return k;
+	k=parser->parsekeyword(";;");
+	if (k) return k;
 	// on crée le bloc fonction
 	newref=MALLOCCLEAR(m,REF_LENGTH);
 	if (!newref) return MTLERR_OM;
@@ -656,7 +708,8 @@ int Compiler::parseproto()
 	TABSET(m,newref,REF_NAME,STACKPULL(m));
 	TABSET(m,newref,REF_CODE,INTTOVAL(nbarg));
 	TABSET(m,newref,REF_PACKAGE,INTTOVAL(ifuns++));
-	if (k=STACKPUSH(m,PNTTOVAL(newref))) return MTLERR_OM;	// [newref]
+	k=STACKPUSH(m,PNTTOVAL(newref));	// [newref]
+	if (k) return MTLERR_OM;
 	addreftopackage(newref,newpackage);
 	STACKDROP(m);
 
@@ -675,24 +728,28 @@ int Compiler::parsetype()
 
 	char* name=STRSTART(VALTOPNT(STACKGET(m,0)));
 	// création des variables de travail
-	if (k=STACKPUSH(m,NIL)) return k; // LOCALS
+	k=STACKPUSH(m,NIL);
+	if (k) return k; // LOCALS
 	locals=STACKREF(m);
 
 	newref=searchemptytype(PNTTOVAL(newpackage),name);
 	int mergetype=1;
 	if (newref)
 	{
-		if (k=createnodetypecore(TABGET(VALTOPNT(TABGET(newref,REF_TYPE)),TYPEHEADER_LENGTH+1))) return k;
+		k=createnodetypecore(TABGET(VALTOPNT(TABGET(newref,REF_TYPE)),TYPEHEADER_LENGTH+1));
+		if (k) return k;
 	}
 	else
 	{
 		mergetype=0;
-		if (k=createnodetypecore(STACKGET(m,1))) return k;
+		k=createnodetypecore(STACKGET(m,1));
+		if (k) return k;
 		newref=MALLOCCLEAR(m,REF_LENGTH);
 		if (!newref) return MTLERR_OM;
 		TABSET(m,newref,REF_CODE,INTTOVAL(CODE_EMPTYTYPE));
 		TABSET(m,newref,REF_TYPE,STACKGET(m,0));
-		 if (k=STACKPUSH(m,PNTTOVAL(newref))) return MTLERR_OM;	// [newtyp local name]
+		k=STACKPUSH(m,PNTTOVAL(newref));	// [newtyp local name]
+		if (k) return MTLERR_OM;
 		addreftopackage(newref,newpackage);
 		STACKDROP(m);
 	}
@@ -712,8 +769,10 @@ int Compiler::parsetype()
 				}
 				if (islabel(parser->token))
 				{
-					if (k=createnodetype(TYPENAME_UNDEF)) return k;
-					if (k=addlabel(locals,parser->token,STACKGET(m,0),INTTOVAL(narg++))) return k;
+					k=createnodetype(TYPENAME_UNDEF);
+					if (k) return k;
+					k=addlabel(locals,parser->token,STACKGET(m,0),INTTOVAL(narg++));
+					if (k) return k;
 				}
 				else if (strcmp(parser->token,")"))
 				{
@@ -721,13 +780,15 @@ int Compiler::parsetype()
 					return MTLERR_SN;
 				}
 			} while(strcmp(parser->token,")"));
-			if (k=DEFTAB(m,narg)) return k;
+			k=DEFTAB(m,narg);
+			if (k) return k;
 			TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 			STACKDROP(m);
 		}
 	}
 	if (!mergetype) STACKDROP(m);
-	else if (k=unif(VALTOPNT(STACKPULL(m)),VALTOPNT(TABGET(newref,REF_TYPE)))) return k;
+	else k=unif(VALTOPNT(STACKPULL(m)),VALTOPNT(TABGET(newref,REF_TYPE)));
+	if (k) return k;
 
 	if (!parser->next(0))
 	{
@@ -780,27 +841,35 @@ int Compiler::parsestruct()
 		}
 		if (islabel(parser->token))
 		{
-			if (k=STRPUSH(m,parser->token)) return k;
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
 			
 			// on crée le bloc champ
 			int* newfield=MALLOCCLEAR(m,REF_LENGTH);
 			if (!newfield) return MTLERR_OM;
 			TABSET(m,newfield,REF_NAME,STACKPULL(m));
 			TABSET(m,newfield,REF_CODE,INTTOVAL(CODE_FIELD));
-			if (k=STACKPUSH(m,PNTTOVAL(newfield))) return MTLERR_OM;	// [newfield local name]
+			k=STACKPUSH(m,PNTTOVAL(newfield));	// [newfield local name]
+			if (k) return MTLERR_OM;
 			addreftopackage(newfield,newpackage);
 			STACKDROP(m);
 			// [local name]
-			if (k=STACKPUSH(m,TABGET(newref,REF_VAL))) return k;
-			if (k=STACKPUSH(m,PNTTOVAL(newref))) return k;
-			if (k=DEFTAB(m,FIELD_LENGTH)) return k;
+			k=STACKPUSH(m,TABGET(newref,REF_VAL));
+			if (k) return k;
+			k=STACKPUSH(m,PNTTOVAL(newref));
+			if (k) return k;
+			k=DEFTAB(m,FIELD_LENGTH);
+			if (k) return k;
 			TABSET(m,newfield,REF_VAL,STACKPULL(m));
 
 			TABSET(m,newref,REF_VAL,INTTOVAL(1+VALTOINT(TABGET(newref,REF_VAL))));	// incrémentation
 			
-			if (k=createnodetype(TYPENAME_FUN)) return k;
-			if (k=STACKPUSH(m,TABGET(newref,REF_TYPE))) return k;
-			if (k=createnodetuple(1)) return k;
+			k=createnodetype(TYPENAME_FUN);
+			if (k) return k;
+			k=STACKPUSH(m,TABGET(newref,REF_TYPE));
+			if (k) return k;
+			k=createnodetuple(1);
+			if (k) return k;
 			TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));	// attachement du noeud tuple au noeud fun
 			STACKDROP(m);
 			
@@ -809,8 +878,11 @@ int Compiler::parsestruct()
 				parser->giveback();
 				k=createnodetype(TYPENAME_WEAK);
 			}
-			else k=creategraph(parser,PNTTOVAL(newpackage),1,locals);
-			if (k) return k;
+			else
+			{
+				k=creategraph(parser,PNTTOVAL(newpackage),1,locals);
+				if (k) return k;
+			}
 			TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH+1,STACKGET(m,0));	// attachement du noeud resultat au noeud fun
 			STACKDROP(m);
 			TABSET(m,newfield,REF_TYPE,STACKPULL(m));
@@ -827,7 +899,8 @@ int Compiler::parsestruct()
 			return MTLERR_SN;
 		}
 	} while(loop);
-	if (k=parser->parsekeyword(";;")) return k;
+	k=parser->parsekeyword(";;");
+	if (k) return k;
 
 	STACKDROPN(m,2);
 
@@ -861,32 +934,38 @@ int Compiler::parsesum()
 		}
 		if (islabel(parser->token))
 		{
-			if (k=STRPUSH(m,parser->token)) return k;
+			k=STRPUSH(m,parser->token);
+			if (k) return k;
 			
 			// on crée le bloc champ
 			int* newcons=MALLOCCLEAR(m,REF_LENGTH);
 			if (!newcons) return MTLERR_OM;
 			TABSET(m,newcons,REF_NAME,STACKPULL(m));
-			if (k=STACKPUSH(m,PNTTOVAL(newcons))) return MTLERR_OM;	// [newcons local name]
+			k=STACKPUSH(m,PNTTOVAL(newcons));	// [newcons local name]
+			if (k) return MTLERR_OM;
 			addreftopackage(newcons,newpackage);
 			STACKDROP(m);
 			// [local name]
 			TABSET(m,newcons,REF_VAL,TABGET(newref,REF_VAL));
 			TABSET(m,newref,REF_VAL,INTTOVAL(1+VALTOINT(TABGET(newref,REF_VAL))));	// incrémentation
 			
-			if (k=createnodetype(TYPENAME_FUN)) return k;
+			k=createnodetype(TYPENAME_FUN);
+			if (k) return k;
 
 			if ((parser->next(0))&&((!strcmp(parser->token,"|"))||(!strcmp(parser->token,";;"))))
 			{
 				parser->giveback();
-				if (k=createnodetuple(0)) return k;
+				k=createnodetuple(0);
+				if (k) return k;
 				TABSET(m,newcons,REF_CODE,INTTOVAL(CODE_CONS0));
 			}
 			else
 			{
 				parser->giveback();
-				if (k=creategraph(parser,PNTTOVAL(newpackage),1,locals)) return k;
-				if (k=createnodetuple(1)) return k;
+				k=creategraph(parser,PNTTOVAL(newpackage),1,locals);
+				if (k) return k;
+				k=createnodetuple(1);
+				if (k) return k;
 				TABSET(m,newcons,REF_CODE,INTTOVAL(CODE_CONS));
 			}
 			TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));	// attachement du noeud tuple au noeud fun

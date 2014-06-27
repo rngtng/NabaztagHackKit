@@ -117,13 +117,15 @@ int htoc(int c)
 // lecture d'une chaîne décimale (s'arrête au premier caractère incorrect)
 int mtl_atoi(char* src)
 {
-	int x,c,s;
+	int x,s;
 	x=s=0;
+	int c=*src;
 	if ((*src)=='-') { s=1; src++; }
-	while(c=*src++)
+	while(c)
 	{
 		if ((c>='0')&&(c<='9')) x=(x*10)+c-'0';
 		else return (s?(-x):x);
+		src++;c=*src;
 	}
 	return (s?(-x):x);
 }
@@ -131,14 +133,16 @@ int mtl_atoi(char* src)
 // lecture d'une chaîne hexadécimale (s'arrête au premier caractère incorrect)
 int mtl_htoi(char* src)
 {
-	int x,c;
-	x=0;
-	while(c=*src++)
+	int x=0;
+	int c=*src;
+	while(c)
 	{
 		if ((c>='0')&&(c<='9')) x=(x<<4)+c-'0';
 		else if ((c>='A')&&(c<='F')) x=(x<<4)+c-'A'+10;
 		else if ((c>='a')&&(c<='f')) x=(x<<4)+c-'a'+10;
 		else return x;
+
+		src++;c=*src;
 	}
 	return x;
 }
@@ -146,11 +150,11 @@ int mtl_htoi(char* src)
 // lecture d'une chaîne flottante (s'arrête au premier caractère incorrect)
 mtl_float mtl_atof(char* src)
 {
-	int c;
 	mtl_float f=0;
 	mtl_float div=1;
 	int point=0;
-	while(c=*src++)
+	int c=*src;
+	while(c)
 	{
 		if ((c=='.')&&(!point)) point=1;
 		else if ((c>='0')&&(c<='9'))
@@ -159,6 +163,7 @@ mtl_float mtl_atof(char* src)
 			if (point) div*=10;
 		}
 		else return f/div;
+		src++;c=*src;
 	}
 	return f/div;
 }

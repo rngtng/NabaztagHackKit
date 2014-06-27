@@ -68,7 +68,7 @@ static int print_line_by_line(e_logtypes t, char *s, int force)
 	int nbwritten=0;
 	char pfx[256];
 	if (do_log_time)
-		snprintf(pfx,255, "%06d %s", time(NULL) - time_first_log, get_prefix(t));
+		snprintf(pfx,255, "%06ld %s", time(NULL) - time_first_log, get_prefix(t));
 	else
 		strncpy(pfx, get_prefix(t), 255);
 	while (*s!='\0')
@@ -176,7 +176,7 @@ void my_printf_set_options(const char *s)
 		else if (!strcmp(token,"simumotors"))
 			my_msk |= LOG_SIMUMOTORS;
 		else {
-				fprintf(stderr, "erreur: %s n'est pas une option valide pour les logs\n");
+				fprintf(stderr, "erreur: %s n'est pas une option valide pour les logs\n",token);
 				break;
 		}
 		token = strtok(NULL, ",");
@@ -236,6 +236,7 @@ static int my_printf_rotate_log(void)
 	tmp=strdup(outfilename);
 	my_printf_set_logfile(tmp);
 	free(tmp);
+        return 0;
 }
 
 /**
@@ -261,6 +262,8 @@ static int my_printf_rotate_log_n(int n)
 	if (!stat(tmpnplusun, &ststat))
 		my_printf_rotate_log_n(n+1);
 	rename(tmpn, tmpnplusun);
+
+        return 0;
 }
 
 /**

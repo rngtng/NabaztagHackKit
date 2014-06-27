@@ -2,7 +2,9 @@
 
 Everything you need to hack the Rabbit: a sinatra server including simple api framework to run custom bytecode on Nabaztag v1/v2. Includes original compiler sources for linux.
 
-![](http://travis-ci.org/rngtng/NabaztagHackKit.png)
+Note: forked for the purpose of OSX compile.
+
+![](http://github.com/ztalbot2000/NabaztagHackKit.png)
 
 ## Getting Started
 

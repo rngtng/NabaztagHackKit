@@ -21,7 +21,8 @@ int Compiler::parseval()
 {
 	int k;
 	
-	if (k=parseval3()) return k;
+	k=parseval3();
+	if (k) return k;
 	
 	if (!parser->next(0)) return 0;
 	if (strcmp(parser->token,"::"))
@@ -29,13 +30,18 @@ int Compiler::parseval()
 		parser->giveback();
 		return 0;
     }
-	if (k=parseval()) return k;	// récursion
+	k=parseval();	// récursion
+	if (k) return k;	// récursion
 
-	if (k=createnodetype(TYPENAME_LIST)) return k;
-	if (k=createnodetype(TYPENAME_UNDEF)) return k;	// noeud élement
+	k=createnodetype(TYPENAME_LIST);
+	if (k) return k;
+	k=createnodetype(TYPENAME_UNDEF);	// noeud élement
+	if (k) return k;	// noeud élement
 	TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));	// attachement du noeud élément au noeud list
-	if (k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,4)))) return k;	// unification élement
-	if (k=unif(VALTOPNT(STACKGET(m,1)),VALTOPNT(STACKGET(m,2)))) return k;	// unification list
+	k=unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(STACKGET(m,4)));	// unification élement
+	if (k) return k;	// unification élement
+	k=unif(VALTOPNT(STACKGET(m,1)),VALTOPNT(STACKGET(m,2)));	// unification list
+	if (k) return k;	// unification list
 	STACKSET(m,4,STACKGET(m,1));	// remplacement du type
 
 	int* p=MALLOCCLEAR(m,LIST_LENGTH);	// création du tuple liste
@@ -52,7 +58,8 @@ int Compiler::parseval3()
 {
 	int k,op,typ;
 	
-	if (k=parseval4()) return k;
+	k=parseval4();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -63,13 +70,16 @@ int Compiler::parseval3()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parseval4()) return k;
+		k=parseval4();
+		if (k) return k;
 		if (op==OPadd) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))+VALTOINT(STACKGET(m,1))));
 		else if (op==OPsub) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))-VALTOINT(STACKGET(m,1))));
 		int* ptyp;
 		if (typ==1) ptyp=VALTOPNT(TABGET(stdtypes,STDTYPE_I));
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
-		if (k=unif(VALTOPNT(STACKGET(m,2)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,2)),ptyp);
+		if (k) return k;
 		STACKDROPN(m,2);
     }
 }
@@ -78,7 +88,8 @@ int Compiler::parseval4()
 {
 	int k,op,typ;
 	
-	if (k=parseval5()) return k;
+	k=parseval5();
+	if (k) return k;
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -90,7 +101,8 @@ int Compiler::parseval4()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parseval5()) return k;
+		k=parseval5();
+		if (k) return k;
 
 		if (op==OPmul) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))*VALTOINT(STACKGET(m,1))));
 		else if (op==OPdiv)
@@ -101,8 +113,10 @@ int Compiler::parseval4()
 		else if (op==OPmod) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))%VALTOINT(STACKGET(m,1))));
 		int* ptyp;
 		if (typ==1) ptyp=VALTOPNT(TABGET(stdtypes,STDTYPE_I));
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
-		if (k=unif(VALTOPNT(STACKGET(m,2)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,2)),ptyp);
+		if (k) return k;
 		STACKDROPN(m,2);
     }
 }
@@ -111,7 +125,9 @@ int Compiler::parseval5()
 {
 	int k,op;
 	
-	if (k=parseval6()) return k;
+	k=parseval6();
+	if (k) return k;
+
 	while(1)
     {
 		if (!parser->next(0)) return 0;
@@ -125,7 +141,8 @@ int Compiler::parseval5()
 			parser->giveback();
 			return 0;
 		}
-		if (k=parseval6()) return k;
+		k=parseval6();
+		if (k) return k;
 
 		if (op==OPand) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))&VALTOINT(STACKGET(m,1))));
 		else if (op==OPor) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))|VALTOINT(STACKGET(m,1))));
@@ -134,8 +151,10 @@ int Compiler::parseval5()
 		else if (op==OPshr) STACKSET(m,3,INTTOVAL(VALTOINT(STACKGET(m,3))>>VALTOINT(STACKGET(m,1))));
 
 		int* ptyp=VALTOPNT(TABGET(stdtypes,STDTYPE_I));
-		if (k=unif(VALTOPNT(STACKGET(m,0)),ptyp)) return k;
-		if (k=unif(VALTOPNT(STACKGET(m,2)),ptyp)) return k;
+		k=unif(VALTOPNT(STACKGET(m,0)),ptyp);
+		if (k) return k;
+		k=unif(VALTOPNT(STACKGET(m,2)),ptyp);
+		if (k) return k;
 		STACKDROPN(m,2);
     }
 }
@@ -152,17 +171,20 @@ int Compiler::parseval6()
 		if (isdecimal(parser->token))	// gestion des entiers
 		{
 			int i=-mtl_atoi(parser->token);
-			if (k=STACKPUSH(m,INTTOVAL(i))) return k;
+			k=STACKPUSH(m,INTTOVAL(i));
+			if (k) return k;
 			return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 		}
 		parser->giveback();
-		if (k=parseval6()) return k;
+		k=parseval6();
+		if (k) return k;
 		STACKSET(m,1,INTTOVAL(-VALTOINT(STACKGET(m,0))));
 		return unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
 	}
 	else if (!strcmp(parser->token,"~"))
 	{
-		if (k=parseval6()) return k;
+		k=parseval6();
+		if (k) return k;
 		STACKSET(m,1,INTTOVAL(~VALTOINT(STACKGET(m,0))));
 		return unif(VALTOPNT(STACKGET(m,0)),VALTOPNT(TABGET(stdtypes,STDTYPE_I)));
 	}
@@ -182,14 +204,17 @@ int Compiler::parseval7()
 	}
 	if (!strcmp(parser->token,"("))	// gestion des parenthèses
 	{
-		if (k=parseval()) return k;
+		k=parseval();
+		if (k) return k;
 		return parser->parsekeyword(")");
 	}
 	else if (!strcmp(parser->token,"["))	// gestion des tuples
 	{
 		int nval=0;
-		if (k=STACKPUSH(m,NIL)) return k;	// valeur finale
-		if (k=STACKPUSH(m,NIL)) return k;	// type final
+		k=STACKPUSH(m,NIL);	// valeur finale
+		if (k) return k;	// valeur finale
+		k=STACKPUSH(m,NIL);	// type final
+		if (k) return k;	// type final
 		int sref=STACKREF(m);
 		while(1)
 		{
@@ -205,22 +230,27 @@ int Compiler::parseval7()
 				int i;
 				for(i=0;i<nval;i++) TABSET(m,p,i,STACKGET(m,(nval-i)*2-1));
 				STACKSETFROMREF(m,sref,1,PNTTOVAL(p));
-				if (k=createnodetupleval(nval)) return k;
+				k=createnodetupleval(nval);
+				if (k) return k;
 				STACKSETFROMREF(m,sref,0,STACKPULL(m));
 				STACKRESTOREREF(m,sref);
 				return 0;
 			}
 			parser->giveback();
-			if (k=parseval()) return k;
+			k=parseval();
+			if (k) return k;
 			nval++;
 		}
 	}
 	else if (!strcmp(parser->token,"{"))	// gestion des tableaux
 	{
 		int nval=0;
-		if (k=STACKPUSH(m,NIL)) return k;	// valeur finale
-		if (k=createnodetype(TYPENAME_TAB)) return k;	// type final
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=STACKPUSH(m,NIL);	// valeur finale
+		if (k) return k;	// valeur finale
+		k=createnodetype(TYPENAME_TAB);	// type final
+		if (k) return k;	// type final
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 		int* p=VALTOPNT(STACKPULL(m));
 
@@ -234,22 +264,26 @@ int Compiler::parseval7()
 			if (!strcmp(parser->token,"}"))
 			{
 
-				if (k=DEFTAB(m,nval)) return k;
+				k=DEFTAB(m,nval);
+				if (k) return k;
 
 				STACKSET(m,2,STACKGET(m,0));	// report de la valeur du tableau
 				STACKDROP(m);
 				return 0;
 			}
 			parser->giveback();
-			if (k=parseval()) return k;
-			if (k=unif(VALTOPNT(STACKGET(m,0)),p)) return k;
+			k=parseval();
+			if (k) return k;
+			k=unif(VALTOPNT(STACKGET(m,0)),p);
+			if (k) return k;
 			STACKDROP(m);
 			nval++;
 		}
 	}
 	else if (!strcmp(parser->token,"nil"))	// gestion du nil
 	{
-		if (k=STACKPUSH(m,NIL)) return k;	// valeur
+		k=STACKPUSH(m,NIL);	// valeur
+		if (k) return k;	// valeur
 		return createnodetype(TYPENAME_WEAK);
 	}
 	else if (!strcmp(parser->token,"'"))	// gestion des 'char
@@ -259,26 +293,31 @@ int Compiler::parseval7()
 			PRINTF(m)(LOG_COMPILER,"Compiler : 'char expected (found EOF)\n");
 			return MTLERR_SN;
 		}
-		if (k=STACKPUSH(m,INTTOVAL(parser->token[0]&255))) return k;	// valeur
-		if (k=parser->parsekeyword("'")) return k;
+		k=STACKPUSH(m,INTTOVAL(parser->token[0]&255));	// valeur
+		if (k) return k;	// valeur
+		k=parser->parsekeyword("'");
+		if (k) return k;
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 	}
 	else if (isdecimal(parser->token))	// gestion des entiers
 	{
 		int i=mtl_atoi(parser->token);
-		if (k=STACKPUSH(m,INTTOVAL(i))) return k;	// valeur
+		k=STACKPUSH(m,INTTOVAL(i));	// valeur
+		if (k) return k;	// valeur
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 	}
 	else if ((parser->token[0]=='0')&&(parser->token[1]=='x')
 		&&(ishexadecimal(parser->token+2)))	// gestion des entiers
 	{
 		int i=mtl_htoi(parser->token+2);
-		if (k=STACKPUSH(m,INTTOVAL(i))) return k;	// valeur
+		k=STACKPUSH(m,INTTOVAL(i));	// valeur
+		if (k) return k;	// valeur
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_I));
 	}
 	else if (parser->token[0]=='"')	// gestion des chaines
 	{
-		if (k=parser->getstring(m,'"')) return k;
+		k=parser->getstring(m,'"');
+		if (k) return k;
 		return STACKPUSH(m,TABGET(stdtypes,STDTYPE_S));
 	}
 	else

@@ -192,6 +192,7 @@ void AbortMetal(Memory* m,int donotstop);
 #define TYPE_TAB 1	// type table pour allocation
 #define TYPE_EXT 2	// type externe pour allocation
 
+//zarf #define PNTTOVAL(p) (1+((int)(p)))	// conversion pointeur vers mot metal
 #define PNTTOVAL(p) (1+((int)(p)))	// conversion pointeur vers mot metal
 #define INTTOVAL(i) ((i)<<1)	// conversion entier vers mot metal
 #define FLOATTOVAL(v) ((~1)&(*(int*)(&(v))))	// conversion flottant vers mot metal
@@ -320,6 +321,7 @@ inline int Memory::pushpnt(void* pnt)
 {
 	int* p=malloc(1,TYPE_BINARY); if (!p) return MTLERR_OM;
 	*(BINSTART(p))=(int)pnt;
+	//zarf *(&p+HEADER_LENGTH)=(int*)pnt;
 	return push(PNTTOVAL(p));
 }
 

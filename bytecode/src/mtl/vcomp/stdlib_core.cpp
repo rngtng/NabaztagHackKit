@@ -111,7 +111,8 @@ const char* coretype[]=
 int Compiler::addstdlibcore()
 {
 	int k;
-	if (k=addnative(NBcore,corename,coreval,corecode,coretype,m)) return k;
+	k=addnative(NBcore,corename,coreval,corecode,coretype,m);
+	if (k) return k;
 /*	FILE* f=fopen("bc.txt","w");
 	for(k=0;k<NBcore;k++)
 	{

@@ -26,7 +26,8 @@ int Compiler::createnodetypecore(const char* name)
 	if (!p) return MTLERR_OM;
 	if (STACKPUSH(m,PNTTOVAL(p))) return MTLERR_OM;
 
-	if (k=STRPUSH(m,name)) return k;
+	k=STRPUSH(m,name);
+	if (k) return k;
 
 	TABSET(m,p,TYPEHEADER_CODE,INTTOVAL(TYPENAME_CORE));
 	TABSET(m,p,TYPEHEADER_LENGTH+1,STACKPULL(m));
@@ -108,7 +109,8 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 	if (!searchlabel_byname(labels,p->token,&val,NULL)) return STACKPUSH(m,val);
 	if ((p->token[0]=='w')&&(isdecimal(p->token+1)))
     {
-		if (k=createnodetype(TYPENAME_WEAK)) return k;
+		k=createnodetype(TYPENAME_WEAK);
+		if (k) return k;
 		return addlabel(labels,p->token,STACKGET(m,0),NIL);
     }
 	if (!strcmp(p->token,"_"))
@@ -127,7 +129,8 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 			PRINTF(m)(LOG_RUNTIME,"Compiler : cannot accept linked variable %s here\n",p->token);
 			return MTLERR_SN;
 		}
-		if (k=createnodetype(TYPENAME_UNDEF)) return k;
+		k=createnodetype(TYPENAME_UNDEF);
+		if (k) return k;
 		return addlabel(labels,p->token,STACKGET(m,0),NIL);
     }
 	else if ((p->token[0]=='r')&&(isdecimal(p->token+1)))
@@ -138,45 +141,54 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 			PRINTF(m)(LOG_RUNTIME,"Compiler : recursivity out of range %d [0 %d[\n",i,rec);
 			return MTLERR_SN;
 		}
-		if (k=createnodetype(TYPENAME_REC)) return k;
+		k=createnodetype(TYPENAME_REC);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,0)),TYPEHEADER_LENGTH,INTTOVAL(i));
 		*rnode=1;
 		return 0;
     }
 	else if (!strcmp(p->token,"tab"))
     {
-		if (k=createnodetype(TYPENAME_TAB)) return k;
-		if (k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode)) return k;
+		k=createnodetype(TYPENAME_TAB);
+		if (k) return k;
+		k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 		STACKDROP(m);
 		return 0;
     }
 	else if (!strcmp(p->token,"list"))
     {
-		if (k=createnodetype(TYPENAME_LIST)) return k;
-		if (k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode)) return k;
+		k=createnodetype(TYPENAME_LIST);
+		if (k) return k;
+		k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 		STACKDROP(m);
 		return 0;
     }
 	else if (!strcmp(p->token,"fun"))
     {
-		if (k=createnodetype(TYPENAME_FUN)) return k;
+		k=createnodetype(TYPENAME_FUN);
+		if (k) return k;
 		int nblab;
 		if (newvars)
 		{
-			if (k=parsegraph(p,env,mono,rec+1,labels,1,rnode)) return k;
+			k=parsegraph(p,env,mono,rec+1,labels,1,rnode);
+		        if (k) return k;
 			nblab=0;
 		}
 		else
 		{
 			nblab=nblabels(labels);
-			if (k=parsegraph(p,env,mono,rec+1,labels,1,rnode)) return k;
+			k=parsegraph(p,env,mono,rec+1,labels,1,rnode);
+		        if (k) return k;
 			nblab=nblabels(labels)-nblab;
 		}
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH,STACKGET(m,0));
 		STACKDROP(m);
-		if (k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode)) return k;
+		k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode);
+		if (k) return k;
 		TABSET(m,VALTOPNT(STACKGET(m,1)),TYPEHEADER_LENGTH+1,STACKGET(m,0));
 		STACKDROP(m);
 		removenlabels(labels,nblab);
@@ -199,7 +211,8 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 			else
             {
 				p->giveback();
-				if (k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode)) return k;
+				k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode);
+		                if (k) return k;
 				n++;
             }
         }
@@ -217,11 +230,13 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 		if (vargs==NIL) return STACKPUSH(m,TABGET(t,REF_TYPE));
 		else
 		{
-			if (k=createnodetypecore(TABGET(q,TYPEHEADER_LENGTH+1))) return k;
+			k=createnodetypecore(TABGET(q,TYPEHEADER_LENGTH+1));
+		        if (k) return k;
 			int n=TABLEN(VALTOPNT(vargs));
 			int* t0=MALLOCCLEAR(m,TABLEN(VALTOPNT(vargs)));
 			if (!t0) return MTLERR_OM;
-			if (k=STACKPUSH(m,PNTTOVAL(t0))) return k;
+			k=STACKPUSH(m,PNTTOVAL(t0));
+		        if (k) return k;
 			if (!p->next(0))
 			{
 				PRINTF(m)(LOG_RUNTIME,"Compiler : '(' expected (found EOF)\n");
@@ -234,7 +249,8 @@ int Compiler::parsegraph(Parser* p,int env,int mono,int rec,int labels,int newva
 			}
 			int i;for(i=0;i<n;i++)
 			{
-				if (k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode)) return k;
+				k=parsegraph(p,env,mono,rec+1,labels,newvars,rnode);
+		                if (k) return k;
 				TABSET(m,t0,i,STACKPULL(m));
 			}
 			if (!p->next(0))
@@ -273,29 +289,42 @@ int Compiler::parse_rnode(int *p)
 		TABSET(m,p,TYPEHEADER_ACTUAL,STACKGET(m,VALTOINT(TABGET(p,TYPEHEADER_LENGTH))));
 		return 0;
 	}
-	if (k=STACKPUSH(m,PNTTOVAL(p))) return k;
+	k=STACKPUSH(m,PNTTOVAL(p));
+	if (k) return k;
 
 	if (c==TYPENAME_CORE)
 	{
 		int* tup=VALTOPNT(TABGET(p,TYPEHEADER_LENGTH));
-		for(i=0;i<TABLEN(tup);i++) if (k=parse_rnode(VALTOPNT(TABGET(tup,i)))) return k;
+		for(i=0;i<TABLEN(tup);i++)
+		{ 
+                   k=parse_rnode(VALTOPNT(TABGET(tup,i)));
+                   if (k) return k;
+		} 
 	}
 	else if (c==TYPENAME_FUN)
 	{
-		if (k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
-		if (k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)))) return k;
+		k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
+		k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_LIST)
 	{
-		if (k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TAB)
 	{
-		if (k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=parse_rnode(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TUPLE)
 	{
-		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++) if (k=parse_rnode(VALTOPNT(TABGET(p,i)))) return k;
+		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++)
+		{
+			k=parse_rnode(VALTOPNT(TABGET(p,i)));
+			if (k) return k;
+		}
 	}
 	STACKDROP(m);
 	return 0;
@@ -306,10 +335,14 @@ int Compiler::creategraph(Parser* p,int env,int mono)
 {
 	int k,labels;
 	int rnode=0;
-	if (k=STACKPUSH(m,NIL)) return k;
+	k=STACKPUSH(m,NIL);
+	if (k) return k;
+
 	labels=STACKREF(m);
 //k=parsegraph(p,env,mono,0,labels,0,&rnode);
-	if (k=parsegraph(p,env,mono,0,labels,0,&rnode)) return k;
+	k=parsegraph(p,env,mono,0,labels,0,&rnode);
+	if (k) return k;
+
 	STACKSET(m,1,STACKGET(m,0));
 	STACKDROP(m);
 	if (rnode) return parse_rnode(VALTOPNT(STACKGET(m,0)));
@@ -322,7 +355,9 @@ int Compiler::creategraph(Parser* p,int env,int mono,int labels)
 {
 	int k;
 	int rnode=0;
-	if (k=parsegraph(p,env,mono,0,labels,0,&rnode)) return k;
+	k=parsegraph(p,env,mono,0,labels,0,&rnode);
+	if (k) return k;
+
 	if (rnode) return parse_rnode(VALTOPNT(STACKGET(m,0)));
 	return 0;
 }
@@ -346,7 +381,8 @@ int Compiler::recechograph(Prodbuffer *output,int* p,int rec,int labels)
 {
 	int i,k;
 	p=actualtype(p);
-	if (k=STACKPUSH(m,PNTTOVAL(p))) return k;
+	k=STACKPUSH(m,PNTTOVAL(p));
+	if (k) return k;
 
 	for(i=0;i<rec;i++) if (STACKGET(m,0)==STACKGET(m,i+1))
 	{
@@ -432,7 +468,8 @@ int Compiler::recechograph(Prodbuffer *output,int* p,int rec,int labels)
 int Compiler::echograph(Prodbuffer *output,int* p)
 {
 	int k,labels;
-	if (k=STACKPUSH(m,NIL)) return k;
+	k=STACKPUSH(m,NIL);
+	if (k) return k;
 	labels=STACKREF(m);
 	recechograph(output,p,0,labels);
 	STACKDROP(m);
@@ -454,13 +491,19 @@ int Compiler::reccopytype(int *p)
 
 	if (c==TYPENAME_TUPLE)
 	{
-		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++) if (k=STACKPUSH(m,NIL)) return k;
-		if (k=createnodetuple(TABLEN(p)-TYPEHEADER_LENGTH)) return k;
+		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++)
+		{
+  			k=STACKPUSH(m,NIL);
+			if (k) return k;
+	        }
+		k=createnodetuple(TABLEN(p)-TYPEHEADER_LENGTH);
+		if (k) return k;
 		TABSET(m,p,TYPEHEADER_COPY,STACKGET(m,0));	// positionne le champ 'copy' de l'original
 		int* q=VALTOPNT(STACKGET(m,0));
 		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++)
 		{
-			if (k=reccopytype(VALTOPNT(TABGET(p,i)))) return k;
+			k=reccopytype(VALTOPNT(TABGET(p,i)));
+			if (k) return k;
 			TABSET(m,q,i,STACKPULL(m));
 		}
 		return 0;
@@ -476,19 +519,23 @@ int Compiler::reccopytype(int *p)
 	int* q=VALTOPNT(STACKGET(m,0));
 	if (c==TYPENAME_FUN)
 	{
-		if (k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 		TABSET(m,q,TYPEHEADER_LENGTH,STACKPULL(m));
-		if (k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)))) return k;
+		k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)));
+		if (k) return k;
 		TABSET(m,q,TYPEHEADER_LENGTH+1,STACKPULL(m));
 	}
 	else if (c==TYPENAME_LIST)
 	{
-		if (k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 		TABSET(m,q,TYPEHEADER_LENGTH,STACKPULL(m));
 	}
 	else if (c==TYPENAME_TAB)
 	{
-		if (k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=reccopytype(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 		TABSET(m,q,TYPEHEADER_LENGTH,STACKPULL(m));
 	}
 	else if (c==TYPENAME_CORE)
@@ -498,8 +545,13 @@ int Compiler::reccopytype(int *p)
 		else
 		{
 			int* tup=VALTOPNT(vargs);
-			for(i=0;i<TABLEN(tup);i++) if (k=reccopytype(VALTOPNT(TABGET(tup,i)))) return k;
-			if (k=DEFTAB(m,TABLEN(tup))) return k;
+			for(i=0;i<TABLEN(tup);i++)
+			{
+				k=reccopytype(VALTOPNT(TABGET(tup,i)));
+				if (k) return k;
+			}
+			k=DEFTAB(m,TABLEN(tup));
+			if (k) return k;
 			TABSET(m,q,TYPEHEADER_LENGTH,STACKPULL(m));
 		}
 	}
@@ -529,25 +581,37 @@ int Compiler::recresetcopy(int *p)
 		else
 		{
 			int* tup=VALTOPNT(vargs);
-			for(i=0;i<TABLEN(tup);i++) if (k=recresetcopy(VALTOPNT(TABGET(tup,i)))) return k;
+			for(i=0;i<TABLEN(tup);i++)
+			{
+				k=recresetcopy(VALTOPNT(TABGET(tup,i)));
+				if (k) return k;
+			}
 		}
 	}
 	else if (c==TYPENAME_FUN)
 	{
-		if (k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
-		if (k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)))) return k;
+		k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
+		k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_LIST)
 	{
-		if (k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TAB)
 	{
-		if (k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=recresetcopy(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TUPLE)
 	{
-		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++) if (k=recresetcopy(VALTOPNT(TABGET(p,i)))) return k;
+		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++)
+		{
+			k=recresetcopy(VALTOPNT(TABGET(p,i)));
+			if (k) return k;
+		}
 	}
 	else if (c==TYPENAME_UNDEF)
 	{
@@ -558,8 +622,10 @@ int Compiler::recresetcopy(int *p)
 int Compiler::copytype(int *p)
 {
 	int k;
-	if (k=reccopytype(p)) return k;
-	if (k=recresetcopy(p)) return k;
+	k=reccopytype(p);
+	if (k) return k;
+	k=recresetcopy(p);
+	if (k) return k;
 	return 0;
 }
 
@@ -579,29 +645,43 @@ int Compiler::recgoweak(int *p)
 	if (c==TYPENAME_CORE)
 	{
 		int vargs=TABGET(p,TYPEHEADER_LENGTH);
-		if (vargs==NIL) return 0;
-		else
+		if (vargs==NIL)
+		{
+			return 0;
+		} else
 		{
 			int* tup=VALTOPNT(vargs);
-			for(i=0;i<TABLEN(tup);i++) if (k=recgoweak(VALTOPNT(TABGET(tup,i)))) return k;
+			for(i=0;i<TABLEN(tup);i++)
+			{
+				k=recgoweak(VALTOPNT(TABGET(tup,i)));
+				if (k) return k;
+			}
 		}
 	}
 	else if (c==TYPENAME_FUN)
 	{
-		if (k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
-		if (k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)))) return k;
+		k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
+		k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH+1)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_LIST)
 	{
-		if (k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TAB)
 	{
-		if (k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)))) return k;
+		k=recgoweak(VALTOPNT(TABGET(p,TYPEHEADER_LENGTH)));
+		if (k) return k;
 	}
 	else if (c==TYPENAME_TUPLE)
 	{
-		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++) if (k=recgoweak(VALTOPNT(TABGET(p,i)))) return k;
+		for(i=TYPEHEADER_LENGTH;i<TABLEN(p);i++)
+		{
+			k=recgoweak(VALTOPNT(TABGET(p,i)));
+			if (k) return k;
+		}
 	}
 	else if (c==TYPENAME_UNDEF)
 	{
@@ -670,19 +750,26 @@ int Compiler::recunif(int* s,int* t)
 		int k;
 		if ((ns==TYPENAME_TAB)||(ns==TYPENAME_LIST)||(ns==TYPENAME_FUN))
 		{
-			if (k=recunif(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH))))
-				return restoreactual(t,s,vt,vs,k);
-			if ((ns==TYPENAME_FUN)
-				&&(k=recunif(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH+1)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH+1)))) )
-					return restoreactual(t,s,vt,vs,k);
+			k=recunif(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH)));
+			if (k)return restoreactual(t,s,vt,vs,k);
+
+			if (ns==TYPENAME_FUN)
+			{
+				k=recunif(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH+1)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH+1)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 		else if (ns==TYPENAME_TUPLE)
 		{
 			int len=TABLEN(s);
-			if (len!=TABLEN(t)) return restoreactual(t,s,vt,vs,MTLERR_TYPE);
-			int i; for(i=TYPEHEADER_LENGTH;i<len;i++)
-				if (k=recunif(VALTOPNT(TABGET(s,i)),VALTOPNT(TABGET(t,i))))
-					return restoreactual(t,s,vt,vs,k);
+			if (len!=TABLEN(t))
+				return restoreactual(t,s,vt,vs,MTLERR_TYPE);
+			int i;
+			for(i=TYPEHEADER_LENGTH;i<len;i++)
+			{
+				k=recunif(VALTOPNT(TABGET(s,i)),VALTOPNT(TABGET(t,i)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 		else if (ns==TYPENAME_CORE)
 		{
@@ -694,9 +781,12 @@ int Compiler::recunif(int* s,int* t)
 			int* tupt=VALTOPNT(vtupt);
 			int len=TABLEN(tups);
 			if (len!=TABLEN(tupt)) return restoreactual(t,s,vt,vs,MTLERR_TYPE);
-			int i; for(i=0;i<len;i++)
-				if (k=recunif(VALTOPNT(TABGET(tups,i)),VALTOPNT(TABGET(tupt,i))))
-					return restoreactual(t,s,vt,vs,k);
+			int i;
+			for(i=0;i<len;i++)
+			{
+				k=recunif(VALTOPNT(TABGET(tups,i)),VALTOPNT(TABGET(tupt,i)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 	}
 	return 0;
@@ -729,7 +819,8 @@ int Compiler::unif_argfun()
 	int* fun=VALTOPNT(STACKPULL(m));
 	int* arg=VALTOPNT(STACKGET(m,0));
 	
-	if (k=unif(VALTOPNT(TABGET(fun,TYPEHEADER_LENGTH)),arg)) return k;
+	k=unif(VALTOPNT(TABGET(fun,TYPEHEADER_LENGTH)),arg);
+	if (k) return k;
 	STACKSET(m,0,TABGET(fun,TYPEHEADER_LENGTH+1));
 	return 0;
 }
@@ -819,19 +910,25 @@ int Compiler::recunifbigger(int* s,int* t)
 		int k;
 		if ((ns==TYPENAME_TAB)||(ns==TYPENAME_LIST)||(ns==TYPENAME_FUN))
 		{
-			if (k=recunifbigger(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH))))
-				return restoreactual(t,s,vt,vs,k);
-			if ((ns==TYPENAME_FUN)
-				&&(k=recunifbigger(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH+1)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH+1)))) )
-					return restoreactual(t,s,vt,vs,k);
+			k=recunifbigger(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH)));
+			if (k) return restoreactual(t,s,vt,vs,k);
+
+			if (ns==TYPENAME_FUN)
+			{
+				k=recunifbigger(VALTOPNT(TABGET(s,TYPEHEADER_LENGTH+1)),VALTOPNT(TABGET(t,TYPEHEADER_LENGTH+1)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 		else if (ns==TYPENAME_TUPLE)
 		{
 			int len=TABLEN(s);
 			if (len!=TABLEN(t)) return restoreactual(t,s,vt,vs,MTLERR_TYPE);
-			int i; for(i=TYPEHEADER_LENGTH;i<len;i++)
-				if (k=recunifbigger(VALTOPNT(TABGET(s,i)),VALTOPNT(TABGET(t,i))))
-					return restoreactual(t,s,vt,vs,k);
+			int i;
+			for(i=TYPEHEADER_LENGTH;i<len;i++)
+			{
+				k=recunifbigger(VALTOPNT(TABGET(s,i)),VALTOPNT(TABGET(t,i)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 		else if (ns==TYPENAME_CORE)
 		{
@@ -843,9 +940,12 @@ int Compiler::recunifbigger(int* s,int* t)
 			int* tupt=VALTOPNT(vtupt);
 			int len=TABLEN(tups);
 			if (len!=TABLEN(tupt)) return restoreactual(t,s,vt,vs,MTLERR_TYPE);
-			int i; for(i=0;i<len;i++)
-				if (k=recunifbigger(VALTOPNT(TABGET(tups,i)),VALTOPNT(TABGET(tupt,i))))
-					return restoreactual(t,s,vt,vs,k);
+			int i;
+			for(i=0;i<len;i++)
+			{
+				k=recunifbigger(VALTOPNT(TABGET(tups,i)),VALTOPNT(TABGET(tupt,i)));
+				if (k) return restoreactual(t,s,vt,vs,k);
+			}
 		}
 	}
 	return 0;
