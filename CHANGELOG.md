@@ -1,6 +1,6 @@
 # Changes
 
-## v0.1.1 - 28-06-2014
+## v0.2.1 - 28-06-2014
 
   * fixed all compile warnings
   * Added -m32 compile option
