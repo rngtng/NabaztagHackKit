@@ -32,63 +32,68 @@
 
 void AbortMetal(Memory* m,int donotstop)
 {
-	if (m->abort) return;
-	PRINTF(m)(LOG_RUNTIME,"\n---------- end of execution\n");
-	m->stop();
+    if (m->abort)
+    {
+        return;
+    }
+    PRINTF(m)(LOG_RUNTIME,"\n---------- end of execution\n");
+    m->stop();
 }
 
 
 
 int StartMetal(const char *starter, const char* output, bool inSign)
 {
-	int k;
+    int k;
 
 //  passe dans le répertoire de l'executable, en retenant le répertoire courant
 
-	Terminal* t=new Terminal();
-	Memory* m=new Memory(32*1024,t,NULL);
-	t->m=m;
+    Terminal* t=new Terminal();
+    Memory* m=new Memory(32*1024,t,NULL);
+    t->m=m;
 
-	k=m->start();
-	if (k)
-	{
-		t->printf(LOG_RUNTIME,"Launcher : erreur d'initialisation Memory\n");
-		return -1;
-	}
-	STRPUSH(m, (char*) starter);
-	k=m->util->compiler->gocompile(COMPILE_FROMFILE);
-	if (!k)
-	{
-		t->printf(LOG_RUNTIME,"\nCompiler : done !\n");
-		File* f=new File(NULL);
-		f->openwrite(output);
-		if (inSign) {
-			f->write("amber", 5);
-			char sizeStr[9];
-			// If you are wondering why I changed this, I found that
-			// the only difference between my bc.jsp and the
-			// original was the size was in upper case.
-			sprintf(sizeStr, "%.8X", m->util->compiler->brelease->getsize());
-			f->write(sizeStr, 8);
-		}
-		f->write(m->util->compiler->brelease->getstart(),m->util->compiler->brelease->getsize());
-		if (inSign) {
-			f->write("Mind", 4);
-		}
-		f->close();
-		return 0;
-	}
-	else
-	{
-		t->printf(LOG_RUNTIME,"Launcher : %s\n\n",m->errorname(k));
-		return -1;
-	}
+    k=m->start();
+    if (k)
+    {
+        t->printf(LOG_RUNTIME,"Launcher : erreur d'initialisation Memory\n");
+        return -1;
+    }
+    STRPUSH(m, (char*) starter);
+    k=m->util->compiler->gocompile(COMPILE_FROMFILE);
+    if (!k)
+    {
+        t->printf(LOG_RUNTIME,"\nCompiler : done !\n");
+        File* f=new File(NULL);
+        f->openwrite(output);
+        if (inSign)
+        {
+            f->write("amber", 5);
+            char sizeStr[9];
+            // If you are wondering why I changed this, I found that
+            // the only difference between my bc.jsp and the
+            // original was the size was in upper case.
+            sprintf(sizeStr, "%.8X", m->util->compiler->brelease->getsize());
+            f->write(sizeStr, 8);
+        }
+        f->write(m->util->compiler->brelease->getstart(),m->util->compiler->brelease->getsize());
+        if (inSign)
+        {
+            f->write("Mind", 4);
+        }
+        f->close();
+        return 0;
+    }
+    else
+    {
+        t->printf(LOG_RUNTIME,"Launcher : %s\n\n",m->errorname(k));
+        return -1;
+    }
 }
 
 
 int vcompDoit(char *starter)
 {
-	int k=StartMetal(starter, "foo.bin", false);
-	getchar();
-	return k;
+    int k=StartMetal(starter, "foo.bin", false);
+    getchar();
+    return k;
 }

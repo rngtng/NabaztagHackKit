@@ -21,30 +21,36 @@
 
 Util::Util(Memory* mem)
 {
-	m=mem;
-	compiler=new Compiler(m);
-	interpreter=new Interpreter(m);
+    m=mem;
+    compiler=new Compiler(m);
+    interpreter=new Interpreter(m);
 }
 
 Util::~Util()
 {
-	delete interpreter;
-	delete compiler;
+    delete interpreter;
+    delete compiler;
 }
 
 void Util::stop()
 {
-	interpreter->stop();
-	compiler->stop();
+    interpreter->stop();
+    compiler->stop();
 }
 
 int Util::start()
 {
-	int k;
-	k=compiler->start();
-	if (k) return k;
-	k=interpreter->start();
-	if (k) return k;
-	return 0;
+    int k;
+    k=compiler->start();
+    if (k)
+    {
+        return k;
+    }
+    k=interpreter->start();
+    if (k)
+    {
+        return k;
+    }
+    return 0;
 }
 

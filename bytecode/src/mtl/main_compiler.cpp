@@ -9,10 +9,10 @@
 #include <string.h>
 #include <unistd.h>
 extern "C" {
-    #include"vmem.h"
-    #include"vloader.h"
-    #include"vinterp.h"
-    #include"properties.h"
+#include"vmem.h"
+#include"vloader.h"
+#include"vinterp.h"
+#include"properties.h"
 
     char srcbytecode[65536];
 
@@ -27,21 +27,23 @@ extern "C" {
             printf("%04x ",i);
             for(j=0; j<16; j++)
             {
-               if (i+j<len)
-               {
-                   printf(buffer,"%02x ",src[i+j]);
-               } else {
-                   printf("   ");
-               }
-               for(j=0; j<16; j++)
-               {
-                  if (i+j<len)
-                  {
-                     printf("%c",(((src[i+j]>=32)&&(src[i+j]<128))?src[i+j]:'.'));
-                  }
-               }
-               printf("\n");
-               //    DelayMs(100);
+                if (i+j<len)
+                {
+                    printf(buffer,"%02x ",src[i+j]);
+                }
+                else
+                {
+                    printf("   ");
+                }
+                for(j=0; j<16; j++)
+                {
+                    if (i+j<len)
+                    {
+                        printf("%c",(((src[i+j]>=32)&&(src[i+j]<128))?src[i+j]:'.'));
+                    }
+                }
+                printf("\n");
+                //    DelayMs(100);
             }
         }
     }
@@ -60,27 +62,27 @@ extern "C" {
         n=fread(srcbytecode,1,65536,f);
         fclose(f);
 
-        #ifdef DUMPBC
-            f=fopen("dumpbc.c","wb");
-            if (f)
+#ifdef DUMPBC
+        f=fopen("dumpbc.c","wb");
+        if (f)
+        {
+            fprintf(f,"const unsigned char dumpbc[%d]={\n",n);
+            for(i=0; i<n; i++)
             {
-                fprintf(f,"const unsigned char dumpbc[%d]={\n",n);
-                for(i=0; i<n; i++)
+                fprintf(f,"0x%02x",srcbytecode[i]&255);
+                if (i+1<n)
                 {
-                    fprintf(f,"0x%02x",srcbytecode[i]&255);
-                    if (i+1<n)
-                    {
-                        fprintf(f,",");
-                    }
-                    if (!((i+1)&0xf))
-                    {
-                        fprintf(f,"\n");
-                    }
+                    fprintf(f,",");
                 }
-                fprintf(f,"\n};\n");
-                fclose(f);
+                if (!((i+1)&0xf))
+                {
+                    fprintf(f,"\n");
+                }
             }
-        #endif
+            fprintf(f,"\n};\n");
+            fclose(f);
+        }
+#endif
     }
 
 } // extern "C"
@@ -97,16 +99,17 @@ void usage(char* inProgram)
 
 int main(int argc,char **argv)
 {
-     if (argc == 3 && strcmp(argv[1],"-s"))
-     {
+    if (argc == 3 && strcmp(argv[1],"-s"))
+    {
         StartMetal(argv[1], argv[2], false);
         return 0;
-     } else if (argc == 4)
-     {
+    }
+    else if (argc == 4)
+    {
         if (strcmp(argv[1], "-s") == 0)
         {
-           StartMetal(argv[2], argv[3], true);
-           return 0;
+            StartMetal(argv[2], argv[3], true);
+            return 0;
         }
     }
 
