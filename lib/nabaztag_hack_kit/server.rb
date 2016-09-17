@@ -12,16 +12,13 @@ module NabaztagHackKit
     def initialize(opts = {})
       super
       @base_file     = opts.fetch(:base_file, __FILE__)
-      @bytecode_file = opts.fetch(:bytecode_file, public_file('bytecode.bin'))
+      @bytecode_file = opts.fetch(:bytecode_file, public_file('bytecode.bin')).to_s
+      abort("Couldn't find Bytecode file. Pls compile first") unless File.exists?(@bytecode_file)
+      logger.info "Serving Bytecode from #{@bytecode_file}"
     end
 
     get "/bc.jsp" do
-      if File.exists?(@bytecode_file)
-        logger.info "Serving Bytecode from #{@bytecode_file}"
-        send_file @bytecode_file
-      else
-        status 404
-      end
+      send_file @bytecode_file
     end
 
     get "/" do

@@ -1,4 +1,3 @@
-
 require "nabaztag_hack_kit/server"
 require "soundcloud"
 require "echonest"
@@ -107,4 +106,3 @@ class Server < NabaztagHackKit::Server
     end
   end
 end
-
