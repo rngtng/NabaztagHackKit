@@ -1,9 +1,9 @@
 #!/usr/bin/env ruby
 
-$LOAD_PATH.unshift ::File.expand_path(::File.dirname(__FILE__) + '/lib')
+require 'bundler/setup'
 require './server'
 
-use Rack::Reloader, 0
+# use Rack::Reloader, 0
 
 ECHONEST_CFG = {
   :key => "",

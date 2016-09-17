@@ -8,7 +8,7 @@ Everything you need to hack the Rabbit: a sinatra server including simple api fr
 
 ### Compile & Run
 
-The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. On a linux machine those binaries are compiled on instalation of the gem. Following three binaries are available:
+The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. On a linux machine those binaries are compiled on installation of the gem. Following three binaries are available:
 
 #### mtl_merge
 
@@ -64,8 +64,21 @@ The Server is the communication endpoint for the rabbit. Its two main purposes a
   1. serving the bytecode on bootup
   2. receive and respond to HTTP requests in a defined format.
 
-To start the server, run shortcut `rake run` or, as it's based on rack, `rackup -p <portnumer>`.
+see `examples/` for various ways on using & extending it. the usal steps are:
 
+### Install
+Install dependencies first:
+
+```
+bundle install --path=vendor/bundle
+```
+
+### Run
+To start and run the server, execute:
+
+```
+bundle exec rackup -p <portnumer>
+```
 
 ## API
 As example and for my own purposes I implemented a simple API to deal with RFID, LEDS, BUTTON and EARS easily.
@@ -115,5 +128,3 @@ I'd like to hack the Violet mir:ror too. Some starting points:
 
   * https://github.com/leh/ruby-mirror
   * http://reflektor.sourceforge.net/
-
-

@@ -1,4 +1,4 @@
-require "nabaztag_hack_kit/version"
+require 'nabaztag_hack_kit/version'
 
 module NabaztagHackKit
 end

@@ -5,5 +5,5 @@ pkg/*
 .rvmrc
 *.bin
 *.o
-examples/record/config.ru
 .mtlrc
+examples/*/vendor/

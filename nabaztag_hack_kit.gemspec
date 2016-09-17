@@ -6,8 +6,8 @@ Gem::Specification.new do |s|
   s.name        = "nabaztag_hack_kit"
   s.version     = NabaztagHackKit::VERSION
   s.authors     = ["RngTng - Tobias Bielohlawek"]
-  s.email       = ["tobi@soundcloud.com"]
-  s.homepage    = "https://github.com/rngtng/nabaztag_hack_kit"
+  s.email       = ["tobi@rngtng.com"]
+  s.homepage    = "https://github.com/rngtng/NabaztagHackKit"
   s.summary     = %q{Sinatra server to run custom Nabaztag bytecode}
   s.description = %q{Sinatra server api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)}
 
