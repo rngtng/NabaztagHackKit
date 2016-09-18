@@ -7,3 +7,5 @@ pkg/*
 *.o
 .mtlrc
 examples/*/vendor/
+bytecode/src/mtl/mtl_comp
+bytecode/src/mtl/mtl_simu
