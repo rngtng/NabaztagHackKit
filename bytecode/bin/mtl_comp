@@ -11,8 +11,10 @@ end
 
 BIN_NAME    = File.basename(__FILE__)
 BIN_PATH    = File.dirname(__FILE__)
-BIN         = File.join( File.expand_path("../ext/mtl", BIN_PATH), BIN_NAME)
+BIN         = File.join( File.expand_path("../src/mtl", BIN_PATH), BIN_NAME)
 FILE        = ARGV.first
+
+puts BIN
 
 FILTER      = ENV['FILTER'] || "| grep -v 'bytes' | grep -e'[a-z]'"
 MERGE       = File.join(BIN_PATH, 'mtl_merge')
