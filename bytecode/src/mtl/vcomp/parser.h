@@ -20,43 +20,43 @@ class Memory;
 class Parser
 {
 private :
-	Terminal* term;
-	char* srcname;	// nom de la source
-	char* src;	// buffer source
-	int index;	// index de lecture
+    Terminal* term;
+    char* srcname;	// nom de la source
+    char* src;	// buffer source
+    int index;	// index de lecture
 
-	char savedchar;	// caractère sauvegardé (momentanément remplacé par \0)
-	int indexsavedchar; //index du caractère sauvegardé
+    char savedchar;	// caractère sauvegardé (momentanément remplacé par \0)
+    int indexsavedchar; //index du caractère sauvegardé
 
-	int again;   // token a relire
-	int lign;       // ligne courante
-	int offligne;   // offset caractere debut ligne
+    int again;   // token a relire
+    int lign;       // ligne courante
+    int offligne;   // offset caractere debut ligne
 
-	int lign0;      // ligne courante (DERNIER TOKEN LU)
-	int offligne0;  // offset caractere debut ligne (DERNIER TOKEN LU)
-	int offchar0;   // offset caractere courant (DERNIER TOKEN LU)
+    int lign0;      // ligne courante (DERNIER TOKEN LU)
+    int offligne0;  // offset caractere debut ligne (DERNIER TOKEN LU)
+    int offchar0;   // offset caractere courant (DERNIER TOKEN LU)
 
 
-	void savechar(int i);
-	void restorechar();
-	void againchar();
-	int nextchar();
-	int gettoken(int filter);
+    void savechar(int i);
+    void restorechar();
+    void againchar();
+    int nextchar();
+    int gettoken(int filter);
 
 public :
-	char* token;
-	Parser(Terminal* t,FileSystem* fs,const char *filename);
-	Parser(Terminal* t,const char *buffer);
-	~Parser();
+    char* token;
+    Parser(Terminal* t,FileSystem* fs,const char *filename);
+    Parser(Terminal* t,const char *buffer);
+    ~Parser();
 
-	char* next(int filter);
-	void giveback();
+    char* next(int filter);
+    void giveback();
 
-	void echoposition();
+    void echoposition();
 
-	int parsekeyword(const char* keyword);
-	int parsekeyword(const char* keyword,int filter);
-	int getstring(Memory* m,char separator);
+    int parsekeyword(const char* keyword);
+    int parsekeyword(const char* keyword,int filter);
+    int getstring(Memory* m,char separator);
 };
 
 
