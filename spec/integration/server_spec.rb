@@ -6,14 +6,14 @@ require "rack/test"
 shared_examples_for :successful_route do
   it "returns 200" do
     get route
-    last_response.should be_ok
+    expect(last_response).to be_ok
   end
 end
 
 shared_examples_for :notfound_route do
   it "returns 404" do
     get route
-    last_response.status.should == 404
+    expect(last_response.status).to eq 404
   end
 end
 
@@ -53,7 +53,7 @@ describe NabaztagHackKit::Server do
 
     it "execute callback" do
       get route
-      last_response.body.should == ""
+      expect(last_response.body).to eq ""
     end
   end
 end
