@@ -26,4 +26,4 @@ libvcomp.a : $(OBJS)
 CPPFLAGS=-fpermissive -m32
 
 clean :
-	rm -f $(OBJS) libcomp.a
+	rm -f $(OBJS) libvcomp.a

@@ -14,27 +14,30 @@ describe NabaztagHackKit::Server do
       })
     end
 
-    it "reads from public/bytecode.bin" do
-      pending
-      app.should_receive(:send_file).with("public/bytecode.bin")
-      do_action '/bc.jsp'
+    xit "reads from public/bytecode.bin" do
+      expect(app).to_receive(:send_file).with("public/bytecode.bin")
+      begin
+        do_action '/bc.jsp'
+      rescue SystemExit
+      end
     end
 
     context "with custom bin code route" do
       let(:app) { NabaztagHackKit::Server.new(custom_route) }
       let(:custom_route) { "bytecode.bin" }
 
-      it "reads from" do
-        pending
-        app.should_receive(:send_file).with(custom_route)
-        do_action '/bc.jsp'
+      xit "reads from" do
+        expect(app).to_receive(:send_file).with(custom_route)
+        begin
+          do_action '/bc.jsp'
+        rescue SystemExit
+        end
       end
     end
   end
 
   describe "#on" do
-    it "accepts" do
-      pending
+    xit "accepts" do
     end
   end
 end

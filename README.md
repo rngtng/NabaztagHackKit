@@ -1,28 +1,70 @@
 # Nabaztag Hack Kit
 
-Everything you need to hack the Rabbit: a sinatra server including simple api framework to run custom bytecode on Nabaztag v1/v2. Includes original compiler sources for linux.
+Everything you need to hack the Rabbit: a sinatra server including simple api framework to run custom bytecode on Nabaztag v1/v2. Includes original compiler sources for linux and a modified mac os x version.
 
-Note: forked for the purpose of OSX compile.
-
-![](http://github.com/ztalbot2000/NabaztagHackKit.png)
+![](http://github.com/rngtng/NabaztagHackKit.png)
 
 ## Getting Started
 
-### Compile & Run
+### Installation
 
-The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. On a linux machine those binaries are compiled on installation of the gem. Following three binaries are available:
+The Hack Kit is distributed as a ruby gem. It comes with a simple web server (based on sinatra) which runs out-of-the for connecting you rabbit and distributing the nabaztag bytecode. In addition it includes sinatra helpers/modules to communicate with the rabbit easily. Lastly it provides binaries to compile your own Nabaztag bytecode (see **Binaries** below).
+
+#### Simple Server
+
+The Server is the communication endpoint for the rabbit. Its two main purposes are:
+
+  1. serving the bytecode on bootup
+  2. receive and respond to HTTP requests in a defined format.
+
+#### Setup
+
+1. Install dependencies first:
+
+```
+gem install nabaztag_hack_kit
+```
+
+or if you have a `Gemfile`
+
+```
+bundle install --path=vendor/bundle
+```
+
+2. Then, create a `config.ru` file
+
+```ruby
+require 'nabaztag_hack_kit/server'
+
+run NabaztagHackKit::Server.new
+```
+
+3. Finally, to start and run the server, execute:
+
+```
+bundle exec rackup -p <portnumer>
+```
+
+See `examples/` folder for more sophisticated usage.
+
+### Binaries
+
+The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. See folder `compiler/`. The linux sources are (more or less) the original ones by violet, the mac osx version was created by @ztalbot2000.
+The compiler binaries are compiled on installation of the gem.
+
+Following three binaries are available:
+
+#### mtl_comp
+
+A wrapper around `mtl_comp`. Compiles a `*.mtl` file. It calls `mtl_merge` before
+
+#### mtl_simu
+
+A wrapper around `mtl_simu`.  Runs a `*.mtl` file. It calls `mtl_merge` before
 
 #### mtl_merge
 
 Merges multiple `*.mtl` files into one. Files are included like in C: `#include "<relative path to file>"`. Output is temporary file `.tmp.mtl`.
-
-#### mtl_comp
-
-Compiles a `*.mtl` file. It calls `mtl_merge` before, and fallbacks to remote compiler in case binary is not found and `HOST` is given.
-
-#### mtl_simu
-
-Runs a `*.mtl` file. It calls `mtl_merge` before, and fallbacks to remote simulator in case binary is not found and `HOST` is given.
 
 
 ### Understanding the Bytecode
@@ -58,30 +100,6 @@ Following assertions are available:
   * assert_equalSL
   * assert_equalTL
 
-
-## Server
-
-The Server is the communication endpoint for the rabbit. Its two main purposes are:
-
-  1. serving the bytecode on bootup
-  2. receive and respond to HTTP requests in a defined format.
-
-see `examples/` for various ways on using & extending it. the usal steps are:
-
-### Install
-Install dependencies first:
-
-```
-bundle install --path=vendor/bundle
-```
-
-### Run
-To start and run the server, execute:
-
-```
-bundle exec rackup -p <portnumer>
-```
-
 ## API
 As example and for my own purposes I implemented a simple API to deal with RFID, LEDS, BUTTON and EARS easily.
 
@@ -108,9 +126,7 @@ Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playba
 
 ## Disclamer
 
-The server part was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from OpenJabNab.
-Thanks!
-
+The server part was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab). Thanks!
 
 ### Protocol
 A good introduction to understand Nabaztag Protocol:

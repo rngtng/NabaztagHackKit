@@ -7,7 +7,7 @@
     * Added -m32 compile option
     * fixed segfault when running mtl_comp with invalid args
     * Changed output so size is CAPITAL hex value to make absolutely no
-      differences when comparing comiled .mtl file and original bc.jsp file
+      differences when comparing compiled .mtl file and original bc.jsp file
 
 ## v0.1.1 - 17-09-2016
 
