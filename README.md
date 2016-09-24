@@ -146,3 +146,8 @@ I'd like to hack the Violet mir:ror too. Some starting points:
 
   * https://github.com/leh/ruby-mirror
   * http://reflektor.sourceforge.net/
+  * http://www.instructables.com/id/Kids-check-in-and-check-out-with-hacked-Mirror-an/
+  * http://svay.com/blog/hacking-rfid-with-nodejs/
+  * http://arduino-projects4u.com/violet-mirror/
+  * 
+  * 
