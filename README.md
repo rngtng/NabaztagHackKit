@@ -174,4 +174,13 @@ ServerlessNabaztag
 CloudServer replace: http://nabaztaglives.com/
 
 
-Websocket HowTo: https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
+Websocket HowTo:
+- https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
+
+Rebuild Nabaztag:
+- https://www.hackster.io/bastiaan-slee/nabaztag-gets-a-new-life-with-google-aiy-e9f2c8
+
+
+## Ruby & Websocket
+- http://blog.honeybadger.io/building-a-simple-websockets-server-from-scratch-in-ruby/
+- https://github.com/pusher/websockets-from-scratch-tutorial
