@@ -71,6 +71,8 @@ Merges multiple `*.mtl` files into one. Files are included like in C: `#include 
 
 The bytecode is written in a custom language by Sylvain Huet. It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Check directory `ext/bytecode/` which contains a basic overview & documentaion as well as a list of (common) commands. A good reference is the original bytecode, included in the directory as well. Major parts got extracted into seperate files, found in `lib/` directory and ready to be included in your code.
 
+https://docs.google.com/document/d/1KMg2wSyMKTmsilCpOByi_59uk5dD8XMfGAu20W63kZE/edit?hl=en_US
+
 ### Testing
 
 The kit includes a simple test framework to test custom bytecode. See `test/bytecode/test.mtl`. A typical test looks like this:
@@ -149,5 +151,27 @@ I'd like to hack the Violet mir:ror too. Some starting points:
   * http://www.instructables.com/id/Kids-check-in-and-check-out-with-hacked-Mirror-an/
   * http://svay.com/blog/hacking-rfid-with-nodejs/
   * http://arduino-projects4u.com/violet-mirror/
-  * 
-  * 
+
+
+## Related Projects
+First class info from the creator himself:
+ -> http://www.sylvain-huet.com/?lang=en#nabv2
+
+Nabaztag Blog
+-> https://www.journaldulapin.com/tag/nabaztag/
+
+New firmware with WPA2
+1. https://github.com/ccarlo64/firmware_nabaztag
+(see http://nabaztag.forumactif.fr/t15323-firmware-for-wpa-wpa2-test)
+
+2. https://github.com/RedoXyde/nabgcc
+  https://github.com/RedoXyde/mtl_linux   
+  (see http://nabaztag.forumactif.fr/t15280p25-nabaztagtag-en-wpa2)
+
+ServerlessNabaztag
+-> https://github.com/andreax79/ServerlessNabaztag
+
+CloudServer replace: http://nabaztaglives.com/
+
+
+Websocket HowTo: https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
