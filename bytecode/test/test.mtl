@@ -209,13 +209,13 @@ fun main=
     assert_equalI 0xFFFFFF bufferRead 0;
   0);
 
-  let test "log" -> t in
-  (
-    log "test" {1};
-    assert_equalS "test,0,1,|" logs;
-    log "test" {56 67 90};
-    assert_equalS "test,0,1,|test,0,56,67,90,|" logs;
-  0);
+  //let test "log" -> t in
+  //(
+  //  log "test" {1};
+  //  assert_equalS "test,0,1,|" logs;
+  //  log "test" {56 67 90};
+  //  assert_equalS "test,0,1,|test,0,56,67,90,|" logs;
+  //0);
 
   exit;
 0;;

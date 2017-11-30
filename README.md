@@ -66,6 +66,13 @@ A wrapper around `mtl_simu`.  Runs a `*.mtl` file. It calls `mtl_merge` before
 
 Merges multiple `*.mtl` files into one. Files are included like in C: `#include "<relative path to file>"`. Output is temporary file `.tmp.mtl`.
 
+## Devlopment
+
+To update the kit run:
+
+```
+bundle exec rake build && bundle exec gem install -V pkg/nabaztag_hack_kit-0.1.0.beta6.gem
+```
 
 ## Understanding the Bytecode
 
@@ -146,7 +153,7 @@ New firmware with WPA2
 (see http://nabaztag.forumactif.fr/t15323-firmware-for-wpa-wpa2-test)
 
 2. https://github.com/RedoXyde/nabgcc
-  https://github.com/RedoXyde/mtl_linux   
+  https://github.com/RedoXyde/mtl_linux
   (see http://nabaztag.forumactif.fr/t15280p25-nabaztagtag-en-wpa2)
 
 ServerlessNabaztag

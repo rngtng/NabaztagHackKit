@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
   s.extensions    = ['compiler/extconf.rb']
 
-  s.bindir        = 'compiler/bin'
+  s.bindir        = 'bin'
   s.executables   = ['mtl_comp', 'mtl_simu', 'mtl_merge']
 
   s.require_paths = ["lib"]

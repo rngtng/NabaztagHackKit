@@ -4,17 +4,17 @@ proto main 0;;
 proto earsInit 0;;
 proto evalTrame 1;;
 
-#include "src/lib/var"
-#include "src/lib/util"
-#include "src/lib/cfg"
-#include "src/lib/arp"
-#include "src/lib/udp"
-#include "src/lib/tcp"
-#include "src/lib/dns"
-#include "src/lib/http"
-#include "src/lib/dhcp"
-#include "src/lib/wav"
-#include "src/lib/wifi"
+#include "_original/lib/var"
+#include "_original/lib/util"
+#include "_original/lib/cfg"
+#include "_original/lib/arp"
+#include "_original/lib/udp"
+#include "_original/lib/tcp"
+#include "_original/lib/dns"
+#include "_original/lib/http"
+#include "_original/lib/dhcp"
+#include "_original/lib/wav"
+#include "_original/lib/wifi"
 
 #include "lib/data_helper"
 

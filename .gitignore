@@ -9,3 +9,5 @@ pkg/*
 examples/*/vendor/
 compiler/osx/mtl_comp
 compiler/osx/mtl_simu
+vendor/bundle
+compiler/osx/vcomp
