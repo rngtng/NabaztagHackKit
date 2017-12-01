@@ -36,7 +36,3 @@ endif
 clean :
 	$(MAKE) -C vcomp clean
 	rm -f $(COMMON_OBJS) $(COMP_OBJS) $(SIMU_OBJS)
-
-install :
-	#nothing to do
-

@@ -10,4 +10,4 @@ Simply run `make`
 
 Sources copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab/tree/master/bootcode/compiler/mtl_linux)
 
-Dummy task 'make install' added to enable gem inline install
+See as well: https://github.com/RedoXyde/mtl_linux
