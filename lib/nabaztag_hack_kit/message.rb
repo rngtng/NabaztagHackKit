@@ -1,20 +1,22 @@
+# frozen_string_literal: true
+
 module NabaztagHackKit
   module Message
     extend self
 
     def build(*commands)
       commands = if commands.first.is_a?(Hash)
-        commands.first
-      elsif !commands.first.is_a?(Array)
-        [commands]
-      else
-        commands
-      end
+                   commands.first
+                 elsif !commands.first.is_a?(Array)
+                   [commands]
+                 else
+                   commands
+                 end
 
-      pack full_message commands.map { |cmd, *data|
+      pack full_message(commands.map do |cmd, *data|
         data = convert_data(data)
         [cmd.to_i] + to_3b(data.size) + data.map(&:to_i)
-      }
+      end)
     end
 
     def to_3b(int)
@@ -30,6 +32,7 @@ module NabaztagHackKit
     end
 
     private
+
     def full_message(*data)
       [0x7F] + data.flatten + [0xFF, 0x0A]
     end
@@ -38,5 +41,4 @@ module NabaztagHackKit
       message.pack('c*')
     end
   end
-
 end

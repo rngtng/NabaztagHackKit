@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 require 'bundler/setup'
 require './server'
@@ -6,14 +7,14 @@ require './server'
 # use Rack::Reloader, 0
 
 ECHONEST_CFG = {
-  :key => "",
-}
+  key: ''
+}.freeze
 
 SOUNDCLOUD_CFG = {
-  :client_id      => "",
-  :client_secret  => "",
-  :username       => "",
-  :password       => "",
-}
+  client_id: '',
+  client_secret: '',
+  username: '',
+  password: ''
+}.freeze
 
 run Record::Server.new(ECHONEST_CFG, SOUNDCLOUD_CFG)

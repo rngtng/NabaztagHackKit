@@ -1,9 +1,10 @@
-require "nabaztag_hack_kit/server"
-require "soundcloud"
-require "echonest"
+# frozen_string_literal: true
+
+require 'nabaztag_hack_kit/server'
+require 'soundcloud'
+require 'echonest'
 
 class Server < NabaztagHackKit::Server
-
   def initialize(echonest_cfg, soundcloud_cfg)
     super
     @@echonest   = Echonest(echonest_cfg[:key])
@@ -33,7 +34,7 @@ class Server < NabaztagHackKit::Server
     puts beats = an.tempo.to_i
     loud = an.loudness.to_i
 
-    if beats > 0
+    if beats.positive?
       {
         REC_START => [3],
         EAR_L => norm(an.segments.first.timbre, 16),
@@ -41,7 +42,7 @@ class Server < NabaztagHackKit::Server
         BMP => [beats],
         LED_L1 => norm(an.segments.first.timbre, 255),
         LED_L2 => norm([beats, beats, beats, beats, loud, loud, loud, loud], 255),
-        LED_L3 => norm(norm an.segments.first.pitches, 255),
+        LED_L3 => norm(norm(an.segments.first.pitches, 255))
       }
     else
       {
@@ -57,52 +58,48 @@ class Server < NabaztagHackKit::Server
   end
 
   def upload(file)
-    @@soundcloud.post('/tracks', :track => {
-      :title        => 'Bunny Boogie',
-      :asset_data   => File.new(file)
-    })
+    @@soundcloud.post('/tracks', track: {
+                        title: 'Bunny Boogie',
+                        asset_data: File.new(file)
+                      })
     {
-      EAR_L  => [16,0,16,0,16,0],
+      EAR_L  => [16, 0, 16, 0, 16, 0],
       LED_L1 => [0],
       LED_L2 => [0],
       LED_L3 => [0]
     }
   end
 
-  on "start" do
+  on 'start' do
     @@dance = true
-    if @@recording
-      @@recording = false
-    end
-    send_nabaztag({
-      REC_STOP => []
-    })
+    @@recording = false if @@recording
+    send_nabaztag(REC_STOP => [])
   end
 
-  on "button-pressed" do
-    send_nabaztag if @@recording
-      @@recording = false
-      {
-        REC_STOP => [],
-        LED_L1   => [100,0,0,0],
-        LED_L2   => [0,100,0,100],
-        LED_L3   => [0,0,100,0]
-      }
-    else
-      @@recording = true
-      sec = @@dance ? 3 : 0
-      {
-        REC_START => [sec]
-      }
-    end
+  on 'button-pressed' do
+    send_nabaztag(if @@recording
+                    @@recording = false
+                    {
+                      REC_STOP => [],
+                      LED_L1   => [100, 0, 0, 0],
+                      LED_L2   => [0, 100, 0, 100],
+                      LED_L3   => [0, 0, 100, 0]
+                    }
+                  else
+                    @@recording = true
+                    sec = @@dance ? 3 : 0
+                    {
+                      REC_START => [sec]
+                    }
+                  end)
   end
 
-  on "recording-finished" do |file_name|
+  on 'recording-finished' do |file_name|
     @@recording = false
-    send_nabaztag if @@dance
-      dance
-    else
-      upload(file_name)
-    end
+    send_nabaztag(if @@dance
+                    dance
+                  else
+                    upload(file_name)
+                  end)
   end
 end

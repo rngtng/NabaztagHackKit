@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'nabaztag_hack_kit/message'
 
 module NabaztagHackKit
@@ -43,7 +45,6 @@ module NabaztagHackKit
       #     Message.to_3b(value)
       #   end.flatten
       # end
-
     end
   end
 end
