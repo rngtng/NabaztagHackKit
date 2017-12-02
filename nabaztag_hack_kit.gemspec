@@ -20,7 +20,8 @@ Gem::Specification.new do |s|
 
   s.require_paths = ["lib"]
 
-  s.add_dependency 'sinatra'
+  s.add_dependency 'sinatra', '>= 2.0'
+  s.add_dependency 'rack', '>= 2.0'
 
   s.add_development_dependency 'rake', '>= 11.2'
   s.add_development_dependency 'rspec', '>= 3.5'
