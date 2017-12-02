@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 
-BIN_NAME    = File.basename(__FILE__)
+BIN_NAME    = 'mtl_compiler'
 BIN_PATH    = File.dirname(__FILE__)
-BIN         = File.join( File.expand_path("../compiler/osx", BIN_PATH), BIN_NAME)
+BIN         = File.join(File.expand_path("../mtl_linux", BIN_PATH), BIN_NAME)
 FILE        = ARGV.first
 
 FILTER      = ENV['FILTER'] || "| grep -v 'bytes' | grep -e'[a-z]'"

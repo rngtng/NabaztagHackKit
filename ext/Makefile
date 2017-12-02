@@ -1,10 +1,10 @@
 all:
 	echo "all"
-	cd osx && make
+	cd mtl_linux && make
 
 install:
 	echo "install"
 
 clean:
 	echo "clean"
-	cd osx && make clean
+	cd mtl_linux && make clean
