@@ -1,17 +1,19 @@
-require "spec_helper"
+# frozen_string_literal: true
 
-require "nabaztag_hack_kit/server"
-require "rack/test"
+require 'spec_helper'
+
+require 'nabaztag_hack_kit/server'
+require 'rack/test'
 
 shared_examples_for :successful_route do
-  it "returns 200" do
+  it 'returns 200' do
     get route
     expect(last_response).to be_ok
   end
 end
 
 shared_examples_for :notfound_route do
-  it "returns 404" do
+  it 'returns 404' do
     get route
     expect(last_response.status).to eq 404
   end
@@ -20,10 +22,10 @@ end
 describe NabaztagHackKit::Server do
   include Rack::Test::Methods
 
-  let(:app) { NabaztagHackKit::Server.new(:bytecode_file => __FILE__) }
+  let(:app) { NabaztagHackKit::Server.new(bytecode_file: __FILE__) }
 
-  describe "/bc.jsp" do
-    let(:route) { "/bc.jsp" }
+  describe '/bc.jsp' do
+    let(:route) { '/bc.jsp' }
 
     it_behaves_like :successful_route
   end
@@ -46,14 +48,14 @@ describe NabaztagHackKit::Server do
   #   # it_behaves_like :successful_route
   # end
 
-  describe "catch all route" do
-    let(:route) { "/api/bunnyid/custom.jsp" }
+  describe 'catch all route' do
+    let(:route) { '/api/bunnyid/custom.jsp' }
 
     it_behaves_like :notfound_route
 
-    it "execute callback" do
+    it 'execute callback' do
       get route
-      expect(last_response.body).to eq ""
+      expect(last_response.body).to eq ''
     end
   end
 end

@@ -1,4 +1,6 @@
-# A sample Gemfile
-source "http://rubygems.org"
+# frozen_string_literal: true
 
-gem "nabaztag_hack_kit", path:"../../"
+# A sample Gemfile
+source 'http://rubygems.org'
+
+gem 'nabaztag_hack_kit', path: '../../'

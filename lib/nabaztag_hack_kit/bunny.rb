@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'nabaztag_hack_kit/message'
 
 module NabaztagHackKit
@@ -43,11 +45,11 @@ module NabaztagHackKit
       Message.build(*@queued_commands.shift || Message::Api::OK)
     end
 
-    def to_json(state = nil, deepth = nil)
+    def to_json(_state = nil, _deepth = nil)
       {
-        :id                   => id,
-        :last_seen            => last_seen,
-        :queued_commands_size => queued_commands.size,
+        id: id,
+        last_seen: last_seen,
+        queued_commands_size: queued_commands.size
       }.to_json
     end
   end

@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 # Merge a file with its includes, pass filename as first argument
 
@@ -19,7 +20,7 @@ end
 
 def src_file(name)
   [BASE_DIR, BASE_DIR_LIB].each do |dir|
-    if (path = File.join(dir, name)) && File.exists?(path)
+    if (path = File.join(dir, name)) && File.exist?(path)
       return path
     end
   end
@@ -28,9 +29,7 @@ end
 
 File.open(TMP, 'w') do |out|
   File.open(file).each_line do |line|
-    if line =~ /\A#include "([^"]+)"/
-      line = `cat #{src_file(mtl_file($1))}`
-    end
+    line = `cat #{src_file(mtl_file(Regexp.last_match(1)))}` if line =~ /\A#include "([^"]+)"/
     out.puts line
   end
 end

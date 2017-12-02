@@ -1,14 +1,15 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 BIN_NAME    = File.basename(__FILE__)
 BIN_PATH    = File.dirname(__FILE__)
-BIN         = File.join(File.expand_path("../mtl_linux", BIN_PATH), BIN_NAME)
+BIN         = File.join(File.expand_path('../mtl_linux', BIN_PATH), BIN_NAME)
 FILE        = ARGV.first
 
 FILTER      = ENV['FILTER'] || "| grep -v 'bytes' | grep -e'[a-z]'"
 MERGE       = File.join(BIN_PATH, 'mtl_merge')
 TMP         = ENV['TMP'] || '.tmp.mtl'
-OUT         = ENV['OUT'] || "bytecode.bin"
+OUT         = ENV['OUT'] || 'bytecode.bin'
 
 unless FILE
   puts "usage: #{File.basename(__FILE__)} [filename]"
@@ -19,11 +20,11 @@ end
 `TMP='#{TMP}' #{MERGE} #{FILE}`
 
 # simu
-out = if File.exists?(BIN)
-  `#{BIN} --source #{TMP}`
-else
-  "local binary not found: #{BIN}"
-end
+out = if File.exist?(BIN)
+        `#{BIN} --source #{TMP}`
+      else
+        "local binary not found: #{BIN}"
+      end
 
 puts out
 `rm #{TMP}`
