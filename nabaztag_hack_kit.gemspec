@@ -11,11 +11,11 @@ Gem::Specification.new do |s|
   s.summary     = %q{Sinatra server to run custom Nabaztag bytecode}
   s.description = %q{Sinatra server api framework to run custom bytecode on Nabaztag v1/v2. Sources + Compiler included (linux only)}
 
-  s.files         = `git ls-files`.split("\n")
+  s.files         = `git ls-files --recurse-submodules`.split("\n")
   s.test_files    = `git ls-files -- {test,spec,features}/*`.split("\n")
-  s.extensions    = ['compiler/extconf.rb']
+  s.extensions    = ['ext/extconf.rb']
 
-  s.bindir        = 'bin'
+  s.bindir        = 'ext/bin'
   s.executables   = ['mtl_comp', 'mtl_simu', 'mtl_merge']
 
   s.require_paths = ["lib"]

@@ -66,7 +66,13 @@ A wrapper around `mtl_simu`.  Runs a `*.mtl` file. It calls `mtl_merge` before
 
 Merges multiple `*.mtl` files into one. Files are included like in C: `#include "<relative path to file>"`. Output is temporary file `.tmp.mtl`.
 
-## Devlopment
+## Development
+
+Be sure to checkout `mtl_linux` submodule first:
+
+```
+git submodule update
+```
 
 To update the kit run:
 
