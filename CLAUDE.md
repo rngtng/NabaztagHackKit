@@ -13,6 +13,10 @@ This repo is the rebooted **NabaztagHackKit** on branch **`sdk** (upstream
 **Scope:** toolchain only (build / simulate / test / flash-upload). **Exclude** high-level
 apps — Home Assistant, weather, TTS. Tie-break when unsure: **prefer `nabaztag-piper`**.
 
+## Build order (bootstrap)
+`mtl toolchain → bc.c (compile boot.mtl) → boot/app bytecode → firmware-c → forth`.
+The C firmware needs a real `bc.c`, which only exists once the MTL compiler can produce it —
+so the **compiler comes before firmware**. Don't start a layer whose inputs aren't built.
 
 ## Structure
 - **Self-contained layer folders.** Each tool/layer owns its `Dockerfile` + `Taskfile.yaml`.
