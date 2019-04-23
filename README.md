@@ -154,3 +154,34 @@ I'd like to hack the Violet mir:ror too. Some starting points:
   * http://www.instructables.com/id/Kids-check-in-and-check-out-with-hacked-Mirror-an/
   * http://svay.com/blog/hacking-rfid-with-nodejs/
   * http://arduino-projects4u.com/violet-mirror/
+
+
+
+## Compilation
+
+In order to compile the code, make use of https://github.com/rngtng/mtl_linux (aktive fork of https://github.com/RedoXyde/mtl_linux)
+
+### Mac OSX / macOS
+
+Simplest way on macOS is using [homebrew](https://brew.sh/). Find the latest formular here: https://github.com/rngtng/homebrew-mtl_linux with
+
+```
+brew tap rngtng/homebrew-mtl_linux
+brew install mtl_linux
+```
+
+## Test
+
+Once compiler & simulator installed, run the test
+
+```
+make test
+```
+
+## About mtl (Metal) Vlisp
+
+MTL/Metal is a custom language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Find the Grammar rules here: https://docs.google.com/document/d/1KMg2wSyMKTmsilCpOByi_59uk5dD8XMfGAu20W63kZE/edit?hl=en_US
+
+Metal is used for programming the Nabaztag, where with `bytecode` the program name is referenced. See original sources here: `/_sources/original/`.
+
+
