@@ -17,4 +17,6 @@ module Basic
 end
 
 # use Rack::Reloader, 0
-run Basic::Server.new
+
+file = ARGF.read.chomp
+run Basic::Server.new(bytecode_file: file)
