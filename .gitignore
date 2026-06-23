@@ -1,2 +1,7 @@
 # OS noise
 .DS_Store
+.task
+
+# Makefiles are project source — override a global `makefile` ignore some setups have
+!Makefile
+*.bin
