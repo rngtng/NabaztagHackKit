@@ -1,9 +1,0 @@
-
-# frozen_string_literal: true
-
-desc 'Test bytcode'
-task :test do
-  puts `bin/mtl_simu test/test.mtl`
-end
-
-task default: :test
