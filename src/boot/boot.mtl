@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\8";;
+var FIRMWARE="\0\0\0\9";;
 
 
 // --------------- UTIL debut
@@ -2937,7 +2937,7 @@ fun main=
 	netstart;
 //	startconfigserver 8080;
 	sndVol button3;
-	wavstartlocal midi_start::nil;
+//	wavstartlocal midi_start::nil;
 
 	set start=time_ms;
 	setleds if master then 0xff else 0xff00ff;
