@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\6";;
+var FIRMWARE="\0\0\0\7";;
 
 
 // --------------- UTIL debut
@@ -2752,7 +2752,7 @@ fun mksample len half=
 fun _wavtestcb i=
 	if fifotest==nil then
 	(
-		let ((time_ms-tstart)>>14)&3 -> t in
+		let (1+((time_ms-tstart)>>13))&3 -> t in
 		 set fifotest=
 			(if t==1 then sample221 else if t==3 then sample881 else sample441)::nil;// feed fifo
 		 set fifoind=0
