@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\2";;
+var FIRMWARE="\0\0\0\3";;
 
 
 // --------------- UTIL debut
@@ -1019,7 +1019,7 @@ fun question id dns=
 
 var dnsid=0;;
 
-type Dns=[idD domainD reqD timeoutD cbD];;
+type Dns=[idD domainD reqD timeoutD cbD t0D];;
 var ldnsreq;;
 var ldns;;
 
@@ -1029,8 +1029,8 @@ fun dnsreq domain cb=
 	if ip!=nil then call cb[ip]
 	else let question dnsid domain -> tramedns in
 	(
-		udpsend netip 999 netdns 53 tramedns nil;
-		set ldnsreq=[idD:dnsid domainD:domain reqD:tramedns timeoutD:time+5 cbD:cb]::ldnsreq;
+		udpsend netip 999 netdns 53 dump tramedns nil;
+		set ldnsreq=[idD:dnsid domainD:domain reqD:tramedns timeoutD:time+5 cbD:cb t0D:time_ms]::ldnsreq;
 		nil
 	);
 	0;;
@@ -1057,6 +1057,13 @@ fun dnstime=
 	(
 		set d.timeoutD=nil;
 		call d.cbD [nil]
+	)
+	else if time_ms-d.t0D>=1000 then
+	(
+		set d.t0D=time_ms;
+		let question d.idD d.domainD -> tramedns in
+			udpsend netip 999 netdns 53 dump tramedns nil;
+		nil
 	);
 	set ldnsreq=filterdnsdead ldnsreq;
 	0;;
@@ -2557,6 +2564,7 @@ fun boot_loop=
 	else
 	if httpboot==nil then
 	let confGetServerUrl -> url in
+//	let "nabdev.no-ip.org:8080/vl" -> url in
 	(
 		if wifiReady then set httpboot=httprequest "GET" boot_url url nil #_bootcbhttp HTTP_NORMAL;
 		0
