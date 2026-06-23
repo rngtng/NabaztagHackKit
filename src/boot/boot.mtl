@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\10";;
+var FIRMWARE="\0\0\0\11";;
 
 
 // --------------- UTIL debut
@@ -2850,7 +2850,7 @@ fun loop=
 			(
 				set lastcount0=i;
 				let time_ms-lasttime0 -> d in
-				if d<10000 && d>700 then
+				if d<10000 && d>600 then
 				(
 					Secho "\n-------------refpos0 ";Iecholn i-count0;
 					led 1 if count0==nil then 0xff00ff else if (i-count0)==17 then 0xff00 else 0xff0000;
@@ -2867,7 +2867,7 @@ fun loop=
 			(
 				set lastcount1=i;
 				let time_ms-lasttime1 -> d in
-				if d<10000 && d>700 then
+				if d<10000 && d>600 then
 				(
 					Secho "\n-------------refpos1 ";Iecholn i-count1;
 					led 3 if count1==nil then 0xff00ff else if (i-count1)==17 then 0xff00 else 0xff0000;
