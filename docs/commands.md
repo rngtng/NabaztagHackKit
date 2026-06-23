@@ -1,11 +1,14 @@
-# Projet METAL
+# Project METAL
 
 ## Commands
 List of commands supported by the VM.  _custom_ got added by me (see lib `openNabaztag.mtl`)
 
+http://www.sylvain-huet.com/rsc/metal/doc/Metal.html
+
 ### Native
+
 | famille | label | type | commentaire |
-|   -- |  -- | -- | -- | -- |
+|   -- |  -- | -- | -- |
 | core | hd | fun[list u0]u0 | premier élément d'une liste |
 | core | tl | fun[list u0]list u0 | liste privée de son premier élément |
 | core | tabnew | fun[u0 I]tab u0 | création d'une table : valeur d'initialisation, taille de la table |
@@ -113,60 +116,60 @@ List of commands supported by the VM.  _custom_ got added by me (see lib `openNa
 | device | rfidRead | fun[S I]S | lecture d'un bloc de données d'un tag : id du tag, numéro du bloc ; retourne les données (chaîne de 4 octets binaires) |
 | device | rfidWrite | fun[S I S]I | écriture d'un bloc de données d'un tag : id du tag, numéro du bloc, donnée à écrire (chaîne de 4 octets) ; retourne 0 si ok |
 
-## Bytecode
+## bytecode
 
-| label | opcode | commentaire |
-| -- | -- | -- |
-| exec | 0 | appel d'une routine |
-| ret | 1 | fin d'une routine |
-| intb | 2 | empiler un entier 8 bits |
-| int | 3 | empiler un entier |
-| nil | 4 | empiler "nil" |
-| drop | 5 | dépiler un élément |
-| dup | 6 | dupliquer un élément dans la pile |
-| getlocalb | 7 | empiler une variable locale, dont l'index tient sur 8 bits |
-| getlocal | 8 | empiler une variable locale, dont l'index au sommet de la pile |
-| add | 9 | ajouter les deux valeurs au sommet de la pile |
-| sub | 10 | soustraire les deux valeurs au sommet de la pile |
-| mul | 11 | multiplier les deux valeurs au sommet de la pile |
-| div | 12 | diviser les deux valeurs au sommet de la pile |
-| mod | 13 | modulo des deux valeurs au sommet de la pile |
-| and | 14 | ET logique entre les bits des deux valeurs au sommet de la pile |
-| or | 15 | OU logique entre les bits des deux valeurs au sommet de la pile |
-| eor | 16 | OU EXCLUSIF logique entre les bits des deux valeurs au sommet de la pile |
-| shl | 17 | décalage vers la gauche |
-| shr | 18 | décalage vers la droite |
-| neg | 19 | changement de signe de la valeur au sommet de la pile |
-| not | 20 | inversion des bits de la valeur au sommet de la pile |
-| non | 21 | inversion booléenne |
-| eq | 22 | test d'égalité des deux valeurs au sommet de la pile |
-| ne | 23 | test de différence des deux valeurs au sommet de la pile |
-| lt | 24 | test d'infériorité des deux valeurs au sommet de la pile |
-| gt | 25 | test de supériorité des deux valeurs au sommet de la pile |
-| le | 26 | test "inférieur ou égal" des deux valeurs au sommet de la pile |
-| ge | 27 | test "supérieur ou égal" des deux valeurs au sommet de la pile |
-| goto | 28 | déplacement du pointeur programme |
-| else | 29 | déplacement conditionnel du pointeur programme en fonction de la valeur au sommet de la pile |
-| mktabb | 30 | crée une table dont la taille est constante et tient sur 8 bits |
-| mktab | 31 | crée une table dont la taille est au sommet de la pile |
-| deftabb | 32 | crée une table dont la taille est constante et tient sur 8 bits, en initialisant les valeurs à partir de la pile |
-| deftab | 33 | crée une table dont la taille est au sommet de la pile, en initialisant les valeurs à partir de la pile |
-| fetchb | 34 | empile un élément d'un tuple, dont l'index est constant et tient sur 8 bits |
-| fetch | 35 | empile un élément d'un tuple, dont l'index est au sommet de la pile |
-| getglobalb | 36 | empiler une variable globale, dont l'index tient sur 8 bits |
-| getglobal | 37 | empiler une variable globale, dont l'index au sommet de la pile |
-| Secho | 38 | voir lib native |
-| Iecho | 39 | voir lib native |
-| setlocalb | 40 | écrit une variable locale, dont l'index tient sur 8 bits |
-| setlocal | 41 | écrit une variable locale, dont l'index est dans la pile |
-| setglobal | 42 | écrit une variable globale |
-| setstructb | 43 | écrit un élément d'un tuple, dont l'index est constant et tient sur 8 bits |
-| setstruct | 44 | écrit un élément d'un tuple, dont l'index est donné dans la pile |
-| hd | 45 | voir lib native |
-| tl | 46 | voir lib native |
-| setlocal2 | 47 | écrit une variable locale, dont l'index est dans la pile |
-| store | 48 | écrit un élément d'un tuple, dont l'index est donné dans la pile |
-| call | 49 | appel d'une routine |
-| callrb | 50 | appel d'une routine |
-| callr | 51 | appel d'une routine |
-| first | 52 | empile le premier élément d'un tuple |
+| famille | label | opcode | commentaire |
+| -- | -- | -- | -- |
+| bytecode | exec | 0 | appel d'une routine |
+| bytecode | ret | 1 | fin d'une routine |
+| bytecode | intb | 2 | empiler un entier 8 bits |
+| bytecode | int | 3 | empiler un entier |
+| bytecode | nil | 4 | empiler "nil" |
+| bytecode | drop | 5 | dépiler un élément |
+| bytecode | dup | 6 | dupliquer un élément dans la pile |
+| bytecode | getlocalb | 7 | empiler une variable locale, dont l'index tient sur 8 bits |
+| bytecode | getlocal | 8 | empiler une variable locale, dont l'index au sommet de la pile |
+| bytecode | add | 9 | ajouter les deux valeurs au sommet de la pile |
+| bytecode | sub | 10 | soustraire les deux valeurs au sommet de la pile |
+| bytecode | mul | 11 | multiplier les deux valeurs au sommet de la pile |
+| bytecode | div | 12 | diviser les deux valeurs au sommet de la pile |
+| bytecode | mod | 13 | modulo des deux valeurs au sommet de la pile |
+| bytecode | and | 14 | ET logique entre les bits des deux valeurs au sommet de la pile |
+| bytecode | or | 15 | OU logique entre les bits des deux valeurs au sommet de la pile |
+| bytecode | eor | 16 | OU EXCLUSIF logique entre les bits des deux valeurs au sommet de la pile |
+| bytecode | shl | 17 | décalage vers la gauche |
+| bytecode | shr | 18 | décalage vers la droite |
+| bytecode | neg | 19 | changement de signe de la valeur au sommet de la pile |
+| bytecode | not | 20 | inversion des bits de la valeur au sommet de la pile |
+| bytecode | non | 21 | inversion booléenne |
+| bytecode | eq | 22 | test d'égalité des deux valeurs au sommet de la pile |
+| bytecode | ne | 23 | test de différence des deux valeurs au sommet de la pile |
+| bytecode | lt | 24 | test d'infériorité des deux valeurs au sommet de la pile |
+| bytecode | gt | 25 | test de supériorité des deux valeurs au sommet de la pile |
+| bytecode | le | 26 | test "inférieur ou égal" des deux valeurs au sommet de la pile |
+| bytecode | ge | 27 | test "supérieur ou égal" des deux valeurs au sommet de la pile |
+| bytecode | goto | 28 | déplacement du pointeur programme |
+| bytecode | else | 29 | déplacement conditionnel du pointeur programme en fonction de la valeur au sommet de la pile |
+| bytecode | mktabb | 30 | crée une table dont la taille est constante et tient sur 8 bits |
+| bytecode | mktab | 31 | crée une table dont la taille est au sommet de la pile |
+| bytecode | deftabb | 32 | crée une table dont la taille est constante et tient sur 8 bits, en initialisant les valeurs à partir de la pile |
+| bytecode | deftab | 33 | crée une table dont la taille est au sommet de la pile, en initialisant les valeurs à partir de la pile |
+| bytecode | fetchb | 34 | empile un élément d'un tuple, dont l'index est constant et tient sur 8 bits |
+| bytecode | fetch | 35 | empile un élément d'un tuple, dont l'index est au sommet de la pile |
+| bytecode | getglobalb | 36 | empiler une variable globale, dont l'index tient sur 8 bits |
+| bytecode | getglobal | 37 | empiler une variable globale, dont l'index au sommet de la pile |
+| bytecode | Secho | 38 | voir lib native |
+| bytecode | Iecho | 39 | voir lib native |
+| bytecode | setlocalb | 40 | écrit une variable locale, dont l'index tient sur 8 bits |
+| bytecode | setlocal | 41 | écrit une variable locale, dont l'index est dans la pile |
+| bytecode | setglobal | 42 | écrit une variable globale |
+| bytecode | setstructb | 43 | écrit un élément d'un tuple, dont l'index est constant et tient sur 8 bits |
+| bytecode | setstruct | 44 | écrit un élément d'un tuple, dont l'index est donné dans la pile |
+| bytecode | hd | 45 | voir lib native |
+| bytecode | tl | 46 | voir lib native |
+| bytecode | setlocal2 | 47 | écrit une variable locale, dont l'index est dans la pile |
+| bytecode | store | 48 | écrit un élément d'un tuple, dont l'index est donné dans la pile |
+| bytecode | call | 49 | appel d'une routine |
+| bytecode | callrb | 50 | appel d'une routine |
+| bytecode | callr | 51 | appel d'une routine |
+| bytecode | first | 52 | empile le premier élément d'un tuple |
