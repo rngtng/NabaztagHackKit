@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\11";;
+var FIRMWARE="\0\0\0\12;;
 
 
 // --------------- UTIL debut
@@ -248,6 +248,16 @@ fun confInit=
 		load conf 0 "conf.bin" 0 CONF_LENGTH
 	);
 	dump conf;;
+	
+fun confReset=
+	set conf=strnew CONF_LENGTH;
+	load conf 0 "conf.bin" 0 CONF_LENGTH;
+	set conf=strnew CONF_LENGTH;
+	strcpy conf 0 conf0 0 nil;
+	confSave;
+	set conf=strnew CONF_LENGTH;
+	load conf 0 "conf.bin" 0 CONF_LENGTH;
+	dump "reset ok";;
 
 fun confGet i len= strsub conf i len;;
 
@@ -1919,7 +1929,7 @@ fun cbhttp req=
 		else if page==2 then httpflash req
 		else if page==3 then (reboot 0x0407FE58 0x13fb6754;nil)
 		else if page==4 then httpupgrade
-		else if page==5 then confInit
+		else if page==5 then confReset
 		else httpindex
 	);;
 
