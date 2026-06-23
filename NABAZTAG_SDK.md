@@ -55,8 +55,8 @@ with a few genuine either/or conflicts (§4).
 |-----------|:---:|:---:|:---:|:---:|----------|
 | C firmware / VM build (ARM) | IAR (closed) | — | **GCC + Docker + Task** ✅ | — | **nabgcc** |
 | Driver/WPA2 source of truth | origin + fixes | — | **modern, audited** ✅ | — | **nabgcc** (provenance: fw_nabaztag) |
-| MTL compiler (.mtl→bytecode) | — | mtl_linux (brew) | mtl_linux (submodule) | **vendored `compiler/`** | ⚔ decide (§4.1) |
-| MTL host simulator | vlispemu.exe (win) | via mtl_linux | mtl_linux `simu` | **`mtl_simu` w/ fake audio/net/http** ✅ | ⚔ decide (§4.1) |
+| MTL compiler (.mtl→bytecode) | — | mtl_linux (brew) | mtl_linux (submodule) | **vendored `compiler/`** | **mtl_linux** (§4.1) ✅ |
+| MTL host simulator | vlispemu.exe (win) | via mtl_linux | mtl_linux `simu` | **`mtl_simu` w/ fake audio/net/http** ✅ | **mtl_linux** + ported http server (§4.1) |
 | Precompiler (#include/#ifdef) | — | `preproc.pl` | — | `preproc.pl` (diverged) | **merge → one** (§4.2) |
 | MTL stdlib | scattered `_sources` | **curated `lib/` + verdicts** ✅ | — | app-embedded | **mtl_library** |
 | MTL test framework | — | **assertion-based, runs in simu** ✅ | — | — | **mtl_library** |
@@ -145,12 +145,15 @@ buildable `boot.mtl` is net-new SDK work** (see §9).
   simulator** — fake audio, network, and an HTTP server — which matters for the
   "simu" priority.
 
-→ **DECIDED: split — `mtl_linux` for compile, piper's `mtl_simu` for simulation.**
-Gets packaging/maintenance from mtl_linux and the richer host simulator from piper.
-**Prerequisite spike:** confirm the two agree on the opcode set (`inc/vm/vbc.h`, 152
-opcodes) so a `mtl_linux`-produced bytecode runs in piper's `mtl_simu`. If they drift,
-fall back to using one toolchain end-to-end. This spike must run before the split is
-load-bearing.
+→ **DECIDED (evaluated): single-toolchain — `mtl_linux` for BOTH compile and simulate.**
+A source-level comparison of the two simulators (both descend from Huet's original)
+found they are code-identical or stub except for **one** real capability piper has and
+mtl_linux lacks: a ~191-line **HTTP file server** in `http_server.c` (serves `bc.jsp` +
+`.forth` from the simulator, with `--http_server_path`/`--http_server_port`). Net/audio
+are identical/stubbed; both reference the same `vbc.h` opcode set (one-opcode diff) → no
+parity risk. So: **drop the split and the parity spike**; use mtl_linux end-to-end and
+**cherry-pick piper's `http_server.c` (~200 LOC) into mtl_linux's simu** — best of both
+without forking a second VM.
 
 ### 4.2 Two diverged precompilers
 `preproc.pl` exists in both `mtl_library/_pre-compiler/` and
@@ -190,36 +193,40 @@ PROVENANCE.md   # per vendored tree: origin repo + commit SHA + "local changes" 
 CHANGELOG.md    # SDK-side changes, tagged by source area, so a diff can be cherry-picked back
 ```
 
-**Divide *tooling* (how you build) from *source* (what you build).** Compiled binaries
-are never committed — built on demand in Docker.
+**Divide *tooling* (how you build) from *source* (what you build), and make every
+folder self-contained** — each owns its `Dockerfile` + `Taskfile.yaml`; the root
+Taskfile only `includes:` them under a per-layer namespace. (No central `docker/` dir —
+that proved to couple unrelated layers.) Compiled binaries are never committed.
 
 ```
 nabaztag-sdk/   (was NabaztagHackKit — renamed, v2)
-├── Taskfile.yaml          # root: includes the per-layer namespaces (§6)
-├── docker/
-│   ├── Dockerfile         # arm-none-eabi-gcc + gcc + python3 + doxygen   (php DROPPED, §7)
-│   └── Dockerfile.mtl     # amd64 32-bit g++ for the MTL tools
+├── Taskfile.yaml          # root: just `includes:` each folder's Taskfile (§6)
 │
 ├── tools/                 # ── TOOLING: how you build (not device code) ──
-│   ├── mtl-compiler/      #   vendored mtl_linux C++ src  → built in Docker
-│   ├── mtl-simu/          #   vendored piper mtl_simu C++ src → built in Docker
-│   ├── pack/              #   Python: mksim, preproc, words, flash-upload, deploy (§7)
-│   ├── Taskfile.yaml      #   `tool:*` namespace (build the toolchain binaries)
-│   └── bin/               #   compiled outputs — .gitignored
+│   ├── mtl_linux/         #   vendored rngtng/mtl_linux: compiler + simulator
+│   │   ├── Dockerfile     #     amd64 / 32-bit g++; BUILDS the tools into the image
+│   │   └── Taskfile.yaml  #     `mtl:compile` / `mtl:simulate`  (the two verbs)
+│   └── pack/              #   Python: mksim, preproc, words, upload, deploy (§7) — later
+│       ├── Dockerfile     #     python3 (local)
+│       └── Taskfile.yaml  #     `pack:*`
 │
 ├── firmware-c/            # ── SRC, Layer 0: C VM + drivers + WPA2 (from nabgcc) ──
-│   └── Taskfile.yaml      #   `fw:*`
+│   ├── Dockerfile         #     arm-none-eabi-gcc + gcc + make (local; no php)
+│   └── Taskfile.yaml      #     `fw:*`
 ├── mtl/                   # ── SRC, Layer 0.5–2: ONE MTL source library (§8) ──
-│   ├── lib/               #   forth/ stdlib/ net/ audio/ hw/ chor/ — reusable modules
-│   ├── boot.mtl           #   composed entrypoint → Layer 0.5 boot (net+conf+fetch)
-│   ├── app.mtl            #   composed entrypoint → Layer 1/2 app (bc.jsp)
-│   └── Taskfile.yaml      #   `boot:*` and `mtl:*`
+│   ├── lib/               #     forth/ stdlib/ net/ audio/ hw/ chor/ — reusable modules
+│   ├── boot.mtl           #     composed entrypoint → Layer 0.5 boot (net+conf+fetch)
+│   ├── app.mtl            #     composed entrypoint → Layer 1/2 app (bc.jsp)
+│   └── Taskfile.yaml      #     `mtl:*` (uses tools/mtl_linux to compile)
 ├── forth/                 # ── SRC, Layer 3: vl/ scripts + REPL (apps stripped) ──
-│   └── Taskfile.yaml      #   `forth:*`
+│   └── Taskfile.yaml      #     `forth:*`
 │
-├── docs/                  # architecture.md + grammar/commands + generated words.txt
+├── docs/                  # grammar/commands (kept) + architecture + generated words.txt
+├── PROVENANCE.md          # per vendored tree: origin + commit + local changes
 └── reference/             # firmware_nabaztag — read-only provenance, never built
 ```
+
+> **Built so far:** `tools/mtl_linux/` (compiler + simulator, self-contained, verified).
 
 Discarded from NabaztagHackKit: `Gemfile`, `*.gemspec`, `Rakefile`, `lib/`, `spec/`,
 `ext/`, old `bytecode/_original` — superseded by nabgcc / piper / mtl_linux.
@@ -236,26 +243,20 @@ build/deploy logic, `scripts/{extract_words,make_nominal}`.
 Root `Taskfile.yaml` uses Task's `includes:` to pull a `Taskfile.yaml` from each tree,
 so every target is prefixed by its layer. `task --list` then reads as a layer map.
 
+Minimal verbs per namespace — the toolchain build is baked into each image, not a task.
+
 ```
-tool:*   ── build the toolchain itself (compiled once, cached) ──
-  tool:build        compile mtl-compiler + mtl-simu in Docker → tools/bin/
-  tool:clean
+mtl:*    ── MTL toolchain: the two verbs (compiler + simulator baked into the image) ──  [BUILT]
+  mtl:compile  -- <src.mtl> <out.bin>   compile MTL → bytecode  (boot.mtl → boot, app.mtl → bc.jsp)
+  mtl:simulate -- --source <src.mtl>    run an app in the host simulator (+ ported http server, §4.1)
+  mtl:test                              MTL assertions in the simulator   (mtl_library/test)   — later
+  mtl:words                             regenerate the Forth word ref      (extract_words.py)  — later
 
 fw:*     ── Layer 0: C VM firmware ──
   fw:build          Nab.elf/.hex/.bin                         (nabgcc make)
   fw:test           native C-VM test harness                  (testvm)
   fw:flash:jtag     OpenOCD + GDB over probe  (host openocd)
   fw:flash:sim      package .sim                              (Python mksim, §7)
-
-boot:*   ── Layer 0.5: boot.mtl ──
-  boot:build        mtl/boot.mtl → boot bytecode              (compiler + preproc)
-  boot:simu         run boot in host simulator
-
-mtl:*    ── Layer 1/2: the app ──
-  mtl:build         mtl/app.mtl → bc.jsp                       (compiler + preproc)
-  mtl:simu          run app on host, faked HW                  (piper mtl_simu)
-  mtl:test          MTL stdlib assertions in simu              (mtl_library/test)
-  mtl:words         regenerate word reference                  (extract_words.py)
 
 forth:*  ── Layer 3: runtime scripts ──
   forth:repl        open telnet REPL to a device
@@ -264,12 +265,11 @@ forth:*  ── Layer 3: runtime scripts ──
 dev:*    ── meta / device I/O ──
   dev:deploy        push bc.jsp + *.forth → web server         (T1/T2 OTA)
   dev:upload        POST .sim to the rabbit's config page      (NEW, §7 — kills manual upload)
-  dev:docs          doxygen (C) + grammar/commands + words.txt
-  dev:shell  dev:clean
+  dev:docs          docs (grammar/commands + words.txt)
 ```
 
-Everything runs in the two Docker images, so host deps are **Docker + Task** only
-(plus host `openocd` for `fw:flash:jtag` — containers can't reach USB).
+(boot vs app is just which entrypoint you pass to `mtl:compile` — §8.) Everything runs in
+Docker, so host deps are **Docker + Task** only (plus host `openocd` for JTAG flashing).
 
 ---
 
@@ -343,8 +343,9 @@ Vendoring gets you a build; these are the pieces that don't exist yet or need fi
    `reboot` (page 3) accept an uploaded image. This is a small, high-value win — automate
    the HTTP POST that the config page performs.
 3. **Port `preproc.pl` → Python** and **adopt `mkfirmware.py`** over the PHP (§7).
-4. **Opcode-parity spike** — confirm `mtl_linux` bytecode runs in piper's `mtl_simu`
-   (`vbc.h`, 152 opcodes). Gates the split toolchain (§4.1). **Do this first.**
+4. **Port piper's `http_server.c` → mtl_linux's simu** (§4.1) — the one capability gap
+   (~200 LOC). The opcode-parity spike is **dropped**: single toolchain end-to-end means
+   bytecode never crosses VMs, so there is nothing to keep in sync.
 
 **Stability carried from nabgcc's audit:** critical Layer-0 bugs already fixed (PMK
 `strcpy`→`memcpy`, VM array-store `||`→`&&`, USB IRQ re-enable, seeded `rand()`, OTA
@@ -363,16 +364,19 @@ real assertions.
    `PROVENANCE.md` + `CHANGELOG.md` for backport. Discontinue standalone `mtl_library`
    and its homebrew tap (or rename the tap → `homebrew-nabaztag-sdk` if a native install
    path is still wanted).
-3. **MTL toolchain** → split: `mtl_linux` compile + piper `mtl_simu` simulate (§4.1),
-   gated by the parity spike (§9.4).
+3. **MTL toolchain** → **single toolchain: `mtl_linux` for both compile AND simulate**
+   (§4.1, decided after a source-level compare of both simulators). Cherry-pick piper's
+   ~200-LOC HTTP server into mtl_linux's simu; no split, no parity spike.
 4. **Languages** → Python for all tooling; C/C++ only as Docker-built binaries; drop
    Perl, Ruby, PHP (§7).
-5. **Docker + Task** → yes; per-layer namespaces `tool:/fw:/boot:/mtl:/forth:/dev:` (§6).
+5. **Docker + Task** → yes; per-layer namespaces `mtl:/fw:/forth:/dev:` (§6), each folder
+   self-contained (owns its `Dockerfile` + `Taskfile`; no central `docker/`).
 6. **Embedding** → default remote-load, keep monolithic for recovery (§3.2); one MTL
    library, composed entrypoints (§8).
 7. **WPA2** → ship now, document the group-key gap (§9).
 8. **Tie-break** → when in doubt, prefer **nabaztag-piper**.
 
-> Status: **design doc only**, no scaffolding yet. First build action when you're ready:
-> the parity spike (§9.4), then rename+gut NabaztagHackKit and vendor per §5.
+> Status: **reboot underway.** Done: gutted the Ruby gem, vendored `tools/mtl_linux/`
+> (compiler + simulator, self-contained, builds in Docker — verified). Next build step:
+> the **precompiler** (gates `bc.c` → firmware) — see `TODO.md`.
 ```
