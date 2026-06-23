@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\5";;
+var FIRMWARE="\0\0\0\6";;
 
 
 // --------------- UTIL debut
@@ -1854,7 +1854,7 @@ fun updateconf args=
 	);;
 			
 
-var firmwarelimit="*violet*";;
+var firmwarelimit="-violet-";;
 
 fun getbinary bin src i off len=
 /*	while i<len do
@@ -1882,6 +1882,7 @@ fun getfirmware req=
 		Secholn "getbinary";
 		setleds 0xff0000;
 		getbinary bin req 0 i0 len>>1;
+		uncrypt bin 0 nil 0x47 47;
 		bin
 	);;
 
@@ -2846,7 +2847,7 @@ fun loop=
 			(
 				set lastcount0=i;
 				let time_ms-lasttime0 -> d in
-				if d<10000 && d>1000 then
+				if d<10000 && d>700 then
 				(
 					Secho "\n-------------refpos0 ";Iecholn i-count0;
 					led 1 if count0==nil then 0xff00ff else if (i-count0)==17 then 0xff00 else 0xff0000;
@@ -2863,7 +2864,7 @@ fun loop=
 			(
 				set lastcount1=i;
 				let time_ms-lasttime1 -> d in
-				if d<10000 && d>1000 then
+				if d<10000 && d>700 then
 				(
 					Secho "\n-------------refpos1 ";Iecholn i-count1;
 					led 3 if count1==nil then 0xff00ff else if (i-count1)==17 then 0xff00 else 0xff0000;
@@ -2881,7 +2882,7 @@ fun loop=
 		(
 			let rfidGet -> s in
 			(
-				setleds if s==nil then 0 else 0xff00;
+				setleds if s==nil then 0 else if !strcmp s "Error" then 0xff0000 else 0xff00;
 				if s!=nil then Secholn strcat "RFID : " s
 			);
 			0
