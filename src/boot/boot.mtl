@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\9";;
+var FIRMWARE="\0\0\0\10";;
 
 
 // --------------- UTIL debut
@@ -594,6 +594,7 @@ fun cbnettcp src mac=
 				set t.ackT=SEQecho (netSeqAdd rseq 1) 0 1;
 				sendtcp t mktcp t TACK nil;
 				set t.stateT=STEST;
+				set t.lastsentT=nil;
 				call t.cbT [t TCPWRITE nil]
 			)
 			else
@@ -1823,6 +1824,7 @@ fun extractpage uri=
 	else if x=='c' then 2
 	else if x=='d' then 3
 	else if x=='u' then 4
+	else if x=='r' then 5
 	else 0;;
 
 fun uriextract uri =
@@ -1917,6 +1919,7 @@ fun cbhttp req=
 		else if page==2 then httpflash req
 		else if page==3 then (reboot 0x0407FE58 0x13fb6754;nil)
 		else if page==4 then httpupgrade
+		else if page==5 then confInit
 		else httpindex
 	);;
 
@@ -2928,7 +2931,8 @@ fun loop=
 
 fun main=
 	MACecho netMac 0 1;
-	Iecho set master=button2;
+	Secho "button :";
+	Iecholn set master=button2;
 	Secholn ":started";
 	confInit;
 	wifiInit 1;
