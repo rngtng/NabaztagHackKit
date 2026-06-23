@@ -16,22 +16,22 @@ task
 
 ### Compile & Simulate
 
-Compile an MTL source to bytecode:
+Compile an MTL boot source to bytecode:
 
 ```
-task mtl:compile SOURCE=bytecode/main.mtl
+task build:boot
 ```
 
-Writes `<name>.bin` (signed device-flash format) into the current dir. Pass `OUT=<dir>` to change the output dir, or `SIGN=false` for raw bytecode.
-
-Run an app in the simulator:
+Run the boot app in the simulator:
 
 ```
-task mtl:simulate SOURCE=bytecode/main.mtl
+task simulate:boot
 ```
 
+Finally, compile the firmware sources to bytecode,including the boot code:
+
 ```
-task mkfirmware:build SOURCE=src/firmware/bin/Nab.bin
+task build:firmware
 ```
 
 ### Layout
