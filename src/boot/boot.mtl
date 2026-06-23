@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\7";;
+var FIRMWARE="\0\0\0\8";;
 
 
 // --------------- UTIL debut
