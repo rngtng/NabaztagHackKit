@@ -1,5 +1,10 @@
 # Changes
 
+## v0.3.0 - 23-06-2026
+
+  * added [dockerized Linux mtl](https://github.com/rngtng/mtl_linux) compiler and simulator under `tools/mtl_linux`
+  * Taskfile tasks to build and run the compiler/simulator via Docker
+
 ## v0.2.1 - 18-09-2016
 
   * pulled in mac os x support by @ztalbot2000 28-06-2014
