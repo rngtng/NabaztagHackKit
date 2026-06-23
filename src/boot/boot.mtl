@@ -11,11 +11,11 @@ var RECLIB;;
 
 ifdef SIMU
 {
-var HARDWARE=5;;
+const HARDWARE=5;;
 }
 else
 {
-var HARDWARE=4;;
+const HARDWARE=4;;
 }
 
 
@@ -29,29 +29,29 @@ var netdns="\0\0\0\0";;
 
 var mymac;;
 
-var macbroadcast="\$ff\$ff\$ff\$ff\$ff\$ff";;
-var ipbroadcast="\$ff\$ff\$ff\$ff";;
+const macbroadcast="\$ff\$ff\$ff\$ff\$ff\$ff";;
+const ipbroadcast="\$ff\$ff\$ff\$ff";;
 
 var master=0;;
 
-var netip_empty="\0\0\0\0";;
+const netip_empty="\0\0\0\0";;
 
-var netip_master="\192\168\0\1";;
-var netmask_master="\255\255\255\0";;
-var netgateway_master="\192\168\0\1";;
+const netip_master="\192\168\0\1";;
+const netmask_master="\255\255\255\0";;
+const netgateway_master="\192\168\0\1";;
 
 var wifiscans;;
 
-var IEEE80211_CRYPT_NONE=0;;
-var IEEE80211_CRYPT_WEP64=1;;
-var IEEE80211_CRYPT_WEP128=2;;
-var IEEE80211_CRYPT_WPA=3;;
-var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
+const IEEE80211_CRYPT_NONE=0;;
+const IEEE80211_CRYPT_WEP=16;;
+const IEEE80211_CRYPT_WPA=32;;
+const IEEE80211_CRYPT_WPA2=64;;
+const IEEE80211_CRYPT_WPA_UNSUPPORTED=255;;
 
-var IEEE80211_AUTH_OPEN=0;;
-var IEEE80211_AUTH_SHARED=1;;
+const IEEE80211_AUTH_OPEN=0;;
+const IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\12;;
+const FIRMWARE="\0\0\0\13";;
 
 
 // --------------- UTIL debut
@@ -77,12 +77,15 @@ fun listtostr l=
 	s
 	);;
 
-fun atoibin2 val=itobin2 atoi val;;
+fun atoibin2 val=
+	itobin2 atoi val
+;;
 
 fun countpattern s p i=
 	let strstr s p i -> j in
 	if j==nil then 0
-	else 1+countpattern s p j+strlen p;;
+	else 1+countpattern s p j+strlen p
+;;
 
 fun strreplace2 sn s p v i id=
 	if i<strlen s then
@@ -93,7 +96,7 @@ fun strreplace2 sn s p v i id=
 		if j!=nil then strcpy sn id+k-i v 0 nil;
 		strreplace2 sn s p v k+strlen p id+k-i+strlen v
 	);;
-	
+
 fun strreplace s p v=
 	let countpattern s p 0 -> i in
 	if !i then s
@@ -199,28 +202,28 @@ fun dumpscan l0=
 	l0;;
 
 // ------------- Config debut
-var CONF_SERVERURL=0;;		//41
-var CONF_NETDHCP=41;;		//1
-var CONF_NETIP=42;;			//4
-var CONF_NETMASK=46;;		//4
-var CONF_NETGATEWAY=50;;	//4
-var CONF_NETDNS=54;;		//4
-var CONF_WIFISSID=58;;		//32
-var CONF_WIFIAUTH=90;;		//1
-var CONF_WIFICRYPT=91;;		//1
-var CONF_WIFIKEY0=92;;		//64
-var CONF_PROXYENABLE=156;;	//1
-var CONF_PROXYIP=157;;		//4
-var CONF_PROXYPORT=161;;	//2
-var CONF_LOGIN=163;;		//6
-var CONF_PWD=169;;			//6
-var CONF_WIFIPMK=175;;		//32
-var CONF_MAGIC=207;;		//1
-var CONF_LENGTH=208;;
+const CONF_SERVERURL=0;;		//41
+const CONF_NETDHCP=41;;		//1
+const CONF_NETIP=42;;			//4
+const CONF_NETMASK=46;;		//4
+const CONF_NETGATEWAY=50;;	//4
+const CONF_NETDNS=54;;		//4
+const CONF_WIFISSID=58;;		//32
+const CONF_WIFIAUTH=90;;		//1
+const CONF_WIFICRYPT=91;;		//1
+const CONF_WIFIKEY0=92;;		//64
+const CONF_PROXYENABLE=156;;	//1
+const CONF_PROXYIP=157;;		//4
+const CONF_PROXYPORT=161;;	//2
+const CONF_LOGIN=163;;		//6
+const CONF_PWD=169;;			//6
+const CONF_WIFIPMK=175;;		//32
+const CONF_MAGIC=207;;		//1
+const CONF_LENGTH=208;;
 
 var conf;;
 
-var conf0=
+const conf0=
 "r.nabaztag.com/vl\0-----------------------\
 \1\0\0\0\0\255\255\255\0\0\0\0\0\0\0\0\0\
 \0-------------------------------\
@@ -248,7 +251,7 @@ fun confInit=
 		load conf 0 "conf.bin" 0 CONF_LENGTH
 	);
 	dump conf;;
-	
+
 fun confReset=
 	set conf=strnew CONF_LENGTH;
 	load conf 0 "conf.bin" 0 CONF_LENGTH;
@@ -282,7 +285,7 @@ fun confSetstr i val len=
 fun webport s= ((strget s 0)<<8)+strget s 1;;
 
 fun confGetWifissid=confGetstr CONF_WIFISSID 32;;
-fun confGetWificrypt=strget confGet CONF_WIFICRYPT 1 0;;
+fun confGetWificrypt=strget confGetbin CONF_WIFICRYPT 1 0;;
 fun confGetWifikey0=confGetstr CONF_WIFIKEY0 64;;
 fun confGetWifiauth=strget confGet CONF_WIFIAUTH 1 0;;
 fun confGetWifipmk=confGetbin CONF_WIFIPMK 32;;
@@ -316,8 +319,8 @@ fun strputchk s i w=
 // ------------- IP fin
 
 // ------------- ARP debut
-var ARPREQ=1;;
-var ARPANS=2;;
+const ARPREQ=1;;
+const ARPANS=2;;
 
 var larp;;
 var larpreq;;
@@ -341,7 +344,7 @@ fun filterarpip l src =
 	else (hd l)::filterarpip tl l src;;
 
 fun checkarp l src=
-	if l!=nil then let hd l->[ip _ cb] in 
+	if l!=nil then let hd l->[ip _ cb] in
 	(
 		if !vstrcmp src 8+14 ip 0 4 then
 		let strsub src 8+8 6 -> mac in
@@ -378,8 +381,8 @@ fun subnet_ ip i=
 fun subnet ip=
 	Secho "test subnet "; IPecho ip 0 1;
 	Iecholn subnet_ ip 3;;
-	
-	
+
+
 fun arpreq ip cb=
 	let IPecho (if subnet ip then ip else netgateway) 0 1 -> ip in
 	let listswitchstr larp ip -> mac in
@@ -387,7 +390,7 @@ fun arpreq ip cb=
 	else
 	(
 		sendarp ip;
-		set larpreq=[ip time cb]::larpreq;	// ### attention à la taille de la liste
+		set larpreq=[ip time cb]::larpreq;	// ### attention Ã  la taille de la liste
 		0
 	);;
 
@@ -412,7 +415,7 @@ fun resetarp=
 
 // ------------- UDP debut
 fun mkudp ipsrc ipdst portsrc portdst content=
-	let strcatlist 
+	let strcatlist
 	"\$aa\$aa\$03\$00\$00\$00\$08\$00\$45\$00\$00\$00\$00\$00\$00\$00\100\17\0\0"::
 	ipsrc::
 	ipdst::
@@ -464,33 +467,33 @@ fun cbnetudp src mac=
 // -------------- UDP fin
 
 // ------------- TCP debut
-var TFIN=0x01;;
-var TSYN=0x02;;
-var TRST=0x04;;
-var TPUSH=0x08;;
-var TACK=0x10;;
-var TURGE=0x20;;
+const TFIN=0x01;;
+const TSYN=0x02;;
+const TRST=0x04;;
+const TPUSH=0x08;;
+const TACK=0x10;;
+const TURGE=0x20;;
 
-var STOFF=-1;;
-var STSYN=0;;
-var STEST=1;;
-var STLISTEN=2;;
-var STFIN=3;;
+const STOFF=-1;;
+const STSYN=0;;
+const STEST=1;;
+const STLISTEN=2;;
+const STFIN=3;;
 
-var CLIENT_SEQ_START="\0\0\1\0";;
-var CLIENT_SEQ_NULL="\0\0\0\0";;
+const CLIENT_SEQ_START="\0\0\1\0";;
+const CLIENT_SEQ_NULL="\0\0\0\0";;
 
-var TCPWRITE=0;;
-var TCPREAD=1;;
-var TCPCLOSE=-1;;
-var TCPSTART=2;;
+const TCPWRITE=0;;
+const TCPREAD=1;;
+const TCPCLOSE=-1;;
+const TCPSTART=2;;
 
-var TCPMAX=1024;;
+const TCPMAX=1024;;
 
 type Tcp=[stateT locT dstT locpT dstpT seqT ackT cbT macT lastsentT retryT locksendT enableT];;
 
 fun mktcp_ ipsrc ipdst portsrc portdst seq ack flag content=
-	let strcatlist 
+	let strcatlist
 	"\$aa\$aa\$03\$00\$00\$00\$08\$00\$45\$00\$00\$00\$00\$00\$00\$00\100\6\0\0"::
 	ipsrc::
 	ipdst::
@@ -534,7 +537,7 @@ fun headerlen src=((strget src 8+32)>>4)<<2;;
 fun datalength src=(strgetword src 10)-20-headerlen src;;
 
 fun sendtcp t trame=
-//	Secholn "tcpSend"; dump trame; 
+//	Secholn "tcpSend"; dump trame;
 	netSend trame 0 nil (/*MACecho*/ t.macT /*0 1*/) 0 1;
 	let strget trame 8+33 -> flag in
 	set t.seqT=netSeqAdd t.seqT (datalength trame)+(if flag&(TSYN|TFIN) then 1 else 0);
@@ -573,7 +576,7 @@ fun listentcp localp cb=
 	(
 		set ltcp=tcp::ltcp
 	);;
-	
+
 fun findtcp l localp dstp src=
 	if l!=nil then let hd l-> t in
 	if t.locpT==localp && t.dstpT==dstp && (!vstrcmp src 8+16 t.locT 0 4)&& (!vstrcmp src 8+12 t.dstT 0 4)
@@ -585,7 +588,7 @@ fun sendclose t=
 	Secholn "## sendclose";
 	sendtcp t mktcp t TFIN+TACK nil;
 	set t.stateT=STFIN;
-	0;; 
+	0;;
 
 fun cbnettcp src mac=
 	Secho "t";
@@ -744,11 +747,11 @@ fun resettcp=
 
 // --------------- DHCP debut
 
-var DHCP_DISCOVER=1;;
-var DHCP_OFFER=2;;
-var DHCP_REQUEST=3;;
-var DHCP_DECLINE=4;;
-var DHCP_ACK=5;;
+const DHCP_DISCOVER=1;;
+const DHCP_OFFER=2;;
+const DHCP_REQUEST=3;;
+const DHCP_DECLINE=4;;
+const DHCP_ACK=5;;
 
 fun mkdhcp op netip hostip newip =
 	let 236+16+14->n in
@@ -762,7 +765,7 @@ fun mkdhcp op netip hostip newip =
 		strset b 236+6 op;
 		strcpy b 236+7 "\61\7\1" 0 3;
 		strcpy b 236+10 mymac 0 6;
-		strcpy b 236+16 "\12\7Pabcdef\55\3\1\3\6" 0 14;
+		strcpy b 236+16 "\12\7Nabaztg\55\3\1\3\6" 0 14;
 		if op==DHCP_REQUEST then strcatlist b::"\54\4"::hostip::"\50\4"::newip::"\255"::nil
 		else strcat b "\255"
 	);;
@@ -1009,7 +1012,7 @@ fun parseans s i n=
 		strcatlist (itoa strget s j+10)::"."::(itoa strget s j+11)::"."::
 		(itoa strget s j+12)::"."::(itoa strget s j+13)::nil
 	else parseans s (j+10+strgetword s j+8) n-1;;
-	
+
 fun parsemsg s=
 	Secholn "parsemsg";
 	let Iecholn strgetword s 0 -> id in
@@ -1051,7 +1054,7 @@ fun dnsreq domain cb=
 
 fun selectbyid d v= d.idD==v;;
 
-fun cbnetdns msg mac ipfrom= 
+fun cbnetdns msg mac ipfrom=
 	Secholn "cbnetdns";
 	dump msg;
 	let Iecholn strgetword msg 0 -> id in
@@ -1061,7 +1064,7 @@ fun cbnetdns msg mac ipfrom=
 	(
 		Secholn "dns found";
 		set ldnsreq=listrem ldnsreq x;
-		if ip!=nil then set ldns=[x.domainD ip]::ldns;	// ### attention à la taille de la liste
+		if ip!=nil then set ldns=[x.domainD ip]::ldns;	// ### attention Ã  la taille de la liste
 		call x.cbD [ip]
 	)
 	else
@@ -1099,15 +1102,15 @@ fun startdnsclient=
 
 // --------------- DNS fin
 
-ifdef BOOT 
+ifdef BOOT
 {
 //------------------ serveur HTTP
 
 type Sock=[sockCnx sockInput sockSize sockOutput sockIndex sockCloseAfter sockCallback];;
 
-var http_header="HTTP/1.0 200 OK\13\10Server: MTL HTTP server\13\10Content-Type: text/html\13\10\13\10";;
+const http_header="HTTP/1.0 200 OK\13\10Server: MTL HTTP server\13\10Content-Type: text/html\13\10\13\10";;
 
-var http_sep="\13\n\13\n";;	// séparateur entre l'en-tête et le corps de la réponse à une requête
+const http_sep="\13\n\13\n";;	// sÃ©parateur entre l'en-tÃªte et le corps de la rÃ©ponse Ã  une requÃªte
 var http_content_start="ontent-Length: ";;
 var http_content_start2="ontent-length: ";;
 var http_content_end="\13\n";;
@@ -1128,7 +1131,7 @@ fun findsize s=
 fun tcpwrite cnx sock=
 Secholn "tcpwrite";
 	if sock.sockOutput!=nil then
-	(	
+	(
 		if sock.sockIndex==nil then set sock.sockIndex=0;
 		Iecholn set sock.sockIndex=writetcp cnx sock.sockOutput Iecholn sock.sockIndex;
 		if sock.sockIndex!=nil && sock.sockIndex>=strlen sock.sockOutput then
@@ -1321,7 +1324,7 @@ a:hover {
 	<p><span class=\"Huge\">You are now connected to your Nabaztag.</span><br />
       <span class=\"caution\">(You are NOT connected to the Internet. To reconnect to the Internet restart your Nabaztag.)<br />
         </span><br />
-        To configure your Rabbit, you will need the following information : 
+        To configure your Rabbit, you will need the following information :
       </p>
       <ul>
 <li>Your SSID (the name of your network)</li>
@@ -1332,8 +1335,8 @@ a:hover {
         </p>
       </blockquote>
       <ul>
-<li>Your encryption type (WEP/WPA)</li>
-<li>Your wi-fi encryption key (WEP/WPA)</li>
+<li>Your encryption type (WEP/WPA/WA2)</li>
+<li>Your wi-fi encryption key (WEP/WPA/WPA2)</li>
 <li>Your authentication method (WEP)</li>
 </ul>
 
@@ -1344,7 +1347,7 @@ a:hover {
         <li>When finished click on ''Update and start&quot;</li>
         <li>Nabaztag will connect to the Internet : all four lights are going from ORANGE to GREEN</li>
         <li>Reconnect to your usual wi-fi network and  finish your registration. </li>
-      </ol>      
+      </ol>
       <p align=\"center\"><a href=\"#basic\">Click here to Start </a></p>
     </td>
   </tr>
@@ -1376,12 +1379,14 @@ a:hover {
     <td colspan=\"2\" class=\"subhead\">Encryption</td>
   </tr>
   <tr>
-    <td><input type=\"radio\" name=\"m\" "::"<ENC-NONE>"::" value=\"0\" />
+    <td><input type=\"radio\" name=\"m\" "::"<ENC-NONE>"::" value=\""::"<ENC-VNONE>"::"\" />
       No encryption<br />
-      <input type=\"radio\" name=\"m\" "::"<ENC-WEP>"::" value=\"1\" />
+      <input type=\"radio\" name=\"m\" "::"<ENC-WEP>"::" value=\""::"<ENC-VWEP>"::"\" />
       WEP encryption<br />
-      <input type=\"radio\" name=\"m\" "::"<ENC-WPA>"::" value=\"2\" />
-      WPA encryption</td>
+      <input type=\"radio\" name=\"m\" "::"<ENC-WPA>"::" value=\""::"<ENC-VWPA>"::"\" />
+      WPA encryption<br />
+      <input type=\"radio\" name=\"m\" "::"<ENC-WPA2>"::" value=\""::"<ENC-VWPA2>"::"\" />
+      WPA2 encryption</td>
     <td class=\"hint\">Select your network's encryption type.</td>
   </tr>
   <tr>
@@ -1420,7 +1425,7 @@ a:hover {
       "::"<AUTH>"::"
     </select></td>
     <td class=\"hint\">Select  your authentication method.</td>
-  </tr>  
+  </tr>
   <tr>
     <td colspan=\"2\" class=\"subhead\">DHCP server </td>
   </tr>
@@ -1570,7 +1575,7 @@ var page_u=
 "<html>
 <head>
 <meta http-equiv=\"content-type\" content=\"text/html;charset=ISO-8859-1\">
-<title>Upgrade your Nabaztag</title> 
+<title>Upgrade your Nabaztag</title>
 <style type=\"text/css\">
 <!--
 body {
@@ -1693,11 +1698,11 @@ fun filterweb val=
 	strreplace (strreplace val "\"" "&quot;") "<" "&lt;";;
 
 fun webcrypt i=
-	if i==IEEE80211_CRYPT_NONE then "No encryption"
-	else if i==IEEE80211_CRYPT_WEP64 then "Wep64 encryption"
-	else if i==IEEE80211_CRYPT_WEP128 then "Wep128 encryption"
-	else if i==IEEE80211_CRYPT_WPA then "WPA-PSK encryption"
-	else "Unkown encryption";;
+	if i==IEEE80211_CRYPT_NONE then "None"
+	else if i==IEEE80211_CRYPT_WEP then "WEP"
+	else if i==IEEE80211_CRYPT_WPA then "WPA"
+  else if i==IEEE80211_CRYPT_WPA2 then "WPA2"
+	else "Unknown ";;
 
 fun isinscan s l=
 	if l==nil then 0
@@ -1707,7 +1712,7 @@ fun isinscan s l=
 fun selectscan s l=
 	if l!=nil then let hd l->[ssid mac bssid rssi channel rateset encryption] in
 	"<option value=\""::(filterweb ssid)::"\""::(if !strcmp ssid s then " selected")::">"::
-	(filterweb ssid)::" - "::(webcrypt encryption)::" - Channel "::(itoa channel)::" - Power "::(itoa rssi)::"</option>"::selectscan s tl l;;
+	(filterweb ssid)::" - "::(webcrypt encryption & 0xf0)::" - Channel "::(itoa channel)::" - Power "::(itoa rssi)::"</option>"::selectscan s tl l;;
 
 
 
@@ -1766,18 +1771,21 @@ fun httpindex=
 			["<PROXY>" webSelect proxy]::
 			["<SSID>" if (!isinscan ssid wifiscans) then filterweb ssid]::
 			["<SCAN>" strcatlist selectscan ssid wifiscans]::
-			["<ENC-NONE>" if crypt==0 then "checked"]::
-			["<ENC-WEP>" if crypt==1 then "checked"]::
-			["<ENC-WPA>" if crypt==2 then "checked"]::
-			["<AUTH>" webSelectList auth [0 "OpenSystem"]::[1 "SharedKey"]::nil]::
+			["<ENC-NONE>" if crypt==IEEE80211_CRYPT_NONE then "checked"]::
+			["<ENC-WEP>" if crypt==IEEE80211_CRYPT_WEP then "checked"]::
+			["<ENC-WPA>" if crypt==IEEE80211_CRYPT_WPA then "checked"]::
+      ["<ENC-WPA2>" if crypt==IEEE80211_CRYPT_WPA2 then "checked"]::
+      ["<ENC-VNONE>" itoa IEEE80211_CRYPT_NONE]::
+			["<ENC-VWEP>" itoa IEEE80211_CRYPT_WEP]::
+			["<ENC-VWPA>" itoa IEEE80211_CRYPT_WPA]::
+      ["<ENC-VWPA2>" itoa IEEE80211_CRYPT_WPA2]::
+			["<AUTH>" webSelectList auth [IEEE80211_AUTH_OPEN "OpenSystem"]::[IEEE80211_AUTH_SHARED "SharedKey"]::nil]::
 			["<KEY>" filterweb key]::
 			["<FIRMWARE>" webip FIRMWARE]::
 
 			nil
 		page_a
 	;;
-
-
 
 fun useparamcheck val=
 	let strget val 0 -> i in
@@ -1805,7 +1813,7 @@ fun useparam v val=
 	else if v=='k' then (if val!=nil && strlen val then confSetstr CONF_WIFISSID val 32)
 	else if v=='w' then (if strcmp val "-" then confSetstr CONF_WIFISSID val 32)
 	else if v=='l' then confSet CONF_WIFIAUTH useparamcheck val 1
-	else if v=='m' then confSet CONF_WIFICRYPT useparamcheck val 1
+	else if v=='m' then confSetbin CONF_WIFICRYPT ctoa atoi val 1
 	else if v=='n' then confSetstr CONF_WIFIKEY0 val 64
 	else if v=='o' then confSet CONF_LOGIN useparammac val 4
 	else if v=='p' then confSet CONF_PWD useparammac val 4
@@ -1854,7 +1862,7 @@ fun updateconf args=
 		let confGetWifissid -> ssid in
 		let confGetWificrypt-> crypt in
 		let confGetWifikey0 -> key in
-		if crypt==2 &&
+		if crypt==IEEE80211_CRYPT_WPA || crypt==IEEE80211_CRYPT_WPA2 &&
 		((crypt0!=crypt)||(strcmp ssid0 ssid)||(strcmp key0 key))
 		then	// recalculer le pmk
 		(
@@ -1864,9 +1872,9 @@ fun updateconf args=
 			confSave
 		)
 	);;
-			
 
-var firmwarelimit="-violet-";;
+
+const firmwarelimit="-violet-";;
 
 fun getbinary bin src i off len=
 /*	while i<len do
@@ -1942,31 +1950,31 @@ fun startconfigserver port=	0;;
 }
 
 //-------------------
-var HTTP_NORMAL=0;;
-var HTTP_STREAM=1;;
-var HTTP_DIRECT=2;;
+const HTTP_NORMAL=0;;
+const HTTP_STREAM=1;;
+const HTTP_DIRECT=2;;
 
-var HTTP_SOLVE=0;;
-var HTTP_REACH=1;;
-var HTTP_CONNECTED=2;;
+const HTTP_SOLVE=0;;
+const HTTP_REACH=1;;
+const HTTP_CONNECTED=2;;
 
 var lasthttpevent;;
 
-// type Httpreq contenant l'état d'une requête
+// type Httpreq contenant l'Ã©tat d'une requÃªte
 type Httpreq=[cnxH inputH outputH indexH cbH typeH stateH startH];;
 
-// callback de lecture sur la socket d'une requête
+// callback de lecture sur la socket d'une requÃªte
 fun tcpread cnx input httpreq=
 	set httpreq.startH=time;
 	if input==nil ||0==strlen input then	// erreur ou fin
 	(	closetcp cnx;	// on ferme la socket
-		if httpreq.typeH==HTTP_NORMAL then call httpreq.cbH [httpreq strcatlist rev httpreq.inputH nil]	// on retourne ce qui a été reçu
+		if httpreq.typeH==HTTP_NORMAL then call httpreq.cbH [httpreq strcatlist rev httpreq.inputH nil]	// on retourne ce qui a Ã©tÃ© reÃ§u
 		else call httpreq.cbH [httpreq nil]
 	)
 	else
 	(
 		set lasthttpevent=time;
-		if httpreq.typeH==HTTP_NORMAL then set httpreq.inputH=input::httpreq.inputH	// on bufferise ce qui a été reçu
+		if httpreq.typeH==HTTP_NORMAL then set httpreq.inputH=input::httpreq.inputH	// on bufferise ce qui a Ã©tÃ© reÃ§u
 		else if httpreq.typeH==HTTP_DIRECT then
 		(
 			call httpreq.cbH [httpreq input];
@@ -1989,22 +1997,22 @@ fun tcpread cnx input httpreq=
 		nil
 	);;
 
-// callback d'écriture sur la socket d'une requête
+// callback d'Ã©criture sur la socket d'une requÃªte
 fun tcpwrite cnx httpreq=
-	set httpreq.stateH=HTTP_CONNECTED; 
-	if httpreq.outputH!=nil then	// s'il y a des choses à envoyer (notamment la première fois)
-	(	set httpreq.indexH=writetcp cnx httpreq.outputH httpreq.indexH;	// envoyer ce qui peut l'être
+	set httpreq.stateH=HTTP_CONNECTED;
+	if httpreq.outputH!=nil then	// s'il y a des choses Ã  envoyer (notamment la premiÃ¨re fois)
+	(	set httpreq.indexH=writetcp cnx httpreq.outputH httpreq.indexH;	// envoyer ce qui peut l'Ãªtre
 		if httpreq.indexH==nil then	// si erreur lors de l'envoi
 		(	closetcp cnx;	// on ferme la socket
 			call httpreq.cbH [httpreq nil]	)	// on retourne nil
-		else if httpreq.indexH>=strlen httpreq.outputH then	// sinon si tout a été envoyé
-		(	set httpreq.indexH=nil;	// purger les données d'émission
+		else if httpreq.indexH>=strlen httpreq.outputH then	// sinon si tout a Ã©tÃ© envoyÃ©
+		(	set httpreq.indexH=nil;	// purger les donnÃ©es d'Ã©mission
 			set httpreq.outputH=nil;
 			nil
 		)
 	);;
 
-var http_prefurl="http://";;	// en-tête normal (mais ici facultatif) d'une requête http
+var http_prefurl="http://";;	// en-tÃªte normal (mais ici facultatif) d'une requÃªte http
 
 fun isip s i=
 	if i>=strlen s then 1
@@ -2013,7 +2021,7 @@ fun isip s i=
 	else isip s i+1;;
 
 
-// découper une url en [host port path].
+// dÃ©couper une url en [host port path].
 // host est de la forme ip:port
 // path ne commence pas par /
 fun cuturl url =
@@ -2046,19 +2054,19 @@ fun httpsendreq ip x=
 	0;;
 
 
-//##> création d'une requête http
-// paramètres : verb=verbe de la requête url=url de la requête postdata=données supplémentaires (nil si aucune) cb=callback de retour
+//##> crÃ©ation d'une requÃªte http
+// paramÃ¨tres : verb=verbe de la requÃªte url=url de la requÃªte postdata=donnÃ©es supplÃ©mentaires (nil si aucune) cb=callback de retour
 fun httprequest verb url postdata cb type=
 	Secho "HTTPREQUEST url =";Secholn url;
-	let cuturl url ->[host port path] in	// décodage de l'url de la requête
+	let cuturl url ->[host port path] in	// dÃ©codage de l'url de la requÃªte
 	let if confGetProxy then strcatlist "http://"::host::":"::(itoa port)::path::nil else path -> path in
 	let Secholn strcatlist verb::" "::path::" HTTP/1.0\13\nUser-Agent: MTL\13\nPragma: no-cache\13\nHost: "::host::"\13\n"::
 			if postdata==nil then "\13\n"::nil
 			else "Content-length: "::(itoa strlen postdata)::"\13\n\13\n"::postdata::nil
-		-> request in	// création de la chaîne requête
+		-> request in	// crÃ©ation de la chaÃ®ne requÃªte
 	let if confGetProxy then webip confGetProxyip else host -> host in
 	let if confGetProxy then confGetProxyport else port -> port in
-	let [outputH:request indexH:0 cbH:cb typeH:type stateH:HTTP_SOLVE startH:time] -> httpreq in	// création de la structure requête
+	let [outputH:request indexH:0 cbH:cb typeH:type stateH:HTTP_SOLVE startH:time] -> httpreq in	// crÃ©ation de la structure requÃªte
 	(
 		Secho "HTTPREQUEST host =";Secholn host;
 		if isip host 0 then httpsendreq host [port httpreq]
@@ -2067,12 +2075,12 @@ fun httprequest verb url postdata cb type=
 			dnsreq host fixarg2 #httpsendreq [port httpreq];
 			nil
 		);
-		httpreq	// on retourne la structure requête pour pouvoir éventuellement l'interrompre en cours de route
+		httpreq	// on retourne la structure requÃªte pour pouvoir Ã©ventuellement l'interrompre en cours de route
 	);;
 
-//##> interruption d'une requête en cours
+//##> interruption d'une requÃªte en cours
 fun httpabort httpreq=
-	closetcp httpreq.cnxH;;	// on ferme la socket de la requête
+	closetcp httpreq.cnxH;;	// on ferme la socket de la requÃªte
 
 fun httpenable httpreq v=
 	enabletcp httpreq.cnxH v;;
@@ -2082,17 +2090,17 @@ fun httpstate httpreq = httpreq.stateH;;
 fun httpstart httpreq = httpreq.startH;;
 
 
-var http_sep="\13\n\13\n";;	// séparateur entre l'en-tête et le corps de la réponse à une requête
+const http_sep="\13\n\13\n";;	// sÃ©parateur entre l'en-tÃªte et le corps de la rÃ©ponse Ã  une requÃªte
 
-	
 
-//##> retourne le header d'une réponse à une requête
+
+//##> retourne le header d'une rÃ©ponse Ã  une requÃªte
 fun httpgetheader res =
 	let strstr res http_sep 0 -> i in
 	if i==nil then res
 	else strsub res 0 i+strlen http_sep;;
 
-//##> retourne le contenu d'une réponse à une requête (sans header)
+//##> retourne le contenu d'une rÃ©ponse Ã  une requÃªte (sans header)
 fun httpgetcontent res =
 	let strstr res http_sep 0 -> i in
 	if i==nil then nil
@@ -2101,15 +2109,15 @@ fun httpgetcontent res =
 //-------------------
 ifdef AUDIOLIB {
 
-var WAV_IDLE=0;;
-var WAV_RUN=1;;
-var WAV_EOF=2;;
+const WAV_IDLE=0;;
+const WAV_RUN=1;;
+const WAV_EOF=2;;
 
-var WAV_BUFFER_STARTSIZE=80000;;
-var WAV_BUFFER_MAXSIZE=400000;;
+const WAV_BUFFER_STARTSIZE=80000;;
+const WAV_BUFFER_MAXSIZE=400000;;
 
-var WAV_END_TIMEOUT=500;;
-var WAV_NET_TIMEOUT=10000;;
+const WAV_END_TIMEOUT=500;;
+const WAV_NET_TIMEOUT=10000;;
 
 
 var wav_state=0;;
@@ -2166,7 +2174,7 @@ fun _wavcb i =
 		if !wav_buffering then let hd wav_fifo -> sample in
 		let strlen sample -> len in
 		(
-			if wav_index<len then 
+			if wav_index<len then
 				set wav_index=wav_index+playFeed sample /*Iecho*/ wav_index nil;
 			if wav_index>=len then
 			(
@@ -2196,7 +2204,7 @@ fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;
 fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
 
 fun mkwav freq channel bps=
-	let strcatlist 
+	let strcatlist
 		"WAVEfmt "::(itobin4 0x12)::
 			(itobin2 1)::(itobin2 channel)::
 			(itobin4 freq)::(itobin4 freq*channel*bps/8)::
@@ -2271,15 +2279,15 @@ fun wavtime =
 
 
 
-var RT2501_S_BROKEN=0;;
-var RT2501_S_IDLE=1;;
-var RT2501_S_SCAN=2;;
-var RT2501_S_CONNECTING=3;;
-var RT2501_S_CONNECTED=4;;
-var RT2501_S_MASTER=5;;
+const RT2501_S_BROKEN=0;;
+const RT2501_S_IDLE=1;;
+const RT2501_S_SCAN=2;;
+const RT2501_S_CONNECTING=3;;
+const RT2501_S_CONNECTED=4;;
+const RT2501_S_MASTER=5;;
 
-var IEEE80211_M_MANAGED=0;;
-var IEEE80211_M_MASTER=1;;
+const IEEE80211_M_MANAGED=0;;
+const IEEE80211_M_MASTER=1;;
 
 var wifitry;;
 
@@ -2410,23 +2418,18 @@ fun wifiwepkey val=
 	let if len<10 then 0 else if len<26 then 5 else 13 -> len in
 	listtostr _wifiwepkey val 0 len<<1;;
 
-fun wificrypttype crypt key=
-	if crypt==1 then if 5==strlen key then IEEE80211_CRYPT_WEP64 else IEEE80211_CRYPT_WEP128
-	else if crypt==2 then IEEE80211_CRYPT_WPA
-	else IEEE80211_CRYPT_NONE;;
-
 fun wifiAuth=
 	setleds 0xff8000;
 	if wifiscans==nil then 0
 	else
-		let Iecholn confGetWificrypt -> crypt in
-		let if crypt==1 then confGetWifiauth else 0-> auth in
-		let if crypt==1 then wifiwepkey confGetWifikey0
-			else if crypt==2 then confGetWifipmk -> key in
+		let confGetWificrypt -> crypt in
+		let if crypt==IEEE80211_CRYPT_WEP then confGetWifiauth else 0-> auth in
+		let if crypt==IEEE80211_CRYPT_WEP then wifiwepkey confGetWifikey0
+			else if crypt==IEEE80211_CRYPT_WPA || crypt==IEEE80211_CRYPT_WPA2 then confGetWifipmk -> key in
 		(
 			dump key;
 			set wifitry=time;
-			netAuth hd wifiscans Iecholn auth (Iecholn wificrypttype crypt key) key;	//## ajouter les paramètres de crypto
+			netAuth hd wifiscans Iecholn auth crypt key;
 			1
 		);;
 
@@ -2533,21 +2536,21 @@ fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
 
 fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
 
-ifdef BOOT 
+ifdef BOOT
 {
-var BOOT_HTTPTIMEOUT=10;;
-var BOOT_WIFITIMEOUT=20;;
+const BOOT_HTTPTIMEOUT=10;;
+const BOOT_WIFITIMEOUT=20;;
 var httpboot;;
 
-var GREEN=0xff00;;
-var AMBER=0xff8000;;
-var BLACK=0;;
+const GREEN=0xff00;;
+const AMBER=0xff8000;;
+const BLACK=0;;
 
 fun boot_leds=
 	let
 		if netState!=RT2501_S_CONNECTED then 0
 		else if netip==netip_empty then 1
-		else let httpstate httpboot -> state in 
+		else let httpstate httpboot -> state in
 		if state==HTTP_SOLVE then 2
 		else if state==HTTP_REACH then 3
 		else if state==HTTP_CONNECTED then 4
@@ -2588,7 +2591,7 @@ fun boot_url url =
 	Secholn strcatlist url::"/bc.jsp?v="::(webip FIRMWARE)::"&m="::(webmac netMac)::"&l="::(webmac confGetLogin)::"&p="::(webmac confGetPwd)::"&h="::(itoa HARDWARE)::nil;;
 
 fun boot_loop=
-	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre réseau
+	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre rÃ©seau
 	(
 		wifiInit 0;
 		resetudp;
@@ -2732,9 +2735,9 @@ var sample221;;
 var sample881;;
 
 var tab_osc={
-	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8 
-	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35 
-	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76 
+	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
+	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
+	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76
 	79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
 };;
 
@@ -2774,7 +2777,7 @@ fun _wavtestcb i=
 	if fifoind>=strlen hd fifotest then set fifotest=tl fifotest;
 	0;;
 
-var TESTDELAY=7000;;
+const TESTDELAY=7000;;
 
 fun loop=
 	if !master then
@@ -2810,7 +2813,7 @@ fun loop=
 	(
 		wifiRun
 	)
-	else 
+	else
 	(
 		if tests+1<tablen coltests then
 		let button2->b in if b!=lastclic then
@@ -2889,7 +2892,7 @@ fun loop=
 				if count1!=nil && i-count1>8 then led 3 0;
 				set lasttime1=time_ms
 			);
-			0			
+			0
 		)
 		else if tests==4 then
 		(
@@ -2916,7 +2919,7 @@ fun loop=
 		)
 		else if tests==6 then
 		(
-			let button2-> b in 
+			let button2-> b in
 			if b!=recbutton then
 			(
 				set recbutton=b;
