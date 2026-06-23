@@ -51,7 +51,7 @@ var IEEE80211_CRYPT_WPA_UNSUPPORTED=4;;
 var IEEE80211_AUTH_OPEN=0;;
 var IEEE80211_AUTH_SHARED=1;;
 
-var FIRMWARE="\0\0\0\3";;
+var FIRMWARE="\0\0\0\5";;
 
 
 // --------------- UTIL debut
@@ -446,6 +446,7 @@ fun resetudp= set ludp=nil;;
 fun cbnetudp src mac=
 	Secho "<udp on ";
 	let Iecholn strgetword src 8+20+2 -> locp in
+	let src -> x in
 	let listswitch ludp locp -> cb in
 	call cb [strsub src 8+20+8 nil mac strsub src 20 4];;
 
@@ -989,21 +990,23 @@ fun skipname s i=
 	else (strfind s i "\0" 0 nil)+1;;
 
 fun parseans s i n=
+	Secholn "parseans";
 	if n<=0 then nil
 	else let skipname s i -> j in
-	let strgetword s j -> typ in
+	let Iecholn strgetword s j -> typ in
 	if typ==1 then
 		strcatlist (itoa strget s j+10)::"."::(itoa strget s j+11)::"."::
 		(itoa strget s j+12)::"."::(itoa strget s j+13)::nil
 	else parseans s (j+10+strgetword s j+8) n-1;;
 	
 fun parsemsg s=
-	let strgetword s 0 -> id in
-	let strgetword s 2 -> code in
-	let strgetword s 4 -> nbqu in
-	let strgetword s 6 -> nbans in
+	Secholn "parsemsg";
+	let Iecholn strgetword s 0 -> id in
+	let Iecholn strgetword s 2 -> code in
+	let Iecholn strgetword s 4 -> nbqu in
+	let Iecholn strgetword s 6 -> nbans in
 	if nbans==0 then nil
-	else let parsequs s 12 nbqu -> i in
+	else let Iecholn parsequs s 12 nbqu -> i in
 	parseans s i nbans;;
 
 fun filterdns src=
@@ -1038,14 +1041,22 @@ fun dnsreq domain cb=
 fun selectbyid d v= d.idD==v;;
 
 fun cbnetdns msg mac ipfrom= 
-	let strgetword msg 0 -> id in
-	let parsemsg msg -> ip in
+	Secholn "cbnetdns";
+	dump msg;
+	let Iecholn strgetword msg 0 -> id in
+	let Secholn parsemsg msg -> ip in
 	let hd select ldnsreq id #selectbyid -> x in
 	if x!=nil then
 	(
+		Secholn "dns found";
 		set ldnsreq=listrem ldnsreq x;
 		if ip!=nil then set ldns=[x.domainD ip]::ldns;	// ### attention à la taille de la liste
 		call x.cbD [ip]
+	)
+	else
+	(
+		Secholn "request not found";
+		nil
 	);
 	0;;
 
@@ -1539,7 +1550,7 @@ body {
   <p>Your rabbit is going to connect to the Internet: all four lights turning from ORANGE to GREEN.</p>
   <p>&nbsp;</p>
   <p>You are now disconnected from your Rabbit. You can reconnect to your usual wi-fi network. </p>
-  <p>Once you are connected to the Internet, close this window and  continue your registration process.</p>
+  <p>Once you are connected to the Internet, close this window and  continue your registration process if this is the first time you setup your Rabbit.</p>
 </div>
 </div>
 </body></html>";;
@@ -1932,6 +1943,7 @@ type Httpreq=[cnxH inputH outputH indexH cbH typeH stateH startH];;
 
 // callback de lecture sur la socket d'une requête
 fun tcpread cnx input httpreq=
+	set httpreq.startH=time;
 	if input==nil ||0==strlen input then	// erreur ou fin
 	(	closetcp cnx;	// on ferme la socket
 		if httpreq.typeH==HTTP_NORMAL then call httpreq.cbH [httpreq strcatlist rev httpreq.inputH nil]	// on retourne ce qui a été reçu
@@ -2082,7 +2094,7 @@ var WAV_EOF=2;;
 var WAV_BUFFER_STARTSIZE=80000;;
 var WAV_BUFFER_MAXSIZE=400000;;
 
-var WAV_END_TIMEOUT=2000;;
+var WAV_END_TIMEOUT=500;;
 var WAV_NET_TIMEOUT=10000;;
 
 
@@ -2093,6 +2105,15 @@ var wav_buffering;;
 var wav_index;;
 var wav_lasttime;;
 var wav_lastnet;;
+var wav_zeros;;
+
+fun wavgetzeros=
+	if wav_zeros==nil then
+	(
+		set wav_zeros=strnew 2048;
+		for i=0;i<2048 do strset wav_zeros i 0
+	);
+	wav_zeros;;
 
 fun wavstop =
 	if wav_state!=WAV_IDLE then
@@ -2150,7 +2171,7 @@ fun _wavstartnow =
 
 fun wavstartlocal l=
 	wavstop;
-	set wav_fifo=l;
+	set wav_fifo=conc l (wavgetzeros)::nil;
 	set wav_state=if 1 then WAV_EOF else WAV_RUN;
 	set wav_lasttime=time_ms;
 	set wav_http=nil;
@@ -2169,7 +2190,7 @@ fun mkwav freq channel bps=
 		"data"::(itobin4 0)::nil -> c in
 	strcatlist "RIFF"::(itobin4 (strlen c))::c::nil;;
 
-
+/*
 fun _wavcbhttp httpreq req=
 	set wav_lastnet=time_ms;
 	if req==nil then
@@ -2225,7 +2246,7 @@ fun wavtime =
 		)
 	);
 	0;;
-
+*/
 }
 
 
@@ -2466,6 +2487,7 @@ fun wifiRun=
 				(
 					Secholn "-------------dhcp";
 					if confGetDhcp then startdhcp;
+					startdnsclient;
 					dhcpW time
 				)
 			)
@@ -2552,7 +2574,7 @@ fun boot_url url =
 	Secholn strcatlist url::"/bc.jsp?v="::(webip FIRMWARE)::"&m="::(webmac netMac)::"&l="::(webmac confGetLogin)::"&p="::(webmac confGetPwd)::"&h="::(itoa HARDWARE)::nil;;
 
 fun boot_loop=
-	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT then	// essayer un autre réseau
+	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre réseau
 	(
 		wifiInit 0;
 		resetudp;
@@ -2695,13 +2717,33 @@ var sample441;;
 var sample221;;
 var sample881;;
 
+var tab_osc={
+	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8 
+	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35 
+	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76 
+	79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
+};;
+
+
+fun osc x=
+	let (x>>6)&3 -> q in
+	let x&255 -> x in
+	if q==0 then tab_osc.x
+	else if q==1 then 255-tab_osc.(127-x)
+	else if q==2 then 255-tab_osc.(x-128)
+	else tab_osc.(255-x);;
+
 fun mksample len half=
 	let strnew len*2 -> s in
 	(
-		for i=0;i<len*2;i+half*4 do
+		let half*2-> per in
+		for i=0;i<len*2;i+per*2 do
 		(
-			for j=i;j<i+half*2 do strset s j 0x7f;
-			for j=i+half*2;j<i+half*4 do strset s j 0x80
+			for j=0;j<half*2 do
+			(
+				strset s i+j+j+1 (osc j*256/per)-0x80;
+				strset s i+j+j 0
+			)
 		);
 		s
 	);;
@@ -2709,7 +2751,7 @@ fun mksample len half=
 fun _wavtestcb i=
 	if fifotest==nil then
 	(
-		let ((time_ms-tstart)>>12)&3 -> t in
+		let ((time_ms-tstart)>>14)&3 -> t in
 		 set fifotest=
 			(if t==1 then sample221 else if t==3 then sample881 else sample441)::nil;// feed fifo
 		 set fifoind=0
@@ -2892,7 +2934,6 @@ fun main=
 	loopcb	#loop;
 
 	netstart;
-	startdnsclient;
 //	startconfigserver 8080;
 	sndVol button3;
 	wavstartlocal midi_start::nil;
