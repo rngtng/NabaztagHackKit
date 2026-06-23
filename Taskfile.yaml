@@ -1,0 +1,21 @@
+# NabaztagSDK — unified entrypoint.
+#
+# Every build runs inside Docker, so the only host requirements are Docker and
+# Task (https://taskfile.dev). Each tool/layer folder is self-contained (it owns
+# its Dockerfile + Taskfile); this root file just includes them under a per-layer
+# namespace. Run `task` with no args to list everything.
+version: '3'
+
+includes:
+  mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
+    taskfile: ./tools/mtl_linux/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk
+      DIR: ./tools/mtl_linux/
+
+tasks:
+  default:
+    desc: List available targets
+    cmds:
+      - task --list
+    silent: true
