@@ -1,0 +1,52 @@
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "mkfirmware"}}'
+  DIR: '{{.DIR | default "."}}'
+
+tasks:
+  image:
+    internal: true   # built on demand as a dep; rebuilt when the toolchain/config changes
+    cmds:
+      - docker build -t {{.IMAGE}} {{.DIR}}
+    sources:
+      - Dockerfile
+      - mkfirmware.php
+
+  sign:
+    desc: 'Sign a firmware .bin for web upload.  Usage: task sign SOURCE=<fw.bin> [OUT=<fw.sim>]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'   # resolve SOURCE/OUT relative to the dir the user ran `task` from
+    requires:
+      vars: [SOURCE]
+    vars:
+      OUT: '{{.OUT | default "firmware.sim"}}'
+    cmds:
+      - mkdir -p "$(dirname {{.OUT}})"
+      # SOURCE's dir mounted read-only at /in; OUT's dir at /out; script lives at /src.
+      # mkfirmware.php args are positional: source output
+      - 'docker run --rm -v "$(dirname $(realpath {{.SOURCE}})):/in:ro" -v "$(realpath $(dirname {{.OUT}})):/out" {{.IMAGE}} php /src/mkfirmware.php /in/{{base .SOURCE}} /out/{{base .OUT}}'
+
+  verify:
+    desc: 'Check a signed .sim is well-formed.  Usage: task verify FILE=<fw.sim>'
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [FILE]
+    cmds:
+      # .sim layout: "-violet-" + itoh8(2*size) + hex(body) + "-violet-".
+      # Validate both sentinels and that the declared length matches the body.
+      - |
+        f='{{.FILE}}'
+        [ "$(head -c8 "$f")" = '-violet-' ] || { echo "[verify] bad header in $f"; exit 1; }
+        [ "$(tail -c8 "$f")" = '-violet-' ] || { echo "[verify] bad footer in $f"; exit 1; }
+        total=$(wc -c < "$f")
+        body=$((total - 24))                       # strip two 8-byte sentinels + 8-char length header
+        declared=$(tail -c +9 "$f" | head -c 8)    # itoh8(2*size) length header
+        expect=$(printf '%08x' "$body")            # what the header should be
+        [ "$declared" = "$expect" ] || { echo "[verify] length mismatch: header=$declared expected=$expect"; exit 1; }
+        echo "[verify] OK: $f  ($((body / 2)) firmware bytes)"
+
+  clean:
+    desc: 'Remove the mkfirmware Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true
