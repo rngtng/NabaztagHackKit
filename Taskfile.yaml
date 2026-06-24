@@ -7,6 +7,12 @@
 version: '3'
 
 includes:
+  firmware: # ARM7TDMI firmware — compile C/asm sources (src/firmware)
+    taskfile: ./src/firmware/Taskfile.yaml
+    vars:
+      IMAGE: nabgcc-build
+      DIR: ./src/firmware/
+
   mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
     taskfile: ./tools/mtl_linux/Taskfile.yaml
     vars:
