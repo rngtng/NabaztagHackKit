@@ -62,7 +62,7 @@ Run the boot app in the simulator:
 task simulate:boot
 ```
 
-Finally, compile the firmware sources to bytecode,including the boot code:
+Finally, compile the firmware sources to bytecode, including the boot code:
 
 ```
 task build:firmware
