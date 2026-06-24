@@ -19,6 +19,12 @@ includes:
       IMAGE: nabaztag-sdk
       DIR: ./tools/mtl_linux/
 
+  mkfirmware: # mkfirmware tool — sign firmware for web upload (tools/mkfirmware)
+    taskfile: ./tools/mkfirmware/Taskfile.yaml
+    vars:
+      IMAGE: mkfirmware
+      DIR: ./tools/mkfirmware/
+
 tasks:
   default:
     desc: List available targets

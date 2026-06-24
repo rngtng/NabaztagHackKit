@@ -30,6 +30,10 @@ Run an app in the simulator:
 task mtl:simulate SOURCE=bytecode/main.mtl
 ```
 
+```
+task mkfirmware:build SOURCE=src/firmware/bin/Nab.bin
+```
+
 ### Layout
 
   * `bytecode/` — MTL sources: `main.mtl`, the `lib/` API (see **API** below), and the original violet sources under `_original/`
