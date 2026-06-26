@@ -1,0 +1,5 @@
+#ifdef PING
+
+var ping_delay = 10;;
+
+#endif

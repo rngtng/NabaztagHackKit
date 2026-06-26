@@ -1,0 +1,114 @@
+#include protos/json_protos.mtl
+
+//--------------------------------------------------------------------------------------------------
+// Timezones
+//--------------------------------------------------------------------------------------------------
+
+const TIMEZONES = {
+    ["UTC"  "UTC"                       0]
+    ["LIS"  "Lisbon"                    0]
+    ["LON"  "London"                    0]
+    ["MAD"  "Madrid"                   60]   // +1
+    ["PAR"  "Paris"                    60]
+    ["ROM"  "Rome"                     60]
+    ["BER"  "Berlin"                   60]
+    ["STO"  "Stockholm"                60]
+    ["ATH"  "Athens"                  120]   // +2
+    ["CAI"  "Cairo"                   120]
+    ["JRS"  "Jerusalem"               120]
+    ["MOW"  "Moscow"                  180]   // +3
+    ["JED"  "Jeddah"                  180]
+    ["THR"  "Tehran"                  210]   // +3.5
+    ["DXB"  "Dubai"                   240]   // +4
+    ["KBL"  "Kabul"                   270]   // +4.5
+    ["KHI"  "Karachi"                 300]   // +5
+    ["DEL"  "Delhi"                   330]   // +5.5
+    ["KTM"  "Kathmandu"               345]   // +5.75
+    ["DAC"  "Dhaka"                   360]   // +6
+    ["RNG"  "Rangoon"                 390]   // +6.5
+    ["BKK"  "Bangkok"                 420]   // +7
+    ["SIN"  "Singapore"               480]   // +8
+    ["HKG"  "Hong Kong"               480]
+    ["BJS"  "Beijing"                 480]
+    ["TPE"  "Taipei"                  480]
+    ["EUC"  "Eucla"                   525]   // +8.75
+    ["SEL"  "Seoul"                   540]   // +9
+    ["TYO"  "Tokyo"                   540]
+    ["ADL"  "Adelaide"                570]   // +9.5
+    ["GUM"  "Guam"                    600]   // +10
+    ["SYD"  "Sydney"                  600]
+    ["LHI"  "Lord Howe Island"        630]   // +10.5
+    ["NOU"  "Nouméa"                  660]   // +11
+    ["NSW"  "Norfolk Island"          690]   // +11.5
+    ["WLG"  "Wellington"              720]   // +12
+    ["CHA"  "Chatham Islands"         765]   // +12.75
+    ["TBU"  "Nuku'alofa"              780]   // +13
+    ["CXI"  "Kiritimati"              840]   // +14
+    ["BAR"  "Baker Island"         (-720)]   // -12
+    ["PPG"  "Pago Pago"            (-660)]   // -11
+    ["HNL"  "Honolulu"             (-600)]   // -10
+    ["MAR"  "Marquesas Islands"    (-570)]   // -9.5
+    ["ANC"  "Anchorage"            (-540)]   // -9
+    ["YVR"  "Vancouver"            (-480)]   // -8
+    ["LAX"  "Los Angeles"          (-480)]
+    ["YEA"  "Edmonton"             (-420)]   // -7
+    ["DEN"  "Denver"               (-420)]
+    ["MEX"  "Mexico City"          (-360)]   // -6
+    ["CHI"  "Chicago"              (-360)]
+    ["NYC"  "New York"             (-300)]   // -5
+    ["CCS"  "Caracas"              (-270)]   // -4.5
+    ["SCL"  "Santiago"             (-240)]   // -4
+    ["YHZ"  "Halifax"              (-240)]
+    ["SIF"  "St. John's"           (-210)]   // -3.5
+    ["RIO"  "Rio de Janeiro"       (-180)]   // -3
+    ["FEN"  "Fernando de Noronha"  (-120)]   // -2
+    ["RAI"  "Praia"                 (-60)]   // -1
+};;
+
+// Cache the last lookup
+var _timezone_last_city_code=nil;;
+var _timezone_last_offset=0;;
+
+/**
+ * Get the time offset (in minutes) from a city code
+ * If the city code is not found, return 0 (UTC)
+ */
+fun get_offset_from_city_code city_code=
+    // Check cache
+    if !strcmp city_code _timezone_last_city_code then
+        _timezone_last_offset
+    else
+        // Search in the table
+        let tablen TIMEZONES -> length in
+        let nil -> offset in (
+            for i=0; (i<length && offset==nil); set i=i+1 do
+                let TIMEZONES.i -> [t_city_code _ t_offset] in (
+                    if !strcmp city_code t_city_code then set offset=t_offset
+            );
+            set _timezone_last_city_code = city_code;
+            set _timezone_last_offset = offset;
+            if offset!=nil then offset else 0
+        );;
+
+/**
+ * Format a timezone entry in JSON format
+ */
+fun timezone_format_timezone timezone=
+    let timezone -> [code name offset] in
+        strcatlist
+            "{ "::
+                (json_str "code" code) :: ", " ::
+                (json_str "name" name) :: ", " ::
+                (json_int "offset" offset) ::
+            " }" :: nil;;
+
+/**
+ * Return the timezones list in JSON format
+ */
+fun timezones_json=
+    let "[\n" -> result in
+    let tablen TIMEZONES -> length in
+        for i=0; i<length; set i=i+1 do
+            let TIMEZONES.i -> timezone in
+            let if i < (length-1) then ",\n" else "\n]" -> sep in
+            set result = strcatlist result::(timezone_format_timezone timezone)::sep::nil;;
