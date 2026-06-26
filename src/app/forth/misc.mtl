@@ -1,0 +1,224 @@
+/**
+ * Misc words for Forth interpreter
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+/**
+ * : Begin a new word definition
+ */
+fun forth_colon f=
+    if f.state == FORTH_STATE_COMPILATION then (
+        forth_abort_msg f ": Nested definitions not allowed"
+    ) else
+        let hd f.istack -> inter in (
+            // Enter compilation state
+            set f.state = FORTH_STATE_COMPILATION;
+            // Get the new word name
+            forth_interpreter_get_token f;
+            if !strcmp inter.token ";" then
+                forth_abort_msg f "Error: ';' without word name"
+            else
+                let forth_get_word inter.token -> new_word in (
+                    if new_word == nil then
+                        let [str:to_lower inter.token] -> key in (
+                        // Secho "Creating new word "; Secholn inter.token;
+                        set new_word = [code:nil];
+                        word_dict_set_w forth_dictionary key new_word
+                    );
+                    forth_rpush f new_word;
+                    set f.cstack = nil;
+                    nil
+                )
+        );;
+
+/**
+ * ; End a word definition
+ */
+fun forth_semi f=
+    if f.state != FORTH_STATE_COMPILATION then (
+        forth_abort_msg f "Error: ';' without matching ':'"
+    ) else
+        let forth_rpop f -> new_word in (
+            // Finish the new word definition
+            // Set the code field to the compiled code
+            set new_word.code = forth_word_list_to_array (rev f.cstack nil);
+            set f.cstack = nil;
+            set f.state = FORTH_STATE_NORMAL;
+            nil
+        );;
+
+fun forth_p f=
+    nil;;
+
+/**
+ * CONSTANT (immediate) ( x "<spaces>name" -- )
+ * Define a constant with the given name and value
+ */
+fun forth_constant f=
+    // Get the new word name
+    forth_interpreter_get_token f;
+    let forth_pop f -> x in
+    let hd f.istack -> inter in
+    let forth_get_word inter.token -> new_word in
+        if new_word == nil then
+            let [str:to_lower inter.token] -> key in (
+                set new_word = [code:{x}];
+                word_dict_set_w forth_dictionary key new_word;
+                nil
+            )
+        else
+        (
+            set new_word.code = {x};
+            nil
+        );;
+
+/**
+ * DEFINED? (immediate) ( "<spaces>name" -- flag )
+ * Check if a word is defined in the dictionary
+ */
+fun forth_defined_q f=
+    // Get the word name
+    forth_interpreter_get_token f;
+    let hd f.istack -> inter in
+    let forth_get_word inter.token -> word in
+    if word == nil then
+        forth_false f // not defined
+    else
+        forth_true f;; // defined
+
+/**
+ * Helper function to print words in the dictionary
+ */
+fun _forth_print_words f dict=
+    if dict==nil then nil
+    else let hd dict -> [name _]in (
+        forth_write f strcat " " name.str;
+        _forth_print_words f (tl dict)
+    );;
+
+/**
+ * WORDS ( -- )
+ * List the words in the dictionary
+ */
+fun forth_words f=
+    _forth_print_words f forth_dictionary.dict;
+    forth_write f " \n";
+    nil;;
+
+/**
+ * TIME&DATE ( -- sec min hour day month year)
+ * Push the current time and date onto the stack
+ */
+fun forth_time_and_date f=
+    let time_local -> [local_time_year local_time_month local_time_day local_time_hour local_time_minute local_time_second days_since_epoc] in (
+        forth_push f [int:local_time_second];
+        forth_push f [int:local_time_minute];
+        forth_push f [int:local_time_hour];
+        forth_push f [int:local_time_day];
+        forth_push f [int:local_time_month];
+        forth_push f [int:local_time_year];
+        nil
+    );;
+
+/**
+ * LOCAL>STRING ( -- str )
+ * Push the current local time and date as a string onto the stack
+ */
+fun forth_local_to_string f=
+    forth_push f [str:time_date_local];;
+
+/**
+ * UTC>STRING ( -- str )
+ * Push the current UTC time and date as a string onto the stack
+ */
+fun forth_utc_to_string f=
+    forth_push f [str:time_date_utc];;
+
+/**
+ * Callback function to resume interpreter after EVALUATE
+ * Restore the previous interpreter state
+ */
+fun _forth_evaluate_cb f=
+    set f.istack = tl f.istack;
+    let forth_list_to_str f.stack " " -> val in
+    forth_interpreter_resume f;;
+
+/**
+ * EVALUATE ( str -- )
+ * Evaluate a string as Forth code
+ */
+fun forth_evaluate f=
+    let forth_pop f -> word in
+    if word.str == nil then (
+        // Secholn "EVALUATE expects a string";
+        forth_push f word;
+        forth_interpreter_resume f
+        // forth_abort_msg f "EVALUATE expects a string"
+    ) else (
+        forth_interpreter_ex word.str f f.forth_sock f.forth_task #_forth_evaluate_cb
+    );;
+
+/**
+ * TIME-MS ( -- ms )
+ * Push the current time in milliseconds onto the stack
+ */
+fun forth_time_ms f=
+    let time_ms -> ms in
+    forth_push f [int:ms];
+    nil;;
+
+/**
+ * UPTIME ( -- s )
+ * Push the system uptime in seconds onto the stack
+ */
+fun forth_uptime f=
+    let time -> s in
+    forth_push f [int:s];
+    nil;;
+
+/**
+ * Callback function to resume interpreter after MS
+ * Restore the previous interpreter state
+ */
+fun _forth_ms_cb task f=
+    forth_interpreter_resume f;
+    TaskStop;;
+
+/**
+ * MS ( delay -- )
+ * Sleep for the specified number of milliseconds
+ */
+fun forth_ms f=
+    let forth_pop f -> delay in
+        // Add the task to the scheduler
+        // The interpreter will be resumed after the delay
+        task_start_ex "forth" delay.int (fixarg2 #_forth_ms_cb f);
+    nil;;
+
+/**
+ * UPDATE-TIME ( -- )
+ * Update the system time from the time server
+ */
+fun forth_update_time f=
+    ntp_get_time;
+    nil;;
+
+/**
+ * TIME? ( -- flag )
+ * Check if the system time has been received from the time server
+ */
+fun forth_time_q f=
+    if time_is_valid then
+        forth_true f
+    else
+        forth_false f;;
+
+/**
+ * MD5 ( str -- hash )
+ * Compute the MD5 hash of a string
+ */
+fun forth_md5 f=
+    let forth_pop f -> str in
+    let md5 str.str -> hash in
+    forth_push f [str:hash];;

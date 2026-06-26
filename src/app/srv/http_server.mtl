@@ -1,0 +1,639 @@
+#include protos/sleep_protos.mtl
+#include protos/audiolib_protos.mtl
+#include protos/streaming_protos.mtl
+#include protos/chor_protos.mtl
+#include protos/task_protos.mtl
+#include protos/midi_protos.mtl
+#include protos/forth_protos.mtl
+#include protos/json_protos.mtl
+#include protos/http_protos.mtl
+#include protos/info_protos.mtl
+#include protos/ntp_protos.mtl
+
+// debug
+#ifdef HTTP_SERVER_DEBUG
+fun _http_server_debug str= Secholn strcatlist "[http-server] " :: str :: nil; nil;;
+#endif
+
+//--------------------------------------------------------------------------------------------------
+// HTTP Server
+//--------------------------------------------------------------------------------------------------
+
+const HTTP_200 = "200 OK";;
+const HTTP_204 = "204 No Content";;
+const HTTP_401 = "401 Unauthorized";;
+const HTTP_404 = "404 Not Found";;
+
+proto http_server_process_request 2;;
+
+/**
+ * Generate the HTTP response header.
+ */
+fun http_header http_status content_type content_length=
+    strcatlist
+        "HTTP/1.1 "::http_status::
+        "\13\10Server: MTL HTTP server"::
+        "\13\10Access-Control-Allow-Origin: *"::
+        (if content_type!=nil then (strcat "\13\10Content-Type: " content_type) else "")::
+        (if content_length!=nil then (strcat "\13\10Content-Length: " (itoa content_length)) else "")::
+        "\13\10Date: " :: time_date_utc ::
+        "\13\10Cache-Control: max-age=0, no-cache, no-store" ::
+        (if config_md5_password!=nil then "\13\10WWW-Authenticate: Basic realm=\"Nabaztag\", charset=\"UTF-8\"" else "") ::
+        "\13\10Pragma: no-cache" ::
+        "\13\10Connection: close"::
+        "\13\10\13\10"::nil
+;;
+
+/**
+ * Send a HTTP response header and close the connection.
+ * sock: socket object for this connection
+ * jsonstatus: response string to send
+ */
+fun http_send_header_and_close http_status content_type sock=
+    sock_send_and_close sock (http_header http_status content_type nil);;
+
+/**
+ * Send a full HTTP response (header + content) and close the connection.
+ * sock: socket object for this connection
+ * content_type: MIME type of the content
+ * content: response string to send
+ */
+fun http_send_content_and_close sock content_type content=
+    sock_send sock (http_header HTTP_200 content_type (strlen content)); // header
+    sock_send_and_close sock content;;
+
+fun http_server_get_header res =
+    let strstr res HTTP_HEADER_SEP 0 -> i in
+    if i!=nil then strsub res 0 i;;
+
+/**
+ * Parse an HTTP header to calculate the total size of the full HTTP message.
+ * It reads the 'Content-Length' value and adds it to the length of the header itself.
+ * s: HTTP request
+ */
+fun http_server_find_content_end s=
+    let to_lower http_server_get_header s -> header in
+    if header!=nil then
+    let strstr header HTTP_CONTENT_LENGTH 0 -> i in
+    let if i!=nil then strstr header HTTP_CONTENT_END i -> j in
+    (strlen header)+(strlen HTTP_HEADER_SEP)+if i!=nil then
+        let i+strlen HTTP_CONTENT_LENGTH -> i in atoi strsub header i if j!=nil then j-i;;
+
+/**
+ * Main data handling function for an HTTP connection.
+ * It buffers incoming data until a complete HTTP request is received,
+ * then calls the user callback.
+ * input: new chunk of data received
+ * sock: socket object for this connection
+ */
+fun http_sock_read input sock=
+    // If the input is nil or empty, the client has closed the connection
+    if input==nil ||0==strlen input then
+    (
+        tcp_close sock.sockCnx;
+        nil
+    )
+    else
+    (
+        if sock.sockSize==nil then
+        (
+            set sock.sockInput = (strcat hd sock.sockInput input)::nil;
+            set sock.sockSize = http_server_find_content_end hd sock.sockInput;
+            nil
+        )
+        else
+        (
+            set sock.sockInput = input::sock.sockInput
+        );
+        // Check if the total received data length now equals or exceeds the expected size
+        if sock.sockSize!=nil && (slistlen sock.sockInput)>=sock.sockSize then
+            let strcatlist rev sock.sockInput nil -> str in
+            (
+                // Clear the input buffer
+                set sock.sockInput=nil;
+                // Call the callback function with the full request
+                call sock.sockCallback [str sock]
+            )
+    );
+    0;;
+
+/**
+ * Event handler for a connection being used for HTTP.
+ * This function is registered as the callback for the TCP connection.
+ * cnx: TCP connection
+ * val: event type (e.g., TCPWRITE, TCPCLOSE)
+ * msg: dataa associated with the event (e.g., incoming data)
+ * sock: socket object for this connection
+ */
+fun http_sock_event cnx val msg sock=
+    if val==TCPWRITE then sock_write sock
+    else if val==TCPCLOSE then http_sock_read nil sock
+    else http_sock_read msg sock;;
+
+/**
+ * Callback function for the main HTTP listening socket.
+ * This is called by the TCP stack whenever a new client connects.
+ * cnx: TCP connection
+ */
+fun http_server_cb cnx code msg=
+    tcp_set_cb cnx fixarg4 #http_sock_event [sockCnx:cnx sockCallback:#http_server_process_request];
+    0;;
+
+//--------------------------------------------------------------------------------------------------
+
+/**
+ * Retrieve the system status as a JSON object.
+ */
+fun http_get_json_status sock args=
+    http_send_content_and_close sock "application/json"
+    strcatlist
+        "{\n"::
+            (json_str "language" config_get_lang) :: ",\n" ::
+            (json_str "latitude" config_get_latitude) :: ",\n" ::
+            (json_str "longitude" config_get_longitude) :: ",\n" ::
+            (json_int "wake_up" config_get_wake_up) :: ",\n" ::
+            (json_int "go_to_bed" config_get_go_to_bed) :: ",\n" ::
+            (json_int "taichi_freq" config_get_taichi_freq) :: ",\n" ::
+            (json_int "sleep_state" sleep_is_sleeping) :: ",\n" ::
+            (json_int "autoclock_enabled" _autoclock_enabled) :: ",\n" ::
+            (json_int "autohalftime_enabled" _autohalftime_enabled) :: ",\n" ::
+            (json_int "autosurprise_enabled" _autosurprise_enabled) :: ",\n" ::
+            (json_int "autotaichi_enabled" _autotaichi_enabled) :: ",\n" ::
+            (json_int "streaming_state" streaming_status) :: ",\n" ::
+            (json_int "processing_state" chor_processing_status) :: ",\n" ::
+            (json_obj "interactive" interactive_json) :: ",\n" ::
+            (json_obj "time" time_json) :: ",\n" ::
+            (json_obj "ears" ears_json) :: ",\n" ::
+            (json_obj "leds" leds_json) :: ",\n" ::
+            (json_obj "info" info_json) :: ",\n" ::
+            (json_int "info_weather" info_service_get INFO_WEATHER) :: ",\n" ::
+            (json_int "info_traffic" info_service_get INFO_TRAFFIC) :: ",\n" ::
+            (json_int "info_pollution" info_service_get INFO_POLLUTION) :: ",\n" ::
+            (json_obj "network" net_json) :: ",\n" ::
+            (json_obj "wifi" wifi_json) :: ",\n" ::
+            (json_str "rev" BYTECODE_REVISION_STR) :: "\n" ::
+        "}" :: nil
+;;
+
+/**
+ * Retrieve the tasks list as a JSON object.
+ */
+fun http_get_json_tasks sock args =
+    http_send_content_and_close sock "application/json" task_json;;
+
+/**
+ * Retrieve the ARP table as a JSON object.
+ */
+fun http_get_json_arp_table sock args =
+    http_send_content_and_close sock "application/json" arp_table_json;;
+
+/**
+ * Retrieve the list of available timezones as a JSON object.
+ */
+fun http_get_timezones sock args =
+    http_send_content_and_close sock "application/json" timezones_json;;
+
+/**
+ * Get time from the time server
+ */
+fun http_get_update_time sock args=
+    ntp_get_time;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Get weather information from the weather server
+ */
+fun http_get_update_weather sock args=
+    forth_interpreter WORD_UPDATE_WEATHER;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Stop everything we can be doing and resets to either idle or asleep
+ */
+fun http_get_stop sock args=
+    run_reset_to_idle;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Reboot the system
+ */
+fun http_get_reboot sock args=
+    http_send_header_and_close HTTP_204 nil sock;
+    reboot 0x0407FE58 0x13fb6754;
+    nil;;
+
+/**
+ * Surprise action
+ */
+fun http_get_surprise sock args=
+    forth_interpreter WORD_SURPRISE;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Play a sound from the MIDI library
+ */
+fun http_get_play_midi midi sock args=
+    if !sleep_is_sleeping then (
+        midi_play midi
+    );
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Play a WAV/MP3 from a given URL
+ */
+fun http_get_play sock args=
+    if !sleep_is_sleeping then (
+        audiolib_start_http http_arg_str args 'u' #streaming_wav_error
+    );
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Text to speech
+ */
+fun http_get_say sock args=
+    if !sleep_is_sleeping then (
+        let http_arg_str args 't' -> text in
+        let forth_new_state -> f in (
+            forth_say_push f text;
+            forth_interpreter_ex WORD_SAY f nil nil nil
+        )
+    );
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Perform Tai Chi exercise
+ */
+fun http_get_taichi sock args=
+    if !sleep_is_sleeping then
+        forth_interpreter WORD_TAICHI;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_mp3 sock args=
+    audiolib_start_http http_arg_str args 'v' #streaming_wav_error;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_sleep sock args=
+    sleep_start nil;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_wakeup sock args=
+    sleep_wake_up nil;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_left sock args=
+    if !sleep_is_sleeping then (
+        ears_go EARS_LEFT http_arg_int args 'p' http_arg_int args 'd'
+    );
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_right sock args=
+    if !sleep_is_sleeping then (
+        ears_go EARS_RIGHT http_arg_int args 'p' http_arg_int args 'd'
+    );
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set the number of pending messages.
+ * args: v=value
+ */
+fun http_get_nose sock args=
+    set info_messages = http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set weather status.
+ * args: v=value
+ */
+fun http_get_weather sock args=
+    info_service_update INFO_WEATHER http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set stock status.
+ * args: v=value
+ */
+fun http_get_stock sock args=
+    info_service_update INFO_STOCK http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set traffic status.
+ * args: v=value
+ */
+fun http_get_traffic sock args=
+    info_service_update INFO_TRAFFIC http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set generic service 4 status.
+ * args: v=value
+ */
+fun http_get_service4 sock args=
+    info_service_update INFO_SERVICE4 http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set generic service 5 status.
+ * args: v=value
+ */
+fun http_get_service5 sock args=
+    info_service_update INFO_SERVICE5 http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set mail status.
+ * args: v=value
+ */
+fun http_get_mail sock args=
+    info_service_update INFO_MAIL http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set pollution status.
+ * args: v=value
+ */
+fun http_get_pollution sock args=
+    info_service_update INFO_POLLUTION http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Clear the status of all services
+ */
+fun http_get_clear sock args=
+    info_clear_all;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+fun http_get_animations sock args=
+    http_send_content_and_close sock "application/json" info_animations_json;;
+
+fun _http_get_dns_cb ip sock=
+    let strcatlist "{ " :: (json_str "ip" ip) :: " }" :: nil -> res in
+    http_send_content_and_close sock "application/json" res;;
+
+/**
+ * Perform a DNS lookup for the given domain and return the result as JSON.
+ * args: d=domain name
+ */
+fun http_get_dns sock args=
+    let http_arg_str args 'd' -> domain in
+        dnsreq domain fixarg2 #_http_get_dns_cb sock;;
+
+/**
+ * Set LED colors override.
+ * sock: http socket
+ * args: n=nose color, l=left color, c=center color, r=right color, b=base color, t=base breathing
+ */
+fun http_post_leds sock args=
+    let parse_color http_arg_str args 'n' -> nose in
+        if nose != nil then set leds_override.LED_NOSE=nose;
+    let parse_color http_arg_str args 'l' -> left in
+        if left != nil then set leds_override.LED_BODY_LEFT=left;
+    let parse_color http_arg_str args 'c' -> center in
+        if center != nil then set leds_override.LED_BODY_MIDDLE=center;
+    let parse_color http_arg_str args 'r' -> right in
+        if right != nil then set leds_override.LED_BODY_RIGHT=right;
+    let parse_color http_arg_str args 'b' -> base in
+        if base != nil then set leds_override.LED_BASE=base;
+    let http_arg_int args 't' -> base_breathing in
+        if base_breathing != nil then set leds_base_breathing=base_breathing;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Set up configuration parameters from HTTP request arguments.
+ */
+fun http_get_setup sock args=
+    let http_arg_str args 'l' -> l in if l != nil then config_set_lang l;  // set language
+    let http_arg_str args 'c' -> c in if c != nil then config_set_city c;  // set city
+    let http_arg_int args 'd' -> d in if d != nil then config_set_dst d;  // set DST
+    let http_arg_str args 'j' -> j in if j != nil then config_set_latitude j;  // set latitude
+    let http_arg_str args 'k' -> k in if k != nil then config_set_longitude k;  // set longitude
+    let http_arg_int args 'w' -> w in if w != nil then config_set_wake_up w;  // set wake up time
+    let http_arg_int args 'b' -> b in if b != nil then config_set_go_to_bed b;  // set bed time
+    let http_arg_int args 't' -> t in if t != nil then config_set_taichi_freq t;  // set taichi freq
+    let http_arg_str args 'u' -> u in if u != nil then config_set_server_url u;  // set server URL
+    config_save;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Auto-control callback
+ */
+fun _http_autocontrol_cb f sock=
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * Auto-control: Enable/disable automatic features
+ * Parameters: c=clock(0/1), h=halftime(0/1), s=surprise(0/1), t=taichi(0/1)
+ * Uses forth_interpreter_ex to set Forth variables (MTL cannot write Forth variables directly)
+ */
+fun http_get_autocontrol sock args=
+    let http_arg_int args 'c' -> clock in
+    let http_arg_int args 'h' -> halftime in
+    let http_arg_int args 's' -> surprise in
+    let http_arg_int args 't' -> taichi in
+    let strcatlist
+        (if clock != nil then itoa clock else "") ::
+        (if clock != nil then " autoclock-enabled ! " else "") ::
+        (if halftime != nil then itoa halftime else "") ::
+        (if halftime != nil then " autohalftime-enabled ! " else "") ::
+        (if surprise != nil then itoa surprise else "") ::
+        (if surprise != nil then " autosurprise-enabled ! " else "") ::
+        (if taichi != nil then itoa taichi else "") ::
+        (if taichi != nil then " autotaichi-enabled ! " else "") ::
+        nil -> code in
+    forth_interpreter_ex code nil nil nil (fixarg2 #_http_autocontrol_cb sock);;
+
+/**
+ * Handle HTTP callback for Forth interpreter. Return the output as JSON.
+ */
+fun _forth_http_cb f sock=
+    http_send_content_and_close sock "application/json"
+    strcatlist
+        "{\n" ::
+            (json_str "output" (strcatlist (rev f.output nil))) :: ",\n" ::
+            (json_str "stack" (forth_list_to_str f.stack " ")) ::
+        "\n}" ::
+        nil;;
+
+/**
+ * Handle an HTTP POST request to execute Forth code.
+ * sock: http socket
+ * args: HTTP request arguments
+ */
+fun http_post_forth sock args=
+    let http_arg_str args 'c' -> code in
+    forth_interpreter_ex code nil nil nil (fixarg2 #_forth_http_cb sock);;
+
+/**
+ * Send a 404 Not Found response.
+ */
+fun http_not_found sock args=
+    let "Not found" -> res in (
+        sock_send sock (http_header HTTP_404 "text/plain" (strlen res)); // header
+        sock_send_and_close sock res
+    );;
+
+fun _http_get_index_cb http res sock=
+    if res == nil then
+        http_not_found sock nil
+    else (
+        let strreplace (http_get_content res) "{SERVER_URL}" config_get_server_url -> content in (
+            sock_send sock (http_header HTTP_200 "text/html" (strlen content)); // header
+            sock_send_and_close sock content;
+            nil
+        )
+    );;
+
+/**
+ * Serve the index.html page, replacing {SERVER_URL} with the actual server URL.
+ */
+fun http_get_index sock args=
+    let strcatlist "http://" :: config_get_server_url :: "/index.html" :: nil -> url in
+        http_request "GET" url nil (fixarg3 #_http_get_index_cb sock) HTTP_NORMAL;
+    nil;;
+
+fun _http_get_openapi_yaml_cb http res sock=
+    if res == nil then
+        http_not_found sock nil
+    else (
+        let strreplace (http_get_content res) "192.168.1.100" (ip_to_str netip) -> content in ( // adjust server URL
+            sock_send sock (http_header HTTP_200 "application/yaml" (strlen content)); // header
+            sock_send_and_close sock content;
+            nil
+        )
+    );;
+
+/**
+ * Serve the OpenAPI YAML specification, adjusting the server URL.
+ */
+fun http_get_openapi_yaml sock args=
+    let strcatlist "http://" :: config_get_server_url :: "/api/openapi.yaml" :: nil -> url in
+        http_request "GET" url nil (fixarg3 #_http_get_openapi_yaml_cb sock) HTTP_NORMAL;
+    nil;;
+
+/**
+ * Check HTTP Basic Authentication.
+ * header: HTTP header
+ * Returns 0 if authentication fails, 1 if it succeeds or is not required.
+ */
+fun _http_check_auth header=
+    if config_md5_password==nil then
+        1
+    else
+        let http_get_header_field header HTTP_AUTHORIZATION -> auth in
+        let strlen HTTP_BASIC -> basic_len in (
+#ifdef HTTP_SERVER_DEBUG
+            _http_server_debug strcat "Authorization: " auth;
+#endif
+            if strcmp (strsub auth 0 basic_len) HTTP_BASIC then (
+#ifdef HTTP_SERVER_DEBUG
+                _http_server_debug "No basic auth";
+#endif
+                0
+            ) else
+                let base64_decode strsub auth basic_len+1 (strlen auth) - basic_len -1 -> cred in
+                let strstr cred "\0" 0 -> i in
+                let if i==nil then cred else strsub cred 0 i -> cred in  // remove trailing nulls
+                let strstr cred ":" 0 -> i in  // find separator
+                let strsub cred 0 i -> user in
+                let strsub cred i+1 (strlen cred) - i -1 -> pass in (
+#ifdef HTTP_SERVER_DEBUG
+                    _http_server_debug strcatlist "user: " :: user :: " password: " :: pass :: nil;
+#endif
+                    (!strcmp user config_username) && (!strcmp (md5 pass) config_md5_password)
+                )
+        );;
+
+/**
+ * Extract the verb, path and args from the HTTP request line.
+ * req: full HTTP request string
+ */
+fun _http_server_parse_req req=
+    let nil -> args in
+    let 1 -> auth in
+    let strstr req " " 0 -> i in
+    let strstr req " " i+1 -> j in
+    let strsub req 0 i -> verb in
+    let http_server_get_header req -> header in
+    let strsub req i+1 j-i-1 -> path in (
+        if !_http_check_auth header then (
+            // Skip parsing the request if authorization fails
+#ifdef HTTP_SERVER_DEBUG
+            _http_server_debug "Authorization failed";
+#endif
+            set auth = 0;
+            nil
+        ) else if !strcmp verb "POST" then (
+            // For POST requests, extract arguments from the body
+            set args = http_extract_args req ((strstr req HTTP_HEADER_SEP 0) + (strlen HTTP_HEADER_SEP));
+            nil
+        ) else (
+            // For GET requests, extract arguments from the path
+            let strstr path "?" 0 -> i in
+                if i!=nil then (
+                    set args=(http_extract_args path i+1);
+                    set path=(strsub path 0 i);
+                    nil
+                )
+        );
+        [verb path args auth]
+    );;
+
+/**
+ * Process an HTTP request and generate the response
+ */
+fun http_server_process_request req sock=
+    let _http_server_parse_req req -> [verb path args auth] in
+    (
+#ifdef HTTP_SERVER_DEBUG
+        _http_server_debug strcatlist "HTTP request verb: " :: verb :: " path: " :: path :: " auth: " :: (itoa auth) :: nil;
+#endif
+        if auth==0 then http_send_header_and_close HTTP_401 nil sock // unauthorized
+        else if !strcmp path "/update-time" then http_get_update_time sock args // get time from time server
+        else if !strcmp path "/update-weather" then http_get_update_weather sock args  // get weather from weather server
+        else if !strcmp path "/stop" then http_get_stop sock args // stop
+        else if !strcmp path "/reboot" then http_get_reboot sock args // reboot
+        else if !strcmp path "/surprise" then http_get_surprise sock args // surprise
+        else if !strcmp path "/status" then http_get_json_status sock args // status
+        else if !strcmp path "/tasks" then http_get_json_tasks sock args // tasks
+        else if !strcmp path "/arp" then http_get_json_arp_table sock args // arp table
+        else if !strcmp path "/timezones" then http_get_timezones sock args // timezones
+        else if !strcmp path "/communication" then http_get_play_midi MIDI_COMMUNION sock args // play communication sound
+        else if !strcmp path "/ack" then http_get_play_midi MIDI_ACK sock args // play ack sound
+        else if !strcmp path "/abort" then http_get_play_midi MIDI_ABORT sock args // play abort sound
+        else if !strcmp path "/ministop" then http_get_play_midi MIDI_MINI_STOP sock args // play ministop sound
+        else if !strcmp path "/play" then http_get_play sock args // play a wav from url
+        else if !strcmp path "/say" then http_get_say sock args // text to speech
+        else if !strcmp path "/taichi" then http_get_taichi sock args // taichi
+        else if !strcmp path "/mp3" then http_get_mp3 sock args // play an mp3 from url
+        else if !strcmp path "/sleep" then http_get_sleep sock args // sleep
+        else if !strcmp path "/wakeup" then http_get_wakeup sock args // wake up
+        else if !strcmp path "/left" then http_get_left sock args // p=position d=direction
+        else if !strcmp path "/right" then http_get_right sock args // p=position d=direction
+        else if !strcmp path "/nose" then http_get_nose sock args // v=value
+        else if !strcmp path "/weather" then http_get_weather sock args // v=value
+        else if !strcmp path "/stock" then http_get_stock sock args // v=value
+        else if !strcmp path "/traffic" then http_get_traffic sock args // v=value
+        else if !strcmp path "/service4" then http_get_service4 sock args // v=value
+        else if !strcmp path "/service5" then http_get_service5 sock args // v=value
+        else if !strcmp path "/mail" then http_get_mail sock args // v=value
+        else if !strcmp path "/pollution" then http_get_pollution sock args // v=value
+        else if !strcmp path "/clear" then http_get_clear sock args // clear all infosrc
+        else if !strcmp path "/animations" then http_get_animations sock args
+        else if !strcmp path "/dns" then http_get_dns sock args // d=domain name
+        else if !strcmp path "/leds" then http_post_leds sock args // leds override, l=left, c=center, r=right
+        else if !strcmp path "/setup" then http_get_setup sock args // setup parameters
+        else if !strcmp path "/forth" then http_post_forth sock args // forth command, c=code
+        else if !strcmp path "/openapi.yaml" then http_get_openapi_yaml sock args // openapi spec
+        else if !strcmp path "/autocontrol" then http_get_autocontrol sock args // auto control: c=clock h=halftime s=surprise t=taichi
+        else if !strcmp path "/" then http_get_index sock args // index page
+        else http_not_found sock args;
+        0
+    );;
+
+/**
+ * Start the HTTP server on the given port.
+ * port: TCP port number to listen on
+ */
+fun http_server_start_srv port =
+    tcp_listen port #http_server_cb;
+    0;;
