@@ -1,0 +1,150 @@
+#include protos/interactive_protos.mtl
+#include protos/streaming_protos.mtl
+#include protos/record_protos.mtl
+#include protos/midi_protos.mtl
+#include protos/run_protos.mtl
+
+// **********************
+// Record
+// **********************
+
+var _record_time_start;;
+var _record_mode;;
+var _record_retry;;
+var _record_play_end;;
+var _record_req;;
+var _record_data;;
+var record_last_wav_bytes = 0;;
+
+fun record_is_uploading=
+    _record_req!=nil;;
+
+fun record_abort=
+    set _record_data=nil;
+    set _record_req=nil;;
+
+/**
+ * Start recording
+ */
+fun record_control mode=
+    leds_turn_off;
+    audiolib_wav_stop;
+    ears_stop 1;
+    audiolib_force_vol 64;
+    audiolib_wav_start_local_ex MP3_START_RECORD::nil 100;
+    set _record_mode = mode;
+    run_set_state recordStartRun;
+    0;;
+
+fun _record_cb_http http res=
+    // record upload done
+    set _record_data=nil;
+    set _record_req=nil;
+    leds_turn_off;
+    if _record_play_end!=nil then
+    (
+        set _record_play_end=nil;
+        midi_play MIDI_END_RECORD
+    );
+    run_set_state idleRun;
+    0;;
+
+fun _record_interactive_send_upload =
+    set _record_req = http_request "POST" (interactive_url_reco interactive_app record_last_wav_bytes streaming_audio_cmd_index) _record_data #interactive_req_cb_http HTTP_NORMAL;
+    run_set_state interactiveReqWaitRun _record_req;
+    0;;
+
+/**
+ * Wait for the end of the starting sound before starting recording
+ */
+fun _record_start_run =
+    if !audiolib_wav_running then
+    (
+        leds_set_color LED_NOSE RGB_RED;
+        audiolib_unforce_vol;
+        reclib_rec_start;
+        set _record_time_start=time_ms;
+        run_set_state recordRun
+    );
+    0;;
+
+/**
+ * Check upload timeout and retry if needed
+ */
+fun _record_check_upload_timeout=
+    if record_is_uploading then
+    (
+        if _record_play_end!=nil && ((_record_play_end-time_ms)<0) then
+        (
+            set _record_play_end=nil;
+            midi_play MIDI_END_RECORD
+        );
+        if (http_inactive _record_req)>STD_NET_TIMEOUT then
+        (
+            Secholn "##timeout on upload";
+            http_abort _record_req;
+            set _record_req=nil;
+            if _record_retry>0 then
+            (
+                // retry
+                set _record_retry=_record_retry-1;
+                if (!interactive_status) then (
+                    set _record_req=http_request "POST" url_record _record_mode _record_data #_record_cb_http HTTP_NORMAL;0
+                ) else (
+                    _record_interactive_send_upload
+                );
+                nil
+            )
+            else
+            (
+                // abort
+                set _record_data=nil;
+                if (!interactive_status) then (
+                    run_set_state idleRun;
+                    0
+                ) else (
+                    interactive_error
+                )
+            )
+        )
+    );;
+
+/**
+ * Stop recording if button released or max time reached
+ */
+fun _record_check_end=
+    if !button2 || ((time_ms-_record_time_start)>RECORD_MAX_RECORDING_TIME) then
+    (
+        reclib_rec_stop;
+        leds_turn_off;
+        let reclib_recriff -> wavfile in
+        (
+            set _record_data=strcatlist wavfile;
+            set _record_retry=3;
+            set _record_play_end=time_ms+400;
+            if (!interactive_status) then (
+                set _record_req=http_request "POST" url_record _record_mode _record_data #_record_cb_http HTTP_NORMAL;
+                run_set_state idleRun;
+                0
+            ) else (
+                _record_interactive_send_upload
+            )
+        )
+    );;
+
+/**
+ * Record task
+ */
+fun record_task task=
+    match run_get_state with
+    ( recordRun -> _record_check_end )|
+    ( recordStartRun -> _record_start_run );
+    // Check upload timeout
+    _record_check_upload_timeout;
+    TaskRun;;
+
+/**
+ * Initialize the record task
+ */
+fun record_init=
+    task_start "record" #record_task;;
