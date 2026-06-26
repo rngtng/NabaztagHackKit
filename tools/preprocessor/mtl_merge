@@ -1,0 +1,35 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Merge a file with its includes, pass filename as first argument
+
+TMP = ENV['TMP'] || '.tmp.mtl'
+
+unless ARGV.size == 1
+  puts "usage: #{File.basename(__FILE__)} [filename]"
+  abort
+end
+
+file = ARGV.first
+BASE_DIR = File.dirname(file)
+BASE_DIR_LIB = File.dirname(File.dirname(__FILE__))
+
+def mtl_file(name)
+  "#{name}.mtl"
+end
+
+def src_file(name)
+  [BASE_DIR, BASE_DIR_LIB].each do |dir|
+    if (path = File.join(dir, name)) && File.exist?(path)
+      return path
+    end
+  end
+  raise "LIB FILE #{name} not found"
+end
+
+File.open(TMP, 'w') do |out|
+  File.open(file).each_line do |line|
+    line = `cat #{src_file(mtl_file(Regexp.last_match(1)))}` if line =~ /\A#include "([^"]+)"/
+    out.puts line
+  end
+end
