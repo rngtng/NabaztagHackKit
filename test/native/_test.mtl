@@ -1,0 +1,5 @@
+fun native_test=
+#include ./test/native/convert_test.mtl
+#include ./test/native/list_test.mtl
+#include ./test/native/string_test.mtl
+0;;
