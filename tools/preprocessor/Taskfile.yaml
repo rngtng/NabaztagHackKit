@@ -1,0 +1,32 @@
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "preprocessor"}}'
+  DIR: '{{.DIR | default "."}}'
+
+tasks:
+  image:
+    internal: true
+    cmds:
+      - docker build -t {{.IMAGE}} {{.DIR}}
+    sources:
+      - Dockerfile
+      - preproc.py
+
+  preprocess:
+    desc: 'Preprocess MTL source. Usage: task preprocess SOURCE=<path.mtl> OUT=<out.mtl> [DEFINES="FOO BAR"]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [SOURCE, OUT]
+    vars:
+      DEFINE_FLAGS: '{{range (splitList " " (.DEFINES | default ""))}}{{if .}}--define {{.}} {{end}}{{end}}'
+      INCLUDE_FLAGS: '{{range (splitList " " (.INCLUDES | default ""))}}{{if .}}-I {{.}} {{end}}{{end}}'
+    cmds:
+      - mkdir -p "$(dirname {{.OUT}})"
+      - 'docker run --rm -v "$(realpath .):/work:ro" -w /work {{.IMAGE}} {{.DEFINE_FLAGS}}{{.INCLUDE_FLAGS}}{{.SOURCE}} > {{.OUT}}'
+
+  clean:
+    desc: 'Remove the preprocessor Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true
