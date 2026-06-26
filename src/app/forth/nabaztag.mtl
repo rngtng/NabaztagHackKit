@@ -1,0 +1,179 @@
+/**
+ * Nabaztag words for Forth interpreter
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+/**
+ * SLEEPING? ( -- flag)
+ * Return true if the Nabaztag is in sleep mode
+ */
+fun forth_sleeping f=
+    forth_push f [int:if sleep_is_sleeping then FORTH_TRUE else FORTH_FALSE];;
+
+/**
+ * SLEEP ( -- )
+ * Put the Nabaztag into sleep mode
+ */
+fun forth_sleep f=
+    sleep_start f;
+    nil;;
+
+/**
+ * WAKE-UP ( -- )
+ * Wake up the Nabaztag from sleep mode
+ */
+fun forth_wake_up f=
+    sleep_wake_up f;
+    nil;;
+
+/**
+ * EARS ( -- left-pos right-pos )
+ * Return the current ears positions
+ */
+fun forth_ears f=
+    forth_push f [int:ears_get_position EARS_LEFT];
+    forth_push f [int:ears_get_position EARS_RIGHT];;
+
+/**
+ * MOVE-EAR ( ear dir pos -- )
+ * Move an ear (0=left, 1=right) ear in direction dir (0=left, 1=right) to position pos (0..16)
+ */
+fun forth_move_ear f=
+    let forth_pop f -> ear in
+    let forth_pop f -> pos in
+    let forth_pop f -> dir in
+    ears_go ear.int pos.int dir.int;
+    nil;;
+
+/**
+ * RANDOM ( max -- n )
+ * Return a pseudo-random number n between 0 and max-1
+ */
+fun forth_random f=
+    let forth_pop f -> max in
+    let random (if max.int > 0 then max.int else 0) -> n in
+    forth_push f [int:n];;
+
+/**
+ * VOLUME ( -- vol )
+ * Get the audio volume
+ */
+fun forth_volume f=
+    forth_push f [int:audiolib_volume];;
+
+/**
+ * CLEAR-INFO ( -- )
+ * Clear all information
+ */
+fun forth_clear_info f=
+    info_clear_all;
+    nil;;
+
+/**
+ * INFO-SET ( val service -- )
+ * Update an info service (1=weather, 2=stock, 3=traffic, ...)
+ */
+fun forth_info_set f=
+    let forth_pop f -> service in
+    let forth_pop f -> val in
+    info_service_update service.int val.int;
+    nil;;
+
+/**
+ * SET-INFO-ANIMATION ( data n -- )
+ * Set info animation n from json
+ */
+fun forth_set_info_animation f=
+    let forth_pop f -> anim_num in
+    let forth_pop f -> data in
+    info_set_animation_from_json anim_num.int data;
+    nil;;
+
+/**
+ * PLAY-URL ( url -- )
+ * Play a WAV file from an HTTP URL
+ * HTTPS is not supported
+ */
+fun forth_play_url f=
+    let forth_pop f -> url in
+    audiolib_start_http url.str #streaming_wav_error;
+    nil;;
+
+/**
+ * PLAY-MIDI ( i -- )
+ * Play a MIDI sound/note
+ * If i>=100, play note (i-100)
+ * If 0<=i<100, play sound i
+ * If i<0, play a random note
+ */
+fun forth_play_midi f=
+    let forth_pop f -> i in
+    if i.int>=100 then
+        midi_play_note (i.int-100)
+    else if i.int>=0 then
+        midi_play i.int
+    else
+        midi_play_random_note;;
+
+/**
+ * PLAY-CHOR ( chor_data -- )
+ * Play a choreography
+ */
+fun forth_play_chor f=
+    let forth_pop f -> chor in
+    let fixarg1 #forth_interpreter_resume f -> cb in
+    chor_start chor.str cb nil;
+    nil;;
+
+/**
+ * EVAL-TRAME ( str -- )
+ * Evaluate a trame
+ */
+fun forth_eval_trame f=
+    let forth_pop f -> t in
+    trame_eval t.str;
+    nil;;
+
+/**
+ * GC ( -- mem% )
+ * Perform garbage collection and return the memory usage percentage
+ */
+fun forth_gc f=
+    let gc -> mem in
+        forth_push f [int:mem];
+    nil;;
+
+/**
+ * REVISION ( -- str )
+ * Push the revision string onto the stack
+ */
+fun forth_revision f=
+    forth_push f [str:BYTECODE_REVISION_STR];;
+
+/**
+ * SAY-PUSH ( str -- ) (internal)
+ * Push a string onto the Forth stack for the say word
+ */
+fun forth_say_push f text=
+    forth_push f [str:text];
+    0;;
+
+/**
+ * STATUS-ALL ( -- )
+ * Print all status values as space-separated integers
+ * Format: sleep_state autoclock autohalftime autosurprise autotaichi weather traffic pollution
+ */
+fun forth_status_all f=
+    let itoa sleep_is_sleeping -> v0 in
+    let itoa _autoclock_enabled -> v1 in
+    let itoa _autohalftime_enabled -> v2 in
+    let itoa _autosurprise_enabled -> v3 in
+    let itoa _autotaichi_enabled -> v4 in
+    let itoa (if info_service_get INFO_WEATHER != nil then info_service_get INFO_WEATHER else -1) -> v5 in
+    let itoa (if info_service_get INFO_TRAFFIC != nil then info_service_get INFO_TRAFFIC else -1) -> v6 in
+    let itoa (if info_service_get INFO_POLLUTION != nil then info_service_get INFO_POLLUTION else -1) -> v7 in
+    forth_write f strcatlist v0 :: " " :: v1 :: " " :: v2 :: " " :: v3 :: " " :: v4 :: " " :: v5 :: " " :: v6 :: " " :: v7 :: "\n" :: nil
+;;
+
+

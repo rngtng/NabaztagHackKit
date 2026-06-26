@@ -1,0 +1,307 @@
+#include protos/button_protos.mtl
+#include protos/word_protos.mtl
+#include protos/forth_protos.mtl
+#include protos/chor_protos.mtl
+#include protos/streaming_protos.mtl
+#include protos/midi_protos.mtl
+#ifdef PING
+#include protos/ping_protos.mtl
+#endif
+#ifdef XMPP
+#include protos/xmpp_protos.mtl
+#endif
+#include protos/run_protos.mtl
+
+// Main loop state
+var run;; // type Run
+
+fun run_get_state =
+    run;;
+
+fun _run_to_str run=
+    match run with
+    ( configstartRun -> "configstartRun" )|
+    ( configwaitRun _ -> "configwaitRun" )|
+    ( interactiveReqWaitRun _ -> "interactiveReqWaitRun" )|
+#ifdef PING
+    ( pingstartRun -> "pingstartRun" )|
+    ( pingwaitRun _ -> "pingwaitRun" )|
+    ( stdWaitRun _ -> "stdWaitRun" )|
+    ( pingRequestWaitRun _ -> "pingRequestWaitRun" )|
+#endif
+#ifdef XMPP
+    ( xmppLoginRun -> "xmppLoginRun" )|
+    ( xmppReconnectRun _ -> "xmppReconnectRun" )|
+#endif
+    ( rscLoadNextRun -> "rscLoadNextRun" )|
+    ( rscLoadWaitRun http-> "rscLoadWaitRun" )|
+    ( chorCmdRun _-> "chorCmdRun" )|
+    ( streamCmdRun _-> "streamCmdRun" )|
+    ( waitCmdRun _ -> "waitCmdRun" )|
+    ( cmdEvalOne _-> "cmdEvalOne" )|
+    ( idleRun -> "idleRun" )|
+    ( sleepRun -> "sleepRun" )|
+    ( recordRun -> "recordRun" )|
+    ( recordStartRun -> "recordStartRun" )|
+    ( earResetWaitRun _ -> "earResetWaitRun" )
+    ;;
+
+// Set main loop state
+fun run_set_state r =
+    Secho "run_set_state "; Secholn _run_to_str r;
+    let run -> old_run in (
+        set run = r;
+        old_run
+    );;
+
+fun run_init =
+    run_set_state configstartRun;
+    task_start "run" #run_task;;
+
+fun _run_control_wait =
+    let button_get_event -> ev in
+    let if ev==nil then ears_get_event else ev -> ev in
+    if ev!=nil then
+    (
+        audiolib_wav_stop;
+        ears_stop 0;
+        if ev==BUTTON_CLIC then forth_interpreter WORD_ON_CLICK // click
+        else if ev==BUTTON_DCLIC then forth_interpreter WORD_ON_DBL_CLICK //ackall
+        else if ev==BUTTON_LCLIC then record_control 0  //back ou record
+        else if ev==BUTTON_DLCLIC then record_control 1 //back ou record
+        else if ev&0x8000 then forth_interpreter WORD_ON_EARS // oreilles
+    );
+    rfid_control
+    ;;
+
+
+fun _run_control_inter =
+    let button_get_event -> ev in
+    if ev!=nil then
+    (
+        if ev==BUTTON_CLIC || ev==BUTTON_DCLIC then (
+            if (interactive_int_mask & MASK_BUTTON == 0) then interactive_send_btn ev
+        ) else if ev==BUTTON_LCLIC then (
+            if (record_enabled) then (
+                // remember wav position and start record
+                set record_last_wav_bytes = audiolib_wav_cur_played_bytes;
+                record_control 0;
+                0
+            ) else (
+                // like BUTTON_CLIC
+                set ev = BUTTON_CLIC;
+                if (interactive_int_mask & MASK_BUTTON == 0) then interactive_send_btn ev
+            )
+        )
+    );
+    rfid_control
+    ;;
+
+/**
+    Stop everything we can be doing and resets to either idle or asleep
+ */
+fun run_reset_to_idle =
+    audiolib_wav_stop;
+    streaming_stop;
+    ears_start_reset;
+    set interactive_status = 0;
+    set interactive_cookie = "";
+    set interactive_app = nil;
+    set chor_processing_status = 0;
+    set streaming_status = 0;
+    set streaming_current_program = nil;
+    run_set_state if !sleep_is_sleeping then idleRun else sleepRun;
+    0
+;;
+
+fun _run_control_play =
+    let button_get_event -> ev in
+    if ev!=nil then (
+        audiolib_wav_stop;
+        ears_stop 0;
+        let atoi listswitchstr streaming_current_program "ID" -> id in
+            if ev==BUTTON_CLIC then (
+                midi_play MIDI_ABORT;
+                if (streaming_status) then streaming_stop;
+                endOfProgram 0;
+#ifdef XMPP
+                XmppSessionSendButtonMsg ev 1 id
+#else
+                0
+#endif
+            ) //pause
+            else if ev==BUTTON_DCLIC then (
+                midi_play MIDI_ACK;
+                if (streaming_status) then streaming_stop;
+                endOfProgram 0;
+#ifdef XMPP
+                XmppSessionSendButtonMsg ev 1 id
+#else
+                0
+#endif
+            ) //ackall
+            else if ev==BUTTON_LCLIC then nil //pause ou record ? callPingRequest 5
+    )
+    ;;
+
+
+fun _run_control_play_or_inter =
+    if !interactive_status then
+        _run_control_play
+    else
+        _run_control_inter;;
+
+
+/*
+    Utilise dans le cas ou on execute un programme et qu'on est en train
+  d'executer une commande "WT". En gros on a un comportement normal
+  sauf qu'on lit les rfid en plus
+*/
+fun _run_control_program_wait =
+    _run_control_play_or_inter;
+    rfid_control
+;;
+
+
+fun _run_idle =
+#ifdef XMPP
+    // if trame waiting, execute it
+    let trame_get_next_pending -> trame in
+    if trame != nil then (
+        trame_eval trame;
+        0
+    )
+    else
+#endif
+    (
+        set chor_processing_status = 0;
+#ifdef PING
+        ping_run_start
+#else
+        0
+#endif
+    );;
+
+
+/**
+ * Config parse callback
+ */
+fun _run_parse_config_cb _ res=
+    if res != nil then (
+        Secholn "config=";
+        let trame_filter_config Secholn http_get_content res 0-> conf in
+        (
+            // http urls
+            set url_ping_server=listswitchstr conf "ping";
+            set url_broadcast=listswitchstr conf "broad";
+            if !strcmp url_ping_server "0.0.0.0" then set url_ping_server = config_get_server_url;
+            if !strcmp url_broadcast "0.0.0.0" then set url_broadcast = config_get_server_url;
+
+#ifdef PING
+            sleep_wake_up nil;
+            if url_ping_server!=nil && url_broadcast!=nil then run_set_state pingstartRun;
+#endif
+#ifdef XMPP
+            /****** XMPP ****/
+            let listswitchstr conf "xmpp_domain" -> xmpp_domain in
+                if xmpp_domain != nil then
+                    XmppSessionStart xmpp_domain 1; // START 1 XMPP SESSION HERE (1 == Display Leds for connexion Details)
+
+            run_set_state xmppLoginRun;
+#endif
+            0
+        )
+    );;
+
+fun _run_config_start =
+    if wifi_connected && audiolib_wav_running==0 then (
+        ntp_get_time;
+        forth_init // set the run state to configwaitRun while fetching init.forth
+#ifndef SERVERLESS
+        Secho "config_get_server_url: "; Secholn config_get_server_url;
+        Secho "url_config: "; Secholn url_config;
+        run_set_state configwaitRun http_request "GET" url_config nil #_run_parse_config_cb HTTP_NORMAL
+#endif
+    );
+    0;;
+
+/**
+ * Check forth.init/config fetch timeout
+ */
+fun _run_config_wait http=
+    // check timeout and retry : cligne + ou - la led middle body toutes les secondes en bleu
+    if ((http_inactive http) > STD_NET_TIMEOUT) then
+    (
+        Secholn "##timeout on configwait";
+        http_abort http;
+        run_set_state configstartRun
+    );
+    0;;
+
+fun run_task task=
+    // Secholn _run_to_str run;
+    match run with
+    ( configstartRun ->
+        _run_config_start;
+        button_clear_event )|
+    ( configwaitRun http ->
+        _run_config_wait http;
+        button_clear_event )|
+#ifdef PING
+    ( pingstartRun ->
+        ping_run_start;
+        button_clear_event )|
+    ( pingwaitRun http ->
+        runpingwait http;
+        _run_control_wait )|
+    ( pingRequestWaitRun http->
+        runPingRequestWait http;
+        button_clear_event )|
+    ( stdWaitRun t ->
+        runStdWait t;
+        _run_control_wait )|
+#endif
+#ifdef XMPP
+    ( xmppLoginRun ->
+        xmpp_run_login;
+        _run_control_wait )|
+    ( xmppReconnectRun params ->
+        if !sleep_is_sleeping then
+            // On fige la base en violet
+            led LED_BASE RGB_VIOLET;
+        let params -> [waitTime xSession oldRun] in
+            match xSession.sStatus with
+                (sOpened -> run_set_state oldRun; 0)|
+                (sClosed -> if time_ms > waitTime then XmppGateReconnect xSession 0; 0)|
+                (_ -> 0);
+        _run_control_wait )|
+#endif
+    ( idleRun ->
+        _run_idle;
+        _run_control_wait ) |
+    ( sleepRun ->
+        _run_idle;
+        button_clear_event )|
+    ( rscLoadNextRun ->
+        streaming_run_rsc_load_next_cmd;
+        _run_control_wait ) |
+    ( rscLoadWaitRun http->
+        streaming_run_rsc_load_wait_cmd http;
+        _run_control_wait )|
+    ( cmdEvalOne i->
+        streaming_run_eval_one_cmd i;
+        _run_control_play_or_inter )|
+    ( chorCmdRun i->
+        chor_run_cmd i;
+        _run_control_play_or_inter )|
+    ( streamCmdRun i0->
+        streaming_run_cmd i0;
+        _run_control_play_or_inter )|
+    ( waitCmdRun i ->
+        streaming_run_wait_cmd i;
+        _run_control_program_wait )|
+    ( interactiveReqWaitRun http ->
+        interactive_request_wait http;
+        _run_control_wait ) |
+    ( _ -> button_clear_event );
+    TaskRun;;

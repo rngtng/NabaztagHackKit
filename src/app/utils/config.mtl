@@ -1,0 +1,175 @@
+#include protos/config_protos.mtl
+
+const CONF_SERVERURL=0;;		//41    Violet Platform URL
+const CONF_NETDHCP=41;;		    //1     DHCP server enabled
+const CONF_NETIP=42;;			//4     Local IP
+const CONF_NETMASK=46;;		    //4     Local Mask
+const CONF_NETGATEWAY=50;;	    //4     Local gateway
+const CONF_NETDNS=54;;		    //4     DNS Server
+const CONF_WIFISSID=58;;		//32    WiFi SSID
+const CONF_WIFIAUTH=90;;		//1
+const CONF_WIFICRYPT=91;;		//1     WiFi Auth (None, WEP, WPA, WPA2)
+const CONF_WIFIKEY0=92;;		//64    WiFi Key
+const CONF_PROXYENABLE=156;;	//1     HTTP Proxy enabled
+const CONF_PROXYIP=157;;		//4     Proxy IP address
+const CONF_PROXYPORT=161;;	    //2     Proxy port
+// const CONF_LOGIN=163;;		//6     obsolete
+// const CONF_PWD=169;;			//6     obsolete
+const CONF_LANGUAGE=163;;       //3     Language (string)
+const CONF_DST=166;;            //1     Daylight Saving Time
+const CONF_CITY=167;;           //4     City code
+const CONF_TAICHI_FREQ=171;;    //1     Tai Chi frequency
+// 172 - 174 --- free ---
+const CONF_WIFIPMK=175;;		//32    WiFi PMK (Pairwise Master Key)
+const CONF_MAGIC=207;;		    //1
+const CONF_LATITUDE=208;;	    //8     Latitude (string)
+const CONF_LONGITUDE=216;;	    //8     Longitude (string)
+const CONF_WAKE_UP=224;;	    //1     Wake up at (hour)
+const CONF_GO_TO_BED=225;;      //1     Go to bed at (hour)
+const CONF_LENGTH=226;;
+
+var _config_data;;
+var config_username = "nabaztag";; // HTTP login user
+var config_md5_password = nil;; // MD5 hash of the HTTP password
+
+/**
+ * Store the configuration
+ */
+fun config_save =
+    Secholn "## save configuration";
+    save _config_data 0 "conf.bin" 0 CONF_LENGTH;;
+
+/**
+ * Load the configuration
+ */
+fun config_load =
+    set _config_data = strnew CONF_LENGTH;
+    load _config_data 0 "conf.bin" 0 CONF_LENGTH;
+    // Valeurs par défaut si flash pas initialisée (0xFF = 255)
+    if strget _config_data CONF_WAKE_UP > 23 then
+        strset _config_data CONF_WAKE_UP 7;
+    if strget _config_data CONF_GO_TO_BED > 23 then
+        strset _config_data CONF_GO_TO_BED 22;;
+
+fun _config_get i len= strsub _config_data i len;;
+
+fun _config_get_bin i len= strsub _config_data i len;;
+
+fun _config_get_str i len=
+    let strstr _config_data "\0" i -> j in
+    strsub _config_data i (if j==nil then len else min len j-i);;
+
+fun _config_set i val len =
+    strcpy _config_data i val 0 len;;
+
+fun _config_set_bin i val len =
+    strcpy _config_data i val 0 len;;
+
+fun _config_set_str i val len=
+    let min strlen val len-1 -> len in
+    (
+        strcpy _config_data i val 0 len;
+        strset _config_data i+len 0
+    );;
+
+fun _config_webport s= ((strget s 0)<<8)+strget s 1;;
+
+
+fun config_get_wifi_ssid = _config_get_str CONF_WIFISSID 32;;
+fun config_get_wifi_crypt = strget _config_get CONF_WIFICRYPT 1 0;;
+fun config_get_wifi_key0 = _config_get_str CONF_WIFIKEY0 64;;
+fun config_get_wifi_auth = strget _config_get CONF_WIFIAUTH 1 0;;
+fun config_get_wifi_pmk = _config_get_bin CONF_WIFIPMK 32;;
+fun config_get_dhcp = strget _config_get CONF_NETDHCP 1 0;;
+fun config_get_net_ip = _config_get CONF_NETIP 4;;
+fun config_get_netmask = _config_get CONF_NETMASK 4;;
+fun config_get_net_gw = _config_get CONF_NETGATEWAY 4;;
+fun config_get_net_dns = _config_get CONF_NETDNS 4;;
+
+// Get server URL
+fun config_get_server_url =
+    _config_get_str CONF_SERVERURL 40;;
+
+// Get Proxy enabled
+fun config_get_proxy =
+    strget _config_get CONF_PROXYENABLE 1 0;;
+
+// Get Proxy IP
+fun config_get_proxy_ip =
+    _config_get CONF_PROXYIP 4;;
+
+// Get Proxy Port
+fun config_get_proxy_port =
+    _config_webport _config_get CONF_PROXYPORT 2;;
+
+// Get Language
+fun config_get_lang =
+    let _config_get CONF_LANGUAGE 2 -> val in
+    if val == nil || val == "" then "fr" else val;;
+
+// Get City code
+fun config_get_city_code =
+    let _config_get_str CONF_CITY 4 -> val in
+    if val == nil then "" else val;;
+
+// Get Latitude
+fun config_get_latitude =
+    let _config_get_str CONF_LATITUDE 8 -> val in
+    if val == nil then "" else val;;
+
+// Get Longitude
+fun config_get_longitude =
+    let _config_get_str CONF_LONGITUDE 8 -> val in
+    if val == nil then "" else val;;
+
+// Get Daylight Saving Time
+fun config_get_dst =
+    strget _config_get CONF_DST 1 0;;
+
+// Get wake up at (hour)
+fun config_get_wake_up =
+    strget _config_get CONF_WAKE_UP 1 0;;
+
+// Get go to bed at (hour)
+fun config_get_go_to_bed =
+    strget _config_get CONF_GO_TO_BED 1 0;;
+
+// Get Tai Chi frequency
+fun config_get_taichi_freq =
+    strget _config_get CONF_TAICHI_FREQ 1 0;;
+
+// Set the server URL
+fun config_set_server_url server_url =
+    _config_set_str CONF_SERVERURL server_url 40;;
+
+// Set Language
+fun config_set_lang lang =
+    _config_set_str CONF_LANGUAGE lang 3;;
+
+// Set city code
+fun config_set_city val =
+    _config_set_str CONF_CITY val 4;;
+
+// Set Daylight Saving Time
+fun config_set_dst val =
+    strset _config_data CONF_DST val;;
+
+// Set latitude
+fun config_set_latitude val =
+    _config_set_str CONF_LATITUDE val 8;;
+
+// Set longitude
+fun config_set_longitude val =
+    _config_set_str CONF_LONGITUDE val 8;;
+
+// Set wake up at (hour)
+fun config_set_wake_up val =
+    strset _config_data CONF_WAKE_UP val;;
+
+// Set go to bed at (hour)
+fun config_set_go_to_bed val =
+    strset _config_data CONF_GO_TO_BED val;;
+
+// Set Tai Chi frequency
+fun config_set_taichi_freq val =
+    strset _config_data CONF_TAICHI_FREQ val;;

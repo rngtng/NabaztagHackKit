@@ -1,0 +1,115 @@
+// -------------------------------------------------------------------------------------------------
+// UDP
+// -------------------------------------------------------------------------------------------------
+
+fun udp_send local localp dst dstp content mac=
+	udpSend localp dst dstp content 0 nil;;
+
+// UDP listeners
+var udp_listeners;; // list of [port cb]
+
+fun regudp port cb=
+	set udp_listeners=[udpStart port cb]::udp_listeners;;
+
+fun udp_reset=
+    set udp_listeners = nil;;
+
+fun netudp t src ip=
+	let listswitch udp_listeners t -> cb in
+	call cb [src nil ip];;
+
+// -------------------------------------------------------------------------------------------------
+// TCP
+// -------------------------------------------------------------------------------------------------
+
+const TCPWRITE=0;;
+const TCPREAD=1;;
+const TCPCLOSE=-1;;
+const TCPSTART=2;;
+
+type Tcp=[tcpT locpT dstpT cbT enableT];;
+var tcp_connections;; // list of Tcp
+
+fun _tcp_dump tcp=
+    strcatlist "tcpT:" :: (itoa tcp.tcpT) :: " locpT:" :: (itoa tcp.locpT) :: " dstpT:" :: (itoa tcp.dstpT) :: " cbT:" :: (if tcp.cbT==nil then "nil" else "notnil") :: " enableT:" :: (itoa tcp.enableT) :: nil;;
+
+fun tcp_write t msg i=
+	tcpSend t.tcpT msg i nil;;
+
+/**
+ * Remove a TCP connection. takes a TCP connection as an argument
+ */
+fun _tcp_remove t=
+    set t.enableT = 0;
+    set tcp_connections=remfromlist tcp_connections t;;
+
+/**
+ * Close a TCP connection. takes a TCP connection as an argument
+ */
+fun tcp_close t=
+	_tcp_remove t;
+	tcpClose t.tcpT;;
+
+fun tcp_set_cb t cb=
+    set t.cbT = cb;;
+
+fun tcp_set_enabled t v=
+    set t.enableT = v;;
+
+fun tcp_is_enabled t=
+    t.enableT;;
+
+/**
+ * Create a listening TCP socket
+ * localp: local port number to listen on
+ * cb: callback function to be executed when a new client connects
+ */
+fun tcp_listen port cb=
+	if cb == nil then Secholn strcatlist "tcp_listen cb is nil port:" :: (itoa port) :: nil;
+	let tcpListen port -> t in
+	let [tcpT:t locpT:port cbT:cb enableT:1] -> tcp in
+    (
+        // Secholn _tcp_dump tcp;
+        set tcp_connections=tcp::tcp_connections
+    );;
+
+/**
+ * Open a new client TCP connection
+ * local: local IP address
+ * localp: local port (can be nil to use an ephemeral port)
+ * dst: destination IP address
+ * dstp: destination port
+ * cb: callback function to handle connection events
+ */
+fun tcp_open local localp dst dstp cb=
+	let tcpOpen dst dstp -> t in
+	let [tcpT:t locpT:localp dstpT:dstp cbT:cb enableT:1] -> tcp in
+	if t!=nil then
+	(
+		set tcp_connections=tcp::tcp_connections;
+		tcp
+	);;
+
+fun _tcp_find l idx=
+    if l==nil then nil
+    else let hd l -> t in (
+        if idx==t.tcpT then t
+        else _tcp_find tl l idx
+    );;
+
+fun nettcp t val msg=
+	if val==TCPSTART then (
+		let atoi msg -> idx in
+        let _tcp_find tcp_connections idx -> tcp in
+        let [tcpT:t locpT:tcp.locpT cbT:tcp.cbT enableT:1] -> new_tcp in
+		(
+            // Secholn strcatlist "TCPSTART idx:" :: (itoa idx) :: " val:" :: (itoa val) :: " tcpT:" :: (itoa new_tcp.tcpT) :: " locpT:" :: (itoa new_tcp.locpT) :: nil;
+			// if new_tcp.cbT == nil then Secholn "callback is nil";
+			set tcp_connections=new_tcp::tcp_connections;
+			call new_tcp.cbT [new_tcp val msg]
+		)
+    )
+	else let _tcp_find tcp_connections t -> tcp in (
+        // Secholn strcatlist "TCP nettcp idx:" :: (itoa t) :: " val:" :: (itoa val) :: nil;
+		call tcp.cbT [tcp val msg]
+    );;
