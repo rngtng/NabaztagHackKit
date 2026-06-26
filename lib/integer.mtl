@@ -1,0 +1,27 @@
+//convert chars into int (there is a limit!!!)
+fun _StoI val pos len=
+  let strget val pos -> v in
+  if(len >= 0) then
+    v << (8 * len) + _StoI val (pos + 1) (len - 1)
+  else
+    0
+;;
+
+fun StoI val=
+  _StoI val 0 (strlen val) - 1
+;;
+
+//convert first 3 chars into int (perfect to set led color)
+fun StoI3 val=
+  _StoI val 0 2
+;;
+
+//convert first 2 chars into int (perfect to set led color)
+fun StoI2 val=
+  _StoI val 0 1
+;;
+
+//?????
+fun CtoI3 s offset=
+  (strget s offset) << 16 + (strget s offset+1) << 8 + strget s offset+2
+;;

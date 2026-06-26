@@ -1,0 +1,82 @@
+proto main 0;;
+
+#include ./test/helper.mtl
+#include ./test/assertions.mtl
+
+//-------------------- MAIN
+#include ./test/lib/_test.mtl
+#include ./test/native/_test.mtl
+
+fun main=
+  lib_test;
+  native_test;
+
+  // let xtest "webmac" -> t in
+  // (
+  //   assert_equalS "0100"  webmac "\1\0";
+  //   assert_equalS "0a00"  webmac "\10\0";
+  //   assert_equalS "00ff"  webmac "\0\255";
+  //   assert_equalS "ff00"  webmac "\255\0";
+  // 0);
+
+  // let test "str_find_end" -> t in
+  // (
+  //   assert_equalI nil      str_find_end "" ;
+  //   assert_equalI 0        str_find_end "\255\0\0" ;
+  //   assert_equalI 2        str_find_end "AB\255";
+  //   assert_equalI 10       str_find_end "0123456789\255";
+  // 0);
+  //
+  // let test "find RIFID id" -> t in
+  // (
+  //   assert_equalI 0   strstr "\208\2\26\1\1\1\1\1" "\208\2\26" 0;
+  //   assert_equalI 1   strstr "\1\208\2\26\1\1\1\1" "\208\2\26" 0;
+  //   assert_equalI nil strstr "\1\208\1\26\1\1\1\1" "\208\2\26" 0;
+  // 0);
+  //
+  // let test "COtoI" -> t in
+  // (
+  //   assert_equalI 0    COtoI 0 0 0;
+  //   assert_equalI 51   COtoI 1 2 3;
+  //   assert_equalI 121  COtoI 3 2 1;
+  //   assert_equalI 215  COtoI 5 5 5;
+  // 0);
+  //
+  // let test "ItoCO" -> t in
+  // (
+  //   assert_equalI 0x000000  ItoCO nil;
+  //   assert_equalI 0x000000  ItoCO 0;
+  //   assert_equalI 0x5a82aa  ItoCO 51;
+  //   assert_equalI 0xaa825a  ItoCO 121;
+  //   assert_equalI 0xFFFFFF  ItoCO 215;
+  //   assert_equalI 0xFFFFFF  ItoCO 255;
+  // 0);
+  //
+  // let test "CtoI3" -> t in
+  // (
+  //   assert_equalI 0         CtoI3 "\0\0\0" 0;
+  //   assert_equalI 255       CtoI3 "\0\0\255" 0;
+  //   assert_equalI 65535     CtoI3 "\0\255\255" 0;
+  //   assert_equalI 16776959  CtoI3 "\0\255\255" 1;
+  // 0);
+  //
+  // let test "parseResponse" -> t in
+  // (
+  //   assert_nil parseResponse "\127";
+  //   assert_nil parseResponse "\122";
+  //   assert_equalTL [11 "1"]::[10 "123"]::nil parseResponse "\127\10\0\0\3\49\50\51\11\0\0\1\49";
+  //   assert_equalTL [11 "1"]::[10 "123"]::nil parseResponse "\127\10\0\0\3\49\50\51\11\0\0\2\49";
+  //   assert_equalTL [51 "\2\49"]::[10 "12"]::nil parseResponse "\127\10\0\0\2\49\50\51\11\0\0\2\49";
+  //   //TODO check last ending byte
+  // 0);
+
+  //let test "log" -> t in
+  //(
+  //  log "test" {1};
+  //  assert_equalS "test,0,1,|" logs;
+  //  log "test" {56 67 90};
+  //  assert_equalS "test,0,1,|test,0,56,67,90,|" logs;
+  //0);
+
+  exit;
+0;;

@@ -1,0 +1,27 @@
+let scenario "integer_test" -> s in
+(
+  let test "StoI" -> t in
+  (
+    assert_equalI 0        StoI "\0\0\0" ;
+    assert_equalI 255      StoI "\0\0\255";
+    assert_equalI 65280    StoI "\0\255\0"
+  );
+
+  let test "StoI2" -> t in
+  (
+    assert_equalI 0        StoI2 "\0\0\0" ;
+    assert_equalI 0        StoI2 "\0\0\255";
+    assert_equalI 255      StoI2 "\0\255\0"
+  );
+
+  let test "StoI3" -> t in
+  (
+    assert_equalI 0        StoI3 "\0\0\0dummy" ;
+    assert_equalI 0        StoI3 "\0\0\0" ;
+    assert_equalI 255      StoI3 "\0\0\255";
+    assert_equalI 65280    StoI3 "\0\255\0";
+    assert_equalI 6579300  StoI3 "\100\100\100";
+    assert_equalI 16711680 StoI3 "\255\0\0";
+    assert_equalI 16777215 StoI3 "\255\255\255"
+  )
+);
