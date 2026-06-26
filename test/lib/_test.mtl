@@ -1,0 +1,9 @@
+#include ./lib/buffer.mtl
+#include ./lib/integer.mtl
+#include ./lib/list.mtl
+
+fun lib_test=
+#include ./test/lib/buffer_test.mtl
+#include ./test/lib/integer_test.mtl
+#include ./test/lib/list_test.mtl
+0;;
