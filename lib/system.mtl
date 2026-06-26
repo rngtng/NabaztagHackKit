@@ -1,0 +1,6 @@
+// -------------------- other stuff
+
+fun exit=
+  Secholn "\n";
+  reboot 0x0407FE58 0x13fb6754
+;;

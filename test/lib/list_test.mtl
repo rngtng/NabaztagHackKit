@@ -1,0 +1,14 @@
+let scenario "list_test" -> s in
+(
+  let test "listlen" -> t in
+  (
+    assert_equalI 0 listlen nil;
+    assert_equalI 1 listlen "test"::nil
+  );
+
+  let test "rev" -> t in
+  (
+    assert_equalIL 3::2::1::nil rev 1::2::3::nil nil;
+    assert_equalS "ABC" "\65\66\67"
+  )
+);

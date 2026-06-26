@@ -1,0 +1,15 @@
+let scenario "string_test" -> s in
+(
+  let test "strcmp" -> t in
+  (
+    //subtract chars result = A - B
+    assert_equalI            0 strcmp "" "";
+    assert_equalI            0 strcmp "T" "T";
+    assert_equalI            0 strcmp "To" "To";
+    assert_equalI  (StoI "A") (strcmp "ToA" "To");
+    assert_equalI -(StoI "A") (strcmp "To" "ToA");
+    assert_equalI           -1 strcmp "A" "B";
+    assert_equalI            1 strcmp "B" "A";
+    assert_equalI           -1 strcmp "TA" "TB"
+  )
+);
