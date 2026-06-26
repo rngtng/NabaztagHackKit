@@ -1,0 +1,53 @@
+/**
+ * Logical operations words for Forth interpreter
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+/**
+ * TRUE ( -- true )
+ */
+fun forth_true f=
+    forth_push f [int:FORTH_TRUE];;
+
+/**
+ * FALSE ( -- false )
+ */
+fun forth_false f=
+    forth_push f [int:FORTH_FALSE];;
+
+/**
+ * AND ( n1 n2 -- flag )
+ * Logical AND
+ */
+fun forth_and f=
+    let forth_pop f -> a in
+    let forth_pop f -> b in
+    if (a.int!=FORTH_FALSE) && (b.int!=FORTH_FALSE) then forth_true f else forth_false f;;
+
+/**
+ * OR ( n1 n2 -- flag )
+ * Logical OR
+ */
+fun forth_or f=
+    let forth_pop f -> a in
+    let forth_pop f -> b in
+    if (a.int!=FORTH_FALSE) || (b.int!=FORTH_FALSE) then forth_true f else forth_false f;;
+
+/**
+ * XOR ( n1 n2 -- flag )
+ * Logical XOR
+ */
+fun forth_xor f=
+    let forth_pop f -> a in
+    let forth_pop f -> b in
+    if (a.int!=FORTH_FALSE) != (b.int!=FORTH_FALSE) then forth_true f else forth_false f;;
+
+/**
+ * INVERT ( n -- flag )
+ * Logical NOT
+ */
+fun forth_invert f=
+    let forth_pop f -> a in
+    if (a.int==FORTH_FALSE) then forth_true f else forth_false f;;
+

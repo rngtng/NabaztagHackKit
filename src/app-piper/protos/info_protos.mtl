@@ -1,0 +1,26 @@
+proto info_clear_all 0;;
+proto info_json 0;;
+proto info_service_get 1;;
+proto info_service_remove 1;;
+proto info_service_update 2;;
+proto info_set_animation_from_json 2;;
+
+// Duration of a service display (seconds)
+var info_duration=15;;
+
+// info_src : les services courants affichés par ce lapin (envoyé par le serveur et mis à jour par le fonction 'info_update')
+// Un tableau de 16 valeurs, pour les services courants. 2 valeurs par service donc 8 services max.
+// 2 valeurs par service : la première valeur vaut 1+info_type (ex : 1 pour meteo), la deuxième vaut infoVal, la valeur du service (ex : 0 pour soleil)
+var info_src;;
+
+// nombre de messages utilisateur en attente (0, 1, 2 et +)
+var info_messages = 0;;
+
+const INFO_WEATHER = 1;;
+const INFO_STOCK = 2;;
+const INFO_TRAFFIC = 3;;
+const INFO_SERVICE4 = 4;;
+const INFO_SERVICE5 = 5;;
+const INFO_MAIL = 6;;
+const INFO_POLLUTION = 7;;
+const INFO_MESSAGES = 8;;

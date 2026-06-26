@@ -1,0 +1,123 @@
+// VuISP - Feb 06 - by Sylvain Huet
+// Metal
+
+proto main 0;;
+
+// #define SIMU
+
+// chose one
+// #define PING
+// #define XMPP
+#define SERVERLESS
+
+#define WEBSERVER
+#define TELNETSERVER
+
+// #define WIFI_DEBUG
+// #define IPV4_DEBUG
+// #define DHCP_DEBUG
+// #define DNS_DEBUG
+// #define HTTP_DEBUG
+// #define HTTP_SERVER_DEBUG
+// #define EARS_DEBUG
+// #define XMPP_DEBUG
+// #define TRAME_DEBUG
+// #define AUDIOLIB_DEBUG
+// #define INTERACTIVE_DEBUG
+// #define CHOR_DEBUG
+// #define INFO_DEBUG
+// #define FORTH_DEBUG
+
+// #define WIFI_MASTER_MODE;; // Enable master mode (access point)
+#define WIFI_REBOOT_ON_LOST
+
+const PORT_HTTP = 80;;
+const BYTECODE_REVISION_STR = "$Rev: 202605061922$";;
+const STD_NET_TIMEOUT = 10000;;
+const LED_TIMEOUT = 600;; // 10 minutes
+
+#include hw/leds.mtl
+#include hw/ears.mtl
+#include hw/button.mtl
+
+#include utils/utils.mtl
+#include utils/json.mtl
+#include utils/task.mtl
+#include utils/md5.mtl
+#include utils/config.mtl
+#include utils/word.mtl
+#include utils/url.mtl
+#include utils/sleep.mtl
+#include utils/b64.mtl
+#include utils/xmlparser.mtl
+#include utils/time.mtl
+
+#include net/net.mtl
+
+#include audio/const_data.mtl
+#include audio/reclib.mtl
+#include audio/audiolib.mtl
+#include audio/midi.mtl
+#include audio/record.mtl
+
+#include chor/choreographic.mtl
+#include chor/interactive.mtl
+#include chor/palette.mtl
+#include chor/streaming.mtl
+#include chor/trame.mtl
+#include chor/info.mtl
+
+#include hw/rfid.mtl
+
+#ifdef XMPP
+#include run/xmpp.mtl
+#endif
+
+#ifdef PING
+#include run/ping.mtl
+#endif
+
+#ifdef WEBSERVER
+#include srv/http_server.mtl
+#endif
+#ifdef TELNETSERVER
+#include srv/telnet_server.mtl
+#endif
+
+#include run/run.mtl
+#include forth/forth.mtl
+
+fun main=
+    // Set the loop callback
+    loopcb #task_scheduler;
+    // Initialize the ears
+    ears_init;
+    // Load the configuration
+    config_load;
+    // Init the wifi and start the wifi job
+    wifi_init 0;
+    // Initialize the network stack, start the network jobs
+    net_init;
+    // Initialize and start the info task
+    info_init;
+    // Start the time update job
+    time_init;
+    // Start the NTP client
+    ntp_init;
+    audiolib_init;
+    button_init;
+    record_init;
+    // Initialize the leds
+    leds_init;
+    // Initialize interactive mode (set defaults and start the interactive ears task)
+    interactive_init;
+    // Start the main loop
+    run_init;
+    // Start the servers
+#ifdef WEBSERVER
+    http_server_start_srv PORT_HTTP;
+#endif
+#ifdef XMPP
+    xmpp_init;
+#endif
+    0;;
