@@ -170,10 +170,6 @@ int checkTcpEvents(void)
     {
         for (i=0; i<=maxval; ++i)
         {
-            if (FD_ISSET(i, &fdset_w))
-            {
-                tcpEventWrite(i);
-            }
             if (FD_ISSET(i, &fdset_r))
             {
                 tcpEventRead(i);
@@ -249,6 +245,7 @@ int tcpEventRead(int fd)
             VPULL();
             VPULL();
         }
+        tcp_listen[idx] = 1;
         VPULL();
         return 1;
     }

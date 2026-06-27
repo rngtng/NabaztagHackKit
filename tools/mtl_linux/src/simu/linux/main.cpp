@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 extern "C" {
 #include"vmem.h"
 #include"vloader.h"
@@ -19,13 +20,13 @@ extern "C" {
 
     int simuInit();
 
-// fonction à appeler régulièrement, pour traiter les messages de la fenêtre du simulateur
+// fonction ï¿½ appeler rï¿½guliï¿½rement, pour traiter les messages de la fenï¿½tre du simulateur
     int simuDoLoop();
 
-// réglagle d'une led
+// rï¿½glagle d'une led
     void simuSetLed(int i,int val);
 
-// réglagle d'un moteur
+// rï¿½glagle d'un moteur
     void simuSetMotor(int i,int val);
 
 }
@@ -107,6 +108,7 @@ extern unsigned char dumpbc[];
 
 int main(int argc,char **argv)
 {
+    signal(SIGPIPE, SIG_IGN);
     PropLoad("config.txt");
 
     if (!handle_options(argc, argv))
@@ -158,8 +160,8 @@ int main(int argc,char **argv)
 
 
 /**
-	 Retourne une valeur différente de 0 si la chaîne non vide passée en argument
-	 représente un nombre, 0 sinon
+	 Retourne une valeur diffï¿½rente de 0 si la chaï¿½ne non vide passï¿½e en argument
+	 reprï¿½sente un nombre, 0 sinon
  */
 static int my_is_number(const char *s)
 {
@@ -171,7 +173,7 @@ static int my_is_number(const char *s)
 }
 
 /**
-	 Gère les options qui sont passées en ligne de commande
+	 Gï¿½re les options qui sont passï¿½es en ligne de commande
  */
 int handle_options(int argc, char **argv)
 {

@@ -7,9 +7,8 @@ origins in `PROVENANCE.md`. (Global `~/.claude/CLAUDE.md` rules still apply — 
 
 ## What this is
 A layered SDK for the Nabaztag: **C VM firmware → MTL toolchain → MTL app → Forth scripts**.
-This repo is the rebooted **NabaztagHackKit** on branch **`v2`** (upstream
+This repo is the rebooted **NabaztagHackKit** on branch **`sdk** (upstream
 `rngtng/NabaztagHackKit`; the user *is* rngtng — free to rename/restructure their repos).
-Not pushed yet.
 
 **Scope:** toolchain only (build / simulate / test / flash-upload). **Exclude** high-level
 apps — Home Assistant, weather, TTS. Tie-break when unsure: **prefer `nabaztag-piper`**.
@@ -31,7 +30,9 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - Host needs only **Docker + Task**; everything builds in containers.
 - The MTL image is **amd64** (32-bit tools) → emulated on Apple Silicon. `cc1`
   **occasionally segfaults** ("internal compiler error") — it's non-deterministic, **re-run**.
-- JTAG flashing is the one host-side exception (USB).
+
+## Openocd
+- JTAG flashing is the one host-side exception (USB). hence openocd on a raspberry Pi
 
 ## Vendoring (no submodules)
 - **Copy sources in**, don't submodule. Record origin repo + commit + local changes in
@@ -49,6 +50,21 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Definition of done (per layer)
 Builds in Docker **and** committed **and** `PROVENANCE.md` updated **and** the folder has a
 short `README.md`. Verify by actually running the task in Docker — not just "it should work".
+
+## MTL language gotchas
+
+- **Compiler error line = closing bracket of enclosing function**, not offending line.
+  Binary-search by commenting out test files to isolate fast.
+- **`::` (cons) has higher precedence than function application.**
+  `f x :: y :: nil` = `f (x :: y :: nil)`, not `(f x) :: y :: nil`.
+- **Negative literals in non-first arg position parse as binary minus.**
+  `fun "v" -1` = `(fun "v") - 1`. Use `(0-1)` to force negative integer.
+- **`strcmp` returns sign only** (-1/0/1), not character difference like C stdlib.
+- **`assert_equalS` breaks on strings containing null bytes** (`\0`).
+  Use `strget` to check individual bytes instead.
+- **No local function definitions** (`let fun` is invalid). Hoist to top level.
+- **`if-then` without `else`** leaves the false branch typed as `I` (0).
+  Always add `else nil` when returning a list.
 
 ## Working agreement
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
