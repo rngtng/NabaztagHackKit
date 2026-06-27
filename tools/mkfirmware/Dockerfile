@@ -1,14 +1,7 @@
-# Self-contained mkfirmware image.
-
-FROM debian:bookworm-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        php-cli \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3-slim
 
 WORKDIR /src
 
-COPY mkfirmware.php ./
+COPY mkfirmware.py ./
 
-CMD ["php", "mkfirmware.php"]
+CMD ["python3", "mkfirmware.py"]
