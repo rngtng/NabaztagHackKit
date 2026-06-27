@@ -6,28 +6,94 @@
 # namespace. Run `task` with no args to list everything.
 version: '3'
 
+vars:
+  DEFAULT_OUT: build
+  BOOT_OUT: '{{.OUT | default (printf "%s/boot" .DEFAULT_OUT)}}'
+  FIRMWARE_OUT: '{{.OUT | default (printf "%s/firmware" .DEFAULT_OUT)}}'
+
 includes:
-  firmware: # ARM7TDMI firmware — compile C/asm sources (src/firmware)
-    taskfile: ./src/firmware/Taskfile.yaml
+  preprocessor: # MTL preprocessor — expand #include / #ifdef (tools/preprocessor)
+    internal: true
+    taskfile: ./tools/preprocessor/Taskfile.yaml
     vars:
-      IMAGE: nabgcc-build
-      DIR: ./src/firmware/
+      IMAGE: preprocessor
+      DIR: ./tools/preprocessor/
 
   mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
+    internal: true
     taskfile: ./tools/mtl_linux/Taskfile.yaml
     vars:
-      IMAGE: nabaztag-sdk
+      IMAGE: nabaztag-sdk-mtl
       DIR: ./tools/mtl_linux/
 
+  firmware: # ARM7TDMI firmware — compile C/asm sources (src/firmware)
+    internal: true
+    taskfile: ./src/firmware/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-firmware
+      DIR: ./src/firmware/
+
   mkfirmware: # mkfirmware tool — sign firmware for web upload (tools/mkfirmware)
+    internal: true
     taskfile: ./tools/mkfirmware/Taskfile.yaml
     vars:
-      IMAGE: mkfirmware
+      IMAGE: nabaztag-sdk-mkfirmware
       DIR: ./tools/mkfirmware/
 
 tasks:
-  default:
-    desc: List available targets
+  clean:
+    desc: 'Clean all build artifacts (firmware, boot, etc.)'
+    vars:
+      OUT: '{{.DEFAULT_OUT}}'
     cmds:
-      - task --list
-    silent: true
+      - task: firmware:clean
+        vars:
+          IMAGE: nabaztag-sdk-firmware
+      - rm -rf '{{.OUT}}'
+
+  build:boot:
+    desc: 'Build boot firmware. Preprocess files, then compile. Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build/boot]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}/merged.mtl'
+          INCLUDES: '{{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
+          OUT: '{{.BOOT_OUT}}'
+          SIGN: 'false'
+
+  simulate:boot:
+    desc: 'Preprocess and simulate boot.mtl in config mode. Config UI served at http://localhost:8080. Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}/merged.mtl'
+          INCLUDES: '{{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
+
+  build:firmware:
+    desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default (printf "%s/dumpbc.c" .BOOT_OUT)}}'
+    cmds:
+      # firmware need latest dumpbc.c in sr/bc.c
+      - cp '{{.SOURCE}}' src/firmware/src/bc.c
+      - task: firmware:compile
+      - rm -rf '{{.FIRMWARE_OUT}}'
+      - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
+      - rm -rf src/firmware/obj src/firmware/src/bc.c
+
