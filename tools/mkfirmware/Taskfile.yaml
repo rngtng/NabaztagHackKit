@@ -11,7 +11,7 @@ tasks:
       - docker build -t {{.IMAGE}} {{.DIR}}
     sources:
       - Dockerfile
-      - mkfirmware.php
+      - mkfirmware.py
 
   sign:
     desc: 'Sign a firmware .bin for web upload.  Usage: task sign SOURCE=<fw.bin> [OUT=<fw.sim>]'
@@ -24,8 +24,7 @@ tasks:
     cmds:
       - mkdir -p "$(dirname {{.OUT}})"
       # SOURCE's dir mounted read-only at /in; OUT's dir at /out; script lives at /src.
-      # mkfirmware.php args are positional: source output
-      - 'docker run --rm -v "$(dirname $(realpath {{.SOURCE}})):/in:ro" -v "$(realpath $(dirname {{.OUT}})):/out" {{.IMAGE}} php /src/mkfirmware.php /in/{{base .SOURCE}} /out/{{base .OUT}}'
+      - 'docker run --rm -v "$(dirname $(realpath {{.SOURCE}})):/in:ro" -v "$(realpath $(dirname {{.OUT}})):/out" {{.IMAGE}} python3 /src/mkfirmware.py sign /in/{{base .SOURCE}} /out/{{base .OUT}}'
 
   verify:
     desc: 'Check a signed .sim is well-formed.  Usage: task verify FILE=<fw.sim>'
