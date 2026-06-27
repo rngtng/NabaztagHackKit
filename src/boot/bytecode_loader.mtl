@@ -1,0 +1,29 @@
+// Remote bytecode download and hot-swap
+// Public API: getbytecode, load_bytecode
+
+// Parse "amber" format bytecode from HTTP response body.
+// Returns bytecode binary string, or nil if not a valid amber payload.
+fun getbytecode res=
+	if res!=nil then
+	let httpgetcontent res -> content in
+	if !strcmp Secholn strsub content 0 5 "amber" then
+	let htoi Secholn strsub content 5 8 -> len in
+	if !strcmp Secholn strsub content 13+len 4 "Mind" then strsub content 13 len;;
+
+// HTTP callback: parse and jump to downloaded bytecode.
+// Replaces the running VM program — never returns on success.
+// httpreq unused but required by httprequest callback convention.
+fun load_bytecode httpreq res=
+	let getbytecode res -> bc in
+	if bc!=nil then
+	(
+		Secholn "LOAD DONE";
+		bytecode bc;
+		0
+	)
+	else
+	(
+		Secholn "LOAD ERROR : not a bytecode";
+		0
+	);
+	0;;
