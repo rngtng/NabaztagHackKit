@@ -3,7 +3,7 @@
 
 proto main 0;;
 
-var SIMU;;
+//var SIMU;;
 var BOOT;;
 
 var AUDIOLIB;;
@@ -202,7 +202,7 @@ fun dumpscan l0=
 	);
 	l0;;
 // end of file util //
-// back to file src/boot/boot.mtl, line 59
+// back to file src/boot/boot.mtl, line 57
 // file config //
 // ------------- Config debut
 const CONF_SERVERURL=0;;		//41
@@ -243,6 +243,7 @@ fun confSave=
 	save conf 0 "conf.bin" 0 CONF_LENGTH;;
 
 fun confInit=
+	Secholn "TOBI";
 	set conf=strnew CONF_LENGTH;
 	load conf 0 "conf.bin" 0 CONF_LENGTH;
 	if (strget conf CONF_MAGIC)!=0x47 then
@@ -253,7 +254,8 @@ fun confInit=
 		set conf=strnew CONF_LENGTH;
 		load conf 0 "conf.bin" 0 CONF_LENGTH
 	);
-	dump conf;;
+	//dump conf;
+	Secholn "TOBI";;
 
 fun confReset=
 	set conf=strnew CONF_LENGTH;
@@ -309,7 +311,7 @@ fun confGetProxyport=webport confGet CONF_PROXYPORT 2;;
 
 // ------------- Config fin
 // end of file config //
-// back to file src/boot/boot.mtl, line 60
+// back to file src/boot/boot.mtl, line 58
 
 ifndef SIMU
 {
@@ -907,7 +909,7 @@ fun nettime=
 
 // --------------- net HOOK fin
 // end of file ipv4 //
-// back to file src/boot/boot.mtl, line 65
+// back to file src/boot/boot.mtl, line 63
 
 }
 else
@@ -1000,7 +1002,7 @@ fun netstart=
 	0;;
 // --------------- TCP/UDP EMULATION fin
 // end of file tcpudp_emu //
-// back to file src/boot/boot.mtl, line 71
+// back to file src/boot/boot.mtl, line 69
 
 }
 
@@ -1114,7 +1116,7 @@ fun startdnsclient=
 
 // --------------- DNS fin
 // end of file dns //
-// back to file src/boot/boot.mtl, line 75
+// back to file src/boot/boot.mtl, line 73
 
 ifdef BOOT
 {
@@ -1983,7 +1985,7 @@ fun cbhttp req=
 
 fun startconfigserver port=	starthttpsrv port #cbhttp;;
 // end of file config_server //
-// back to file src/boot/boot.mtl, line 79
+// back to file src/boot/boot.mtl, line 77
 }
 else
 {
@@ -2148,7 +2150,7 @@ fun httpgetcontent res =
 	if i==nil then nil
 	else strsub res i+strlen http_sep strlen res;;
 // end of file http //
-// back to file src/boot/boot.mtl, line 86
+// back to file src/boot/boot.mtl, line 84
 
 ifdef AUDIOLIB {
 
@@ -2580,7 +2582,7 @@ fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
 
 fun wifiConnected= match wifi with (stationW -> 1)|(_ -> 0);;
 // end of file wifi //
-// back to file src/boot/boot.mtl, line 260
+// back to file src/boot/boot.mtl, line 258
 
 ifdef BOOT
 {
@@ -2679,7 +2681,7 @@ fun boot_loop=
 		0
 	);;
 // end of file boot_loop //
-// back to file src/boot/boot.mtl, line 264
+// back to file src/boot/boot.mtl, line 262
 }
 
 ifdef RECLIB {
@@ -3010,13 +3012,20 @@ fun loop=
 fun main=
 	MACecho netMac 0 1;
 	Secho "button :";
-	Iecholn set master=button2;
+	Iecholn set master=0;
 	Secholn ":started";
+	Secholn "";
+	Secholn "";
+	Secholn "";
+	Secholn "";
+	Secholn "";
 	confInit;
-	wifiInit 1;
+	Secholn "hi :";
+	//wifiInit 1;
 	loopcb	#loop;
 
 	netstart;
+	Secho "hi :";
 //	startconfigserver 8080;
 	sndVol button3;
 //	wavstartlocal midi_start::nil;
@@ -3025,5 +3034,5 @@ fun main=
 	setleds if master then 0xff else 0xff00ff;
 	0;;
 // end of file main //
-// back to file src/boot/boot.mtl, line 341
+// back to file src/boot/boot.mtl, line 339
 }

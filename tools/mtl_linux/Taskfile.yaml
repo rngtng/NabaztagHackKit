@@ -28,15 +28,18 @@ tasks:
       - 'docker run --rm -v "$(dirname $(realpath {{.SOURCE}})):/in:ro" -v "$(realpath {{.OUT}}):/out" -w /out {{.IMAGE}} /src/mtl_compiler {{if eq .SIGN "true"}}-s {{end}}/in/{{base .SOURCE}} /out/{{.OUTFILE}}'
 
   simulate:
-    desc: 'Run an MTL app in the simulator (config baked in).  Usage: task mtl:simulate SOURCE=<app>.mtl [-- extra args]'
+    desc: 'Run an MTL app in the simulator (config baked in).  Usage: task mtl:simulate SOURCE=<app>.mtl [PORT=<host-port>] [-- extra args]'
     deps: [image]
     dir: '{{.USER_WORKING_DIR}}'   # resolve SOURCE relative to the dir the user ran `task` from, not the Taskfile's
     requires:
       vars: [SOURCE]
+    vars:
+      PORT: '{{.PORT | default 8080}}'
     cmds:
       # cwd = /src so the baked config.txt is found; SOURCE is mounted into /work and passed via --source.
       # --init: run tini as PID 1 so the sim (no SIGINT handler) is a child and a single Ctrl+C stops it.
-      - 'docker run --rm --init -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} {{.CLI_ARGS}}'
+      # PORT: maps container port 80 (HTTP config server) to the given host port.
+      - 'docker run --rm --init -p {{.PORT}}:80 -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} {{.CLI_ARGS}}'
 
   clean:
     desc: 'Remove Docker image and build artifacts'
