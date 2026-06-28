@@ -97,6 +97,38 @@ tasks:
         vars:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
+  build:app2:
+    desc: 'Build app2 MVP (Forth + Telnet + REST API). Usage: task build:app2'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP2_OUT: '{{.OUT}}/app2'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/app2/main.mtl
+          OUT: '{{.APP2_OUT}}/merged.mtl'
+          INCLUDES: 'src/app2 src/app'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP2_OUT}}/merged.mtl'
+          OUT: '{{.APP2_OUT}}'
+
+  simulate:app2:
+    desc: 'Simulate app2 MVP in MTL simulator. HTTP UI at http://localhost:8080. Usage: task simulate:app2'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP2_OUT: '{{.OUT}}/app2'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/app2/main.mtl
+          OUT: '{{.APP2_OUT}}/merged.mtl'
+          INCLUDES: 'src/app2 src/app'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP2_OUT}}/merged.mtl'
+
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
     dir: '{{.USER_WORKING_DIR}}'

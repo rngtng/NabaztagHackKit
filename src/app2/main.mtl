@@ -1,0 +1,93 @@
+// NabaztagHackKit — app2 MVP
+// Foundation layer: Forth interpreter + Telnet REPL + minimal REST API + firmware upload.
+// Excludes: LED choreography, XMPP, weather/clock/email, HTML UI, MIDI preloads.
+
+proto main 0;;
+
+// #define SIMU
+
+// chose one
+// #define PING
+// #define XMPP
+#define SERVERLESS
+
+#define WEBSERVER
+#define TELNETSERVER
+
+// #define WIFI_DEBUG
+// #define IPV4_DEBUG
+// #define DHCP_DEBUG
+// #define DNS_DEBUG
+// #define HTTP_DEBUG
+// #define HTTP_SERVER_DEBUG
+// #define EARS_DEBUG
+// #define FORTH_DEBUG
+// #define AUDIOLIB_DEBUG
+
+#define WIFI_REBOOT_ON_LOST
+
+const PORT_HTTP = 80;;
+const BYTECODE_REVISION_STR = "$Rev: 202505062100$";;
+const STD_NET_TIMEOUT = 10000;;
+const LED_TIMEOUT = 600;; // 10 minutes
+
+#include hw/leds.mtl
+#include hw/ears.mtl
+#include hw/button.mtl
+
+#include utils/utils.mtl
+#include utils/json.mtl
+#include utils/task.mtl
+#include utils/md5.mtl
+#include utils/config.mtl
+#include utils/word.mtl
+#include utils/url.mtl
+#include utils/sleep.mtl
+#include utils/b64.mtl
+#include utils/time.mtl
+
+#include net/net.mtl
+
+#include audio/const_data.mtl
+#include audio/reclib.mtl
+#include audio/audiolib.mtl
+#include audio/record.mtl
+
+#include hw/rfid.mtl
+
+// Stubs for excluded modules (chor, info, streaming, trame, midi)
+// — allows forth/nabaztag.mtl and forth/memory.mtl to compile unchanged
+#include stubs.mtl
+
+#ifdef PING
+#include run/ping.mtl
+#endif
+
+#ifdef WEBSERVER
+#include srv/http_server.mtl
+#endif
+#ifdef TELNETSERVER
+#include srv/telnet_server.mtl
+#endif
+
+#include run/run.mtl
+#include forth/forth.mtl
+
+fun main=
+    loopcb #task_scheduler;
+    ears_init;
+    info_init;
+    config_load;
+    wifi_init 0;
+    net_init;
+    time_init;
+    ntp_init;
+    audiolib_init;
+    button_init;
+    record_init;
+    leds_init;
+    run_init;
+#ifdef WEBSERVER
+    http_server_start_srv PORT_HTTP;
+#endif
+    0;;
