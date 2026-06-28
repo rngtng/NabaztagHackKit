@@ -138,7 +138,8 @@ fun http_sock_event cnx val msg sock=
  * cnx: TCP connection
  */
 fun http_server_cb cnx code msg=
-    tcp_set_cb cnx fixarg4 #http_sock_event [sockCnx:cnx sockCallback:#http_server_process_request];
+    let sock_create cnx #http_server_process_request -> sock in
+    tcp_set_cb cnx fixarg4 #http_sock_event sock;
     0;;
 
 //--------------------------------------------------------------------------------------------------
