@@ -341,15 +341,15 @@ a:hover {
 "::nil;;
 
 var page_done="
-#include page_done.html
+#include "page_done.html"
 ";;
 
 var page_u="
-#include page_upgrade.html
+#include "page_upgrade.html"
 ";;
 
 var page_error="
-#include page_error.html
+#include "page_error.html"
 ";;
 
 
