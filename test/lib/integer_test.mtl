@@ -23,5 +23,79 @@ let scenario "integer_test" -> s in
     assert_equalI 6579300  StoI3 "\100\100\100";
     assert_equalI 16711680 StoI3 "\255\0\0";
     assert_equalI 16777215 StoI3 "\255\255\255"
+  );
+
+  let test "itoh4" -> t in
+  (
+    assert_equalS "00000000" itoh4 0;
+    assert_equalS "000000ff" itoh4 255;
+    assert_equalS "0000ffff" itoh4 65535;
+    assert_equalS "deadbeef" itoh4 0xdeadbeef
+  );
+
+  let test "itobin4" -> t in
+  (
+    assert_equalS "\0\0\0\0"       itobin4 0;
+    assert_equalS "\255\0\0\0"    itobin4 255;
+    assert_equalS "\0\1\0\0"       itobin4 256
+  );
+
+  let test "atoibin2" -> t in
+  (
+    // itobin2 is big-endian; assert_equalS breaks on null bytes so check bytes
+    assert_equalI 0   strget atoibin2 "0"   0;
+    assert_equalI 0   strget atoibin2 "0"   1;
+    assert_equalI 0   strget atoibin2 "1"   0;
+    assert_equalI 1   strget atoibin2 "1"   1;
+    assert_equalI 0   strget atoibin2 "255" 0;
+    assert_equalI 255 strget atoibin2 "255" 1
+  );
+
+  let test "hex_to_int" -> t in
+  (
+    assert_equalI 0  hex_to_int '0';
+    assert_equalI 9  hex_to_int '9';
+    assert_equalI 10 hex_to_int 'A';
+    assert_equalI 15 hex_to_int 'F';
+    assert_equalI 10 hex_to_int 'a';
+    assert_equalI 15 hex_to_int 'f'
+  );
+
+  let test "int_to_hex" -> t in
+  (
+    assert_equalI '0' int_to_hex 0;
+    assert_equalI '9' int_to_hex 9;
+    assert_equalI 'a' int_to_hex 10;
+    assert_equalI 'f' int_to_hex 15
+  );
+
+  let test "XorHexStr" -> t in
+  (
+    assert_equalS "ff" XorHexStr "ff" "00";
+    assert_equalS "00" XorHexStr "ff" "ff";
+    assert_equalS "01" XorHexStr "0a" "0b"
+  );
+
+  let test "dataToHexStr" -> t in
+  (
+    assert_equalS "00"   dataToHexStr "\0";
+    assert_equalS "ff"   dataToHexStr "\255";
+    assert_equalS "4142" dataToHexStr "\65\66"
+  );
+
+  let test "sqrt" -> t in
+  (
+    assert_equalI 0  sqrt 0;
+    assert_equalI 1  sqrt 1;
+    assert_equalI 2  sqrt 4;
+    assert_equalI 3  sqrt 9;
+    assert_equalI 4  sqrt 16;
+    assert_equalI 10 sqrt 100
+  );
+
+  let test "random" -> t in
+  (
+    assert_equalI 0 random 0;
+    assert_equalI 0 random 1
   )
 );

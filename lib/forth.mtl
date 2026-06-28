@@ -1,0 +1,84 @@
+/**
+ * Forth interpreter — library entry point
+ * Includes all generic Forth core files.
+ * App-specific words (nabaztag hardware, net, tasks) are NOT included here;
+ * include them separately and provide forth_init_dictionary.
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+#include "lib/protos/ascii_protos.mtl"
+#include "lib/protos/forth_protos.mtl"
+#include "lib/protos/word_protos.mtl"
+#include "lib/protos/sock_protos.mtl"
+#include "lib/integer.mtl"
+#include "lib/string.mtl"
+#include "lib/list.mtl"
+#include "lib/url.mtl"
+#include "lib/sock.mtl"
+
+// The dictionary is a list of Words
+var forth_dictionary = nil;; // list of [Word Word] tuples (the first Word is the key, the second is the value)
+var forth_memory = nil;; // list of allocated memory blocks
+
+// Interpreter token state
+type Interpreter=[
+    start               // current token start
+    end                 // current token end
+    end_ln              // next end of line position
+    parentheses         // parentheses depth
+    input               // input text
+    text_len            // length of the input text
+    token               // current token
+    quoted              // true if the token is a quoted string
+    inter_cb            // interpreter callback
+];;
+
+#ifdef FORTH_DEBUG
+fun _forth_debug str= Secho strcatlist "[forth] " :: str :: nil; nil;;
+proto forth_print_word 1;;
+fun forth_debug_word w=
+    if w.func != nil then strcat "[func] " w.str
+    else if w.code != nil then "[code]"
+    else if w.int != nil then strcat "[int]  " itoa w.int
+    else if w.str != nil then strcat "[str]  " w.str
+    else if w.list != nil then strcat "[list] #" itoa listlen w.list
+    else if w.dict != nil then strcat "[dict] #" itoa listlen w.dict
+    else "[nil]";;
+fun forth_print_word w=
+    Secholn forth_debug_word w;;
+#endif
+
+fun forth_is_nil w=
+    if w.int == nil && w.str == nil && w.list == nil && w.dict == nil && w.code == nil && w.func == nil then -1 else 0;;
+
+/**
+ * Compare two Words. Returns 0 if equal, -1 if w1 < w2, 1 if w1 > w2, nil if not comparable.
+ */
+fun forth_compare_words w1 w2=
+    if w1.int != nil && w2.int != nil then
+        if w1.int == w2.int then 0
+        else if w1.int < w2.int then -1
+        else 1
+    else if w1.str != nil && w2.str != nil then
+        str_compare w1.str w2.str
+    else if (forth_is_nil w1) != 0 && (forth_is_nil w2) != 0 then
+        0
+    else
+        nil;;
+
+/**
+ * Get a word from the dictionary by name (case insensitive)
+ */
+fun forth_get_word name=
+    word_dict_get forth_dictionary (to_lower name);;
+
+#include "lib/forth/stack.mtl"
+#include "lib/forth/logical.mtl"
+#include "lib/forth/arithmetic.mtl"
+#include "lib/forth/comparison.mtl"
+#include "lib/forth/output.mtl"
+#include "lib/forth/list.mtl"
+#include "lib/forth/string.mtl"
+#include "lib/forth/control.mtl"
+#include "lib/forth/interpreter.mtl"

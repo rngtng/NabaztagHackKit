@@ -1,0 +1,40 @@
+#include "lib/string.mtl"
+
+// Firmware binary is delimited by this 8-byte marker
+const firmwarelimit="-violet-";;
+
+// Decode hex-encoded firmware bytes into bin buffer
+fun getbinary bin src i off len=
+	if i<len then
+	(
+		strset bin i (htoi strsub src off 2);
+		getbinary bin src i+1 off+2 len
+	);;
+
+// Extract firmware binary from raw HTTP upload body.
+// Returns binary string on success, nil on invalid/missing firmware.
+fun getfirmware req=
+	let strstr req firmwarelimit 0 -> i0 in
+	if i0!=nil then let i0+8->i0 in
+	let htoi strsub req i0 8 -> len in
+	let i0+8->i0 in
+	let strsub req i0+len 8 -> end in
+	if !strcmp end firmwarelimit then
+	let strnew len>>1 -> bin in
+	(
+		Secholn "getbinary";
+		getbinary bin req 0 i0 len>>1;
+		uncrypt bin 0 nil 0x47 47;
+		bin
+	);;
+
+// Parse and flash firmware from upload body.
+// On valid firmware: flashes device and reboots (never returns).
+// On invalid firmware: returns nil.
+fun firmware_flash req=
+	let getfirmware req -> firm in
+	if firm!=nil then
+	(
+		Secholn "######### firmware found";
+		flashFirmware firm 0x13fb6754 0x0407FE58
+	);;
