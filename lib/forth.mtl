@@ -12,10 +12,10 @@
 #include "lib/protos/ascii_protos.mtl"
 #include "lib/protos/forth_protos.mtl"
 #include "lib/protos/word_protos.mtl"
-#include "lib/integer.mtl"
-#include "lib/string.mtl"
-#include "lib/list.mtl"
-#include "lib/url.mtl"
+#include "lib/std/integer.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/url.mtl"
 
 // The dictionary is a list of Words
 var forth_dictionary = nil;; // list of [Word Word] tuples (the first Word is the key, the second is the value)

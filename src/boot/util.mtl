@@ -1,7 +1,7 @@
-#include "lib/list"
-#include "lib/integer"
-#include "lib/string"
-#include "lib/net"
+#include "lib/std/list"
+#include "lib/std/integer"
+#include "lib/std/string"
+#include "lib/std/net"
 
 fun itoanil l= if l==nil then '0'::nil else l;;
 

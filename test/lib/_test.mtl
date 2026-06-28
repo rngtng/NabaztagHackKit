@@ -1,11 +1,11 @@
-#include "lib/buffer.mtl"
-#include "lib/integer.mtl"
-#include "lib/list.mtl"
-#include "lib/string.mtl"
-#include "lib/net.mtl"
-#include "lib/b64.mtl"
-#include "lib/url.mtl"
-#include "lib/json.mtl"
+#include "lib/std/buffer.mtl"
+#include "lib/std/integer.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/net.mtl"
+#include "lib/std/b64.mtl"
+#include "lib/std/url.mtl"
+#include "lib/std/json.mtl"
 
 // Stubs for TCP primitives required by lib/sse_server.mtl at compile time.
 // Only sse_event (pure string fn) is called in tests; TCP fns are never invoked.
@@ -15,7 +15,7 @@ fun writetcp t msg i= 0;;
 fun closetcp t= 0;;
 fun tcpcb t cb= 0;;
 
-#include "lib/sse_server.mtl"
+#include "lib/net/sse_server.mtl"
 
 fun cmpI a b= if a<b then -1 else 1;;
 fun gtI x a= x>a;;

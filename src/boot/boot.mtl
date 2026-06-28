@@ -187,63 +187,6 @@ fun mkwav freq channel bps=
 		"data"::(itobin4 0)::nil -> c in
 	strcatlist "RIFF"::(itobin4 (strlen c))::c::nil;;
 
-/*
-fun _wavcbhttp httpreq req=
-	set wav_lastnet=time_ms;
-	if req==nil then
-	(
-		Secholn ">>>>>>>>>>>>>>>>>>>>>>>>>>>>><end of file";
-		set wav_state=WAV_EOF;
-		if wav_index==nil then
-		(
-			set wav_fifo=tl wav_fifo;
-			if wav_fifo==nil then wavstop
-			else _wavstartnow
-		);
-		0
-	)
-	else
-	(
-		set wav_fifo=conc wav_fifo req::nil;
-		let slistlen wav_fifo -> n in
-		if wav_index==nil && n>WAV_BUFFER_STARTSIZE then
-		(
-			set wav_fifo=tl wav_fifo;
-			_wavstartnow
-		)
-		else if n>WAV_BUFFER_MAXSIZE then
-		(
-			Secholn "\n>>>>>>>>>>>>>>http wait";
-			httpenable httpreq 0
-		);
-		nil
-	);
-	0;;
-
-fun wavstarthttp url =
-	wavstop;
-	set wav_fifo=nil;
-	set wav_state=WAV_RUN;
-	set wav_index=nil;
-	set wav_buffering=1;
-	set wav_lasttime=nil;
-	set wav_lastnet=time_ms;
-	set wav_http=httprequest "GET" url nil #_wavcbhttp HTTP_STREAM;;
-
-fun wavtime =
-	if wav_http!=nil && wav_state==WAV_RUN && /*wav_fifo==nil &&*/ (time_ms-wav_lastnet>WAV_NET_TIMEOUT) then
-	(
-		if wav_http!=nil then
-		(
-			Secholn "####wavhttp abort";
-			httpabort wav_http;
-			set wav_http=nil;
-			_wavcbhttp wav_http nil;
-			0
-		)
-	);
-	0;;
-*/
 }
 
 

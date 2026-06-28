@@ -1,6 +1,6 @@
-#include "lib/list.mtl"
-#include "lib/string.mtl"
-#include "lib/sock.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/string.mtl"
+#include "lib/net/sock.mtl"
 
 // Simple single-request TCP HTTP/1.0 server
 // Public API: starthttpsrv, tcpsend, tcpcloseafter
@@ -37,7 +37,7 @@ fun tcpcloseafter sock=
 
 fun _httpsrv_tcpread cnx input sock=
 	if input==nil || 0==strlen input then
-	(	tcp_close cnx;
+	(	closetcp cnx;
 		nil	)
 	else
 	(

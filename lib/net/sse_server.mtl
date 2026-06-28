@@ -1,5 +1,5 @@
-#include "lib/list.mtl"
-#include "lib/string.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/string.mtl"
 #include "lib/protos/sock_protos.mtl"
 
 // #define SSE_DEBUG

@@ -76,10 +76,10 @@ Each layer depends only on layers below it. The dependency rule is strict: nothi
 
 | Layer | Modules | Dependencies |
 |-------|---------|--------------|
-| 0 — Utilities | `integer.mtl`, `string.mtl`, `list.mtl` | none (MTL built-ins only) |
+| 0 — Utilities | `std/integer.mtl`, `std/string.mtl`, `std/list.mtl`, `std/buffer.mtl` | none (MTL built-ins only) |
 | 1 — Types | `protos/sock_protos.mtl`, `protos/forth_protos.mtl`, `protos/word_protos.mtl`, `protos/ascii_protos.mtl` | none |
-| 2 — Encoding | `b64.mtl`, `url.mtl`, `json.mtl`, `net.mtl`, `md5.mtl` | Layer 0 |
-| 3 — Network | `sock.mtl`, `http_server.mtl` | Layers 0–2 |
+| 2 — Encoding | `std/b64.mtl`, `std/url.mtl`, `std/json.mtl`, `std/net.mtl`, `std/md5.mtl` | Layer 0 |
+| 3 — Network | `net/sock.mtl`, `net/http_server.mtl`, `net/sse_server.mtl` | Layers 0–2 |
 | 4 — Forth | `forth.mtl` + `forth/*.mtl` | Layers 0–2 only |
 
 `lib/forth` sits at Layer 4 and does **not** depend on `lib/sock`. I/O is wired by the caller through two callbacks stored in the interpreter state:
@@ -150,6 +150,8 @@ The boot image handles WiFi provisioning (serves a captive-portal config page) a
 ```
 lib/                 Reusable MTL standard library
 lib/protos/          Type definitions (no logic)
+lib/std/             Primitives (string, integer, list, buffer, b64, url, json, md5, net)
+lib/net/             Network helpers (sock, http_server, sse_server)
 lib/forth/           Forth interpreter core
 src/app/             Main application
 src/app/hw/          Hardware drivers (LEDs, ears, button, RFID)

@@ -3,7 +3,11 @@
 Portable MTL modules for the Nabaztag firmware. Each file is self-contained
 and `#include`-able on demand. No module pulls in more than it needs.
 
-## Architecture
+The `lib/` modules should declare all external deps as `proto` at the top so
+each file is self-documenting and linter-friendly.
+
+
+## Architecture Proposal
 
 ```
 lib/
@@ -20,7 +24,7 @@ lib/
 │   ├── control.mtl / list.mtl / string.mtl / output.mtl
 │   └── …
 │
-├── Primitives
+├── std  # Primitives
 │   ├── string.mtl        String helpers (strcat, strsub, itoa, …)
 │   ├── integer.mtl       Integer utilities
 │   ├── list.mtl          Linked-list helpers (hd, tl, rev, …)
@@ -31,7 +35,7 @@ lib/
 │   ├── md5.mtl           MD5 hash
 │   └── net.mtl           IP/MAC address conversions
 │
-├── Networking
+├── net # Networking
 │   ├── sock.mtl          Sock write/close helpers (app-level, uses tcp_write/tcp_close)
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
@@ -81,9 +85,9 @@ type Sock=[sockCnx sockInput sockSize sockOutput sockIndex sockCloseAfter sockCa
 ### String / integer / list primitives
 
 ```mtl
-#include "lib/string.mtl"
-#include "lib/list.mtl"
-#include "lib/integer.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/integer.mtl"
 ```
 
 No dependencies. Safe to include anywhere.
@@ -91,7 +95,7 @@ No dependencies. Safe to include anywhere.
 ### HTTP server (single request-response)
 
 ```mtl
-#include "lib/http_server.mtl"
+#include "lib/net/http_server.mtl"
 
 fun handle_request raw_request=
     "<html>hello</html>";;
@@ -108,7 +112,7 @@ closed after the response is flushed.
 
 ```mtl
 #include "lib/protos/sse_protos.mtl"   // if sse_server.mtl included elsewhere
-#include "lib/sse_server.mtl"
+#include "lib/net/sse_server.mtl"
 
 fun on_accept cnx val msg=
     if val==TCPSTART then sse_accept_client cnx;;
@@ -136,7 +140,7 @@ clients. It handles partial writes via the cooperative task loop (no threads
 needed). Maximum ~4–5 concurrent clients given the 1 MB RAM budget.
 
 **Prerequisites:** The including file must define (or stub) these VM primitives
-before `#include "lib/sse_server.mtl"`:
+before `#include "lib/net/sse_server.mtl"`:
 
 ```mtl
 fun writetcp cnx msg offset= …;;
@@ -152,7 +156,7 @@ stub them out — see `test/lib/_test.mtl` for the pattern.
 ### JSON builder
 
 ```mtl
-#include "lib/json.mtl"
+#include "lib/std/json.mtl"
 ```
 
 Minimal builder/parser for constructing JSON strings to pass to `sse_broadcast`.
@@ -160,7 +164,7 @@ Minimal builder/parser for constructing JSON strings to pass to `sse_broadcast`.
 ### Network address utilities
 
 ```mtl
-#include "lib/net.mtl"
+#include "lib/std/net.mtl"
 
 let str_to_ip "192.168.1.1" -> ip in …
 let ip_to_str ip -> s in …

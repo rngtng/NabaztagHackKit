@@ -1,5 +1,5 @@
-#include "lib/string.mtl"
-#include "lib/integer.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/integer.mtl"
 
 // RFC 3986 safe chars
 fun _url_percent_encode_ch ch=

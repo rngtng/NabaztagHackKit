@@ -46,7 +46,7 @@ fun netstart=
     set ltcp=nil;
     0;;
 
-#include "lib/sse_server.mtl"
+#include "lib/net/sse_server.mtl"
 
 var _tick = 0;;
 var _last_broadcast = nil;;

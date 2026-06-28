@@ -77,7 +77,7 @@ tasks:
           SOURCE: '{{.SOURCE}}'
           OUT: '{{.BOOT_OUT}}/merged.mtl'
           INCLUDES: '. {{dir .SOURCE}}'
-          DEFINES: 'SIMU BOOT'
+          DEFINES: 'SIMU'
       - task: mtl:simulate
         vars:
           SOURCE: '{{.BOOT_OUT}}/merged.mtl'

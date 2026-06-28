@@ -1,4 +1,4 @@
-#include "lib/string.mtl"
+#include "lib/std/string.mtl"
 
 // Firmware binary is delimited by this 8-byte marker
 const firmwarelimit="-violet-";;
