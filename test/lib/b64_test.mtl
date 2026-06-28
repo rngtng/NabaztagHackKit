@@ -1,0 +1,23 @@
+let scenario "b64_test" -> s in
+(
+  let test "b64_encode" -> t in
+  (
+    assert_equalS "TWFu"     b64_encode "Man";
+    assert_equalS "YWJj"     b64_encode "abc";
+    assert_equalS "Zm9vYmFy" b64_encode "foobar"
+  );
+
+  let test "base64_decode" -> t in
+  (
+    assert_equalS "Man"    base64_decode "TWFu";
+    assert_equalS "abc"    base64_decode "YWJj";
+    assert_equalS "foobar" base64_decode "Zm9vYmFy"
+  );
+
+  let test "round-trip" -> t in
+  (
+    assert_equalS "Man"    base64_decode b64_encode "Man";
+    assert_equalS "abc"    base64_decode b64_encode "abc";
+    assert_equalS "foobar" base64_decode b64_encode "foobar"
+  )
+);
