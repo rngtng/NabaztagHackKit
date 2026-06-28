@@ -1,5 +1,5 @@
-#include "http_server"
-#include "firmware"
+#include "http_server.mtl"
+#include "firmware.mtl"
 
 //----------------------
 
@@ -341,15 +341,15 @@ a:hover {
 "::nil;;
 
 var page_done="
-#include page_done.html
+#include "page_done.html"
 ";;
 
 var page_u="
-#include page_upgrade.html
+#include "page_upgrade.html"
 ";;
 
 var page_error="
-#include page_error.html
+#include "page_error.html"
 ";;
 
 
@@ -536,7 +536,7 @@ fun updateconf args=
 // HTTP handler for firmware upload — wraps firmware_flash with error page response
 fun httpflash req=
 	Secholn "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf";
-	firmware_flash req;
+	boot_firmware_flash req;
 	// only reached when firmware_flash returned nil (invalid firmware)
 	setleds 0xff;
 	page_error;;

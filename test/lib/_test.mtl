@@ -1,9 +1,22 @@
-#include ./lib/buffer.mtl
-#include ./lib/integer.mtl
-#include ./lib/list.mtl
+#include "lib/buffer.mtl"
+#include "lib/integer.mtl"
+#include "lib/list.mtl"
+#include "lib/string.mtl"
+#include "lib/net.mtl"
+#include "lib/b64.mtl"
+#include "lib/url.mtl"
+#include "lib/json.mtl"
+
+fun cmpI a b= if a<b then -1 else 1;;
+fun gtI x a= x>a;;
 
 fun lib_test=
-#include ./test/lib/buffer_test.mtl
-#include ./test/lib/integer_test.mtl
-#include ./test/lib/list_test.mtl
+#include "test/lib/buffer_test.mtl"
+#include "test/lib/integer_test.mtl"
+#include "test/lib/list_test.mtl"
+#include "test/lib/string_test.mtl"
+#include "test/lib/net_test.mtl"
+#include "test/lib/b64_test.mtl"
+#include "test/lib/url_test.mtl"
+#include "test/lib/json_test.mtl"
 0;;

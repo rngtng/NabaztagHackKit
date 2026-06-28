@@ -1,23 +1,15 @@
 proto main 0;;
 
-#include ./test/helper.mtl
-#include ./test/assertions.mtl
+#include "test/helper.mtl"
+#include "test/assertions.mtl"
 
 //-------------------- MAIN
-#include ./test/lib/_test.mtl
-#include ./test/native/_test.mtl
+#include "test/lib/_test.mtl"
+#include "test/native/_test.mtl"
 
 fun main=
   lib_test;
   native_test;
-
-  // let xtest "webmac" -> t in
-  // (
-  //   assert_equalS "0100"  webmac "\1\0";
-  //   assert_equalS "0a00"  webmac "\10\0";
-  //   assert_equalS "00ff"  webmac "\0\255";
-  //   assert_equalS "ff00"  webmac "\255\0";
-  // 0);
 
   // let test "str_find_end" -> t in
   // (
@@ -25,13 +17,6 @@ fun main=
   //   assert_equalI 0        str_find_end "\255\0\0" ;
   //   assert_equalI 2        str_find_end "AB\255";
   //   assert_equalI 10       str_find_end "0123456789\255";
-  // 0);
-  //
-  // let test "find RIFID id" -> t in
-  // (
-  //   assert_equalI 0   strstr "\208\2\26\1\1\1\1\1" "\208\2\26" 0;
-  //   assert_equalI 1   strstr "\1\208\2\26\1\1\1\1" "\208\2\26" 0;
-  //   assert_equalI nil strstr "\1\208\1\26\1\1\1\1" "\208\2\26" 0;
   // 0);
   //
   // let test "COtoI" -> t in
