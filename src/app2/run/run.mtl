@@ -1,0 +1,133 @@
+// Run — app2: simplified main loop, no XMPP/chor/streaming/interactive
+#include protos/button_protos.mtl
+#include protos/forth_protos.mtl
+#include protos/run_protos.mtl
+#include protos/task_protos.mtl
+#include protos/record_protos.mtl
+#ifdef PING
+#include protos/ping_protos.mtl
+#endif
+
+var run;; // type Run
+
+fun run_get_state =
+    run;;
+
+fun _run_to_str run=
+    match run with
+    ( configstartRun ->         "configstartRun" )|
+    ( configwaitRun _ ->        "configwaitRun" )|
+#ifdef PING
+    ( pingstartRun ->           "pingstartRun" )|
+    ( pingwaitRun _ ->          "pingwaitRun" )|
+    ( stdWaitRun _ ->           "stdWaitRun" )|
+    ( pingRequestWaitRun _ ->   "pingRequestWaitRun" )|
+#endif
+    ( idleRun ->                "idleRun" )|
+    ( recordRun ->              "recordRun" )|
+    ( recordStartRun ->         "recordStartRun" )|
+    ( earResetWaitRun _ ->      "earResetWaitRun" )
+    ;;
+
+fun run_set_state r =
+    Secho "run_set_state "; Secholn _run_to_str r;
+    let run -> old_run in (
+        set run = r;
+        old_run
+    );;
+
+fun run_init =
+    run_set_state configstartRun;
+    task_start "run" #run_task;;
+
+/**
+ * Stop audio and reset ears; transition to idle.
+ */
+fun run_reset_to_idle =
+    audiolib_wav_stop;
+    ears_start_reset;
+    run_set_state idleRun;
+    0;;
+
+/**
+ * Poll button and ear events; dispatch to Forth callbacks.
+ */
+fun _run_control_wait =
+    let button_get_event -> ev in
+    let if ev==nil then ears_get_event else ev -> ev in
+    if ev!=nil then
+    (
+        audiolib_wav_stop;
+        ears_stop 0;
+        if ev==BUTTON_CLIC then forth_interpreter WORD_ON_CLICK
+        else if ev==BUTTON_DCLIC then forth_interpreter WORD_ON_DBL_CLICK
+        else if ev==BUTTON_LCLIC then record_control 0
+        else if ev==BUTTON_DLCLIC then record_control 1
+        else if ev&0x8000 then forth_interpreter WORD_ON_EARS
+    );
+    rfid_control
+    ;;
+
+fun _run_idle =
+#ifdef PING
+    ping_run_start
+#else
+    0
+#endif
+    ;;
+
+/**
+ * Fetch init.forth once WiFi is up and no audio is playing.
+ */
+fun _run_config_start =
+    if wifi_connected && audiolib_wav_running==0 then (
+        ntp_get_time;
+        forth_init
+    );
+    0;;
+
+/**
+ * Abort init.forth fetch on timeout; retry from configstartRun.
+ */
+fun _run_config_wait http=
+    if ((http_inactive http) > STD_NET_TIMEOUT) then
+    (
+        Secholn "##timeout on configwait";
+        http_abort http;
+        run_set_state configstartRun
+    );
+    0;;
+
+fun run_task task=
+    match run with
+    ( configstartRun ->
+        _run_config_start;
+        button_clear_event )|
+    ( configwaitRun http ->
+        _run_config_wait http;
+        button_clear_event )|
+#ifdef PING
+    ( pingstartRun ->
+        ping_run_start;
+        button_clear_event )|
+    ( pingwaitRun http ->
+        runpingwait http;
+        _run_control_wait )|
+    ( pingRequestWaitRun http ->
+        runPingRequestWait http;
+        button_clear_event )|
+    ( stdWaitRun t ->
+        runStdWait t;
+        _run_control_wait )|
+#endif
+    ( idleRun ->
+        _run_idle;
+        _run_control_wait )|
+    ( recordRun ->
+        _run_control_wait )|
+    ( recordStartRun ->
+        button_clear_event )|
+    ( earResetWaitRun _ ->
+        button_clear_event )|
+    ( _ -> button_clear_event );
+    TaskRun;;
