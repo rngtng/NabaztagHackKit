@@ -3,6 +3,8 @@
  * Includes all generic Forth core files.
  * App-specific words (nabaztag hardware, net, tasks) are NOT included here;
  * include them separately and provide forth_init_dictionary.
+ * I/O is abstracted via f.write_fn (output callback) and f.readline_cb (pending read).
+ * The caller wires the transport: e.g. set f.write_fn = fixarg2 #sock_send my_sock.
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */
@@ -10,12 +12,10 @@
 #include "lib/protos/ascii_protos.mtl"
 #include "lib/protos/forth_protos.mtl"
 #include "lib/protos/word_protos.mtl"
-#include "lib/protos/sock_protos.mtl"
 #include "lib/integer.mtl"
 #include "lib/string.mtl"
 #include "lib/list.mtl"
 #include "lib/url.mtl"
-#include "lib/sock.mtl"
 
 // The dictionary is a list of Words
 var forth_dictionary = nil;; // list of [Word Word] tuples (the first Word is the key, the second is the value)
