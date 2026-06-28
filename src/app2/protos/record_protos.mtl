@@ -1,0 +1,7 @@
+proto record_is_uploading 0;;
+proto record_abort 0;;
+
+const RECORD_MAX_RECORDING_TIME = 8000;;
+
+var record_is_recording = 0;;
+var record_enabled = 1;;

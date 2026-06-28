@@ -1,0 +1,31 @@
+// Stubs for modules excluded from app2:
+// chor (choreography/info/streaming/trame) and audio/midi.
+// Allows forth/nabaztag.mtl and forth/memory.mtl to compile unchanged.
+
+// --- chor/info stubs ---
+var _autoclock_enabled = 0;;
+var _autohalftime_enabled = 0;;
+var _autosurprise_enabled = 0;;
+var _autotaichi_enabled = 0;;
+var info_duration = 0;;
+var info_palette;;
+
+fun info_init= set info_palette = tabnew 0 16;;
+fun info_clear_all= nil;;
+fun info_service_get service= nil;;
+fun info_service_update service val= nil;;
+fun info_set_animation_from_json num data= nil;;
+
+// --- chor/streaming stub ---
+fun streaming_wav_error= nil;;
+
+// --- chor/trame stub ---
+fun trame_eval ping_trame= nil;;
+
+// --- chor/choreographic stub ---
+fun chor_start chor_data cb cb_args= nil;;
+
+// --- audio/midi stubs ---
+fun midi_play i= nil;;
+fun midi_play_note i= nil;;
+fun midi_play_random_note= nil;;
