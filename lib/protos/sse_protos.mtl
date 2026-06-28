@@ -1,0 +1,4 @@
+proto sse_event 2;;
+proto sse_broadcast 2;;
+proto sse_accept_client 1;;
+proto sse_remove_client 1;;

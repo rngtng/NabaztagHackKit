@@ -7,6 +7,16 @@
 #include "lib/url.mtl"
 #include "lib/json.mtl"
 
+// Stubs for TCP primitives required by lib/sse_server.mtl at compile time.
+// Only sse_event (pure string fn) is called in tests; TCP fns are never invoked.
+const TCPWRITE=0;;
+const TCPCLOSE=-1;;
+fun writetcp t msg i= 0;;
+fun closetcp t= 0;;
+fun tcpcb t cb= 0;;
+
+#include "lib/sse_server.mtl"
+
 fun cmpI a b= if a<b then -1 else 1;;
 fun gtI x a= x>a;;
 
@@ -19,4 +29,5 @@ fun lib_test=
 #include "test/lib/b64_test.mtl"
 #include "test/lib/url_test.mtl"
 #include "test/lib/json_test.mtl"
+#include "test/lib/sse_server_test.mtl"
 0;;
