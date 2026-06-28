@@ -1,0 +1,22 @@
+#include "lib/echo.mtl"
+#include "lib/system.mtl"
+
+fun scenario name=
+  SLecholn "\n##### "::name::": #####"::nil
+;;
+
+fun test name=
+  SLecholn "\n"::name::": "::nil
+;;
+
+// fun xtest name=
+//   //no op, skip test
+// 0;;
+
+fun ok should=
+  SLecholn "  "::should::" is valid"::nil
+;;
+
+fun failed should is=
+  SLecholn "!! "::"  "::should::" expected but got "::is::nil
+;;

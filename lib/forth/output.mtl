@@ -1,0 +1,131 @@
+/**
+ * Output words for Forth interpreter
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+/**
+ * Write a string to the output.
+ * If write_fn is set, calls it; otherwise buffers in f.output.
+ */
+fun forth_write f s=
+#ifdef SIMU
+    Secho s;
+#endif
+    if f.write_fn != nil then (
+        f.write_fn s;
+        nil
+    ) else (
+        set f.output = s :: f.output;
+        nil
+    );;
+
+/**
+ * Format a cell as string
+ */
+fun forth_word_fmt cell=
+    if cell.int != nil then itoa cell.int
+    else if cell.str != nil then cell.str
+    else if cell.list != nil then strcatlist "[" :: (forth_list_to_str cell.list " ") :: "]" :: nil
+    else if cell.dict != nil then strcatlist "{" :: (forth_dict_to_str cell.dict " ") :: "}" :: nil
+    else if cell.func != nil then "<func>"
+    else "?";;
+
+/**
+ * Format a dictionary to a string
+ */
+fun forth_dict_to_str dict separator=
+    let nil -> t in (
+        for i=dict; i!=nil; tl i do
+            let hd i -> [k v] in (
+            set t = (forth_word_fmt k) :: "=" :: (forth_word_fmt v) :: t;
+            if (nil != tl i) then set t = separator :: t
+        );
+        strcatlist t
+    );;
+
+/**
+ * Format a list of words to a string
+ */
+fun forth_list_to_str list separator=
+    let nil -> t in (
+        for l=list; l!=nil; tl l do (
+            set t = (forth_word_fmt (hd l)) :: t;
+            if (nil != tl l) then set t = separator :: t
+        );
+        strcatlist t
+    );;
+
+/**
+ * . ( n -- )
+ * Display n
+ */
+fun forth_d f=
+    let forth_pop f -> a in
+    forth_write f forth_word_fmt a;;
+
+/**
+ * CR ( -- )
+ * Display CR
+ */
+fun forth_cr f=
+    forth_write f "\n";;
+
+/**
+ * SPACE ( -- )
+ * Display space
+ */
+fun forth_space f=
+    forth_write f " ";;
+
+/**
+ * EMIT ( char -- )
+ * Emit character
+ */
+fun forth_emit f=
+    let forth_pop f -> a in
+    let " " -> s in
+    forth_write f (strset s 0 a.int);;
+
+/**
+ * BL ( -- char )
+ * Character value for a space
+ */
+fun forth_bl f=
+    forth_push f [int:32];;
+
+/**
+ * .S ( -- )
+ * Copy and display the values currently on the data stack
+ */
+fun forth_dot_s f=
+    let forth_list_to_str f.stack " " -> val in
+    forth_write f val;
+    forth_write f "\n";;
+
+/**
+ * Internal callback: delivers a line to a suspended READ-LINE.
+ * Strips trailing \r\n, pushes the line onto the stack, resumes.
+ */
+fun _forth_readline_deliver f input=
+    let strsub input 0 ((strlen input) - 2) -> line in
+    forth_push f [str:line];
+    set f.readline_cb = nil;
+    forth_interpreter_resume f;
+    0;;
+
+/**
+ * READ-LINE ( -- line )
+ * Suspend the interpreter and wait for the next line from write_fn's transport.
+ * The caller is responsible for delivering input via f.readline_cb.
+ */
+fun forth_read_line f=
+    if f.write_fn == nil then (
+        forth_write f "\nREAD-LINE: no I/O available\n";
+        set f.stack = nil;
+        set f.rstack = nil;
+        set f.pc = nil;
+        nil
+    ) else
+        set f.readline_cb = fixarg1 #_forth_readline_deliver f;
+    nil;;

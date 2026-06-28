@@ -1,4 +1,4 @@
-#include "bytecode_loader"
+#include "bytecode_loader.mtl"
 
 const BOOT_HTTPTIMEOUT=10;;
 const BOOT_WIFITIMEOUT=20;;

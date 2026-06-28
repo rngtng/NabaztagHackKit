@@ -1,0 +1,27 @@
+//----------- Data Dump
+#include "lib/std/list.mtl"
+
+// echo a string list as string
+fun SLecho list=
+  Secho strcatlist list
+;;
+
+fun SLecholn list=
+  SLecho list;
+  Secholn ""
+;;
+
+// echo a integer list as string
+fun ILecho list=
+  Secho listtostr list
+;;
+
+fun ILecholn list=
+  ILecho list;
+  Secholn ""
+;;
+
+// echo a tuple list as string
+fun TLecho tlist=
+  Secho TLtoS tlist
+;;

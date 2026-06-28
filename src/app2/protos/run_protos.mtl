@@ -1,0 +1,30 @@
+// Main loop states — app2 MVP (no chor, streaming, interactive, xmpp)
+type Run =
+    configstartRun |            // Fetch init.forth from server
+    configwaitRun _ |           // Waiting for init.forth download
+#ifdef PING
+    pingstartRun |
+    pingwaitRun _ |
+    stdWaitRun _ |
+    pingRequestWaitRun _ |
+#endif
+    idleRun |                   // Normal operation
+    recordRun |                 // Recording audio
+    recordStartRun |            // Waiting for start-record sound to finish
+    earResetWaitRun _;;         // Ear reset with completion callback
+
+proto run_init 0;;
+proto run_set_state 1;;
+proto run_get_state 0;;
+proto run_task 1;;
+proto run_reset_to_idle 0;;
+proto _run_to_str 1;;
+
+const RUN_NONE=0;;
+const RUN_WAIT=1;;
+const RUN_PLAY=2;;
+const RUN_INTERACTIF=3;;
+const RUN_PROGRAM_WAIT=4;;
+
+const RUN_MSG_IDLE=0x7fffffff;;
+const RUN_MSG_ASLEEP=0x7ffffffe;;

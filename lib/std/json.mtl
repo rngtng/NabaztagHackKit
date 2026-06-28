@@ -1,0 +1,46 @@
+#include "lib/protos/ascii_protos.mtl"
+
+fun _json_is_special_char c =
+    (c == ASCII_TAB) ||
+    (c == ASCII_NEWLINE) ||
+    (c == ASCII_DOUBLE_QUOTE) ||
+    (c == ASCII_SLASH) ||
+    (c == ASCII_BACKSLASH);;
+
+fun _json_count_special_char s =
+    let 0 -> count in
+    let strlen s -> length in (
+        for i=0; i<length do if _json_is_special_char strget s i then set count = count + 1;
+        count
+    );;
+
+fun json_quote_str str=
+    if str == nil then "\"\"" else
+    let strlen str -> len in
+    let _json_count_special_char str -> nquote in
+    let strnew (len + nquote + 2) -> s in (
+        strset s 0 ASCII_DOUBLE_QUOTE;
+        let 1 -> j in
+        for i=0; i<len do (
+            let strget str i -> ch in (
+                if ch == ASCII_TAB then (strset s j ASCII_BACKSLASH; set j = j + 1; set ch = 116)
+                else if ch == ASCII_NEWLINE then (strset s j ASCII_BACKSLASH; set j = j + 1; set ch = 110)
+                else if ch == ASCII_DOUBLE_QUOTE then (strset s j ASCII_BACKSLASH; set j = j + 1; set ch = ASCII_DOUBLE_QUOTE)
+                else if ch == ASCII_SLASH then (strset s j ASCII_BACKSLASH; set j = j + 1; set ch = ASCII_SLASH)
+                else if ch == ASCII_BACKSLASH then (strset s j ASCII_BACKSLASH; set j = j + 1; set ch = ASCII_BACKSLASH);
+                strset s j ch;
+                set j = j + 1
+            )
+        );
+        strset s (len + nquote + 1) ASCII_DOUBLE_QUOTE;
+        s
+    );;
+
+fun json_int k v=
+    strcatlist "\"" :: k :: "\": " :: (itoa v) :: nil;;
+
+fun json_str k v=
+    strcatlist "\"" :: k :: "\": " :: (json_quote_str v) :: nil;;
+
+fun json_obj k v=
+    strcatlist "\"" :: k :: "\": " :: v :: nil;;

@@ -1,0 +1,29 @@
+# ARM7TDMI firmware layer — compiles the C/asm sources in this dir to
+# bin/Nab.{elf,hex,bin} inside the Docker toolchain (see Dockerfile).
+# Run standalone (`task compile`) or via the root SDK Taskfile (`task firmware:compile`).
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabgcc-build"}}'
+  DIR: '{{.DIR | default "."}}'
+
+tasks:
+  image:
+    internal: true   # built on demand as a dep; rebuilt when the toolchain changes
+    cmds:
+      - docker build -t {{.IMAGE}} {{.DIR}}
+
+  compile:
+    desc: 'Compile the ARM firmware → bin/Nab.{elf,hex,bin}'
+    deps: [image]
+    cmds:
+      # bind-mount the firmware tree at /work; obj/ and bin/ land back on the host.
+      # serial build: the Makefile's mkdir rules race under -j.
+      - 'docker run --rm -v "$(realpath {{.DIR}}):/work" {{.IMAGE}} make'
+
+  clean:
+    desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker image'
+    dir: '{{.DIR}}'
+    cmds:
+      - rm -rf bin obj
+      - docker rmi {{.IMAGE}} || true

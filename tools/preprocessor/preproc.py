@@ -56,7 +56,12 @@ class _MTLPreprocessor(pcpp.Preprocessor):
                 return io.StringIO(fh.read().replace('"', '\\"'))
         result = super().on_file_open(is_system_include, path)
         # treat every file as #pragma once — no need for the directive in sources
-        self.include_once.add(os.path.realpath(path))
+        # pcpp >= 1.31 changed include_once from set to dict
+        key = os.path.realpath(path)
+        if isinstance(self.include_once, set):
+            self.include_once.add(key)
+        else:
+            self.include_once[key] = True
         return result
 
 
@@ -65,7 +70,7 @@ def preprocess(source, defines, include_dirs):
     pp = _MTLPreprocessor()
 
     for d in defines:
-        pp.define(f"{d} 1")
+        pp.define(f"{d} {d}")  # self-ref: #ifdef works, token not substituted
     pp.define(f"__DATE__ {_date()!r}")
 
     pp.add_path(".")  # always search from repo root so "lib/foo.mtl" resolves everywhere
@@ -116,6 +121,9 @@ def _self_test():
             #ifdef MISSING
             proto skip 0;;
             #endif
+            #ifdef EXT_FLAG
+            var EXT_FLAG;;
+            #endif
             #include "inc.mtl"
             #include "inc.mtl"
             proto helper 0;;
@@ -130,7 +138,7 @@ def _self_test():
         old = os.getcwd()
         os.chdir(d)
         try:
-            lines = preprocess(Path(d, "main.mtl"), [], [d])
+            lines = preprocess(Path(d, "main.mtl"), ["EXT_FLAG"], [d])
             lines = remove_extra_protos(lines)
             text = "".join(lines)
             assert "proto main" in text,         "ifdef define failed"
@@ -140,6 +148,7 @@ def _self_test():
             assert text.count("fun helper") == 1, "pragma once dedup failed"
             assert '\\"hello\\"' in text,         "html quote escaping failed"
             assert "fun forth_word" in text,      "extension-less include failed"
+            assert "var EXT_FLAG" in text,        "external define token substitution broken"
         finally:
             os.chdir(old)
     print("self-test OK")

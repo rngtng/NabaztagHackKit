@@ -3,7 +3,9 @@
 
 proto main 0;;
 
-//var SIMU;;
+#ifdef SIMU
+var SIMU;;
+#endif
 var BOOT;;
 
 var AUDIOLIB;;
@@ -54,34 +56,34 @@ const IEEE80211_AUTH_SHARED=1;;
 const FIRMWARE="\0\0\0\13";;
 
 
-#include "util"
-#include "config"
+#include "util.mtl"
+#include "config.mtl"
 
 ifndef SIMU
 {
 
-#include "ipv4"
+#include "ipv4.mtl"
 
 }
 else
 {
 
-#include "tcpudp_emu"
+#include "tcpudp_emu.mtl"
 
 }
 
-#include "dns"
+#include "dns.mtl"
 
 ifdef BOOT
 {
-#include "config_server"
+#include "config_server.mtl"
 }
 else
 {
 fun startconfigserver port=	0;;
 }
 
-#include "http"
+#include "http.mtl"
 
 ifdef AUDIOLIB {
 
@@ -176,9 +178,6 @@ fun wavstartlocal l=
 	_wavstartnow
 	;;
 
-fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;;
-fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
-
 fun mkwav freq channel bps=
 	let strcatlist
 		"WAVEfmt "::(itobin4 0x12)::
@@ -188,63 +187,6 @@ fun mkwav freq channel bps=
 		"data"::(itobin4 0)::nil -> c in
 	strcatlist "RIFF"::(itobin4 (strlen c))::c::nil;;
 
-/*
-fun _wavcbhttp httpreq req=
-	set wav_lastnet=time_ms;
-	if req==nil then
-	(
-		Secholn ">>>>>>>>>>>>>>>>>>>>>>>>>>>>><end of file";
-		set wav_state=WAV_EOF;
-		if wav_index==nil then
-		(
-			set wav_fifo=tl wav_fifo;
-			if wav_fifo==nil then wavstop
-			else _wavstartnow
-		);
-		0
-	)
-	else
-	(
-		set wav_fifo=conc wav_fifo req::nil;
-		let slistlen wav_fifo -> n in
-		if wav_index==nil && n>WAV_BUFFER_STARTSIZE then
-		(
-			set wav_fifo=tl wav_fifo;
-			_wavstartnow
-		)
-		else if n>WAV_BUFFER_MAXSIZE then
-		(
-			Secholn "\n>>>>>>>>>>>>>>http wait";
-			httpenable httpreq 0
-		);
-		nil
-	);
-	0;;
-
-fun wavstarthttp url =
-	wavstop;
-	set wav_fifo=nil;
-	set wav_state=WAV_RUN;
-	set wav_index=nil;
-	set wav_buffering=1;
-	set wav_lasttime=nil;
-	set wav_lastnet=time_ms;
-	set wav_http=httprequest "GET" url nil #_wavcbhttp HTTP_STREAM;;
-
-fun wavtime =
-	if wav_http!=nil && wav_state==WAV_RUN && /*wav_fifo==nil &&*/ (time_ms-wav_lastnet>WAV_NET_TIMEOUT) then
-	(
-		if wav_http!=nil then
-		(
-			Secholn "####wavhttp abort";
-			httpabort wav_http;
-			set wav_http=nil;
-			_wavcbhttp wav_http nil;
-			0
-		)
-	);
-	0;;
-*/
 }
 
 
@@ -255,11 +197,11 @@ fun wavtime =
 
 
 
-#include "wifi"
+#include "wifi.mtl"
 
 ifdef BOOT
 {
-#include "boot_loop"
+#include "boot_loop.mtl"
 }
 
 ifdef RECLIB {
@@ -295,16 +237,6 @@ fun cbrec s=
 	set lrec=s::lrec;
 	0;;
 
-fun itobin4 i=
-	let strnew 4 -> s in
-	(
-		strset s 0 i;
-		strset s 1 i>>8;
-		strset s 2 i>>16;
-		strset s 3 i>>24;
-		s
-	);;
-
 fun liststrlen l r=	if l==nil then r else liststrlen tl l r+strlen hd l;;
 
 fun mkriff ldata=
@@ -336,5 +268,5 @@ fun recriff =
 
 
 ifdef BOOT {
-#include "main"
+#include "main.mtl"
 }

@@ -1,0 +1,309 @@
+// HTTP server — app2 MVP: /status /forth /reboot /stop /play /mp3 /firmware
+#include protos/audiolib_protos.mtl
+#include protos/task_protos.mtl
+#include protos/forth_protos.mtl
+#include protos/json_protos.mtl
+#include protos/http_protos.mtl
+#include protos/ntp_protos.mtl
+#include protos/run_protos.mtl
+
+#ifdef HTTP_SERVER_DEBUG
+fun _http_server_debug str= Secholn strcatlist "[http-server] " :: str :: nil; nil;;
+#endif
+
+const HTTP_200 = "200 OK";;
+const HTTP_204 = "204 No Content";;
+const HTTP_400 = "400 Bad Request";;
+const HTTP_401 = "401 Unauthorized";;
+const HTTP_404 = "404 Not Found";;
+
+proto http_server_process_request 2;;
+
+fun http_header http_status content_type content_length=
+    strcatlist
+        "HTTP/1.1 "::http_status::
+        "\13\10Server: MTL HTTP server"::
+        "\13\10Access-Control-Allow-Origin: *"::
+        (if content_type!=nil then (strcat "\13\10Content-Type: " content_type) else "")::
+        (if content_length!=nil then (strcat "\13\10Content-Length: " (itoa content_length)) else "")::
+        "\13\10Date: " :: time_date_utc ::
+        "\13\10Cache-Control: max-age=0, no-cache, no-store" ::
+        (if config_md5_password!=nil then "\13\10WWW-Authenticate: Basic realm=\"Nabaztag\", charset=\"UTF-8\"" else "") ::
+        "\13\10Pragma: no-cache" ::
+        "\13\10Connection: close"::
+        "\13\10\13\10"::nil
+;;
+
+fun http_send_header_and_close http_status content_type sock=
+    sock_send_and_close sock (http_header http_status content_type nil);;
+
+fun http_send_content_and_close sock content_type content=
+    sock_send sock (http_header HTTP_200 content_type (strlen content));
+    sock_send_and_close sock content;;
+
+fun http_server_get_header res =
+    let strstr res HTTP_HEADER_SEP 0 -> i in
+    if i!=nil then strsub res 0 i;;
+
+fun http_server_find_content_end s=
+    let to_lower http_server_get_header s -> header in
+    if header!=nil then
+    let strstr header HTTP_CONTENT_LENGTH 0 -> i in
+    let if i!=nil then strstr header HTTP_CONTENT_END i -> j in
+    (strlen header)+(strlen HTTP_HEADER_SEP)+if i!=nil then
+        let i+strlen HTTP_CONTENT_LENGTH -> i in atoi strsub header i if j!=nil then j-i;;
+
+fun http_sock_read input sock=
+    if input==nil ||0==strlen input then
+    (
+        tcp_close sock.sockCnx;
+        nil
+    )
+    else
+    (
+        if sock.sockSize==nil then
+        (
+            set sock.sockInput = (strcat hd sock.sockInput input)::nil;
+            set sock.sockSize = http_server_find_content_end hd sock.sockInput;
+            nil
+        )
+        else
+        (
+            set sock.sockInput = input::sock.sockInput
+        );
+        if sock.sockSize!=nil && (slistlen sock.sockInput)>=sock.sockSize then
+            let strcatlist rev sock.sockInput nil -> str in
+            (
+                set sock.sockInput=nil;
+                call sock.sockCallback [str sock]
+            )
+    );
+    0;;
+
+fun http_sock_event cnx val msg sock=
+    if val==TCPWRITE then sock_write sock
+    else if val==TCPCLOSE then http_sock_read nil sock
+    else http_sock_read msg sock;;
+
+fun http_server_cb cnx code msg=
+    let sock_create cnx #http_server_process_request -> sock in
+    tcp_set_cb cnx fixarg4 #http_sock_event sock;
+    0;;
+
+//--------------------------------------------------------------------------------------------------
+// Endpoints
+//--------------------------------------------------------------------------------------------------
+
+/**
+ * GET /status — device state as JSON
+ */
+fun http_get_status sock args=
+    http_send_content_and_close sock "application/json"
+    strcatlist
+        "{\n"::
+            (json_str "language" config_get_lang) :: ",\n" ::
+            (json_int "sleep_state" sleep_is_sleeping) :: ",\n" ::
+            (json_str "run_state" _run_to_str run_get_state) :: ",\n" ::
+            (json_obj "time" time_json) :: ",\n" ::
+            (json_obj "ears" ears_json) :: ",\n" ::
+            (json_obj "leds" leds_json) :: ",\n" ::
+            (json_obj "network" net_json) :: ",\n" ::
+            (json_obj "wifi" wifi_json) :: ",\n" ::
+            (json_int "info_messages" info_messages) :: ",\n" ::
+            (json_str "rev" BYTECODE_REVISION_STR) :: "\n" ::
+        "}" :: nil
+;;
+
+/**
+ * GET /tasks — task list as JSON
+ */
+fun http_get_tasks sock args =
+    http_send_content_and_close sock "application/json" task_json;;
+
+/**
+ * GET /stop — halt audio, reset ears, go idle
+ */
+fun http_get_stop sock args=
+    run_reset_to_idle;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /reboot — reboot device
+ */
+fun http_get_reboot sock args=
+    http_send_header_and_close HTTP_204 nil sock;
+    reboot 0x0407FE58 0x13fb6754;
+    nil;;
+
+/**
+ * GET /play?u=<url> — play WAV from URL
+ */
+fun http_get_play sock args=
+    audiolib_start_http (http_arg_str args 'u') nil;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /mp3?v=<url> — play MP3 from URL
+ */
+fun http_get_mp3 sock args=
+    audiolib_start_http (http_arg_str args 'v') nil;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /update-time — trigger NTP sync
+ */
+fun http_get_update_time sock args=
+    ntp_get_time;
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /nose?v=<count> — set pending message count (blinks nose LED)
+ */
+fun http_get_nose sock args=
+    set info_messages = http_arg_int args 'v';
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /ears/left?p=<pos>&d=<dir>  GET /ears/right?p=<pos>&d=<dir>
+ */
+fun http_get_ear side sock args=
+    ears_go side (http_arg_int args 'p') (http_arg_int args 'd');
+    http_send_header_and_close HTTP_204 nil sock;;
+
+/**
+ * GET /dns?d=<domain> — DNS lookup, returns {ip}
+ */
+fun _http_get_dns_cb ip sock=
+    http_send_content_and_close sock "application/json"
+        strcatlist "{ " :: (json_str "ip" ip) :: " }" :: nil;;
+
+fun http_get_dns sock args=
+    dnsreq (http_arg_str args 'd') fixarg2 #_http_get_dns_cb sock;;
+
+/**
+ * POST /forth?c=<code> — execute Forth, return {output, stack}
+ */
+fun _forth_http_cb f sock=
+    http_send_content_and_close sock "application/json"
+    strcatlist
+        "{\n" ::
+            (json_str "output" (strcatlist (rev f.output nil))) :: ",\n" ::
+            (json_str "stack" (forth_list_to_str f.stack " ")) ::
+        "\n}" ::
+        nil;;
+
+fun http_post_forth sock args=
+    forth_interpreter_ex (http_arg_str args 'c') nil nil nil (fixarg2 #_forth_http_cb sock);;
+
+/**
+ * POST /firmware — accept raw .sim binary, save to flash, reboot.
+ * Send the body as raw binary (Content-Type: application/octet-stream).
+ * NOTE: filename "firmware.sim" must match what the boot firmware reads.
+ */
+fun http_post_firmware sock req=
+    let strstr req HTTP_HEADER_SEP 0 -> sep in
+    let if sep!=nil then strsub req (sep + strlen HTTP_HEADER_SEP) nil else nil -> body in
+    let strlen body -> body_len in
+    if body_len < 24 then (  // too small to be a valid .sim
+        let "firmware too small" -> msg in (
+            sock_send sock (http_header HTTP_400 "text/plain" (strlen msg));
+            sock_send_and_close sock msg
+        )
+    ) else (
+        save body 0 "firmware.sim" 0 body_len;
+        http_send_header_and_close HTTP_204 nil sock;
+        reboot 0x0407FE58 0x13fb6754;
+        nil
+    );;
+
+/**
+ * 404 fallback
+ */
+fun http_not_found sock args=
+    let "Not found" -> res in (
+        sock_send sock (http_header HTTP_404 "text/plain" (strlen res));
+        sock_send_and_close sock res
+    );;
+
+//--------------------------------------------------------------------------------------------------
+// Auth + dispatch
+//--------------------------------------------------------------------------------------------------
+
+fun _http_check_auth header=
+    if config_md5_password==nil then
+        1
+    else
+        let http_get_header_field header HTTP_AUTHORIZATION -> auth in
+        let strlen HTTP_BASIC -> basic_len in (
+#ifdef HTTP_SERVER_DEBUG
+            _http_server_debug strcat "Authorization: " auth;
+#endif
+            if strcmp (strsub auth 0 basic_len) HTTP_BASIC then 0
+            else
+                let base64_decode strsub auth basic_len+1 (strlen auth) - basic_len -1 -> cred in
+                let strstr cred "\0" 0 -> i in
+                let if i==nil then cred else strsub cred 0 i -> cred in
+                let strstr cred ":" 0 -> i in
+                let strsub cred 0 i -> user in
+                let strsub cred i+1 (strlen cred) - i -1 -> pass in
+                    (!strcmp user config_username) && (!strcmp (md5 pass) config_md5_password)
+        );;
+
+fun _http_server_parse_req req=
+    let nil -> args in
+    let 1 -> auth in
+    let strstr req " " 0 -> i in
+    let strstr req " " i+1 -> j in
+    let strsub req 0 i -> verb in
+    let http_server_get_header req -> header in
+    let strsub req i+1 j-i-1 -> path in (
+        if !_http_check_auth header then (
+#ifdef HTTP_SERVER_DEBUG
+            _http_server_debug "Authorization failed";
+#endif
+            set auth = 0;
+            nil
+        ) else if !strcmp verb "POST" then (
+            set args = http_extract_args req ((strstr req HTTP_HEADER_SEP 0) + (strlen HTTP_HEADER_SEP));
+            nil
+        ) else (
+            let strstr path "?" 0 -> i in
+                if i!=nil then (
+                    set args=(http_extract_args path i+1);
+                    set path=(strsub path 0 i);
+                    nil
+                )
+        );
+        [verb path args auth]
+    );;
+
+fun http_server_process_request req sock=
+    let _http_server_parse_req req -> [verb path args auth] in
+    (
+#ifdef HTTP_SERVER_DEBUG
+        _http_server_debug strcatlist "HTTP " :: verb :: " " :: path :: nil;
+#endif
+        if auth==0 then http_send_header_and_close HTTP_401 nil sock
+        else if !strcmp path "/status"      then http_get_status sock args
+        else if !strcmp path "/tasks"       then http_get_tasks sock args
+        else if !strcmp path "/stop"        then http_get_stop sock args
+        else if !strcmp path "/reboot"      then http_get_reboot sock args
+        else if !strcmp path "/play"        then http_get_play sock args
+        else if !strcmp path "/mp3"         then http_get_mp3 sock args
+        else if !strcmp path "/update-time" then http_get_update_time sock args
+        else if !strcmp path "/nose"        then http_get_nose sock args
+        else if !strcmp path "/ears/left"   then http_get_ear EARS_LEFT sock args
+        else if !strcmp path "/ears/right"  then http_get_ear EARS_RIGHT sock args
+        else if !strcmp path "/dns"         then http_get_dns sock args
+        else if !strcmp path "/forth"       then http_post_forth sock args
+        else if !strcmp path "/firmware"    then http_post_firmware sock req  // raw req, not args
+        else http_not_found sock args;
+        0
+    );;
+
+/**
+ * Start the HTTP server on the given port.
+ */
+fun http_server_start_srv port =
+    tcp_listen port #http_server_cb;
+    0;;

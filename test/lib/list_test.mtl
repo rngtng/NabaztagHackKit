@@ -1,0 +1,66 @@
+let scenario "list_test" -> s in
+(
+  let test "listlen" -> t in
+  (
+    assert_equalI 0 listlen nil;
+    assert_equalI 1 listlen "test"::nil
+  );
+
+  let test "rev" -> t in
+  (
+    assert_equalIL 3::2::1::nil rev 1::2::3::nil nil;
+    assert_equalS "ABC" "\65\66\67"
+  );
+
+  let test "conc" -> t in
+  (
+    assert_equalIL nil conc nil nil;
+    assert_equalIL 1::2::nil conc 1::2::nil nil;
+    assert_equalIL 1::2::nil conc nil 1::2::nil;
+    assert_equalIL 1::2::3::4::nil conc 1::2::nil 3::4::nil
+  );
+
+  let test "listnth" -> t in
+  (
+    assert_equalI 10 listnth 10::20::30::nil 0;
+    assert_equalI 20 listnth 10::20::30::nil 1;
+    assert_equalI 30 listnth 10::20::30::nil 2
+  );
+
+  let test "listrem" -> t in
+  (
+    assert_equalIL 2::3::nil listrem 1::2::3::nil 1;
+    assert_equalIL 1::3::nil listrem 1::2::3::nil 2;
+    assert_equalIL 1::2::nil listrem 1::2::3::nil 3;
+    assert_equalIL 1::2::3::nil listrem 1::2::3::nil 99
+  );
+
+  let test "sort" -> t in
+  (
+    assert_equalIL 1::2::3::nil (sort 3::1::2::nil #cmpI);
+    assert_equalIL nil (sort nil #cmpI)
+  );
+
+  let test "select" -> t in
+  (
+    assert_equalIL 3::4::nil (select 1::2::3::4::nil 2 #gtI);
+    assert_equalIL nil (select 1::2::nil 99 #gtI)
+  );
+
+  let test "listlast" -> t in
+  (
+    assert_equalI 1 listlast 1::nil;
+    assert_equalI 3 listlast 1::2::3::nil
+  );
+
+  let test "listtotab" -> t in
+  (
+    let listtotab 1::2::3::nil -> arr in
+    (
+      assert_equalI 3 tablen arr;
+      assert_equalI 1 arr.0;
+      assert_equalI 2 arr.1;
+      assert_equalI 3 arr.2
+    )
+  )
+);

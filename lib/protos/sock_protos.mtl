@@ -1,0 +1,12 @@
+/**
+ * State of a single high-level connection
+ * sockInput: buffer for incoming data
+ * sockSize: total expected size of the incoming message
+ * sockOutput: string buffer for outgoing data
+ * sockIndex: current position/offset within sockOutput for partial writes
+ * sockCloseAfter: flag to indicate if the TCP connection should be closed after the response is sent
+ * sockCallback: user-defined function to call to process the complete request and generate a response
+ */
+
+type Sock=[sockCnx sockInput sockSize sockOutput sockIndex sockCloseAfter sockCallback];;
+

@@ -1,0 +1,144 @@
+# NabaztagSDK — unified entrypoint.
+#
+# Every build runs inside Docker, so the only host requirements are Docker and
+# Task (https://taskfile.dev). Each tool/layer folder is self-contained (it owns
+# its Dockerfile + Taskfile); this root file just includes them under a per-layer
+# namespace. Run `task` with no args to list everything.
+version: '3'
+
+vars:
+  OUT: build
+
+includes:
+  preprocessor: # MTL preprocessor — expand #include / #ifdef (tools/preprocessor)
+    internal: true
+    taskfile: ./tools/preprocessor/Taskfile.yaml
+    vars:
+      IMAGE: preprocessor
+      DIR: ./tools/preprocessor/
+
+  mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
+    internal: true
+    taskfile: ./tools/mtl_linux/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-mtl
+      DIR: ./tools/mtl_linux/
+
+  firmware: # ARM7TDMI firmware — compile C/asm sources (src/firmware)
+    internal: true
+    taskfile: ./src/firmware/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-firmware
+      DIR: ./src/firmware/
+
+  mkfirmware: # mkfirmware tool — sign firmware for web upload (tools/mkfirmware)
+    internal: true
+    taskfile: ./tools/mkfirmware/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-mkfirmware
+      DIR: ./tools/mkfirmware/
+
+tasks:
+  clean:
+    desc: 'Clean all build artifacts (firmware, boot, etc.)'
+    cmds:
+      - task: firmware:clean
+        vars:
+          IMAGE: nabaztag-sdk-firmware
+      - rm -rf '{{.OUT}}'
+
+  build:boot:
+    desc: 'Build boot firmware. Preprocess files, then compile. Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build/boot]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      BOOT_OUT:  '{{.OUT}}/boot'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
+          OUT: '{{.BOOT_OUT}}'
+          SIGN: 'false'
+
+  simulate:boot:
+    desc: 'Preprocess and simulate boot.mtl in config mode. Config UI served at http://localhost:8080. Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      BOOT_OUT:  '{{.OUT}}/boot'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
+
+  test:
+    desc: 'Preprocess and run MTL unit tests. Usage: task test'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: "test/test.mtl"
+      TEST_OUT: '{{.OUT}}/test'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.TEST_OUT}}/merged.mtl'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.TEST_OUT}}/merged.mtl'
+
+  build:app2:
+    desc: 'Build app2 MVP (Forth + Telnet + REST API). Usage: task build:app2'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP2_OUT: '{{.OUT}}/app2'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/app2/main.mtl
+          OUT: '{{.APP2_OUT}}/merged.mtl'
+          INCLUDES: 'src/app2 src/app'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP2_OUT}}/merged.mtl'
+          OUT: '{{.APP2_OUT}}'
+
+  simulate:app2:
+    desc: 'Simulate app2 MVP in MTL simulator. HTTP UI at http://localhost:8080. Usage: task simulate:app2'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP2_OUT: '{{.OUT}}/app2'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/app2/main.mtl
+          OUT: '{{.APP2_OUT}}/merged.mtl'
+          INCLUDES: 'src/app2 src/app'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP2_OUT}}/merged.mtl'
+
+  build:firmware:
+    desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default (printf "%s/dumpbc.c" .BOOT_OUT)}}'
+    cmds:
+      # firmware need latest dumpbc.c in sr/bc.c
+      - cp '{{.SOURCE}}' src/firmware/src/bc.c
+      - task: firmware:compile
+      - rm -rf '{{.FIRMWARE_OUT}}'
+      - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
+      - rm -rf src/firmware/obj src/firmware/src/bc.c
+
