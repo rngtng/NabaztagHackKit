@@ -12,3 +12,9 @@
 *.map
 *.dis
 *.o
+
+# Proxy CA bundles injected by remote execution environment
+ca-bundle.crt
+
+# Build outputs
+build/
