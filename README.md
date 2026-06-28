@@ -1,84 +1,44 @@
 # Nabaztag Hack Kit
 
-Everything you need to hack the Rabbit: a sinatra server including simple api framework to run custom bytecode on Nabaztag v1/v2. Includes original compiler sources for linux and a modified mac os x version.
+Everything you need to hack the Rabbit: a dockerized MTL toolchain to compile and run custom bytecode on Nabaztag v1/v2, plus the original compiler sources for linux and a modified mac os x version.
 
 ![](http://github.com/rngtng/NabaztagHackKit.png)
 
 ## Getting Started
 
-### Installation
+The only host requirements are [Docker](https://www.docker.com/) and [Task](https://taskfile.dev). Every build runs inside Docker — no toolchain to install locally.
 
-The Hack Kit is distributed as a ruby gem. It comes with a simple web server (based on sinatra) which runs out-of-the for connecting you rabbit and distributing the nabaztag bytecode. In addition it includes sinatra helpers/modules to communicate with the rabbit easily. Lastly it provides binaries to compile your own Nabaztag bytecode (see **Binaries** below).
-
-### Simple Server
-
-The Server is the communication endpoint for the rabbit. Its two main purposes are:
-
-  1. serving the bytecode on bootup
-  2. receive and respond to HTTP requests in a defined format.
-
-### Setup
-
-1. Install dependencies first:
+Run `task` with no args to list all targets:
 
 ```
-gem install nabaztag_hack_kit
+task
 ```
 
-or if you have a `Gemfile`
+### Compile & Simulate
+
+Compile an MTL source to bytecode:
 
 ```
-bundle install --path=vendor/bundle
+task mtl:compile SOURCE=bytecode/main.mtl
 ```
 
-2. Then, create a `config.ru` file
+Writes `<name>.bin` (signed device-flash format) into the current dir. Pass `OUT=<dir>` to change the output dir, or `SIGN=false` for raw bytecode.
 
-```ruby
-require 'nabaztag_hack_kit/server'
-
-run NabaztagHackKit::Server.new
-```
-
-3. Finally, to start and run the server, execute:
+Run an app in the simulator:
 
 ```
-bundle exec rackup -p <portnumer>
+task mtl:simulate SOURCE=bytecode/main.mtl
 ```
 
-See `examples/` folder for more sophisticated usage.
+### Layout
 
-### Binaries
+  * `bytecode/` — MTL sources: `main.mtl`, the `lib/` API (see **API** below), and the original violet sources under `_original/`
+  * `tools/mtl_linux/` — dockerized linux compiler (`mtl_compiler`) and simulator (`mtl_simu`)
+  * `ext/bin/` — prebuilt mac os x binaries (`mtl_comp`, `mtl_simu`, `mtl_merge`) by @ztalbot2000
+  * `src/firmware/`, `src/boot/` — C firmware and boot sources
+  * `docs/` — grammar, commands and hardware notes
 
-The kit comes with violet sources and binaries to compile custom Nabaztag bytecode. See folder `compiler/`. The linux sources are (more or less) the original ones by violet, the mac osx version was created by @ztalbot2000.
-The compiler binaries are compiled on installation of the gem.
-
-Following three binaries are available:
-
-#### mtl_comp
-
-A wrapper around `mtl_comp`. Compiles a `*.mtl` file. It calls `mtl_merge` before
-
-#### mtl_simu
-
-A wrapper around `mtl_simu`.  Runs a `*.mtl` file. It calls `mtl_merge` before
-
-#### mtl_merge
-
-Merges multiple `*.mtl` files into one. Files are included like in C: `#include "<relative path to file>"`. Output is temporary file `.tmp.mtl`.
-
-## Development
-
-Be sure to checkout `mtl_linux` submodule first:
-
-```
-git submodule update
-```
-
-To update the kit run:
-
-```
-bundle exec rake build && bundle exec gem install -V pkg/nabaztag_hack_kit-0.1.0.beta6.gem
-```
+The linux sources are (more or less) the original ones by violet; the mac os x version was created by @ztalbot2000.
 
 ## API
 As example and for my own purposes I implemented a simple API to deal with RFID, LEDS, BUTTON and EARS easily. (see bytecode/main.mtl)
@@ -105,7 +65,7 @@ Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playba
 
 ## Disclamer
 
-The server part was heavily inspired by [Trudy.rb](https://github.com/quimarche/trudy/blob/master/trudy.rb), compiler code copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab). Thanks!
+Compiler code copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab). Thanks!
 
 
 ## Nabaztag Background
