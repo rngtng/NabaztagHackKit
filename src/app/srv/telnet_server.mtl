@@ -21,10 +21,10 @@ const TELNET_TM       = 6;;   // Timing Mark option
 /**
  * Process incoming Telnet IAC commands.
  * input: incoming data
- * f: Forth interpreter state for this connection
- * returns: remaining data after processing IAC commands
+ * sock: the connection socket (used to send IAC responses)
+ * returns: remaining data after stripping IAC sequences
  */
-fun _telnet_process_iac input f=
+fun _telnet_process_iac input sock=
 	let strlen input -> len in
     let strnew strlen input -> r in
     let 0 -> l in
@@ -34,8 +34,8 @@ fun _telnet_process_iac input f=
                 set i = i + 1;
                 set ch = strget input i;
                 if ch == TELNET_IP then ( // client: IAC IP
-                    sock_send f.forth_sock "\$ff\$f2"; // server: IAC DM
-                    sock_write f.forth_sock;
+                    sock_send sock "\$ff\$f2"; // server: IAC DM
+                    sock_write sock;
                     0
                 ) else if ch == TELNET_DO then // client: IAC DO xx
                     let "\$ff\$00\$00" -> response in ( // IAC WONT
@@ -48,8 +48,8 @@ fun _telnet_process_iac input f=
                         strset response 1 TELNET_WONT;
                         strset response 2 ch // server: IAC WONT xx
                     );
-                    sock_send f.forth_sock response;
-                    sock_write f.forth_sock;
+                    sock_send sock response;
+                    sock_write sock;
                     0
                 ) else if ch == TELNET_WILL then // client: IAC WILL xx
                     let "\$ff\$00\$00" -> response in ( // IAC DO
@@ -57,8 +57,8 @@ fun _telnet_process_iac input f=
                     set ch = strget input i;
                     strset response 1 TELNET_DONT;
                     strset response 2 ch; // server: IAC DONT xx
-                    sock_send f.forth_sock response;
-                    sock_write f.forth_sock;
+                    sock_send sock response;
+                    sock_write sock;
                     0
                 ) else if ch == TELNET_NOP then ( // client: IAC NOP (No operation)
                     0
@@ -77,55 +77,49 @@ fun _telnet_process_iac input f=
 
 /**
  * Main data handling function for a Telnet connection.
- * input: incoming data
- * f: Forth interpreter state for this connection
+ * input: incoming data (nil signals connection close)
+ * state: [f sock] pair — Forth interpreter state and TCP socket
  */
-fun _telnet_sock_read input f=
-    // If the input is nil or empty, the client has closed the connection
-    if input==nil ||0==strlen input then
-        tcp_close f.forth_sock.sockCnx
-    else if f.forth_sock.sockCallback != nil then
-         let _telnet_process_iac input f -> input in
+fun _telnet_sock_read input state=
+    let state -> [f sock] in
+    if input==nil || 0==strlen input then
+        tcp_close sock.sockCnx
+    else if f.readline_cb != nil then
+         let _telnet_process_iac input sock -> input in
             if (strlen input) > 0 then
-                call f.forth_sock.sockCallback [input f.forth_sock];;
-
-/**
- * Write pending output to the Telnet connection.
- * f: Forth interpreter state for this connection
- */
-fun _telnet_sock_write f=
-    sock_write f.forth_sock;;
+                f.readline_cb input;;
 
 /**
  * Event handler for a connection being used for Telnet.
- * This function is registered as the callback for the TCP connection.
- * cnx: TCP connection
- * val: event type (e.g., TCPWRITE, TCPCLOSE)
- * input: incoming data
- * f: Forth interpreter state for this connection
+ * Registered as the TCP callback; state is [f sock].
  */
-fun _telnet_sock_event cnx val input f=
-    if val==TCPWRITE then _telnet_sock_write f
-    else if val==TCPCLOSE then _telnet_sock_read nil f
-    else _telnet_sock_read input f;;
+fun _telnet_sock_event cnx val input state=
+    let state -> [f sock] in
+    if val==TCPWRITE then sock_write sock
+    else if val==TCPCLOSE then _telnet_sock_read nil state
+    else _telnet_sock_read input state;;
 
 /**
  * Callback function for the Forth interpreter when it finishes.
+ * Flushes remaining output and closes the connection.
  */
 fun _telnet_forth_interpreter_cb f sock=
-    _telnet_sock_write f;  // Ensure all output is sent
+    sock_write sock;
     sock_close_after sock;;
 
 /**
  * Callback function for the main Telnet listening socket.
- * This is called by the TCP stack whenever a new client connects.
+ * Called by the TCP stack whenever a new client connects.
  * cnx: TCP connection
+ * text: initial Forth code to execute (e.g. "interpreter")
  */
 fun telnet_server_cb cnx _ _ text=
-    let [sockCnx:cnx sockCallback:nil] -> sock in
-    let forth_interpreter_setup nil nil sock nil nil -> f in (
-        tcp_set_cb cnx fixarg4 #_telnet_sock_event f;
-        forth_interpreter_ex text f sock nil (fixarg2 #_telnet_forth_interpreter_cb sock)
+    let sock_create cnx nil -> sock in
+    let forth_interpreter_setup nil nil (fixarg2 #sock_send sock) nil nil -> f in
+    let [f sock] -> state in (
+        tcp_set_cb cnx fixarg4 #_telnet_sock_event state;
+        forth_interpreter_ex text f (fixarg2 #sock_send sock) nil
+            (fixarg2 #_telnet_forth_interpreter_cb sock)
     );
     0;;
 

@@ -156,9 +156,9 @@ fun forth_new_state=
         rstack:nil // return stack
         pc:0 // program counter
         state:FORTH_STATE_NORMAL // normal (not compilation) state
-        forth_sock: nil // socket
+        write_fn: nil // output callback
+        readline_cb: nil // pending read callback
         forth_task: nil // task
-        // istack: inter :: nil // interpreter state
         istack:nil // interpreter state stack
     ];;
 
@@ -170,7 +170,7 @@ fun forth_new_state=
  * task: task associated with this interpreter
  * cb: callback function to call when execution completes
  */
-fun forth_interpreter_setup text f sock task cb=
+fun forth_interpreter_setup text f write_fn task cb=
     if forth_dictionary==nil then forth_init_dictionary;
     let [
         start:0
@@ -184,13 +184,13 @@ fun forth_interpreter_setup text f sock task cb=
     ] -> inter in
     if f == nil then
         let forth_new_state -> nf in (
-        set nf.forth_sock = sock;
+        set nf.write_fn = write_fn;
         set nf.forth_task = task;
         set nf.istack = inter :: nil;
         nf
     ) else (
         set f.istack = inter :: f.istack;
-        if f.forth_sock == nil then set f.forth_sock = sock;
+        if f.write_fn == nil then set f.write_fn = write_fn;
         if f.forth_task == nil then set f.forth_task = task;
         f
     );;
@@ -288,9 +288,9 @@ fun forth_interpreter_loop f=
  * task: task associated with this interpreter
  * cb: callback function to call when execution completes
  */
-fun forth_interpreter_ex text f sock task cb=
+fun forth_interpreter_ex text f write_fn task cb=
     if forth_dictionary==nil then forth_init_dictionary;
-    let forth_interpreter_setup text f sock task cb -> f in
+    let forth_interpreter_setup text f write_fn task cb -> f in
         forth_interpreter_loop f;;
 
 /**
