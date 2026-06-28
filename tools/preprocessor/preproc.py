@@ -56,7 +56,12 @@ class _MTLPreprocessor(pcpp.Preprocessor):
                 return io.StringIO(fh.read().replace('"', '\\"'))
         result = super().on_file_open(is_system_include, path)
         # treat every file as #pragma once — no need for the directive in sources
-        self.include_once.add(os.path.realpath(path))
+        # pcpp >= 1.31 changed include_once from set to dict
+        key = os.path.realpath(path)
+        if isinstance(self.include_once, set):
+            self.include_once.add(key)
+        else:
+            self.include_once[key] = True
         return result
 
 

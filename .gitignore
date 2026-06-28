@@ -4,6 +4,8 @@
 
 # Makefiles are project source — override a global `makefile` ignore some setups have
 !Makefile
+
+
 *.bin
 /src/firmware/bin
 *.lst
@@ -12,3 +14,9 @@
 *.map
 *.dis
 *.o
+
+# Proxy CA bundles injected by remote execution environment
+ca-bundle.crt
+
+# Build outputs
+build/

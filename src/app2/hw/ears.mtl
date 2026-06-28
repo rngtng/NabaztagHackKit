@@ -1,10 +1,9 @@
-#include protos/interactive_protos.mtl
+// Ears — app2: removed interactive mode dependency
 #include protos/leds_protos.mtl
 #include protos/ears_protos.mtl
 #include protos/run_protos.mtl
 #include protos/task_protos.mtl
 #include protos/json_protos.mtl
-#include protos/sse_protos.mtl
 
 /*
  Ears management.
@@ -231,7 +230,6 @@ fun _ears_detect_run=
 		if (ears.(0).ear_direction)==0 && (ears.(1).ear_direction)==0 then
 		(
 			set _ears_event=0x8000+(ears.(0).ear_last_position<<8)+(ears.(1).ear_last_position);
-			sse_broadcast "ears" strcatlist "\"left\": " :: (itoa ears.(0).ear_last_position) :: ", \"right\": " :: (itoa ears.(1).ear_last_position) :: nil;
 #ifdef EARS_DEBUG
 			_ears_debug strcatlist "acquisition: " :: (itoa ears.(0).ear_last_position) :: ", " :: (itoa ears.(1).ear_last_position) :: nil;
             _ears_debug "Set mode EARS_MODE_WAIT_AND_DETECT";
@@ -260,7 +258,6 @@ fun _ears_reset_run=
 #endif
 				set e.ear_broken=1;
 				set e.ear_last_position=0;
-//				set e.ear_last_value=v;
 				set e.ear_target=0;
 				set e.ear_target_loop=0; // v16
 				set e.ear_delay=0;
@@ -325,13 +322,10 @@ fun _ears_wait_run=
 		if v==e.ear_last_value then (
             nil
 		) else if e.ear_direction then (
-			// Oreille en train de tourner
-			//_ears_debug ", tourne e.ear_direction="; Iecho e.ear_direction;
 			set e.ear_last_value = v;
 			set e.ear_last_position=_ears_check e.ear_last_position+ if e.ear_direction>0 then delta else -delta;
 			if e.ear_last_position==e.ear_target then
 			(
-                // Secho "stop "; Iecholn e.ear_number;
 				if e.ear_target_loop == 0 then //v16
 					_ears_motor_set_direction e 0
 				else if e.ear_direction>0 then
@@ -340,15 +334,9 @@ fun _ears_wait_run=
 					set e.ear_target_loop = e.ear_target_loop+1 // v16
 			)
 		) else if delta>2 then (
-			//_ears_debug "bouged";
-			// Pas de mvt autonome.
-			// Veut dire qu'une oreille a été tournée par l'utilisateur :
-			// si interactif : le noter
-			// sinon passer en mode detect
 			set e.ear_last_value = v;
-			if interactive_status then
-				(interactive_note_ear_touched i v delta)
-			else if _ears_mode==EARS_MODE_WAIT_AND_DETECT then
+			// No interactive mode: enter detect mode on manual ear movement
+			if _ears_mode==EARS_MODE_WAIT_AND_DETECT then
 				ears_set_mode_detect
 		)
 	);;

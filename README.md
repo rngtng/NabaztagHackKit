@@ -16,19 +16,25 @@ Run with no args to list all targets.
 
 ### Compile & Simulate
 
-Compile an MTL source to bytecode:
+Compile an MTL boot source to bytecode:
 
 ```
-task mtl:compile SOURCE=src/app/main.mtl
+task build:boot
 ```
 
-Run in the simulator:
+Run the boot app in the simulator:
 
 ```
-task mtl:simulate SOURCE=src/app/main.mtl
+task simulate:boot
 ```
 
-Run the test suite:
+Finally, compile the firmware sources to bytecode,including the boot code:
+
+```
+task build:firmware
+```
+
+Run the lib test suite:
 
 ```
 task test
