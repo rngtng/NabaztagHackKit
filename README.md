@@ -1,6 +1,6 @@
 # Nabaztag Hack Kit
 
-Everything you need to hack the Rabbit: a dockerized MTL toolchain to compile and run custom bytecode on Nabaztag v1/v2, plus the original compiler sources for linux and a modified mac os x version.
+A complete MTL firmware and SDK for the Nabaztag v1/v2 IoT rabbit — including a dockerized toolchain, a reusable MTL standard library, a Forth interpreter, and a full application stack for WiFi, audio, RFID, LEDs, and ears.
 
 ![](http://github.com/rngtng/NabaztagHackKit.png)
 
@@ -8,11 +8,11 @@ Everything you need to hack the Rabbit: a dockerized MTL toolchain to compile an
 
 The only host requirements are [Docker](https://www.docker.com/) and [Task](https://taskfile.dev). Every build runs inside Docker — no toolchain to install locally.
 
-Run `task` with no args to list all targets:
-
 ```
 task
 ```
+
+Run with no args to list all targets.
 
 ### Compile & Simulate
 
@@ -34,118 +34,164 @@ Finally, compile the firmware sources to bytecode,including the boot code:
 task build:firmware
 ```
 
-### Layout
+Run the lib test suite:
 
-  * `bytecode/` — MTL sources: `main.mtl`, the `lib/` API (see **API** below), and the original violet sources under `_original/`
-  * `tools/mtl_linux/` — dockerized linux compiler (`mtl_compiler`) and simulator (`mtl_simu`)
-  * `ext/bin/` — prebuilt mac os x binaries (`mtl_comp`, `mtl_simu`, `mtl_merge`) by @ztalbot2000
-  * `src/firmware/`, `src/boot/` — C firmware and boot sources
-  * `docs/` — grammar, commands and hardware notes
+```
+task test
+```
 
-The linux sources are (more or less) the original ones by violet; the mac os x version was created by @ztalbot2000.
+---
 
-## API
-As example and for my own purposes I implemented a simple API to deal with RFID, LEDS, BUTTON and EARS easily. (see bytecode/main.mtl)
+## Architecture
 
-### Input Devices
+The project is split into three layers: a reusable standard library (`lib/`), a boot image (`src/boot/`), and the main application (`src/app/`). The layers are intentionally kept separate so that `lib/` has no knowledge of hardware specifics and `src/app/` assembles the final product.
 
-#### RFID
-see my other project *NabaztagInjector*
+```
+┌─────────────────────────────────────────────────────────┐
+│  src/app/          Application layer                    │
+│  ─ main.mtl        Entry point, task scheduler          │
+│  ─ hw/             LEDs, ears, button, RFID             │
+│  ─ net/            WiFi, DHCP, DNS, NTP, HTTP client    │
+│  ─ forth/          Forth interpreter (app extension)    │
+│  ─ srv/            Telnet server, HTTP server           │
+│  ─ chor/           Choreography (audio/visual effects)  │
+│  ─ audio/          MP3, recording, MIDI                 │
+├─────────────────────────────────────────────────────────┤
+│  src/boot/         Boot image                           │
+│  ─ config server   WiFi provisioning UI                 │
+│  ─ firmware        OTA firmware upgrade                 │
+├─────────────────────────────────────────────────────────┤
+│  lib/              Standard library (no hardware deps)  │
+│  Layer 4: Forth interpreter                             │
+│  Layer 3: Network  (sock, http_server)                  │
+│  Layer 2: Encoding (b64, url, json, md5, net)           │
+│  Layer 1: Types    (protos/)                            │
+│  Layer 0: Utilities (integer, string, list)             │
+└─────────────────────────────────────────────────────────┘
+```
 
+### lib/ — Standard Library
 
-#### BUTTON
-Current Button has very basic functionality: a short press send HTTP Request of type `Log` to server, a long
-press forces the bunny to restart.
+Each layer depends only on layers below it. The dependency rule is strict: nothing in `lib/` may reference hardware, WiFi, or app-specific state.
 
-### Output Devices
-Data for all output devices are stored in buffers. Each device has two: one for onetime, imediate playback, another for permanent loops.
+| Layer | Modules | Dependencies |
+|-------|---------|--------------|
+| 0 — Utilities | `integer.mtl`, `string.mtl`, `list.mtl` | none (MTL built-ins only) |
+| 1 — Types | `protos/sock_protos.mtl`, `protos/forth_protos.mtl`, `protos/word_protos.mtl`, `protos/ascii_protos.mtl` | none |
+| 2 — Encoding | `b64.mtl`, `url.mtl`, `json.mtl`, `net.mtl`, `md5.mtl` | Layer 0 |
+| 3 — Network | `sock.mtl`, `http_server.mtl` | Layers 0–2 |
+| 4 — Forth | `forth.mtl` + `forth/*.mtl` | Layers 0–2 only |
 
-#### LEDS
-Buffers 0 - 9, where 0-4 are used for onetime, and 5-9 for loop playback.
+`lib/forth` sits at Layer 4 and does **not** depend on `lib/sock`. I/O is wired by the caller through two callbacks stored in the interpreter state:
 
-#### EARS
-Buffers 10 - 13, where 10 & 11 are used for onetime, and 12 & 13 for loop playback.
+- `write_fn` — output callback; called by the interpreter whenever it needs to write a string. Set to `nil` to buffer output in `f.output` instead.
+- `readline_cb` — pending-read callback; set by `READ-LINE` when the interpreter suspends waiting for a line. The transport layer delivers input by calling `f.readline_cb input` and clears this field.
 
+This keeps the interpreter transport-agnostic. A socket-backed REPL, an HTTP-triggered script, and a task-spawned evaluation all use the same interpreter code with different write functions.
 
-## Disclamer
+#### Wiring I/O at the app layer
 
-Compiler code copied from [OpenJabNab](https://github.com/OpenJabNab/OpenJabNab). Thanks!
+```mtl
+// telnet REPL: wire sock_send as the write function
+let sock_create cnx nil -> sock in
+let forth_interpreter_setup nil nil (fixarg2 #sock_send sock) nil nil -> f in
+    forth_interpreter_ex text f (fixarg2 #sock_send sock) nil cb;;
 
+// background task: no I/O → output buffered in f.output
+forth_interpreter_ex text nil nil task nil;;
+```
+
+#### sock.mtl API
+
+| Function | Description |
+|----------|-------------|
+| `sock_create cnx callback` | Create a new Sock (use this instead of naming fields inline) |
+| `sock_send sock s` | Append `s` to output buffer and flush |
+| `sock_write sock` | Flush the output buffer to the TCP connection |
+| `sock_close_after sock` | Mark for close; closes immediately if buffer is empty |
+| `sock_send_and_close sock s` | Send `s` then close |
+
+#### http_server.mtl API
+
+| Function | Description |
+|----------|-------------|
+| `starthttpsrv port cbrequest` | Listen on `port`; call `cbrequest(rawRequest)` → HTML string |
+| `tcpsend sock s` | Send response body fragment |
+| `tcpcloseafter sock` | Signal end of response |
+
+### src/app/ — Application
+
+The application includes `lib/forth` then extends it with hardware-specific Forth words. App code assembles the layers at startup:
+
+```
+src/app/forth/forth.mtl
+  #include lib/forth          ← generic interpreter
+  #include forth/dictionary   ← hardware words (say, ears, leds, rfid, …)
+  #include forth/net          ← HTTP fetch, Forth-level DNS
+  #include forth/task         ← async task management
+```
+
+The telnet server starts a Forth REPL per connection. The HTTP server evaluates Forth code sent via POST. Both share the same interpreter; only the write function differs.
+
+```
+src/app/srv/
+  telnet_server.mtl    ← REPL over TCP; READ-LINE supported
+  http_server.mtl      ← REST API + Forth evaluation
+```
+
+### src/boot/ — Boot Image
+
+The boot image handles WiFi provisioning (serves a captive-portal config page) and OTA firmware upgrades. It does **not** include `lib/` — it has its own minimal HTTP and TCP stack to keep the flash footprint small.
+
+---
+
+## Directory Layout
+
+```
+lib/                 Reusable MTL standard library
+lib/protos/          Type definitions (no logic)
+lib/forth/           Forth interpreter core
+src/app/             Main application
+src/app/hw/          Hardware drivers (LEDs, ears, button, RFID)
+src/app/net/         Network stack (WiFi, DHCP, DNS, NTP, HTTP)
+src/app/forth/       Forth interpreter (app extension + dictionary)
+src/app/srv/         Servers (telnet, HTTP)
+src/app/chor/        Choreography (synchronized audio/LED/ear effects)
+src/app/audio/       MP3 playback, recording, MIDI
+src/boot/            Boot/provisioning image
+src/firmware/        C firmware (VM, HAL, USB, audio)
+tools/mtl_linux/     Dockerized MTL compiler and simulator
+tools/preprocessor/  C preprocessor for MTL (pcpp-based)
+tools/mkfirmware/    Firmware packaging tool
+test/                MTL unit tests (lib/ coverage)
+docs/                Grammar, commands, hardware notes
+build/               Compiled outputs (Nab.hex, Nab.elf)
+```
+
+---
+
+## About MTL (Metal)
+
+MTL/Metal is a custom functional language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). Files end with `.mtl`. Key features used in this codebase:
+
+- **Types**: `type Sock=[field1 field2];;` — record types; fields accessed as `sock.field`
+- **Functions**: `fun name arg1 arg2 = body;;`
+- **Partial application**: `fixarg2 #fn val` — fixes argument 2 of `fn` as `val`
+- **Lists**: `hd`, `tl`, `::` (cons), `nil`
+- **Mutation**: `set field = value;` — in-place field update
+
+Grammar reference: [docs/grammar.md](docs/grammar.md)
+
+---
 
 ## Nabaztag Background
-Read following posting for more background on Nabaztag Hacking (uses google translate:)
 
-  * [First class info from the creator himself](http://www.sylvain-huet.com/?lang=en#nabv2)
-  * [A good nabaztag Blog](https://www.journaldulapin.com/tag/nabaztag/)
-  * [A good introduction to understand Nabaztag Protocol](http://www.sis.uta.fi/~spi/jnabserver/documentation/index.html)
-  * [Les source bytecode et compilateur](http://translate.googleusercontent.com/translate_c?hl=en&rurl=translate.google.com&sl=fr&tl=en&twu=1&u=http://nabaztag.forumactif.fr/t13241p30-les-sources-bytecode-et-compilateur&usg=ALkJrhjLTbx1GMfSUgwhdjES1LzlE07HZQ#338060)
-  * [Mindscape donne une seconde vie a nabaztag](http://translate.google.com/translate?hl=en&sl=fr&tl=en&u=http%3A%2F%2Fwww.planete-domotique.com%2Fblog%2F2011%2F08%2F07%2Fmindscape-donne-une-seconde-vie-a-nabaztag%2F)
+- [First-hand info from the creator](http://www.sylvain-huet.com/?lang=en#nabv2)
+- [Journal du lapin](https://www.journaldulapin.com/tag/nabaztag/)
+- [Protocol overview](http://www.sis.uta.fi/~spi/jnabserver/documentation/index.html)
 
 ## Related Projects
 
-New firmware with WPA2
-1. https://github.com/ccarlo64/firmware_nabaztag
-(see http://nabaztag.forumactif.fr/t15323-firmware-for-wpa-wpa2-test)
-
-2. https://github.com/RedoXyde/nabgcc
-  https://github.com/RedoXyde/mtl_linux
-  (see http://nabaztag.forumactif.fr/t15280p25-nabaztagtag-en-wpa2)
-
-ServerlessNabaztag
--> https://github.com/andreax79/ServerlessNabaztag
-
-CloudServer replace: http://nabaztaglives.com/
-
-Rebuild Nabaztag:
-- https://www.hackster.io/bastiaan-slee/nabaztag-gets-a-new-life-with-google-aiy-e9f2c8
-
-- http://petertyser.com/nabaztag-nabaztagtag-dissection/
-
-## Websocket
-
-Websocket HowTo:
-- https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
-
-- http://blog.honeybadger.io/building-a-simple-websockets-server-from-scratch-in-ruby/
-- https://github.com/pusher/websockets-from-scratch-tutorial
-
-
-## Future
-I'd like to hack the Violet mir:ror too. Some starting points:
-
-  * https://github.com/leh/ruby-mirror
-  * http://reflektor.sourceforge.net/
-  * http://www.instructables.com/id/Kids-check-in-and-check-out-with-hacked-Mirror-an/
-  * http://svay.com/blog/hacking-rfid-with-nodejs/
-  * http://arduino-projects4u.com/violet-mirror/
-
-
-
-## Compilation
-
-In order to compile the code, make use of https://github.com/rngtng/mtl_linux (aktive fork of https://github.com/RedoXyde/mtl_linux)
-
-### Mac OSX / macOS
-
-Simplest way on macOS is using [homebrew](https://brew.sh/). Find the latest formular here: https://github.com/rngtng/homebrew-mtl_linux with
-
-```
-brew tap rngtng/homebrew-mtl_linux
-brew install mtl_linux
-```
-
-## Test
-
-Once compiler & simulator installed, run the test
-
-```
-make test
-```
-
-## About mtl (Metal) Vlisp
-
-MTL/Metal is a custom language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). It is referenced as _Metal_ and files end with `.mtl`. Unfortunately documentation is very poor (and in french). Find the Grammar rules here: https://docs.google.com/document/d/1KMg2wSyMKTmsilCpOByi_59uk5dD8XMfGAu20W63kZE/edit?hl=en_US
-
-Metal is used for programming the Nabaztag, where with `bytecode` the program name is referenced. See original sources here: `/_sources/original/`.
-
-
+- [ccarlo64/firmware_nabaztag](https://github.com/ccarlo64/firmware_nabaztag) — WPA2 firmware
+- [RedoXyde/nabgcc](https://github.com/RedoXyde/nabgcc) — GCC-based firmware
+- [andreax79/ServerlessNabaztag](https://github.com/andreax79/ServerlessNabaztag)
