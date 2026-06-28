@@ -1,0 +1,41 @@
+#include "lib/string.mtl"
+
+fun _str_to_ip s i val j=
+  if i<4 then
+  let strstr val "." j -> k in
+  (
+    strset s i atoi strsub val j if k==nil then nil else k-j;
+    _str_to_ip s i+1 val if k==nil then strlen val else k+1
+  );;
+
+fun str_to_ip val=
+  let strnew 4 -> ip in
+  (
+    _str_to_ip ip 0 val 0;
+    ip
+  );;
+
+fun ip_to_str ip=
+  strcatlist (itoa strget ip 0)::"."::(itoa strget ip 1)::"."::(itoa strget ip 2)::"."::(itoa strget ip 3)::nil;;
+
+fun mac_to_str src=
+    let strnew 17 -> s in
+    let 0 -> i in
+    (
+        for j=0;j<6 do
+        (
+            strcpy s i (ctoh strget src j) 0 2;
+            set i=i+2;
+            if j<5 then (strset s i ':'; set i=i+1)
+        );
+        s
+    );;
+
+fun ipcmp a b =
+    strcmp (strsub a 0 4) (strsub b 0 4);;
+
+fun isip s i=
+    if i>=strlen s then 1
+    else let strget s i -> c in
+    if (c<'0' || c>'9')&&c!='.' then 0
+    else isip s i+1;;

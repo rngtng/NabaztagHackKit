@@ -1,0 +1,59 @@
+#include "lib/string.mtl"
+#include "lib/integer.mtl"
+
+// RFC 3986 safe chars
+fun _url_percent_encode_ch ch=
+    if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '-' || ch == '_' || ch == '~' then
+        nil
+    else
+        let itoh ch -> h in
+        strcat "%" (to_upper if (strlen h) < 2 then (strcat "0" h) else h);;
+
+fun url_encode text=
+    let strlen text -> length in
+    let strnew (length * 3) -> res in
+    let 0 -> pos in (
+        for i=0; i<length do (
+            let strget text i -> ch in
+            let _url_percent_encode_ch ch -> enc in (
+                if enc == nil then (
+                    strset res pos ch;
+                    set pos = pos + 1
+                ) else (
+                    let strlen enc -> enc_len in
+                    for j=0; j<enc_len do (
+                        strset res pos (strget enc j);
+                        set pos = pos + 1
+                    )
+                )
+            )
+        );
+        strsub res 0 pos
+    );;
+
+fun url_decode url_encoded=
+    let strlen url_encoded -> length in
+    let strnew length -> res in
+    let 0 -> pos in (
+        let 0 -> i in (
+            while i<length do (
+                let strget url_encoded i -> ch in
+                if ch == '%' && (i+2)<length then (
+                    let strsub url_encoded i+1 2 -> hex_str in
+                    let (hex_to_int strget hex_str 0)*16 + (hex_to_int strget hex_str 1) -> decoded_ch in
+                    strset res pos decoded_ch;
+                    set pos = pos + 1;
+                    set i = i + 3
+                ) else if ch == '+' then (
+                    strset res pos 32;
+                    set pos = pos + 1;
+                    set i = i + 1
+                ) else (
+                    strset res pos ch;
+                    set pos = pos + 1;
+                    set i = i + 1
+                )
+            );
+            strsub res 0 pos
+        )
+    );;

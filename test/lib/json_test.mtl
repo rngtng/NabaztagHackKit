@@ -1,0 +1,30 @@
+let scenario "json_test" -> s in
+(
+  let test "json_quote_str" -> t in
+  (
+    // \34 = double quote, \92 = backslash
+    assert_equalS "\34\34"          json_quote_str nil;
+    assert_equalS "\34hello\34"     json_quote_str "hello";
+    assert_equalS "\34a\92tb\34"    json_quote_str "a\9b";   // tab escaped as \t
+    assert_equalS "\34a\92\47b\34"  json_quote_str "a\47b"   // slash escaped as \/
+  );
+
+  let test "json_int" -> t in
+  (
+    assert_equalS "\34n\34: 42"  (json_int "n" 42);
+    assert_equalS "\34x\34: 0"   (json_int "x" 0);
+    assert_equalS "\34v\34: -1"  (json_int "v" (0-1))
+  );
+
+  let test "json_str" -> t in
+  (
+    assert_equalS "\34k\34: \34v\34"      (json_str "k" "v");
+    assert_equalS "\34name\34: \34hi\34"  (json_str "name" "hi")
+  );
+
+  let test "json_obj" -> t in
+  (
+    assert_equalS "\34k\34: {}"  (json_obj "k" "{}");
+    assert_equalS "\34a\34: []"  (json_obj "a" "[]")
+  )
+);

@@ -1,5 +1,5 @@
 //----------- Data Dump
-#include ./lib/list.mtl
+#include "lib/list.mtl"
 
 // echo a string list as string
 fun SLecho list=

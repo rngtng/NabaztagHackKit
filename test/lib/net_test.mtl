@@ -1,0 +1,36 @@
+let scenario "net_test" -> s in
+(
+  let test "ip_to_str" -> t in
+  (
+    assert_equalS "0.0.0.0"       ip_to_str "\0\0\0\0";
+    assert_equalS "192.168.0.1"   ip_to_str "\192\168\0\1";
+    assert_equalS "255.255.255.0" ip_to_str "\255\255\255\0"
+  );
+
+  let test "str_to_ip" -> t in
+  (
+    assert_equalS "\0\0\0\0"       str_to_ip "0.0.0.0";
+    assert_equalS "\192\168\0\1"   str_to_ip "192.168.0.1";
+    assert_equalS "\255\255\255\0" str_to_ip "255.255.255.0"
+  );
+
+  let test "mac_to_str" -> t in
+  (
+    assert_equalS "01:02:03:04:05:06" mac_to_str "\1\2\3\4\5\6";
+    assert_equalS "00:ff:00:ff:00:ff" mac_to_str "\0\255\0\255\0\255"
+  );
+
+  let test "ipcmp" -> t in
+  (
+    assert_equalI 0 ipcmp "\192\168\0\1" "\192\168\0\1";
+    assert_equalI 0 ipcmp "\0\0\0\0" "\0\0\0\0"
+  );
+
+  let test "isip" -> t in
+  (
+    assert_equalI 1 isip "192.168.0.1" 0;
+    assert_equalI 1 isip "0.0.0.0"     0;
+    assert_equalI 0 isip "not-ip"      0;
+    assert_equalI 0 isip "192.168.x.1" 0
+  )
+);

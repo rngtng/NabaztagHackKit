@@ -1,5 +1,5 @@
-#include "http_server"
-#include "firmware"
+#include "http_server.mtl"
+#include "firmware.mtl"
 
 //----------------------
 
@@ -536,7 +536,7 @@ fun updateconf args=
 // HTTP handler for firmware upload — wraps firmware_flash with error page response
 fun httpflash req=
 	Secholn "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf";
-	firmware_flash req;
+	boot_firmware_flash req;
 	// only reached when firmware_flash returned nil (invalid firmware)
 	setleds 0xff;
 	page_error;;
