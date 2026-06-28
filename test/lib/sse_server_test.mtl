@@ -1,0 +1,15 @@
+let scenario "sse_server_test" -> s in
+(
+  let test "sse_event" -> t in
+  (
+    assert_equalS
+      "data: {\"type\":\"button\", \"click\": 1}\10\10"
+      sse_event "button" "\"click\": 1";
+    assert_equalS
+      "data: {\"type\":\"ears\", \"left\": 3, \"right\": 7}\10\10"
+      sse_event "ears" "\"left\": 3, \"right\": 7";
+    assert_equalS
+      "data: {\"type\":\"rfid\", \"id\": \"A1B2C3\"}\10\10"
+      sse_event "rfid" "\"id\": \"A1B2C3\""
+  )
+);
