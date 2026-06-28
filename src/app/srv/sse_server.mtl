@@ -1,0 +1,65 @@
+// #define SSE_DEBUG
+
+#ifdef SSE_DEBUG
+fun _sse_debug str= Secholn strcatlist "[sse] " :: str :: nil; nil;;
+#endif
+
+const SSE_HEADERS = "HTTP/1.1 200 OK\13\10Content-Type: text/event-stream\13\10Cache-Control: no-cache\13\10Access-Control-Allow-Origin: *\13\10Connection: keep-alive\13\10\13\10";;
+
+var _sse_clients = nil;;
+
+/**
+ * Remove a client by its TCP connection handle.
+ */
+fun _sse_remove_rec l cnx=
+    if l==nil then nil
+    else let hd l -> s in
+    if s.sockCnx==cnx then _sse_remove_rec (tl l) cnx
+    else s :: (_sse_remove_rec (tl l) cnx);;
+
+fun sse_remove_client cnx=
+#ifdef SSE_DEBUG
+    _sse_debug "client disconnected";
+#endif
+    set _sse_clients = _sse_remove_rec _sse_clients cnx;;
+
+/**
+ * TCP event handler for open SSE connections.
+ * Replaces the HTTP request handler once the SSE handshake is complete.
+ */
+fun _sse_tcpevent cnx val msg sock=
+    if val==TCPWRITE then sock_write sock
+    else if val==TCPCLOSE then sse_remove_client cnx;;
+
+/**
+ * Accept a new SSE connection: send headers, switch TCP callback, register client.
+ * Called from http_server_process_request for GET /events.
+ */
+fun sse_accept_client sock=
+#ifdef SSE_DEBUG
+    _sse_debug "client connected";
+#endif
+    sock_send sock SSE_HEADERS;
+    tcp_set_cb sock.sockCnx fixarg4 #_sse_tcpevent sock;
+    set _sse_clients = sock :: _sse_clients;;
+
+/**
+ * Send a formatted SSE event to all connected clients.
+ */
+fun _sse_broadcast_to l data=
+    if l==nil then nil
+    else (
+        sock_send (hd l) data;
+        _sse_broadcast_to (tl l) data
+    );;
+
+/**
+ * Broadcast an event to all SSE clients.
+ * type: event type string (e.g. "button", "ears", "rfid")
+ * data: inner JSON fields string (e.g. "\"click\": 1")
+ * Emits: data: {"type":"<type>", <data>}\n\n
+ */
+fun sse_broadcast type data=
+    if _sse_clients != nil then
+    let strcatlist "data: {\"type\":\"" :: type :: "\", " :: data :: "}\10\10" :: nil -> event in
+    _sse_broadcast_to _sse_clients event;;
