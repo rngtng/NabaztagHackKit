@@ -26,3 +26,6 @@ fun sock_send_and_close sock s =
     sock_send sock s;
     sock_close_after sock
     ;;
+
+fun sock_create cnx callback =
+    [sockCnx:cnx sockInput:"" sockSize:nil sockOutput:nil sockIndex:nil sockCloseAfter:0 sockCallback:callback];;

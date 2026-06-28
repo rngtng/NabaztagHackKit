@@ -22,7 +22,8 @@ type Forth=[
     pc                  // program counter
     state               // normal (0) or compilation state (-1)
     output              // list of collected output strings
-    forth_sock          // socket
+    write_fn            // output callback: fun(s) sends string s; nil = buffer in output
+    readline_cb         // pending read: fun(input) delivers a line; nil = not waiting
     forth_task          // associated task
 ];;
 

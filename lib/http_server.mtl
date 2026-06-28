@@ -1,6 +1,6 @@
 #include "lib/list.mtl"
 #include "lib/string.mtl"
-#include "lib/protos/sock_protos.mtl"
+#include "lib/sock.mtl"
 
 // Simple single-request TCP HTTP/1.0 server
 // Public API: starthttpsrv, tcpsend, tcpcloseafter
@@ -27,41 +27,24 @@ fun _httpsrv_findsize s=
 	(strlen header)+(strlen _httpsrv_sep)+if i!=nil then
 		let i+strlen _httpsrv_clen_start -> i in atoi strsub header i if j!=nil then j-i;;
 
-fun _httpsrv_tcpwrite cnx sock=
-	Secholn "tcpwrite";
-	if sock.sockOutput!=nil then
-	(
-		if sock.sockIndex==nil then set sock.sockIndex=0;
-		Iecholn set sock.sockIndex=writetcp cnx sock.sockOutput Iecholn sock.sockIndex;
-		if sock.sockIndex!=nil && sock.sockIndex>=strlen sock.sockOutput then
-		(	set sock.sockIndex=nil;
-			set sock.sockOutput=nil;
-			if sock.sockCloseAfter==1 then closetcp sock.sockCnx
-		)
-	);
-	0;;
-
 // Send s as part of the response body
 fun tcpsend sock s=
-	set sock.sockOutput=strcat sock.sockOutput s;
-	_httpsrv_tcpwrite sock.sockCnx sock;;
+	sock_send sock s;;
 
 // Signal that the response is complete — close after flush
 fun tcpcloseafter sock=
-	set sock.sockCloseAfter=1;
-	if sock.sockIndex>=strlen sock.sockOutput then closetcp sock.sockCnx;;
+	sock_close_after sock;;
 
 fun _httpsrv_tcpread cnx input sock=
-	Secho "u";
-	if input==nil ||0==strlen input then
-	(	closetcp cnx;
+	if input==nil || 0==strlen input then
+	(	tcp_close cnx;
 		nil	)
 	else
 	(
 		if sock.sockSize==nil then
 		(
 			set sock.sockInput=(strcat hd sock.sockInput input)::nil;
-			Secho "size=";Iecholn set sock.sockSize=_httpsrv_findsize hd sock.sockInput;
+			set sock.sockSize=_httpsrv_findsize hd sock.sockInput;
 			nil
 		)
 		else set sock.sockInput=input::sock.sockInput;
@@ -79,13 +62,12 @@ fun _httpsrv_tcpread cnx input sock=
 	0;;
 
 fun _httpsrv_tcpevent t val msg sock=
-	if val==TCPWRITE then _httpsrv_tcpwrite t sock
+	if val==TCPWRITE then sock_write sock
 	else if val==TCPCLOSE then _httpsrv_tcpread t nil sock
 	else _httpsrv_tcpread t msg sock;;
 
 fun _httpsrv_accept cnx code msg cbrequest=
-	Secholn "httpsrv accept";
-	let [sockCnx:cnx sockCallback:cbrequest]-> sock in
+	let sock_create cnx cbrequest -> sock in
 	(
 		tcpcb cnx fixarg4 #_httpsrv_tcpevent sock;
 		0
@@ -94,5 +76,4 @@ fun _httpsrv_accept cnx code msg cbrequest=
 // Start HTTP server on port; cbrequest(rawRequest) returns HTML response string
 fun starthttpsrv port cbrequest=
 	listentcp port fixarg4 #_httpsrv_accept cbrequest;
-	Secholn "##ok";
 	0;;

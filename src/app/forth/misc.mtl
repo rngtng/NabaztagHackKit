@@ -156,7 +156,7 @@ fun forth_evaluate f=
         forth_interpreter_resume f
         // forth_abort_msg f "EVALUATE expects a string"
     ) else (
-        forth_interpreter_ex word.str f f.forth_sock f.forth_task #_forth_evaluate_cb
+        forth_interpreter_ex word.str f f.write_fn f.forth_task #_forth_evaluate_cb
     );;
 
 /**

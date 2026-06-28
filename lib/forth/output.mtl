@@ -5,19 +5,17 @@
  */
 
 /**
- * Write a string to the output
+ * Write a string to the output.
+ * If write_fn is set, calls it; otherwise buffers in f.output.
  */
 fun forth_write f s=
 #ifdef SIMU
     Secho s;
 #endif
-    if f.forth_sock != nil then (
-
-        // send to socket
-        sock_send f.forth_sock s;
+    if f.write_fn != nil then (
+        f.write_fn s;
         nil
     ) else (
-        // append to output buffer
         set f.output = s :: f.output;
         nil
     );;
@@ -98,7 +96,7 @@ fun forth_bl f=
 
 /**
  * .S ( -- )
- * Copy and display the values currently on the data stac
+ * Copy and display the values currently on the data stack
  */
 fun forth_dot_s f=
     let forth_list_to_str f.stack " " -> val in
@@ -106,28 +104,28 @@ fun forth_dot_s f=
     forth_write f "\n";;
 
 /**
- * Callback function to read a line from the socket
+ * Internal callback: delivers a line to a suspended READ-LINE.
+ * Strips trailing \r\n, pushes the line onto the stack, resumes.
  */
-fun _forth_readline_cb input sock f=
-    let strsub input 0 ((strlen input) - 2) -> line in // remove \r\n
-        forth_push f [str:line]; // push the line onto the stack
-    set f.forth_sock.sockCallback = nil;  // clear the callback
-    forth_interpreter_resume f;  // resume the interpreter
+fun _forth_readline_deliver f input=
+    let strsub input 0 ((strlen input) - 2) -> line in
+    forth_push f [str:line];
+    set f.readline_cb = nil;
+    forth_interpreter_resume f;
     0;;
 
 /**
  * READ-LINE ( -- line )
- * Read a line from the current socket
+ * Suspend the interpreter and wait for the next line from write_fn's transport.
+ * The caller is responsible for delivering input via f.readline_cb.
  */
 fun forth_read_line f=
-    if f.forth_sock == nil then (
-        // forth_abort_msg f "READ-LINE: no socket available"
-        forth_write f "\nREAD-LINE: no socket available\n";
+    if f.write_fn == nil then (
+        forth_write f "\nREAD-LINE: no I/O available\n";
         set f.stack = nil;
         set f.rstack = nil;
-        set f.pc = nil; // end execution
+        set f.pc = nil;
         nil
     ) else
-        // Set the socket callback
-        set f.forth_sock.sockCallback = fixarg3 #_forth_readline_cb f;
+        set f.readline_cb = fixarg1 #_forth_readline_deliver f;
     nil;;
