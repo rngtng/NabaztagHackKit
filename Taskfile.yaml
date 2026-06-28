@@ -7,9 +7,7 @@
 version: '3'
 
 vars:
-  DEFAULT_OUT: build
-  BOOT_OUT: '{{.OUT | default (printf "%s/boot" .DEFAULT_OUT)}}'
-  FIRMWARE_OUT: '{{.OUT | default (printf "%s/firmware" .DEFAULT_OUT)}}'
+  OUT: build
 
 includes:
   preprocessor: # MTL preprocessor — expand #include / #ifdef (tools/preprocessor)
@@ -43,8 +41,6 @@ includes:
 tasks:
   clean:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
-    vars:
-      OUT: '{{.DEFAULT_OUT}}'
     cmds:
       - task: firmware:clean
         vars:
@@ -56,12 +52,13 @@ tasks:
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      BOOT_OUT:  '{{.OUT}}/boot'
     cmds:
       - task: preprocessor:preprocess
         vars:
           SOURCE: '{{.SOURCE}}'
           OUT: '{{.BOOT_OUT}}/merged.mtl'
-          INCLUDES: '{{dir .SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
       - task: mtl:compile
         vars:
           SOURCE: '{{.BOOT_OUT}}/merged.mtl'
@@ -73,16 +70,32 @@ tasks:
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      BOOT_OUT:  '{{.OUT}}/boot'
     cmds:
       - task: preprocessor:preprocess
         vars:
           SOURCE: '{{.SOURCE}}'
           OUT: '{{.BOOT_OUT}}/merged.mtl'
-          INCLUDES: '{{dir .SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
           DEFINES: 'SIMU BOOT'
       - task: mtl:simulate
         vars:
           SOURCE: '{{.BOOT_OUT}}/merged.mtl'
+
+  test:
+    desc: 'Preprocess and run MTL unit tests. Usage: task test'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: "test/test.mtl"
+      TEST_OUT: '{{.OUT}}/test'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.TEST_OUT}}/merged.mtl'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
