@@ -10,6 +10,8 @@
 #include protos/info_protos.mtl
 #include protos/ntp_protos.mtl
 
+#include srv/sse_server.mtl
+
 // debug
 #ifdef HTTP_SERVER_DEBUG
 fun _http_server_debug str= Secholn strcatlist "[http-server] " :: str :: nil; nil;;
@@ -625,6 +627,7 @@ fun http_server_process_request req sock=
         else if !strcmp path "/forth" then http_post_forth sock args // forth command, c=code
         else if !strcmp path "/openapi.yaml" then http_get_openapi_yaml sock args // openapi spec
         else if !strcmp path "/autocontrol" then http_get_autocontrol sock args // auto control: c=clock h=halftime s=surprise t=taichi
+        else if !strcmp path "/events" then sse_accept_client sock // SSE event stream
         else if !strcmp path "/" then http_get_index sock args // index page
         else http_not_found sock args;
         0

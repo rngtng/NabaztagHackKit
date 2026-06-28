@@ -4,6 +4,7 @@
 #include protos/run_protos.mtl
 #include protos/task_protos.mtl
 #include protos/json_protos.mtl
+#include protos/sse_protos.mtl
 
 /*
  Ears management.
@@ -230,6 +231,7 @@ fun _ears_detect_run=
 		if (ears.(0).ear_direction)==0 && (ears.(1).ear_direction)==0 then
 		(
 			set _ears_event=0x8000+(ears.(0).ear_last_position<<8)+(ears.(1).ear_last_position);
+			sse_broadcast "ears" strcatlist "\"left\": " :: (itoa ears.(0).ear_last_position) :: ", \"right\": " :: (itoa ears.(1).ear_last_position) :: nil;
 #ifdef EARS_DEBUG
 			_ears_debug strcatlist "acquisition: " :: (itoa ears.(0).ear_last_position) :: ", " :: (itoa ears.(1).ear_last_position) :: nil;
             _ears_debug "Set mode EARS_MODE_WAIT_AND_DETECT";

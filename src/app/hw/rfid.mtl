@@ -4,6 +4,7 @@
 #include protos/run_protos.mtl
 #include protos/midi_protos.mtl
 #include protos/forth_protos.mtl
+#include protos/sse_protos.mtl
 
 // ********** RFID **********************
 // v19 Amélioration de la lecteure RFID
@@ -59,6 +60,7 @@ fun rfid_control=
 			set _rfid_last=rfid;
 			set _rfid_last_time = time_ms;
 			midi_play MIDI_RFID_OK;
+			sse_broadcast "rfid" strcatlist "\"id\": \"" :: rfid :: "\"" :: nil;
 
 			// lancer l'animation (v19)
 			chor_start_ex CHOR_RFID_OK #_rfid_end_chor nil;
