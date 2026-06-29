@@ -24,12 +24,20 @@ includes:
       IMAGE: nabaztag-sdk-mtl
       DIR: ./tools/mtl_linux/
 
+  firmware: # NabGCC based firmware
+    internal: true
+    taskfile: ./src/firmware/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-firmware
+      DIR: ./src/firmware/
+
 tasks:
   clean:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
     cmds:
       - task: mtl:clean
       - task: preprocessor:clean
+      - task: firmware:clean
       - rm -rf '{{.OUT}}'
 
   build:boot:
@@ -81,3 +89,17 @@ tasks:
       - task: mtl:simulate
         vars:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
+
+  build:firmware:
+    desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.OUT}}/boot/dumpbc.c'
+      FIRMWARE_OUT: '{{.OUT}}/firmware'
+    cmds:
+      # firmware need latest dumpbc.c in sr/bc.c
+      - cp '{{.SOURCE}}' src/firmware/src/bc.c
+      - task: firmware:compile
+      - rm -rf '{{.FIRMWARE_OUT}}'
+      - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
+      - rm -rf src/firmware/obj src/firmware/src/bc.c
