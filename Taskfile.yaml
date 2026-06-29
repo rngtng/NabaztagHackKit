@@ -10,6 +10,13 @@ vars:
   OUT: build
 
 includes:
+  preprocessor: # MTL preprocessor — expand #include / #ifdef (tools/preprocessor)
+    internal: true
+    taskfile: ./tools/preprocessor/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-preprocessor
+      DIR: ./tools/preprocessor/
+
   mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
     internal: true
     taskfile: ./tools/mtl_linux/Taskfile.yaml
@@ -22,6 +29,7 @@ tasks:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
     cmds:
       - task: mtl:clean
+      - task: preprocessor:clean
       - rm -rf '{{.OUT}}'
 
   build:boot:
@@ -31,9 +39,14 @@ tasks:
       SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
       BOOT_OUT: '{{.OUT}}/boot'
     cmds:
-      - task: mtl:compile
+      - task: preprocessor:preprocess
         vars:
           SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
           OUT: '{{.BOOT_OUT}}'
           SIGN: 'false'
 
@@ -42,7 +55,14 @@ tasks:
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      SIMU_BOOT_OUT: '{{.OUT}}/boot_simu'
     cmds:
-      - task: mtl:simulate
+      - task: preprocessor:preprocess
         vars:
           SOURCE: '{{.SOURCE}}'
+          OUT: '{{.SIMU_BOOT_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.SIMU_BOOT_OUT}}/merged.mtl'

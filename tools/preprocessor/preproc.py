@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""MTL preprocessor: #ifdef/#include/proto-dedup pipeline."""
+"""MTL preprocessor backed by pcpp — #ifdef/#include/#define/#pragma once pipeline."""
 import argparse
+import io
 import os
 import re
 import sys
@@ -15,14 +16,13 @@ try:
 except Exception:
     _TZ = None
 
-_IFDEF   = re.compile(r"^#ifdef ([a-zA-Z0-9_-]+)")
-_IFNDEF  = re.compile(r"^#ifndef ([a-zA-Z0-9_-]+)")
-_ELSE    = re.compile(r"^#else\b")
-_ENDIF   = re.compile(r"^#endif\b")
-_DEFINE  = re.compile(r"^#define ([a-zA-Z0-9_-]+)")
-_INCLUDE = re.compile(r'^#include "?([a-zA-Z0-9._/\-]+)"?')
-_FUN     = re.compile(r"^fun ([a-zA-Z0-9_-]+)")
-_PROTO   = re.compile(r"^proto ([a-zA-Z0-9_-]+)")
+try:
+    import pcpp
+except ImportError:
+    sys.exit("pcpp not installed — run: pip install pcpp")
+
+_FUN   = re.compile(r"^fun ([a-zA-Z0-9_-]+)")
+_PROTO = re.compile(r"^proto ([a-zA-Z0-9_-]+)")
 
 
 def _date():
@@ -30,79 +30,58 @@ def _date():
     return dt.isoformat(timespec="seconds")
 
 
-def _resolve(raw, include_dirs):
-    p = Path(raw)
-    for base in [Path(".")] + [Path(d) for d in include_dirs]:
-        c = base / p
-        if c.exists():
-            return c
-        if not c.suffix:
-            mtl = c.with_suffix(".mtl")
-            if mtl.exists():
-                return mtl
-    return None
+class _MTLPreprocessor(pcpp.Preprocessor):
+    """pcpp subclass for MTL: comment passthrough, HTML/CSS quote-escaping on include."""
+
+    def __init__(self):
+        super().__init__()
+        self.line_directive = None     # suppress #line markers (MTL compiler rejects them)
+        self.passthru_comments = True  # keep // and /* */ comments
+
+    def on_error(self, file, line, msg):
+        sys.exit(f"{file}:{line}: {msg}")
+
+    def on_file_open(self, is_system_include, path):
+        """Handle extension-less includes, directory collisions, and HTML/CSS escaping."""
+        p = Path(path)
+        # Extension-less include (e.g. #include "forth" where lib/forth/ also exists):
+        # use is_file() to skip directories, then retry with .mtl suffix.
+        if not p.is_file() and not p.suffix:
+            mtl = p.with_suffix('.mtl')
+            if mtl.is_file():
+                return super().on_file_open(is_system_include, str(mtl))
+        # Escape double-quotes in HTML/CSS so they embed cleanly in MTL strings.
+        if p.suffix.lower() in ('.html', '.css'):
+            with open(path, 'r') as fh:
+                return io.StringIO(fh.read().replace('"', '\\"'))
+        result = super().on_file_open(is_system_include, path)
+        # treat every file as #pragma once — no need for the directive in sources
+        # pcpp >= 1.31 changed include_once from set to dict
+        key = os.path.realpath(path)
+        if isinstance(self.include_once, set):
+            self.include_once.add(key)
+        else:
+            self.include_once[key] = True
+        return result
 
 
 def preprocess(source, defines, include_dirs):
-    """Return list of output lines with includes expanded and ifdefs resolved."""
-    included, out, date = set(), [], _date()
+    """Return preprocessed output lines."""
+    pp = _MTLPreprocessor()
 
-    def process(path, label):
-        is_html = path.suffix.lower() in (".html", ".css")
-        included.add(str(path))
-        skip = [False]  # True = currently skipping; stack mirrors ifdef nesting
+    for d in defines:
+        pp.define(f"{d} {d}")  # self-ref: #ifdef works, token not substituted
+    pp.define(f"__DATE__ {_date()!r}")
 
-        for n, raw in enumerate(path.read_text().splitlines(keepends=True), 1):
-            line = raw.replace("__DATE__", date)
-            if is_html:
-                line = line.replace('"', '\\"')
+    pp.add_path(".")  # always search from repo root so "lib/foo.mtl" resolves everywhere
+    for d in include_dirs:
+        pp.add_path(str(d))
 
-            if m := _IFDEF.match(line):
-                skip.append(skip[-1] or (m.group(1) not in defines))
-                continue
-            if m := _IFNDEF.match(line):
-                skip.append(skip[-1] or (m.group(1) in defines))
-                continue
-            if _ELSE.match(line):
-                if len(skip) < 2:
-                    sys.exit(f"{label}:{n}: #else without #ifdef")
-                # flip current level but keep parent skip if it was already skipping
-                skip[-1] = skip[-2] or (not skip[-1])
-                continue
-            if _ENDIF.match(line):
-                if len(skip) < 2:
-                    sys.exit(f"{label}:{n}: #endif without #ifdef")
-                skip.pop()
-                continue
+    pp.parse(Path(source).read_text(), str(source))
 
-            if skip[-1]:
-                continue
-
-            if m := _DEFINE.match(line):
-                defines.add(m.group(1))
-                continue
-
-            if m := _INCLUDE.match(line):
-                raw_inc = m.group(1)
-                resolved = _resolve(raw_inc, include_dirs)
-                if resolved is None:
-                    sys.exit(f"{label}:{n}: cannot find include '{raw_inc}'")
-                if str(resolved) in included:
-                    out.append(f"// file {raw_inc} already included\n")
-                    continue
-                out.append(f"// file {raw_inc} //\n")
-                process(resolved, raw_inc)
-                out.append(f"// end of file {raw_inc} //\n")
-                out.append(f"// back to file {label}, line {n}\n")
-                continue
-
-            out.append(line)
-
-        if len(skip) != 1:
-            sys.exit(f"{label}: unclosed #ifdef at end of file")
-
-    process(source, str(source))
-    return out
+    out = io.StringIO()
+    pp.write(out)
+    return out.getvalue().splitlines(keepends=True)
 
 
 def remove_extra_protos(lines):
@@ -118,28 +97,22 @@ def remove_extra_protos(lines):
 
 
 def find_line(processed_path, target):
-    """Map a line number in a processed file back to its original source location."""
-    cur_file, cur_line, n = str(processed_path), 0, 0
-    with open(processed_path) as f:
-        for raw in f:
-            n += 1
-            if n == target:
-                break
-            if (m := re.match(r"^// file (.+?) //\s*$", raw)) and "already included" not in raw:
-                cur_file, cur_line = m.group(1), 1
-                continue
-            if m := re.match(r"^// back to file (.+?), line (\d+)", raw):
-                cur_file, cur_line = m.group(1), int(m.group(2))
-                continue
-            if re.match(r"^// end of file", raw):
-                continue
-            cur_line += 1
-    return f"{cur_file}, line {cur_line}"
+    """Map a processed-file line number back to a source location.
+
+    Note: the pcpp backend suppresses line directives for MTL compiler compatibility,
+    so file-level source tracking is unavailable. The line number in the merged file
+    is returned as-is.
+    """
+    return f"{processed_path}, line {target}"
 
 
 def _self_test():
     with tempfile.TemporaryDirectory() as d:
-        Path(d, "inc.mtl").write_text("fun helper=\n  0\n;;\n")
+        Path(d, "inc.mtl").write_text("#pragma once\nfun helper=\n  0\n;;\n")
+        Path(d, "page.html").write_text('<p>"hello"</p>\n')
+        # Directory collision: lib/forth/ dir alongside lib/forth.mtl
+        (Path(d) / "forth").mkdir()
+        Path(d, "forth.mtl").write_text("#pragma once\nfun forth_word= 0;;\n")
         Path(d, "main.mtl").write_text(textwrap.dedent("""\
             #define FEATURE
             #ifdef FEATURE
@@ -148,29 +121,41 @@ def _self_test():
             #ifdef MISSING
             proto skip 0;;
             #endif
-            #include inc.mtl
+            #ifdef EXT_FLAG
+            var EXT_FLAG;;
+            #endif
+            #include "inc.mtl"
+            #include "inc.mtl"
             proto helper 0;;
+            #include "forth"
             fun main=
               0
             ;;
+            var page="
+            #include "page.html"
+            ";;
         """))
         old = os.getcwd()
         os.chdir(d)
         try:
-            lines = preprocess(Path(d, "main.mtl"), set(), [])
+            lines = preprocess(Path(d, "main.mtl"), ["EXT_FLAG"], [d])
             lines = remove_extra_protos(lines)
             text = "".join(lines)
-            assert "proto main" in text, "ifdef define failed"
-            assert "proto skip" not in text, "ifdef missing should be excluded"
-            assert "fun helper" in text, "include failed"
-            assert "//proto helper" in text, "proto dedup failed"
+            assert "proto main" in text,         "ifdef define failed"
+            assert "proto skip" not in text,     "ifdef missing should be excluded"
+            assert "fun helper" in text,         "include failed"
+            assert "//proto helper" in text,     "proto dedup failed"
+            assert text.count("fun helper") == 1, "pragma once dedup failed"
+            assert '\\"hello\\"' in text,         "html quote escaping failed"
+            assert "fun forth_word" in text,      "extension-less include failed"
+            assert "var EXT_FLAG" in text,        "external define token substitution broken"
         finally:
             os.chdir(old)
     print("self-test OK")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="MTL preprocessor")
+    ap = argparse.ArgumentParser(description="MTL preprocessor (pcpp backend)")
     ap.add_argument("-D", "--define", action="append", default=[], dest="defines", metavar="NAME")
     ap.add_argument("-I", action="append", default=[], dest="include_dirs", metavar="DIR")
     ap.add_argument("--test", action="store_true", help="run self-test and exit")
@@ -191,7 +176,7 @@ def main():
     if not args.source:
         ap.error("source file required")
 
-    lines = preprocess(Path(args.source), set(args.defines), args.include_dirs)
+    lines = preprocess(Path(args.source), args.defines, args.include_dirs)
     lines = remove_extra_protos(lines)
     sys.stdout.write("".join(lines))
 
