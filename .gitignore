@@ -4,4 +4,13 @@
 
 # Makefiles are project source — override a global `makefile` ignore some setups have
 !Makefile
+
+
 *.bin
+/src/firmware/bin
+*.lst
+*.d
+*.sym
+*.map
+*.dis
+*.o

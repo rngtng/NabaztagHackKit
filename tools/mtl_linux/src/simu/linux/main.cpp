@@ -10,6 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 extern "C" {
 #include"vmem.h"
 #include"vloader.h"
@@ -107,6 +108,7 @@ extern unsigned char dumpbc[];
 
 int main(int argc,char **argv)
 {
+    signal(SIGPIPE, SIG_IGN);
     PropLoad("config.txt");
 
     if (!handle_options(argc, argv))
