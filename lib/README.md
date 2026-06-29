@@ -1,13 +1,22 @@
 # lib — Reusable MTL Library
 
-Portable MTL modules for the Nabaztag firmware. Each file is self-contained
-and `#include`-able on demand. No module pulls in more than it needs.
+Portable MTL modules for the Nabaztag firmware. Each file is self-contained and `#include`-able on demand. No module pulls in more than it needs.
 
-The `lib/` modules should declare all external deps as `proto` at the top so
-each file is self-documenting and linter-friendly.
+The `lib/` modules should declare all external deps as `proto` at the top so each file is self-documenting and linter-friendly.
 
+## About MTL (Metal)
 
-## Architecture Proposal
+MTL/Metal is a custom functional language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). Files end with `.mtl`. Key features used in this codebase:
+
+- **Types**: `type Sock=[field1 field2];;` — record types; fields accessed as `sock.field`
+- **Functions**: `fun name arg1 arg2 = body;;`
+- **Partial application**: `fixarg2 #fn val` — fixes argument 2 of `fn` as `val`
+- **Lists**: `hd`, `tl`, `::` (cons), `nil`
+- **Mutation**: `set field = value;` — in-place field update
+
+Grammar reference: [docs/grammar.md](docs/grammar.md)
+
+## Architecture
 
 ```
 lib/
@@ -171,6 +180,36 @@ let ip_to_str ip -> s in …
 let mac_to_str mac_bytes -> s in …
 ```
 
+#### Wiring I/O at the app layer
+
+```mtl
+// telnet REPL: wire sock_send as the write function
+let sock_create cnx nil -> sock in
+let forth_interpreter_setup nil nil (fixarg2 #sock_send sock) nil nil -> f in
+    forth_interpreter_ex text f (fixarg2 #sock_send sock) nil cb;;
+
+// background task: no I/O → output buffered in f.output
+forth_interpreter_ex text nil nil task nil;;
+```
+
+#### sock.mtl API
+
+| Function | Description |
+|----------|-------------|
+| `sock_create cnx callback` | Create a new Sock (use this instead of naming fields inline) |
+| `sock_send sock s` | Append `s` to output buffer and flush |
+| `sock_write sock` | Flush the output buffer to the TCP connection |
+| `sock_close_after sock` | Mark for close; closes immediately if buffer is empty |
+| `sock_send_and_close sock s` | Send `s` then close |
+
+#### http_server.mtl API
+
+| Function | Description |
+|----------|-------------|
+| `starthttpsrv port cbrequest` | Listen on `port`; call `cbrequest(rawRequest)` → HTML string |
+| `tcpsend sock s` | Send response body fragment |
+| `tcpcloseafter sock` | Signal end of response |
+
 ## Testing
 
 Unit tests live in `test/lib/<module>_test.mtl` and are run via:
@@ -195,6 +234,4 @@ let scenario "my_module" -> s in
 Available assertions: `assert_equalI`, `assert_equalS`, `assert_nil`,
 `assert_equalIL`, `assert_equalSL`, `assert_equalTL`.
 
-For SSE integration testing without real hardware, see `test/sse_test_app.mtl`
-— a self-contained app that broadcasts a tick event every 2 s and can be
-exercised with `curl -sN http://localhost:<port>/`.
+For SSE integration testing without real hardware, see `test/sse_test_app.mtl` — a self-contained app that broadcasts a tick event every 2 s and can be exercised with `curl -sN http://localhost:<port>/`.
