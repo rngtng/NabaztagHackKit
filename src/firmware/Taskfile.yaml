@@ -1,0 +1,34 @@
+# Nabaztag toolkit — every target runs in the Docker toolchain (see Dockerfile),
+# so the only host requirements are Docker, Task (https://taskfile.dev) and git.
+# Run `task --list` to see targets. `task compile`  to build the firmware.
+# Artifacts land in bin/ (and obj/) on the host via a bind mount.
+#   bin/Nab.elf  → flash with OpenOCD/GDB (see README "Flash")
+#   bin/Nab.sim  → upload via the config page (blue LEDs)
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabgcc-build"}}'
+  DIR: '{{.DIR | default "."}}'
+
+tasks:
+  image:
+    internal: true   # built on demand as a dep; rebuilt when the toolchain changes
+    dir: '{{.DIR}}'
+    cmds:
+      - docker build -t {{.IMAGE}} .
+
+  compile:
+    desc: 'Compile the ARM firmware → bin/Nab.{elf,hex,bin}'
+    dir: '{{.DIR}}'
+    cmds:
+      - task: image
+      # bind-mount the firmware tree at /work; obj/ and bin/ land back on the host.
+      # serial build: the Makefile's mkdir rules race under -j.
+      - 'docker run --rm -v "$(realpath .):/work" {{.IMAGE}} make'
+
+  clean:
+    desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker image'
+    dir: '{{.DIR}}'
+    cmds:
+      - rm -rf bin obj
+      - docker rmi {{.IMAGE}} || true
