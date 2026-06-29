@@ -1,15 +1,15 @@
 # boot/ — stdlib extraction roadmap
 
-## Quick wins (dead code / duplicates)
+## ~~Quick wins (dead code / duplicates)~~ ✓ done
 
-Ranked by impact. Apply in any order; each is independent.
+| # | What | Resolved |
+|---|------|---------|
+| 1 | 57-line `/* */` block: `_wavcbhttp`, `wavstarthttp`, `wavtime` | Deleted from `boot.mtl` |
+| 2 | `wifiConnected` — duplicate of `wifiReady` | Deleted from `wifi.mtl` |
+| 3 | `confGetbin` — duplicate of `confGet` | Deleted; callers updated to `confGet` |
+| 4 | Stray `/*"disabled=\"disabled\""*/` comment | Deleted from `config_server.mtl` |
 
-| # | Tag | What | Where | Action |
-|---|-----|------|-------|--------|
-| 1 | delete | 57-line `/* */` block: `_wavcbhttp`, `wavstarthttp`, `wavtime` — commented out, every call site also commented | `boot.mtl` inside `ifdef AUDIOLIB` | Delete the `/* … */` block entirely |
-| 2 | delete | `wifiConnected` — identical body to `wifiReady`, zero callers in boot | `wifi.mtl` | Delete; callers (none currently) use `wifiReady` |
-| 3 | delete | `confGetbin` — same body as `confGet`, zero callers after split | `config.mtl` | Delete the function |
-| 4 | delete | `/*"disabled=\"disabled\""*/` — stray commented literal inline in string | `config_server.mtl` ~line 517 | Delete the comment fragment |
+Note: `confSetbin` (same body as `confSet`) kept — has real callers in `config_server.mtl`.
 
 ## What's here
 
@@ -113,7 +113,7 @@ Steps to unify:
    (or vice versa — pick one canonical name and update all call sites).
 2. Replace `setleds` with `leds_set_all` (or alias).
 3. Add a thin task-scheduler shim for boot (a simple loopcb wrapper that calls
-   the wifi task function). 
+   the wifi task function).
 4. Replace boot's `wifi.mtl` with an `#include` of app's.
 
 ### http.mtl vs src/app/net/http.mtl
@@ -137,39 +137,14 @@ standalone `lib/task.mtl` that can be included optionally. Then boot can include
 
 ---
 
-## mtl_merge recursive includes
+## consistent conditionals
 
-`tools/preprocessor/mtl_merge` is single-level: it expands `#include` in the
-root file only, not in included files. This forced the pattern of declaring all
-includes in `boot.mtl` rather than in sub-modules.
+`task build:boot` and `task simulate:boot` both call `preprocessor:preprocess`
+before compiling. Defines (`BOOT`, `SIMU`) are passed via `DEFINES=` so the
+preprocessor expands conditional blocks correctly.
 
-Two options:
-- **Fix mtl_merge**: make `process_file` recursive (trivial Ruby change, ~5 lines).
-- **Use preproc.py**: `tools/preprocessor/preproc.py` already handles recursive
-  includes, `#ifdef`/`#define`, and proto-dedup. Use it as the sole preprocessor:
-  ```
-  task preprocessor:preprocess SOURCE=src/boot/boot.mtl OUT=build/boot_merged.mtl
-  ```
-  and update `boot:compile` to call that instead of mtl_merge.
-
-Switching to `preproc.py` is the better long-term choice: it also handles
-`#define BOOT` (letting sub-modules use `#ifdef BOOT` guards instead of the
-language-level `ifdef BOOT { }` blocks).
-
----
-
-## stdlib structure proposal
-
-```
-lib/
-  string.mtl        — strstr, strreplace, filterpercent, … (from util.mtl)
-  list.mtl          — rev, conc, listlen, sort, select, … (from util.mtl / lib/list.mtl)
-  net.mtl           — webip, webmac, useparamip  (from util.mtl)
-  integer.mtl       — itoh4, itobin4, atoibin2   (from util.mtl / lib/integer.mtl)
-  http_server.mtl   — starthttpsrv, tcpsend, tcpcloseafter
-  firmware.mtl      — getfirmware, firmware_flash
-  bytecode.mtl      — getbytecode, load_bytecode
-```
-
-The `lib/` modules should declare all external deps as `proto` at the top so
-each file is self-documenting and linter-friendly.
+One open item: boot.mtl still uses MTL-level `ifdef BOOT { }` blocks for some
+conditionals instead of preprocessor `#ifdef BOOT`. These work but are processed
+by the MTL compiler rather than the preprocessor, so `#include` directives inside
+them are always expanded regardless of the flag. Migrating to `#ifdef BOOT` /
+`#ifndef SIMU` preprocessor directives would make the conditionals consistent.

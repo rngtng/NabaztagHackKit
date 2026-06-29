@@ -1,0 +1,81 @@
+fun listlen list=
+  if list == nil then
+    0
+  else
+    1 + listlen tl list
+;;
+
+// TODO rename to LtoS
+fun listtostr list=
+  let strnew listlen list -> s in
+  let 0 -> i in
+  (
+    for p = list; p != nil; tl p do
+    (
+      strset s i hd p;
+      set i = i + 1
+    );
+  s
+  )
+;;
+
+fun TLtoS tuplelist=
+  if tuplelist == nil then
+    ""
+  else
+    let hd tuplelist -> [a b] in
+    strcatlist (itoa a)::b::(TLtoS tl tuplelist)::nil
+;;
+
+fun rev list1 list2=
+  if list1 == nil then
+    list2
+  else
+    rev tl list1 (hd list1)::list2
+;;
+
+fun slistlen l=
+  if l==nil then 0 else (strlen hd l)+slistlen tl l;;
+
+fun listnth l i=
+  if !i then hd l else if i>0 then listnth tl l i-1;;
+
+fun listrem l x=
+  if l!=nil then if x==hd l then tl l else (hd l)::listrem tl l x;;
+
+fun listreplacestr l key val=
+  if l!=nil then if !strcmp hd l key then val::listreplacestr tl l key val
+  else (hd l)::listreplacestr tl l key val;;
+
+fun conc p q=
+  if p==nil then q else (hd p)::conc tl p q;;
+
+fun insert x l f=
+  if l==nil then x::nil
+  else let call f [x hd l] -> r in
+  if r>0 then (hd l)::insert x tl l f
+  else if r<0 then x::l
+  else insert x tl l f;;
+
+fun sort l f=
+  if l!=nil then insert hd l sort tl l f f
+  else nil;;
+
+fun select l a f=
+  if l!=nil then let hd l -> x in
+  (if call f [x a] then x::select tl l a f else select tl l a f)
+  else nil;;
+
+fun listlast l=
+    if (tl l) != nil then listlast tl l else hd l;;
+
+fun listtotab l=
+    let 0 -> i in
+    let tabnew 0 (listlen l) -> t in (
+        for p=l;p!=nil;tl p do
+        (
+            set t.i=hd p;
+            set i=i+1
+        );
+        t
+    );;

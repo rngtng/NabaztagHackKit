@@ -61,8 +61,6 @@ fun confReset=
 
 fun confGet i len= strsub conf i len;;
 
-fun confGetbin i len= strsub conf i len;;
-
 fun confGetstr i len=
 	let strstr conf "\0" i -> j in
 	strsub conf i (if j==nil then len else min len j-i);;
@@ -82,10 +80,10 @@ fun confSetstr i val len=
 fun webport s= ((strget s 0)<<8)+strget s 1;;
 
 fun confGetWifissid=confGetstr CONF_WIFISSID 32;;
-fun confGetWificrypt=strget confGetbin CONF_WIFICRYPT 1 0;;
+fun confGetWificrypt=strget confGet CONF_WIFICRYPT 1 0;;
 fun confGetWifikey0=confGetstr CONF_WIFIKEY0 64;;
 fun confGetWifiauth=strget confGet CONF_WIFIAUTH 1 0;;
-fun confGetWifipmk=confGetbin CONF_WIFIPMK 32;;
+fun confGetWifipmk=confGet CONF_WIFIPMK 32;;
 
 fun confGetDhcp=strget confGet CONF_NETDHCP 1 0;;
 fun confGetNetip=confGet CONF_NETIP 4;;

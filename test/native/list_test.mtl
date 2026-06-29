@@ -1,0 +1,14 @@
+let scenario "list_test" -> s in
+(
+  let test "listtostr" -> t in
+  (
+    assert_equalS "\49"       listtostr 49::nil;
+    assert_equalS "\51\52\53" listtostr 51::52::53::nil
+  );
+
+  let test "strcatlist" -> t in
+  (
+    assert_equalS "\54"    strcatlist "\54"::nil;
+    assert_equalS "313233" strcatlist "31"::"32"::"33"::nil
+  )
+);

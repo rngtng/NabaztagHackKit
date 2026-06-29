@@ -1,0 +1,26 @@
+let scenario "convert_test" -> s in
+(
+  let test "itoa" -> t in
+  (
+    assert_equalS "0"     itoa 0;
+    assert_equalS "51"    itoa 51;
+    assert_equalS "255"   itoa 255;
+    assert_equalS "25500" itoa 25500
+  );
+
+  let test "itoh" -> t in
+  (
+    assert_equalS "0"     itoh 0;
+    assert_equalS "33"    itoh 51; // 51 -> hex == 33
+    assert_equalS "ff"    itoh 255; // 255 -> hex == ff
+    assert_equalS "3e517" itoh 255255 // 255255 -> hex == 3e517
+  );
+
+  let test "ctoa" -> t in
+  (
+    assert_equalS "\0"     ctoa 0;
+    assert_equalS "\51"    ctoa 51;
+    assert_equalS "A"      ctoa 65;
+    assert_equalS "\255"   ctoa 255
+  )
+);
