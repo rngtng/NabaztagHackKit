@@ -1,0 +1,62 @@
+#include "bytecode_loader"
+
+const BOOT_HTTPTIMEOUT=10;;
+const BOOT_WIFITIMEOUT=20;;
+var httpboot;;
+
+const GREEN=0xff00;;
+const AMBER=0xff8000;;
+const BLACK=0;;
+
+fun boot_leds=
+	let
+		if netState!=RT2501_S_CONNECTED then 0
+		else if netip==netip_empty then 1
+		else let httpstate httpboot -> state in
+		if state==HTTP_SOLVE then 2
+		else if state==HTTP_REACH then 3
+		else if state==HTTP_CONNECTED then 4
+	-> step in
+	let (time_ms>>8)&1 -> t in
+	(
+		led 4 if t then AMBER else BLACK;
+		for i=0;i<3 do led 1+i if step>i then GREEN else if step<i || t then AMBER else BLACK;
+		led 0 if t then AMBER else if step<3 then AMBER else if step>3 then GREEN else BLACK
+	);;
+
+// Save network environment before jumping to new bytecode so it can
+// restore IP/wifi state without re-scanning on next boot
+fun _bootcbhttp httpreq res=
+	envset envmake;
+	dump envget;
+	load_bytecode httpreq res;;
+
+
+fun boot_url url =
+	Secholn strcatlist url::"/bc.jsp?v="::(webip FIRMWARE)::"&m="::(webmac netMac)::"&l="::(webmac confGetLogin)::"&p="::(webmac confGetPwd)::"&h="::(itoa HARDWARE)::nil;;
+
+fun boot_loop=
+	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre réseau
+	(
+		wifiInit 0;
+		resetudp;
+		set httpboot=nil;
+		netSetmode IEEE80211_M_MANAGED nil 11;
+		set wifiscans=tl wifiscans;
+		nil
+	)
+	else
+	if httpboot==nil then
+	let confGetServerUrl -> url in
+//	let "nabdev.no-ip.org:8080/vl" -> url in
+	(
+		if wifiReady then set httpboot=httprequest "GET" boot_url url nil #_bootcbhttp HTTP_NORMAL;
+		0
+	)
+	else let httpstart httpboot -> t0 in
+	if time-t0>BOOT_HTTPTIMEOUT then
+	(
+		httpabort httpboot;
+		set httpboot=nil;
+		0
+	);;

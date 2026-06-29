@@ -1,0 +1,267 @@
+var midi_start=
+"\$4d\$54\$68\$64\$00\$00\$00\$06\$00\$00\$00\$01\$01\$e0\$4d\$54\
+\$72\$6b\$00\$00\$00\$d1\$00\$ff\$03\$08\$4e\$65\$77\$42\$6f\$6f\
+\$74\$33\$00\$ff\$51\$03\$07\$a1\$20\$00\$ff\$58\$04\$04\$02\$18\
+\$08\$00\$90\$58\$76\$2f\$80\$58\$00\$0d\$90\$59\$6e\$35\$80\$59\
+\$00\$07\$90\$5a\$67\$27\$80\$5a\$00\$15\$90\$5b\$79\$3b\$80\$5b\
+\$00\$01\$90\$5c\$6e\$26\$80\$5c\$00\$16\$90\$5d\$64\$2c\$80\$5d\
+\$00\$10\$90\$5e\$6e\$1c\$80\$5e\$00\$20\$90\$5f\$7d\$3c\$60\$7d\
+\$03\$80\$5f\$00\$2d\$60\$00\$0c\$90\$61\$62\$28\$80\$61\$00\$14\
+\$90\$62\$70\$3c\$63\$6c\$00\$80\$62\$00\$23\$63\$00\$19\$90\$64\
+\$79\$2c\$80\$64\$00\$10\$90\$65\$68\$2d\$80\$65\$00\$0f\$90\$66\
+\$6e\$27\$80\$66\$00\$15\$90\$67\$73\$3c\$68\$70\$05\$80\$67\$00\
+\$1e\$68\$00\$19\$90\$69\$6e\$2b\$80\$69\$00\$11\$90\$6a\$6c\$1e\
+\$80\$6a\$00\$1e\$90\$6b\$70\$2d\$80\$6b\$00\$0f\$90\$6c\$6c\$2c\
+\$80\$6c\$00\$10\$90\$6d\$67\$1e\$80\$6d\$00\$1e\$90\$6e\$73\$39\
+\$80\$6e\$00\$00\$ff\$2f\$00";;
+
+var start;;
+var tests=0;;
+var lastclic;;
+var tstart;;
+
+var lasttime0;;
+var lastcount0;;
+var count0;;
+var lasttime1;;
+var lastcount1;;
+var count1;;
+
+
+
+var coltests={0 0 0xffff00 0xff 0xff8000 0xffff 0xff00ff};;
+
+var fifoind;;
+var fifotest;;
+
+var recbutton;;
+
+var sample441;;
+var sample221;;
+var sample881;;
+
+var tab_osc={
+	0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
+	9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
+	37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76
+	79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
+};;
+
+
+fun osc x=
+	let (x>>6)&3 -> q in
+	let x&255 -> x in
+	if q==0 then tab_osc.x
+	else if q==1 then 255-tab_osc.(127-x)
+	else if q==2 then 255-tab_osc.(x-128)
+	else tab_osc.(255-x);;
+
+fun mksample len half=
+	let strnew len*2 -> s in
+	(
+		let half*2-> per in
+		for i=0;i<len*2;i+per*2 do
+		(
+			for j=0;j<half*2 do
+			(
+				strset s i+j+j+1 (osc j*256/per)-0x80;
+				strset s i+j+j 0
+			)
+		);
+		s
+	);;
+
+fun _wavtestcb i=
+	if fifotest==nil then
+	(
+		let (1+((time_ms-tstart)>>13))&3 -> t in
+		 set fifotest=
+			(if t==1 then sample221 else if t==3 then sample881 else sample441)::nil;// feed fifo
+		 set fifoind=0
+	);
+	set fifoind=fifoind+playFeed hd fifotest fifoind nil;
+	if fifoind>=strlen hd fifotest then set fifotest=tl fifotest;
+	0;;
+
+const TESTDELAY=7000;;
+
+fun loop=
+	if !master then
+	(
+		if !wavrunning then
+		(
+			wifiRun;
+			boot_leds;
+			boot_loop
+		)
+	)
+	else if start!=nil then
+	(
+		if time_ms-start>TESTDELAY then setleds 0xffffff;
+		if !button2 then
+		(
+//		Secho "release ";Iecholn time_ms; Iecholn start;
+			if (time_ms-start)>TESTDELAY then
+			(
+				set tests=1;
+				set lastclic=0;
+				set start=nil;
+				set tstart=time_ms
+			)
+			else
+			(
+				setleds 0xff;
+				set start=nil
+			)
+		)
+	)
+	else if !tests then
+	(
+		wifiRun
+	)
+	else
+	(
+		if tests+1<tablen coltests then
+		let button2->b in if b!=lastclic then
+		(
+			set lastclic=Iecho b;
+			if b then
+			(
+				set tests=min (tablen coltests)-1 tests+1;
+				setleds coltests.tests;
+				motorset 0 0;
+				motorset 1 0;
+				playStop;
+				set fifotest=nil;
+				set recbutton=0;
+				set tstart=time_ms;
+				set lasttime0=nil;
+				0
+			)
+		);
+		let time_ms-tstart-2048 -> d in
+		if d>=0 then
+		if tests==2 then
+		(
+			motorset 0 if d&8192 then 1 else -1;
+			motorset 1 if d&8192 then -1 else 1;
+			Secho "\n";Iecho time_ms;
+			Secho "---0:";Iecholn motorget 0;
+			Secho "--------1:";Iecholn motorget 1
+
+		)
+		else if tests==3 then
+		(
+			if lasttime0==nil then
+			(
+				setleds 0;
+				motorset 0 1;
+				motorset 1 1;
+				set lasttime0=time_ms;
+				set lastcount0=motorget 0;
+				set count0=nil;
+				set lasttime1=time_ms;
+				set lastcount1=motorget 1;
+				set count1=nil
+			);
+			let motorget 0 -> i in
+			if i!=lastcount0 then
+			(
+				set lastcount0=i;
+				let time_ms-lasttime0 -> d in
+				if d<10000 && d>600 then
+				(
+					Secho "\n-------------refpos0 ";Iecholn i-count0;
+					led 1 if count0==nil then 0xff00ff else if (i-count0)==17 then 0xff00 else 0xff0000;
+					set count0=i
+				);
+				Secho "\n";Iecho time_ms;
+				Secho "--0:";
+				Iecho i;
+				if count0!=nil && i-count0>8 then led 1 0;
+				set lasttime0=time_ms
+			);
+			let motorget 1 -> i in
+			if i!=lastcount1 then
+			(
+				set lastcount1=i;
+				let time_ms-lasttime1 -> d in
+				if d<10000 && d>600 then
+				(
+					Secho "\n-------------refpos1 ";Iecholn i-count1;
+					led 3 if count1==nil then 0xff00ff else if (i-count1)==17 then 0xff00 else 0xff0000;
+					set count1=i
+				);
+				Secho "\n";Iecho time_ms;
+				Secho "-----1:";
+				Iecho i;
+				if count1!=nil && i-count1>8 then led 3 0;
+				set lasttime1=time_ms
+			);
+			0
+		)
+		else if tests==4 then
+		(
+			let rfidGet -> s in
+			(
+				setleds if s==nil then 0 else if !strcmp s "Error" then 0xff0000 else 0xff00;
+				if s!=nil then Secholn strcat "RFID : " s
+			);
+			0
+		)
+		else if tests==5 then
+		(
+			if fifotest==nil then
+			(
+				set fifotest=(mkwav 8000 1 16)::nil;
+				set fifoind=0;
+				set sample441=mksample 1000 10;
+				set sample221=mksample 1000 20;
+				set sample881=mksample 1000 5;
+				playStart 1024 #_wavtestcb
+			);
+			sndVol button3;
+			0
+		)
+		else if tests==6 then
+		(
+			let button2-> b in
+			if b!=recbutton then
+			(
+				set recbutton=b;
+				if b then
+				(
+					setleds 0xffff00;
+					wavstop;
+					recstart
+				)
+				else
+				(
+					recstop;
+					sndVol 0x40;
+					let recriff -> wavfile in wavstartlocal wavfile;
+					setleds 0xff00ff
+				)
+			)
+		)
+	);
+	0;;
+
+
+fun main=
+	MACecho netMac 0 1;
+	Secho "button :";
+	Iecholn set master=button2;
+	Secholn ":started";
+	confInit;
+	wifiInit 1;
+	loopcb	#loop;
+
+	netstart;
+//	startconfigserver 8080;
+	sndVol button3;
+//	wavstartlocal midi_start::nil;
+
+	set start=time_ms;
+	setleds if master then 0xff else 0xff00ff;
+	0;;
