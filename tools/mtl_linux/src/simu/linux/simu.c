@@ -147,10 +147,10 @@ int diodergb[NBLED]=
 #endif
 
 
-// TODO
 int getButton()
 {
-    return 0;
+    static int called = 0;
+    return called++ == 0 ? 1 : 0;
 }
 
 // fonction d'affichage des diodes
@@ -259,13 +259,7 @@ void simuSetLed(int i,int val)
     diodeval[i+1]=(val>>8)&255;
     diodeval[i+2]=(val)&255;
 
-    my_printf(LOG_SIMULEDS, "Setting led %d: [%d %d %d]\n", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
-    my_printf(LOG_SIMULEDS, "All leds state:", i/3, diodeval[i], diodeval[i+1], diodeval[i+2]);
-    for (i=0; i<NBLED/3; ++i)
-    {
-        my_printf(LOG_SIMULEDS, " [%3d %3d %3d]", diodeval[3*i], diodeval[3*i+1], diodeval[3*i+2]);
-    }
-    my_printf(LOG_SIMULEDS, "\n");
+    my_printf(LOG_SIMULEDS, "led %d 0x%06x\n", i/3, val & 0xffffff);
 }
 
 #ifdef VL_MOTORS

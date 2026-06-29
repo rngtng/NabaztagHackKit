@@ -10,7 +10,7 @@
 
 #include "log.h"
 
-static int my_msk = LOG_INIT | LOG_VM | LOG_SIMUNET;
+static int my_msk = LOG_INIT | LOG_VM | LOG_SIMUNET | LOG_SIMULEDS;
 #define BUFSIZE 16384
 static char tmpbuf[BUFSIZE];
 
@@ -166,6 +166,7 @@ void my_printf(e_logtypes t, const char *fmt, ...)
         siml=0;
         siml_idx=0;
     }
+    fflush(outstream);
 }
 
 /**

@@ -3,7 +3,7 @@
 
 proto main 0;;
 
-//var SIMU;;
+var SIMU;;
 var BOOT;;
 
 var AUDIOLIB;;

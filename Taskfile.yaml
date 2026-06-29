@@ -6,16 +6,43 @@
 # namespace. Run `task` with no args to list everything.
 version: '3'
 
+vars:
+  OUT: build
+
 includes:
   mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
+    internal: true
     taskfile: ./tools/mtl_linux/Taskfile.yaml
     vars:
-      IMAGE: nabaztag-sdk
+      IMAGE: nabaztag-sdk-mtl
       DIR: ./tools/mtl_linux/
 
 tasks:
-  default:
-    desc: List available targets
+  clean:
+    desc: 'Clean all build artifacts (firmware, boot, etc.)'
     cmds:
-      - task --list
-    silent: true
+      - task: mtl:clean
+      - rm -rf '{{.OUT}}'
+
+  build:boot:
+    desc: 'Build boot firmware. Preprocess files, then compile. Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build/boot]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+      BOOT_OUT: '{{.OUT}}/boot'
+    cmds:
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.BOOT_OUT}}'
+          SIGN: 'false'
+
+  simulate:boot:
+    desc: 'Preprocess and simulate boot.mtl in config mode. Config UI served at http://localhost:8080. Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+    cmds:
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.SOURCE}}'
