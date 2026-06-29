@@ -234,7 +234,7 @@ fun wavstarthttp url =
 	set wav_http=httprequest "GET" url nil #_wavcbhttp HTTP_STREAM;;
 
 fun wavtime =
-	if wav_http!=nil && wav_state==WAV_RUN && /*wav_fifo==nil &&*/ (time_ms-wav_lastnet>WAV_NET_TIMEOUT) then
+	if wav_http!=nil && wav_state==WAV_RUN && (time_ms-wav_lastnet>WAV_NET_TIMEOUT) then
 	(
 		if wav_http!=nil then
 		(
