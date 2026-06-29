@@ -1,0 +1,89 @@
+let scenario "buffer_test" -> s in
+(
+  let test "buffersInit" -> t in
+  (
+    buffersInit 1
+  );
+
+  let test "bufferFill" -> t in
+  (
+    bufferFill 0 "\0\255";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalS "\0\255" buffer.valB;
+      assert_equalI 2 buffer.lenB;
+      assert_equalI 1 buffer.stepB;
+      assert_equalI 0 buffer.posB;
+      assert_equalI 0 buffer.loopB
+    )
+  );
+
+  let test "bufferRead" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0;
+    assert_nil             bufferRead 0
+  );
+
+  let test "bufferFill3" -> t in
+  (
+    bufferFill3 0 "\0\0\0\255\255\255";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalS "\0\0\0\255\255\255" buffer.valB;
+      assert_equalI 6 buffer.lenB;
+      assert_equalI 3 buffer.stepB;
+      assert_equalI 0 buffer.posB;
+      assert_equalI 0 buffer.loopB
+    )
+  );
+
+  let test "bufferRead3" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0;
+    assert_nil             bufferRead 0
+  );
+
+  //-------- Loop
+  let test "loopBufferFill" -> t in
+  (
+    loopBufferFill 0 "\0\255\32";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalI 0 buffer.posB;
+      assert_equalI 1 buffer.loopB
+    )
+  );
+
+  let test "loopBufferRead" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0;
+    assert_equalI 0x20     bufferRead 0;
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFF     bufferRead 0
+  );
+
+  let test "bufferFill3" -> t in
+  (
+    loopBufferFill3 0 "\0\0\0\255\255\255";
+
+    let buffers.0 -> buffer in
+    (
+      assert_equalI 0 buffer.posB;
+      assert_equalI 1 buffer.loopB
+    )
+  );
+
+  let test "bufferRead3" -> t in
+  (
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0;
+    assert_equalI 0        bufferRead 0;
+    assert_equalI 0xFFFFFF bufferRead 0
+  )
+);

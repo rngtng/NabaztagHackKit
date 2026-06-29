@@ -1,0 +1,25 @@
+let scenario "url_test" -> s in
+(
+  let test "url_encode" -> t in
+  (
+    assert_equalS "hello"       url_encode "hello";
+    assert_equalS "a%20b"       url_encode "a b";
+    assert_equalS "a%3Db%26c"   url_encode "a=b&c";
+    assert_equalS "foo.bar-baz" url_encode "foo.bar-baz"
+  );
+
+  let test "url_decode" -> t in
+  (
+    assert_equalS "hello"  url_decode "hello";
+    assert_equalS "a b"    url_decode "a%20b";
+    assert_equalS "a b"    url_decode "a+b";
+    assert_equalS "a=b&c"  url_decode "a%3Db%26c"
+  );
+
+  let test "round-trip" -> t in
+  (
+    assert_equalS "hello world"  url_decode url_encode "hello world";
+    assert_equalS "a=b&c"        url_decode url_encode "a=b&c";
+    assert_equalS "foo/bar"      url_decode url_encode "foo/bar"
+  )
+);

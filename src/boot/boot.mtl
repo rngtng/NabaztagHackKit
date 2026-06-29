@@ -56,34 +56,34 @@ const IEEE80211_AUTH_SHARED=1;;
 const FIRMWARE="\0\0\0\13";;
 
 
-#include "util"
-#include "config"
+#include "util.mtl"
+#include "config.mtl"
 
 ifndef SIMU
 {
 
-#include "ipv4"
+#include "ipv4.mtl"
 
 }
 else
 {
 
-#include "tcpudp_emu"
+#include "tcpudp_emu.mtl"
 
 }
 
-#include "dns"
+#include "dns.mtl"
 
 ifdef BOOT
 {
-#include "config_server"
+#include "config_server.mtl"
 }
 else
 {
 fun startconfigserver port=	0;;
 }
 
-#include "http"
+#include "http.mtl"
 
 ifdef AUDIOLIB {
 
@@ -178,9 +178,6 @@ fun wavstartlocal l=
 	_wavstartnow
 	;;
 
-fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;;
-fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
-
 fun mkwav freq channel bps=
 	let strcatlist
 		"WAVEfmt "::(itobin4 0x12)::
@@ -257,11 +254,11 @@ fun wavtime =
 
 
 
-#include "wifi"
+#include "wifi.mtl"
 
 ifdef BOOT
 {
-#include "boot_loop"
+#include "boot_loop.mtl"
 }
 
 ifdef RECLIB {
@@ -297,16 +294,6 @@ fun cbrec s=
 	set lrec=s::lrec;
 	0;;
 
-fun itobin4 i=
-	let strnew 4 -> s in
-	(
-		strset s 0 i;
-		strset s 1 i>>8;
-		strset s 2 i>>16;
-		strset s 3 i>>24;
-		s
-	);;
-
 fun liststrlen l r=	if l==nil then r else liststrlen tl l r+strlen hd l;;
 
 fun mkriff ldata=
@@ -338,5 +325,5 @@ fun recriff =
 
 
 ifdef BOOT {
-#include "main"
+#include "main.mtl"
 }
