@@ -62,6 +62,7 @@ SECTIONS
     __bss_start = . ;
     __bss_start__ = . ;
     *(.bss)
+    *(.bss.*)
     *(COMMON)
     } >IntRAM
   . = ALIGN(4);
