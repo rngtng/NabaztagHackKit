@@ -1,6 +1,6 @@
 # Changes
 
-## v0.9.0 - 05-07-2026
+## v2.0.0-alpha9 - 05-07-2026
 
   * `lib/chor/` — the choreography engine: the Violet chor-bytecode
     interpreter (LED/palette/ear/MIDI commands, waits, conditional jumps)
@@ -12,7 +12,7 @@
     This completes the planned lib extraction: std, sys, net (full stack),
     hw, audio, chor, forth.
 
-## v0.8.0 - 05-07-2026
+## v2.0.0-alpha8 - 05-07-2026
 
   * **the network stack lives in `lib/net`** — ipv4/ (ARP/IP/TCP/UDP/ICMP in
     MTL over raw 802.11 frames + the SIMU tcpudp_emu backend), wifi
@@ -33,7 +33,7 @@
     most recent definition at their point of compilation), shared types
     across redefinitions
 
-## v0.7.0 - 04-07-2026
+## v2.0.0-alpha7 - 04-07-2026
 
   * `lib/audio/` — `audiolib` (WAV playback engine: local sample lists or
     HTTP streaming with flow-controlled buffering, button3 volume curve)
@@ -46,7 +46,7 @@
     predicates, MIDI table well-formedness); suite 435 assertions /
     35 scenarios
 
-## v0.6.0 - 04-07-2026
+## v2.0.0-alpha6 - 04-07-2026
 
   * `lib/hw/` — rabbit hardware building blocks on VM natives:
     `button` (click/double/long-click events), `leds` (setters, override
@@ -61,7 +61,7 @@
     and go-target math, button events, RFID id parsing, WAV container
     layout; suite now 423 assertions / 33 scenarios
 
-## v0.5.0 - 04-07-2026
+## v2.0.0-alpha5 - 04-07-2026
 
   * `src/app-template/` — blueprint proving "new app = lib blocks + business
     logic": composes the TCP adapter, HTTP server and Forth core; `app.mtl`
@@ -78,7 +78,7 @@
   * `task test` now also fails on compiler errors reported via stderr
   * suite: 379 assertions / 28 scenarios
 
-## v0.4.0 - 04-07-2026
+## v2.0.0-alpha4 - 04-07-2026
 
   * `lib/` finalized as the canonical reusable MTL library: `std/` (pure data),
     `sys/` (task scheduler, firmware/bytecode/system/echo), `net/` (sock,
@@ -100,7 +100,24 @@
     `write_fn` output path never compiled
   * new `task build:app` compiles app bytecode (preprocess + mtl compile)
 
-## v0.3.0 - 23-06-2026
+## v2.0.0-alpha - 2026-06-30
+
+Complete SDK reboot. Ruby gem gutted; repo is now a layered MTL SDK + toolchain.
+
+  * Dockerized MTL toolchain (`tools/mtl_linux`) — compile and simulate `.mtl` on any host
+  * Dockerized C preprocessor (`tools/preprocessor`) — `#include`/`#ifdef` for MTL, no host deps
+  * Dockerized firmware packager (`tools/mkfirmware`) — `.bin` → signed `.sim` for OTA upload
+  * Root `Taskfile.yaml` wires all layers: `task build:boot`, `task build:firmware`, `task test`, `task simulate:boot`
+  * Reusable MTL standard library (`lib/`) — string, list, integer, base64, URL, JSON, MD5, HTTP, SSE, Forth interpreter
+  * MTL test framework (`test/`) — assertion-based unit tests run in the simulator
+  * Boot image (`src/boot/`) — WiFi provisioning + OTA firmware upgrade, simulated via `task simulate:boot`
+  * C firmware layer (`src/firmware/`) — ARM7TDMI VM via nabgcc/GCC toolchain
+  * Application layer (`src/app-piper/`) — Forth interpreter + hardware words (audio, RFID, LEDs, ears, networking)
+  * JTAG debrick guide + Raspberry Pi configs (`tools/openocd/`)
+  * `NABAZTAG_SDK.md` — architecture rationale and TODOs
+  * `PROVENANCE.md` — vendored-source origins
+
+## v2.0.0-alpha3 - 23-06-2026
 
   * added [dockerized Linux mtl](https://github.com/rngtng/mtl_linux) compiler and simulator under `tools/mtl_linux`
   * Taskfile tasks to build and run the compiler/simulator via Docker

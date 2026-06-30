@@ -34,19 +34,20 @@ The project is split into three components: a toolchain and build system (`tools
 ```
 docs/                Grammar, commands, hardware notes
 lib/                 Reusable MTL standard library
-src/app-*            Various applications
+src/app-piper/       Main application (Forth interpreter, audio, RFID, LEDs, ears, networking)
 src/boot/            Boot/provisioning image
 src/firmware/        C firmware (VM, HAL, USB, audio)
 tools/mtl_linux/     Dockerized MTL compiler and simulator
-tools/preprocessor/  DockerizedC preprocessor for MTL (pcpp-based)
-tools/mkfirmware/    Dockerized Firmware packaging tool
+tools/preprocessor/  Dockerized C preprocessor for MTL (pcpp-based)
+tools/mkfirmware/    Dockerized firmware packaging tool (.bin → signed .sim)
+tools/openocd/       JTAG debrick configs (Raspberry Pi + FTDI)
 test/                MTL unit tests (lib/ coverage)
 CHANGELOG.md         SDK-side changes, tagged by source area, so a diff can be cherry-picked back
 ```
 
 ## Toolchain and build system - tools/
 
-Run `task -a` to list all targets.
+Run `task --list` to list all targets.
 
 ### Compile & Simulate
 
@@ -93,28 +94,6 @@ Each layer depends only on layers below it. The dependency rule is strict: nothi
 - `readline_cb` — pending-read callback; set by `READ-LINE` when the interpreter suspends waiting for a line. The transport layer delivers input by calling `f.readline_cb input` and clears this field.
 
 This keeps the interpreter transport-agnostic. A socket-backed REPL, an HTTP-triggered script, and a task-spawned evaluation all use the same interpreter code with different write functions.
-
-
-### src/app/ — Application
-
-The application includes `lib/forth` then extends it with hardware-specific Forth words. App code assembles the layers at startup:
-
-```
-src/app/forth/forth.mtl
-  #include lib/forth          ← generic interpreter
-  #include forth/dictionary   ← hardware words (say, ears, leds, rfid, …)
-  #include forth/net          ← HTTP fetch, Forth-level DNS
-  #include forth/task         ← async task management
-```
-
-The telnet server starts a Forth REPL per connection. The HTTP server evaluates Forth code sent via POST. Both share the same interpreter; only the write function differs.
-
-```
-src/app/srv/
-  telnet_server.mtl    ← REPL over TCP; READ-LINE supported
-  http_server.mtl      ← REST API + Forth evaluation
-```
-
 
 ### src/boot/ — Boot Image
 
