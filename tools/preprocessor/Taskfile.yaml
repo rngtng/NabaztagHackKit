@@ -7,11 +7,9 @@ vars:
 tasks:
   image:
     internal: true
+    dir: '{{.DIR}}'
     cmds:
-      - docker build -t {{.IMAGE}} {{.DIR}}
-    sources:
-      - Dockerfile
-      - preproc.py
+      - docker build -t {{.IMAGE}} .
 
   preprocess:
     desc: 'Preprocess MTL source. Usage: task preprocess SOURCE=<path.mtl> OUT=<out.mtl> [DEFINES="FOO BAR"]'

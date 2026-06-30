@@ -7,8 +7,9 @@ vars:
 tasks:
   image:
     internal: true   # built on demand as a dep; rebuilt when the toolchain/config changes
+    dir: '{{.DIR}}'
     cmds:
-      - docker build -t {{.IMAGE}} {{.DIR}}
+      - docker build -t {{.IMAGE}} .
 
   compile:
     desc: 'Compile MTL source → bytecode.  Usage: task mtl:compile SOURCE=<src.mtl> [OUT=<dir>] [SIGN=false].  Writes <name>.bin and a dumpbc.c debug dump into OUT (defaults to cwd).'
