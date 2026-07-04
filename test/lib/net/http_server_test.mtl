@@ -1,0 +1,55 @@
+let scenario "http_server_test" -> s in
+(
+  let test "GET request in one chunk" -> t in
+  (
+    test_tcp_reset;
+    set test_http_req=nil;
+    let sock_create 9 #test_http_handler -> sock in
+    (
+      _httpsrv_tcpread 9 "GET / HTTP/1.0\13\10\13\10" sock;
+      assert_equalS "GET / HTTP/1.0\13\10\13\10" test_http_req;
+      assert_equalS strcat http_header "<html>ok</html>" test_tcp_out;
+      assert_equalI 1 test_tcp_closed
+    )
+  );
+
+  let test "POST body split across chunks" -> t in
+  (
+    test_tcp_reset;
+    set test_http_req=nil;
+    let sock_create 9 #test_http_handler -> sock in
+    (
+      _httpsrv_tcpread 9 "POST / HTTP/1.0\13\10Content-Length: 5\13\10\13\10he" sock;
+      assert_nil test_http_req;
+      assert_equalI 0 test_tcp_closed;
+      _httpsrv_tcpread 9 "llo" sock;
+      assert_equalS "POST / HTTP/1.0\13\10Content-Length: 5\13\10\13\10hello" test_http_req;
+      assert_equalI 1 test_tcp_closed
+    )
+  );
+
+  let test "response with partial writes" -> t in
+  (
+    test_tcp_reset;
+    set test_http_req=nil;
+    set test_tcp_partial=10;
+    let sock_create 9 #test_http_handler -> sock in
+    (
+      _httpsrv_tcpread 9 "GET / HTTP/1.0\13\10\13\10" sock;
+      assert_equalI 0 test_tcp_closed;
+      for i=0; i<30 do _httpsrv_tcpevent 9 TCPWRITE nil sock;
+      assert_equalS strcat http_header "<html>ok</html>" test_tcp_out;
+      assert_equalI 1 test_tcp_closed
+    )
+  );
+
+  let test "empty read closes connection" -> t in
+  (
+    test_tcp_reset;
+    let sock_create 9 #test_http_handler -> sock in
+    (
+      _httpsrv_tcpread 9 "" sock;
+      assert_equalI 1 test_tcp_closed
+    )
+  )
+);

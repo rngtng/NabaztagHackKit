@@ -1,0 +1,37 @@
+let scenario "forth_control_test" -> s in
+(
+  let test "colon definition" -> t in
+  (
+    assert_equalS "25" forth_run_stack ": square dup * ; 5 square";
+    assert_equalS "-1" forth_run_stack ": five 5 ; defined? five";
+    assert_equalS "0" forth_run_stack "defined? no-such-word"
+  );
+
+  let test "constant" -> t in
+  (
+    assert_equalS "42 42" forth_run_stack "42 constant answer answer answer"
+  );
+
+  let test "if else then" -> t in
+  (
+    assert_equalS "10" forth_run_stack ": t1 if 10 else 20 then ; true t1";
+    assert_equalS "20" forth_run_stack ": t2 if 10 else 20 then ; false t2";
+    assert_equalS "7" forth_run_stack ": t3 if 7 then ; true t3";
+    assert_equalS "" forth_run_stack ": t4 if 7 then ; false t4"
+  );
+
+  let test "begin until loop" -> t in
+  (
+    assert_equalS "5" forth_run_stack ": count5 0 begin 1+ dup 5 >= until ; count5"
+  );
+
+  let test "( comment )" -> t in
+  (
+    assert_equalS "3" forth_run_stack "1 ( this is ignored ) 2 +"
+  );
+
+  let test "abort clears stacks" -> t in
+  (
+    assert_equalS "" forth_run_stack "1 2 3 abort"
+  )
+);

@@ -1,0 +1,19 @@
+let scenario "md5_test" -> s in
+(
+  let test "md5 (RFC 1321 vectors)" -> t in
+  (
+    assert_equalS "d41d8cd98f00b204e9800998ecf8427e" md5 "";
+    assert_equalS "0cc175b9c0f1b6a831c399e269772661" md5 "a";
+    assert_equalS "900150983cd24fb0d6963f7d28e17f72" md5 "abc";
+    assert_equalS "f96b697d7cb7938d525a2f31aaf161d0" md5 "message digest";
+    assert_equalS "c3fcd3d76192e4007dfb496cca67e13b" md5 "abcdefghijklmnopqrstuvwxyz";
+    assert_equalS "57edf4a22be3c955ac49da2e2107b67a" md5 "12345678901234567890123456789012345678901234567890123456789012345678901234567890"
+  );
+
+  let test "md5 (block boundaries 55/56/64 bytes)" -> t in
+  (
+    assert_equalS "ef1772b6dff9a122358552954ad0df65" md5 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    assert_equalS "3b0c8ac703f828b04c6c197006d17218" md5 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    assert_equalS "014842d480b571495a4a0363793f7367" md5 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  )
+);

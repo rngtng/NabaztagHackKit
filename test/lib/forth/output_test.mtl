@@ -1,0 +1,25 @@
+let scenario "forth_output_test" -> s in
+(
+  let test ". prints number" -> t in
+  (
+    assert_equalS "42" forth_run "42 ."
+  );
+
+  let test "cr space emit" -> t in
+  (
+    assert_equalS "\n" forth_run "cr";
+    assert_equalS " " forth_run "space";
+    assert_equalS "A" forth_run "65 emit";
+    assert_equalS "32" forth_run "bl ."
+  );
+
+  let test ".s shows the stack" -> t in
+  (
+    assert_equalS "1 2 3\n" forth_run "1 2 3 .s"
+  );
+
+  let test "output buffered across words" -> t in
+  (
+    assert_equalS "1 2" forth_run "1 . space 2 ."
+  )
+);

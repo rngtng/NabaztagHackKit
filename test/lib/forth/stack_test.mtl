@@ -1,0 +1,37 @@
+let scenario "forth_stack_test" -> s in
+(
+  let test "literals" -> t in
+  (
+    assert_equalS "1 2 3" forth_run_stack "1 2 3"
+  );
+
+  let test "dup drop swap over rot" -> t in
+  (
+    assert_equalS "1 1" forth_run_stack "1 dup";
+    assert_equalS "1" forth_run_stack "1 2 drop";
+    assert_equalS "2 1" forth_run_stack "1 2 swap";
+    assert_equalS "1 2 1" forth_run_stack "1 2 over";
+    assert_equalS "2 3 1" forth_run_stack "1 2 3 rot"
+  );
+
+  let test "nip tuck pick" -> t in
+  (
+    assert_equalS "2" forth_run_stack "1 2 nip";
+    assert_equalS "2 1 2" forth_run_stack "1 2 tuck";
+    assert_equalS "1 2 3 1" forth_run_stack "1 2 3 2 pick"
+  );
+
+  let test "?dup depth" -> t in
+  (
+    assert_equalS "5 5" forth_run_stack "5 ?dup";
+    assert_equalS "0" forth_run_stack "0 ?dup";
+    assert_equalS "7 8 2" forth_run_stack "7 8 depth"
+  );
+
+  let test "return stack" -> t in
+  (
+    assert_equalS "1 5" forth_run_stack "5 >r 1 r>";
+    assert_equalS "5 5" forth_run_stack "5 >r r@ r>";
+    assert_equalS "1" forth_run_stack "5 >r 1 rdrop"
+  )
+);

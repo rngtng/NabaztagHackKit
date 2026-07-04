@@ -1,0 +1,25 @@
+let scenario "forth_list_test" -> s in
+(
+  let test "nil :: count" -> t in
+  (
+    assert_equalS "0" forth_run_stack "nil count";
+    assert_equalS "2" forth_run_stack "nil 1 :: 2 :: count"
+  );
+
+  let test "hd tl" -> t in
+  (
+    assert_equalS "[1 2] 2" forth_run_stack "nil 1 :: 2 :: hd";
+    assert_equalS "[1]" forth_run_stack "nil 1 :: 2 :: tl"
+  );
+
+  let test "nth" -> t in
+  (
+    assert_equalS "20" forth_run_stack "nil 10 :: 20 :: 0 nth";
+    assert_equalS "10" forth_run_stack "nil 10 :: 20 :: 1 nth"
+  );
+
+  let test "count on string" -> t in
+  (
+    assert_equalS "5" forth_run_stack "\"hello\" count"
+  )
+);
