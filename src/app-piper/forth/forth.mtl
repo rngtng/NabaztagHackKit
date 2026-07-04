@@ -1,154 +1,22 @@
 /**
- * Forth interpreter
+ * Forth interpreter — app assembly.
+ * Core (interpreter, stack/arith/logic/string/list/control/compile words,
+ * JSON, core dictionary) comes from lib/forth.mtl; this file adds the
+ * app-specific word packs and the init.forth boot fetch.
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */
 
-// https://forth-standard.org/
-// https://www.forth.org/Ting/Forth-for-the-Complete-Idiot/Forth-79-Handy-Reference.pdf
-// https://win32forth.sourceforge.net/doc/Guide/primer.htm
-// http://forth200x.org/documents/forth-2012.pdf
-
-// #define FORTH_DEBUG
-
-#ifdef FORTH_DEBUG
-fun _forth_debug str= Secho strcatlist "[forth] " :: str :: nil; nil;;
-proto forth_print_word 1;;
-#endif
-
-type Interpreter=[
-    start               // current token start
-    end                 // current token end
-    end_ln              // next end of line position
-    parentheses         // parentheses depth
-    input               // input text
-    text_len            // length of the input text
-    token               // current token
-    quoted              // true if the token is a quoted string
-    inter_cb            // interpreter callback
-];;
-
-// The dictionary is a list of Words
-var forth_dictionary = nil;; // list of [Word Word] tuples (the first Word is the key, the second is the value)
-var forth_memory = nil;; // list of allocated memory blocks
-
 #include "protos/ascii_protos.mtl"
 #include "protos/forth_protos.mtl"
-#include "forth/stack.mtl"
-#include "forth/logical.mtl"
-#include "forth/arithmetic.mtl"
-#include "forth/comparison.mtl"
-#include "forth/output.mtl"
-#include "forth/list.mtl"
-#include "forth/string.mtl"
-#include "lib/forth/json.mtl"
-#include "forth/control.mtl"
+#include "lib/forth.mtl"
 #include "forth/misc.mtl"
 #include "forth/net.mtl"
 #include "forth/nabaztag.mtl"
-#include "forth/interpreter.mtl"
 #include "forth/memory.mtl"
 #include "forth/task.mtl"
 #include "forth/dictionary.mtl"
 
-fun forth_word_list_to_array words =
-    let 0 -> i in
-    let tabnew [func:nil] (listlen words) -> t in (
-        for p=words; p!=nil; tl p do
-        (
-            set t.i=hd p;
-            set i=i+1
-        );
-        t
-    );;
-
-#ifdef FORTH_DEBUG
-fun forth_debug_word w=
-    if w.func != nil then strcat "[func] " w.str
-    else if w.code != nil then "[code]"
-    else if w.int != nil then strcat "[int]  " itoa w.int
-    else if w.str != nil then strcat "[str]  " w.str
-    else if w.list != nil then strcat "[list] #" itoa listlen w.list
-    else if w.dict != nil then strcat "[dict] #" itoa listlen w.dict
-    else "[nil]";;
-
-fun forth_print_word w=
-    Secholn forth_debug_word w;;
-#endif
-
-fun forth_is_nil w=
-    if w.int == nil && w.str == nil && w.list == nil && w.dict == nil && w.code == nil && w.func == nil then -1 else 0;;
-
-/**
- * Compare two Words.
- * Returns 0 if equal, -1 if w1 < w2, 1 if w1 > w2, nil if not comparable.
- */
-fun forth_compare_words w1 w2=
-    // TODO compare other types
-    if w1.int != nil && w2.int != nil then
-        if w1.int == w2.int then 0 // equal
-        else if w1.int < w2.int then -1  // w1 less than w2
-        else 1 // w1 greater than w2
-    else if w1.str != nil && w2.str != nil then
-        str_compare w1.str w2.str
-    else if (forth_is_nil w1) != 0 && (forth_is_nil w2) != 0 then
-        0  // both nil
-    else
-        nil;;
-
-/**
- * Run a sequence of Words as code, managing the return stack for nested calls.
- * Return the word flag (FORTH_IMMEDIATE, FORTH_ASYNC) if set
- */
-fun forth_execute_code f code=
-    let 0 -> flag in (
-        while (code != nil) && (f.pc != nil) && (f.pc < (tablen code)) && (flag != FORTH_ASYNC) do
-            let code.(f.pc) -> word in (
-#ifdef FORTH_DEBUG
-                _forth_debug "pc: "; Iecho f.pc; Secho " "; Secho forth_debug_word word;
-                Secho "  ["; Secho forth_list_to_str f.stack " "; Secholn "]";
-#endif
-                set f.pc = f.pc + 1;
-                set flag = word.flag;
-
-                // Execute a colon-defined word
-                if word.code != nil then (
-                    // Push current pc and code onto return stack
-                    forth_rpush f [int:f.pc code:code];
-                    set f.pc = 0;
-                    set code = word.code;
-                    nil
-                )
-                // Execute primitive function
-                else if word.func != nil then (
-                    if word.flag == FORTH_ASYNC then (
-                        // If asynchronous word, push current pc and code onto return stack
-                        // and return after word execution
-                        forth_rpush f [int:f.pc code:code]
-                    );
-                    call word.func [f]
-                )
-                // Push the word onto the stack
-                else (
-                    forth_push f word
-                );
-
-                // Check if we need to return from the current word
-                if (f.pc == nil) || (f.pc >= (tablen code)) then
-                    // Pop return address from return stack
-                    let forth_rpop f -> ret_addr in (
-                        set code = ret_addr.code;
-                        set f.pc = ret_addr.int
-                    )
-
-            );
-        flag
-    );;
-
-/**
- * Forth interpreter hook for connection established.
- * Set the run state to idleRun and execute the on-connet word.
- */
 fun _forth_init_cb _=
     run_set_state idleRun;
     forth_interpreter WORD_ON_CONNECT;
