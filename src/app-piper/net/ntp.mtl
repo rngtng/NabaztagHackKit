@@ -1,4 +1,4 @@
-#include "protos/time_protos.mtl"
+#include "lib/protos/time_protos.mtl"
 #include "protos/ntp_protos.mtl"
 
 //--------------------------------------------------------------------------------------------------
