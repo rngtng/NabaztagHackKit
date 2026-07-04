@@ -108,7 +108,7 @@ fun forth_rot f=
     let forth_pop f -> a in
     let forth_pop f -> b in
     let forth_pop f -> c in
-    set f.stack = b :: a :: c :: f.stack;
+    set f.stack = c :: a :: b :: f.stack;
     nil;;
 
 /**
@@ -139,7 +139,7 @@ fun forth_nip f=
 fun forth_tuck f=
     let forth_pop f -> a in
     let forth_pop f -> b in
-    set f.stack = b :: a :: b :: f.stack;
+    set f.stack = a :: b :: a :: f.stack;
     nil;;
 
 /**

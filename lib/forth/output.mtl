@@ -13,7 +13,7 @@ fun forth_write f s=
     Secho s;
 #endif
     if f.write_fn != nil then (
-        f.write_fn s;
+        call f.write_fn [s];
         nil
     ) else (
         set f.output = s :: f.output;
@@ -107,7 +107,7 @@ fun forth_dot_s f=
  * Internal callback: delivers a line to a suspended READ-LINE.
  * Strips trailing \r\n, pushes the line onto the stack, resumes.
  */
-fun _forth_readline_deliver f input=
+fun _forth_readline_deliver input f=
     let strsub input 0 ((strlen input) - 2) -> line in
     forth_push f [str:line];
     set f.readline_cb = nil;
@@ -127,5 +127,5 @@ fun forth_read_line f=
         set f.pc = nil;
         nil
     ) else
-        set f.readline_cb = fixarg1 #_forth_readline_deliver f;
+        set f.readline_cb = fixarg2 #_forth_readline_deliver f;
     nil;;
