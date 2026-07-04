@@ -1,0 +1,194 @@
+#include "lib/protos/time_protos.mtl"
+#include "lib/protos/task_protos.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/json.mtl"
+#include "lib/sys/timezones.mtl"
+#include "lib/sys/task.mtl"
+
+// App-provided configuration accessors (device config lives app-side)
+proto config_get_dst 0;;
+proto config_get_city_code 0;;
+
+//--------------------------------------------------------------------------------------------------
+// Time functions
+//--------------------------------------------------------------------------------------------------
+
+const TIME_DELAY = 1000;; // Time update task delay (in ms)
+var time_local = [0 0 0 0 0 0 0] ;; // [year, month, day, hour, minute, second, days_since_epoc]
+var time_utc = [0 0 0 0 0 0 0] ;; // [year, month, day, hour, minute, second, days_since_epoc]
+
+/**
+ * Get Daylight Saving Time offset (in minutes)
+ */
+fun _time_dst_offset=
+    if (config_get_dst == 1) then 60 else 0;;
+
+/**
+ * Get the time offset (in minutes) from UTC
+ */
+fun time_offset=
+    _time_dst_offset + get_offset_from_city_code config_get_city_code;;
+
+fun time_is_valid=
+    time_high !=0 || time_low != 0;;
+
+/**
+ * Calculate the year, month, day, hours, minutes, seconds
+ * offset: offset is in minutes
+ */
+fun _time_calculate_datetime offset=
+    let time_high -> h in
+    let time_low -> l in
+    let offset * 60 + (time - _ntp_receive_time) -> offset in
+    let if (l + offset) > 65536 then h + ((l + offset) >> 16) else h -> h in
+    let (l + offset) % 65536 -> l in
+    let ((h % 675) * 65536 + l) % 86400 -> time_of_the_day in   // 675 is 86400 >> 7
+    // exact day count: h*65536+l seconds and 675*65536 = 512*86400, so split
+    // on h/675 (h*512/675 alone truncates l's contribution and can lose a day)
+    let (h / 675) * 512 + (((h % 675) * 65536 + l) / 86400) -> days_since_epoch in
+    let 4 * (days_since_epoch - 59) + 3 -> ee in
+    let (ee % 1461) / 4 -> gg in
+    let 5 * gg + 2 -> hh in
+    let ((hh % 153) / 5) + 1 -> day in
+    let ((hh / 153) + 2) % 12 + 1 -> month in
+    let (ee / 1461) + 1900 + ((14 - month) / 12) -> year in
+    let if (time_of_the_day < 0) then 0 else time_of_the_day -> time_of_the_day in
+        [
+            year
+            if (month > 0) then month else 1
+            if (day > 0) then day else 1
+            (time_of_the_day / 3600 ) % 24
+            time_of_the_day / 60 % 60
+            time_of_the_day % 60
+            days_since_epoch
+        ];;
+
+/**
+ * Update the current year, month, day, housrs, minutes, seconds
+ */
+fun _time_calculate=
+    set time_local = _time_calculate_datetime time_offset;
+    set time_utc = _time_calculate_datetime 0;
+    0;;
+
+/**
+ * Update the time of day
+ */
+fun time_update_task task=
+    _time_calculate;
+    TaskRun;;
+
+/**
+ * Return the current local time in human readable form
+ */
+fun time_local_human=
+    let time_local -> [local_time_year local_time_month local_time_day local_time_hour local_time_minute local_time_second _] in
+        strcatlist
+           (zero_pad (itoa local_time_year) 4) :: "-" ::
+           (zero_pad (itoa local_time_month) 2) :: "-" ::
+           (zero_pad (itoa local_time_day) 2) :: " " ::
+           (zero_pad (itoa local_time_hour) 2) :: ":" ::
+           (zero_pad (itoa local_time_minute) 2) :: ":" ::
+           (zero_pad (itoa local_time_second) 2) :: nil;;
+
+/**
+ * Return the current time as a string
+ */
+fun time_current_weekday days_since_epoch=
+    let (days_since_epoch + 1) % 7 -> weekday in
+        WEEKDAYS.weekday;;
+
+/**
+ * Return the current UTC time as string
+ */
+fun time_date_utc=
+    let time_utc -> [utc_time_year utc_time_month utc_time_day utc_time_hour utc_time_minute utc_time_second days_since_epoch] in
+        strcatlist (time_current_weekday days_since_epoch) :: ", " ::
+           (zero_pad (itoa utc_time_day) 2) :: " " ::
+           MONTHS.(utc_time_month - 1) :: " " ::
+           (zero_pad (itoa utc_time_year) 4) :: " " ::
+           (zero_pad (itoa utc_time_hour) 2) :: ":"::
+           (zero_pad (itoa utc_time_minute) 2) :: ":"::
+           (zero_pad (itoa utc_time_second) 2) :: " GMT" ::
+           nil;;
+
+/**
+ * Return the current local time as string
+ */
+fun time_date_local=
+    let time_local -> [local_time_year local_time_month local_time_day local_time_hour local_time_minute local_time_second days_since_epoch] in
+        strcatlist (time_current_weekday days_since_epoch) :: ", " ::
+           (zero_pad (itoa local_time_day) 2) :: " " ::
+           MONTHS.(local_time_month - 1) :: " " ::
+           (zero_pad (itoa local_time_year) 4) :: " " ::
+           (zero_pad (itoa local_time_hour) 2) :: ":"::
+           (zero_pad (itoa local_time_minute) 2) :: ":"::
+           (zero_pad (itoa local_time_second) 2) :: " " ::
+           config_get_city_code ::
+           nil;;
+
+/**
+ * Return time status as JSON
+ */
+fun time_json=
+    strcatlist
+        "{\n"::
+            (json_int "time" time) :: ",\n" ::
+            (json_str "ts" time_local_human) :: ",\n" ::
+            (json_int "dst" config_get_dst) :: ",\n" ::
+            (json_int "offset" time_offset) :: ",\n" ::
+            (json_str "city_code" config_get_city_code) :: ",\n" ::
+            (json_str "time_server" ntp_server) :: "\n" ::
+        "}" :: nil;;
+
+/**
+ * Parse month string to month number
+ * month_str: three letter month string (e.g., "Jan", "Feb", etc.)
+ */
+fun _time_parse_month month_str=
+    let to_lower month_str -> month_str in
+    let nil -> result in (
+        for i=0;(i<12) && (result==nil) do
+            if !strcmp month_str to_lower MONTHS.i then set result=i;
+        if result != nil then
+            result + 1
+        else
+            nil
+    );;
+
+/**
+ * Parse a date string in the format "Day, DD Mon YYYY HH:MM:SS GMT"
+ */
+fun time_parse_date date_str=
+    let atoi strsub date_str 5 2 -> day in
+    let _time_parse_month (strsub date_str 8 3) -> month in
+    let atoi strsub date_str 12 4 -> year in
+    let atoi strsub date_str 17 2 -> hour in
+    let atoi strsub date_str 20 2 -> minute in
+    let atoi strsub date_str 23 2 -> second in
+    [year month day hour minute second];;
+
+fun _time_datetime_to_high_low datetime=
+    [0 0];; // TODO - no implementation yet
+
+/**
+ * Set the current time/date
+ * datetime: [year month day hour minute second]
+ */
+fun time_set datetime=
+    let _time_datetime_to_high_low datetime -> [high low] in
+    (
+        set time_high = high;
+        set time_low = low;
+        _time_calculate;
+        Secho "Time updated h:"; Iecho time_high; Secho " l:"; Iecho time_low; Secho " "; Secholn time_date_utc
+    );;
+
+/**
+ * Initialize the time task
+ */
+fun time_init=
+    // Seed the random number generator
+    srand time_ms;
+    // Start the time update task
+    task_start_ex "time_update" TIME_DELAY #time_update_task;;

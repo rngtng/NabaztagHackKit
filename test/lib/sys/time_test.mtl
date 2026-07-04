@@ -1,0 +1,51 @@
+let scenario "time_test" -> s in
+(
+  let test "time_is_valid" -> t in
+  (
+    set time_high=0; set time_low=0;
+    assert_equalI 0 time_is_valid;
+    set time_high=1;
+    assert_equalI 1 time_is_valid
+  );
+
+  let test "timezone offsets" -> t in
+  (
+    assert_equalI 0 get_offset_from_city_code "UTC";
+    assert_equalI 60 get_offset_from_city_code "PAR";
+    assert_equalI 0 get_offset_from_city_code "UTC"
+  );
+
+  let test "datetime from NTP timestamp" -> t in
+  (
+    // 2004-06-01 12:00:00 UTC = 3295080000 s since 1900 = [50278 60992] hi/lo
+    set time_high=50278; set time_low=60992;
+    set _ntp_receive_time=time;    // zero drift (tiny race on a second tick)
+    set test_city_code="UTC";
+    _time_calculate;
+    assert_equalS "Tue, 01 Jun 2004 12:00:00 GMT" time_date_utc;
+    assert_equalS "2004-06-01 12:00:00" time_local_human
+  );
+
+  let test "local offset applies" -> t in
+  (
+    set test_city_code="PAR";      // +60 min, DST stubbed to 0
+    set _ntp_receive_time=time;
+    _time_calculate;
+    assert_equalS "2004-06-01 13:00:00" time_local_human;
+    assert_equalS "Tue, 01 Jun 2004 12:00:00 GMT" time_date_utc;
+    set test_city_code="UTC"
+  );
+
+  let test "time_parse_date" -> t in
+  (
+    let time_parse_date "Tue, 01 Jun 2004 12:00:00 GMT" -> [y mo d h mi se] in
+    (
+      assert_equalI 2004 y;
+      assert_equalI 6 mo;
+      assert_equalI 1 d;
+      assert_equalI 12 h;
+      assert_equalI 0 mi;
+      assert_equalI 0 se
+    )
+  )
+);

@@ -13,6 +13,13 @@
 var test_task_runs=0;;
 fun test_task_fn task= set test_task_runs=test_task_runs+1; TaskRun;;
 
+// Stubs for the app-side config accessors lib/sys/time.mtl declares as protos
+var test_city_code="UTC";;
+fun config_get_city_code= test_city_code;;
+fun config_get_dst= 0;;
+
+#include "lib/sys/time.mtl"
+
 // Capturing stubs for the VM TCP primitives required by lib/net modules.
 // writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
 const TCPWRITE=0;;
@@ -85,6 +92,7 @@ fun lib_test=
 #include "test/lib/std/md5_test.mtl"
 #include "test/lib/std/xmlparser_test.mtl"
 #include "test/lib/sys/task_test.mtl"
+#include "test/lib/sys/time_test.mtl"
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"
