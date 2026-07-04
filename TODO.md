@@ -182,6 +182,15 @@ before every commit — see `CLAUDE.md`.
 3. Add simple pyhton? `http_server`  to server apps to boot and/or mtl_linux's simu
 4. UX/UI for simulator: `mtl_simu` is a console app, but a simple Web UI would be nice for debugging & interactions
    - serial output console, LED, ear, button, rfid, etc.
+5. **LED temporal dithering** — the TLC5922 dot-correction DAC gives only 7 bits per
+   channel. Keep 16-bit brightness in the fade engine and alternate between adjacent
+   codes per `led_fade_tick` (or PWM via the fast 2-byte ON/OFF register) for ~9-10
+   effective bits, so very slow/dim fades (night breathing) look continuous.
+6. **Centralize the LED green/blue swap** — LLC2_2 vs LLC2_3/4c channel order is only
+   handled by swapping `RGB_GREEN`/`RGB_BLUE` in `led.h`; raw hex colors bypass it.
+   Fold the swap into `set_led`/`led_fade` so color values are board-independent.
+7. **LED fade in simulator** — `mtl_simu`'s `ledfade` jumps straight to the target
+   color; animate it once the simulator gets a tick/UI (see 4).
 
 
 **Tie-break** → when in doubt, prefer **nabaztag-piper**.

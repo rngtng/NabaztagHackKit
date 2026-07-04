@@ -5,11 +5,7 @@
 # Makefiles are project source — override a global `makefile` ignore some setups have
 !Makefile
 
-
 *.bin
-/src/firmware/bin
-/tools/testvm/testvm
-/tools/testvm/bc.c
 *.lst
 *.d
 *.sym
@@ -19,3 +15,5 @@
 
 # task build output (OUT=build in Taskfile.yaml)
 /build/
+/tools/testvm/testvm
+/tools/testvm/bc.c

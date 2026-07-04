@@ -4,9 +4,31 @@ Sources are **vendored** (copied, not submodules — see [NABAZTAG_SDK.md](NABAZ
 §5). Each entry records origin repo + commit so changes can be diffed and backported
 upstream. "Local changes" lists everything we altered from the vendored copy.
 
-## `tools/mtl_linux/`
-- **Origin:** https://github.com/rngtng/mtl_linux — the MTL toolchain: **compiler AND
-  simulator** (rngtng).
+## src/firmware — C VM firmware (nabgcc)
+
+- Origin: https://github.com/rngtng/nabgcc, branch `wpa2` (vendored 2026-06, see
+  commit "Add nabgcc - branch wpa2"; itself a GCC port of the original Violet
+  firmware by RedoX).
+- Local changes:
+  - Dockerfile + Taskfile.yaml added; build artifacts ignored (commit "Dockerize nabgcc").
+  - Memory layout fix for complete flash (commit "FIX: Memory layout…").
+  - `src/hal/led.c`, `inc/hal/led.h`: gamma-2.2 intensity table (no low-end dead
+    zone), generic TLC5922 channel packer replacing per-LED mask tables, fade
+    engine `led_fade`/`led_fade_tick` with batched SPI flush; tick hooked into
+    the main loop (`src/main.c`).
+  - `inc/vm/vbc.h`, `inc/vm/vbc_str.h`, `inc/vm/vlog.h`, `src/vm/vinterp.c`,
+    `src/vm/vlog.c`: new opcode `OPledfade` (153) → `sysLedFade`.
+
+## tools/mtl_linux — MTL compiler + simulator
+
+- Origin: https://github.com/rngtng/mtl_linux (vendored 2026-06, v0.3.0 "added
+  dockerized Linux mtl compiler and simulator").
+- Local changes:
+  - Dockerfile + Taskfile.yaml added.
+  - `inc/vm/vbc.h`, `inc/vm/vbc_str.h`, `inc/vm/vlog.h`, `src/vm/vinterp.c`,
+    `src/vm/vlog.c`: opcode `OPledfade` (153); simulator applies the target
+    color immediately (no fade engine host-side).
+  - `src/vcomp/stdlib_core.cpp`: new builtin `ledfade` — `fun[I I I]I`.
 - **Commit:** `7606eb3ec7afa40d6af4c1d33165068e24ac07e3` (upstream HEAD). Vendored straight
   from upstream — not via nabgcc's old submodule pin. The Docker/Task/README/LICENSE and
   the GCC-14.2 + macOS + warning compile fixes all landed upstream (commits `547ce0c..7606eb3`),
@@ -82,6 +104,12 @@ Local changes on top of the vendored sources:
 Per `CLAUDE.md`'s vendoring rule ("copy sources in, don't submodule — record
 origin repo + commit + local changes"). This is the backport bridge: what came
 from where, and what changed here so fixes can flow back upstream.
+
+## src/app-piper, src/boot, lib/, bytecode/
+
+- Origin: https://github.com/jsapede/nabaztag-piper (app + boot) and
+  https://github.com/rngtng/mtl_library (curated stdlib + test framework).
+- Local changes: none beyond restructuring into this repo's layout.
 
 ## Where each part came from
 
