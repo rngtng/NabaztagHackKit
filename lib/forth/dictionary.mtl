@@ -1,0 +1,115 @@
+/**
+ * Core Forth dictionary — every word implemented by the lib/forth core files.
+ * Consumers provide forth_init_dictionary (see lib/forth.mtl); the simplest
+ * form is:  fun forth_init_dictionary= forth_init_core_dictionary;;
+ * Apps extend by prepending their word entries to forth_core_words.
+ * Derived from nabaztag-piper forth/dictionary.mtl (core subset).
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+fun forth_core_words=
+        // Compilation
+        [ [str: ":"                ] [ func:#forth_colon]] ::
+        [ [str: ";"                ] [ func:#forth_semi        flag:FORTH_IMMEDIATE]] ::
+        [ [str: "("                ] [ func:#forth_p]] ::
+        [ [str: "constant"         ] [ func:#forth_constant    flag:FORTH_IMMEDIATE]] ::
+        [ [str: "defined?"         ] [ func:#forth_defined_q   flag:FORTH_IMMEDIATE]] ::
+        [ [str: "words"            ] [ func:#forth_words]] ::
+        // Stack manipulation
+        [ [str: "dup"              ] [func:#forth_dup]] ::
+        [ [str: "drop"             ] [func:#forth_drop]] ::
+        [ [str: "swap"             ] [func:#forth_swap]] ::
+        [ [str: "over"             ] [func:#forth_over]] ::
+        [ [str: "rot"              ] [func:#forth_rot]] ::
+        [ [str: "pick"             ] [func:#forth_pick]] ::
+        [ [str: "nip"              ] [func:#forth_nip]] ::
+        [ [str: "tuck"             ] [func:#forth_tuck]] ::
+        [ [str: "?dup"             ] [func:#forth_qdup]] ::
+        [ [str: "depth"            ] [func:#forth_depth]] ::
+        [ [str: ">r"               ] [func:#forth_to_r]] ::
+        [ [str: "r>"               ] [func:#forth_r_from]] ::
+        [ [str: "r@"               ] [func:#forth_r_fetch]] ::
+        [ [str: "rdrop"            ] [func:#forth_rdrop]] ::
+        [ [str: "rdepth"           ] [func:#forth_rdepth]] ::
+        [ [str: "2>r"              ] [func:#forth_two_to_r]] ::
+        [ [str: "2r>"              ] [func:#forth_two_r_from]] ::
+        [ [str: "2r@"              ] [func:#forth_two_r_fetch]] ::
+        // Comparison
+        [ [str: "<"                ] [func:#forth_less]] ::
+        [ [str: "<="               ] [func:#forth_less_eq]] ::
+        [ [str: "="                ] [func:#forth_eq]] ::
+        [ [str: ">"                ] [func:#forth_more]] ::
+        [ [str: ">="               ] [func:#forth_more_eq]] ::
+        [ [str: "<>"               ] [func:#forth_ne]] ::
+        [ [str: "<0"               ] [func:#forth_zero_less]] ::
+        [ [str: "0="               ] [func:#forth_zero_eq]] ::
+        [ [str: ">0"               ] [func:#forth_zero_more]] ::
+        [ [str: "0<>"              ] [func:#forth_zero_ne]] ::
+        // Arithmetic
+        [ [str: "+"                ] [func:#forth_sum]] ::
+        [ [str: "-"                ] [func:#forth_sub]] ::
+        [ [str: "1+"               ] [func:#forth_one_plus]] ::
+        [ [str: "1-"               ] [func:#forth_one_minus]] ::
+        [ [str: "2+"               ] [func:#forth_two_plus]] ::
+        [ [str: "2-"               ] [func:#forth_two_minus]] ::
+        [ [str: "*"                ] [func:#forth_mul]] ::
+        [ [str: "/"                ] [func:#forth_div]] ::
+        [ [str: "mod"              ] [func:#forth_mod]] ::
+        [ [str: "/mod"             ] [func:#forth_div_mod]] ::
+        [ [str: "*/"               ] [func:#forth_times_div]] ::
+        [ [str: "*/mod"            ] [func:#forth_times_div_mod]] ::
+        [ [str: "max"              ] [func:#forth_max]] ::
+        [ [str: "min"              ] [func:#forth_min]] ::
+        [ [str: "abs"              ] [func:#forth_abs]] ::
+        // Logical
+        [ [str: "and"              ] [func:#forth_and ]] ::
+        [ [str: "or"               ] [func:#forth_or ]] ::
+        [ [str: "xor"              ] [func:#forth_xor ]] ::
+        [ [str: "invert"           ] [func:#forth_invert ]] ::
+        [ [str: "true"             ] [func:#forth_true ]] ::
+        [ [str: "false"            ] [func:#forth_false ]] ::
+        // Output
+        [ [str: "."                ] [func:#forth_d ]] ::
+        [ [str: ".s"               ] [func:#forth_dot_s ]] ::
+        [ [str: "emit"             ] [func:#forth_emit ]] ::
+        [ [str: "cr"               ] [func:#forth_cr ]] ::
+        [ [str: "space"            ] [func:#forth_space ]] ::
+        [ [str: "bl"               ] [func:#forth_bl ]] ::
+        [ [str: "read-line"        ] [func:#forth_read_line   flag:FORTH_ASYNC]] ::
+        // List
+        [ [str: "nil"              ] [func:#forth_nil ]] ::
+        [ [str: "::"               ] [func:#forth_colon_colon]] ::
+        [ [str: "hd"               ] [func:#forth_hd ]] ::
+        [ [str: "tl"               ] [func:#forth_tl ]] ::
+        [ [str: "nth"              ] [func:#forth_nth ]] ::
+        [ [str: "count"            ] [func:#forth_count ]] ::
+        [ [str: "str-join"         ] [func:#forth_str_join ]] ::
+        // String
+        [ [str: "$repeat"          ] [func:#forth_dollar_repeat ]] ::
+        [ [str: "pad-right"        ] [func:#forth_pad_right ]] ::
+        [ [str: "pad-left"         ] [func:#forth_pad_left ]] ::
+        [ [str: "lower"            ] [func:#forth_lower ]] ::
+        [ [str: "upper"            ] [func:#forth_upper ]] ::
+        [ [str: "url-encode"       ] [func:#forth_url_encode ]] ::
+        [ [str: "url-decode"       ] [func:#forth_url_decode ]] ::
+        [ [str: ">number"          ] [func:#forth_to_number ]] ::
+        // Control
+        [ [str: "begin"            ] [ func:#forth_begin       flag:FORTH_IMMEDIATE]] ::
+        [ [str: "until"            ] [ func:#forth_until       flag:FORTH_IMMEDIATE]] ::
+        [ [str: "if"               ] [ func:#forth_if          flag:FORTH_IMMEDIATE]] ::
+        [ [str: "else"             ] [ func:#forth_else        flag:FORTH_IMMEDIATE]] ::
+        [ [str: "then"             ] [ func:#forth_then        flag:FORTH_IMMEDIATE]] ::
+        [ [str: "jmp"              ] [ func:#forth_jmp ]] ::
+        [ [str: "?jmp"             ] [ func:#forth_qjmp ]] ::
+        [ [str: "abort"            ] [ func:#forth_abort ]] ::
+        [ [str: "exit"             ] [ func:#forth_exit ]] ::
+        [ [str: "case"             ] [ func:#forth_case        flag:FORTH_IMMEDIATE]] ::
+        [ [str: "endcase"          ] [ func:#forth_endcase     flag:FORTH_IMMEDIATE]] ::
+        [ [str: "of"               ] [ func:#forth_of          flag:FORTH_IMMEDIATE]] ::
+        [ [str: "endof"            ] [ func:#forth_endof       flag:FORTH_IMMEDIATE]] ::
+        nil;;
+
+fun forth_init_core_dictionary=
+    set forth_dictionary = [dict: forth_core_words];
+    0;;

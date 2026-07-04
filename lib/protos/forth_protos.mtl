@@ -36,7 +36,6 @@ proto forth_compare_words 2;;
 proto forth_dict_to_str 2;;
 proto forth_execute_code 2;;
 proto forth_get_word 1;;
-proto forth_init 0;;
 proto forth_init_dictionary 0;;
 proto forth_interpreter 1;;
 proto forth_interpreter_ex 5;;
@@ -46,7 +45,6 @@ proto forth_interpreter_resume 1;;
 proto forth_interpreter_setup 5;;
 proto forth_list_to_str 2;;
 proto forth_new_state 0;;
-proto forth_say_push 2;;
 proto forth_word_fmt 1;;
 proto forth_word_list_to_array 1;;
 
