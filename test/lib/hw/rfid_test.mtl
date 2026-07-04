@@ -1,0 +1,9 @@
+let scenario "rfid_test" -> s in
+(
+  let test "_rfid_parse counts non-zero id bytes" -> t in
+  (
+    assert_equalI 0 _rfid_parse "\0\0\0\0\0\0";
+    assert_equalI 3 _rfid_parse "ABC\0\0\0";
+    assert_equalI 6 _rfid_parse "AABBCC"
+  )
+);

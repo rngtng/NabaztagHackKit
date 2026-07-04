@@ -1,0 +1,50 @@
+let scenario "ears_test" -> s in
+(
+  let test "position arithmetic" -> t in
+  (
+    assert_equalI 5 _ears_check 5;
+    assert_equalI 3 _ears_check 20;
+    assert_equalI 15 _ears_check (0-2);
+    assert_equalI 0 _ears_loop_count 5 0;
+    assert_equalI 1 _ears_loop_count 20 0;
+    assert_equalI (0-1) _ears_loop_count (0-1) 0
+  );
+
+  let test "ears_setup" -> t in
+  (
+    ears_setup;
+    let ears.(0) -> e in assert_equalI 0 e.ear_number;
+    let ears.(1) -> e in assert_equalI 1 e.ear_number;
+    assert_nil ears_target_position.EARS_LEFT
+  );
+
+  let test "ears_go target math" -> t in
+  (
+    ears_setup;
+    set _ears_initialized=1;
+    set _ears_mode=EARS_MODE_WAIT;
+    let ears.(0) -> e in
+    (
+      set e.ear_last_position=0;
+      ears_go 0 5 0;
+      assert_equalI 5 e.ear_target;
+      assert_equalI 0 e.ear_target_loop;
+      assert_equalI 5 ears_target 0;
+      assert_equalI 1 e.ear_direction;
+
+      // > one full loop: 22 = 5 + 1*17
+      ears_go 0 22 0;
+      assert_equalI 5 e.ear_target;
+      assert_equalI 22 ears_target 0
+    );
+    let ears.(1) -> e in
+    (
+      set e.ear_last_position=3;
+      ears_go 1 7 1;          // backward
+      assert_equalI 7 e.ear_target;
+      assert_equalI (0-1) e.ear_direction
+    );
+    ears_stop 1;
+    set _ears_initialized=0
+  )
+);

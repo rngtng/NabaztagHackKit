@@ -1,0 +1,22 @@
+let scenario "reclib_test" -> s in
+(
+  let test "_reclib_mkriff builds a WAV container" -> t in
+  (
+    let strcatlist _reclib_mkriff "abcd"::nil -> wav in
+    (
+      assert_equalI 64 strlen wav;
+      assert_equalS "RIFF" strsub wav 0 4;
+      // RIFF size field = data length + 52
+      assert_equalI 56 strget wav 4;
+      assert_equalI 0 strget wav 5;
+      assert_equalS "WAVE" strsub wav 8 4;
+      assert_equalS "abcd" strsub wav 60 4
+    );
+    // two chunks are concatenated in order
+    let strcatlist _reclib_mkriff "ab"::"cd"::nil -> wav in
+    (
+      assert_equalI 64 strlen wav;
+      assert_equalS "abcd" strsub wav 60 4
+    )
+  )
+);

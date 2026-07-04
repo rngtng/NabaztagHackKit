@@ -19,6 +19,11 @@ fun config_get_city_code= test_city_code;;
 fun config_get_dst= 0;;
 
 #include "lib/sys/time.mtl"
+#include "lib/hw/button.mtl"
+#include "lib/hw/leds.mtl"
+#include "lib/hw/ears.mtl"
+#include "lib/hw/rfid.mtl"
+#include "lib/hw/reclib.mtl"
 
 // Capturing stubs for the VM TCP primitives required by lib/net modules.
 // writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
@@ -93,6 +98,11 @@ fun lib_test=
 #include "test/lib/std/xmlparser_test.mtl"
 #include "test/lib/sys/task_test.mtl"
 #include "test/lib/sys/time_test.mtl"
+#include "test/lib/hw/button_test.mtl"
+#include "test/lib/hw/leds_test.mtl"
+#include "test/lib/hw/ears_test.mtl"
+#include "test/lib/hw/rfid_test.mtl"
+#include "test/lib/hw/reclib_test.mtl"
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"

@@ -1,0 +1,29 @@
+let scenario "leds_test" -> s in
+(
+  let test "leds_osc waveform" -> t in
+  (
+    assert_equalI 0 leds_osc 0;
+    assert_equalI 124 leds_osc 63;
+    assert_equalI 131 leds_osc 64;
+    assert_equalI 255 leds_osc 128;
+    assert_equalI 124 leds_osc 192;
+    assert_equalI 0 leds_osc 256
+  );
+
+  let test "leds_scale_color" -> t in
+  (
+    assert_equalI 0xFF8040 leds_scale_color 0xFF8040 255;
+    assert_equalI 0 leds_scale_color 0xFF8040 0;
+    assert_equalI 0x804020 leds_scale_color 0xFF8040 128
+  );
+
+  let test "leds_setup override table" -> t in
+  (
+    leds_setup;
+    assert_equalI (0-1) leds_override.LED_NOSE;
+    assert_equalI (0-1) leds_override.LED_BASE;
+    set leds_override.LED_NOSE = 0xFF0000;
+    assert_equalI 0xFF0000 leds_override.LED_NOSE;
+    leds_setup
+  )
+);

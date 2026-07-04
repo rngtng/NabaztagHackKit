@@ -55,6 +55,13 @@ lib/
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
 │
+├── hw/              Rabbit hardware on VM natives
+│   ├── button.mtl        Click/double/long-click event task (button2)
+│   ├── leds.mtl          LED setters, override table, breathing oscillator (led)
+│   ├── ears.mtl          Ear motor state machine: reset/goto/detect (motorget/motorset)
+│   ├── rfid.mtl          Debounced tag detection (rfidGet) — rfid_poll
+│   └── reclib.mtl        Microphone capture → WAV/RIFF (recStart/recStop/recVol)
+│
 ├── forth/           Forth interpreter (sub-modules, assembled by forth.mtl)
 │   ├── interpreter.mtl   Tokenizer + interpreter loop
 │   ├── compile.mtl       : ; ( constant defined? words
@@ -67,9 +74,15 @@ lib/
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
 
-Future building blocks (extraction from `src/app-piper` pending): `hw/`
-(leds/ears/button/rfid), `audio/`, `chor/`, and the `ipv4/` + wifi/dhcp/dns/ntp
-network stack.
+Future building blocks (extraction from `src/app-piper` pending): `audio/`
+(playback/midi), `chor/`, and the `ipv4/` + wifi/dhcp/dns/ntp network stack.
+
+`lib/hw` decouples from app policy via seams: LED *animations* (what blinks
+when) stay app-side on top of the lib primitives; the ears state machine
+exposes `ears_touched_cb` (user turned an ear — return 1 to consume) and
+`ears_post_run_cb` (poll app state each tick); `rfid_poll` returns a fresh
+tag id and the app decides the reaction; `reclib` records and packages WAV,
+upload flow stays app-side.
 
 **Starting a new app:** copy `src/app-template/` — `main.mtl` assembles lib
 blocks, `app.mtl` is the business logic. `task simulate:app` runs it on
