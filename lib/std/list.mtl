@@ -79,3 +79,10 @@ fun listtotab l=
         );
         t
     );;
+
+// total strlen of a string list, accumulated onto r
+fun liststrlen l r=
+    if l==nil then
+        r
+    else
+        liststrlen tl l r+strlen hd l;;

@@ -32,5 +32,10 @@ let scenario "net_test" -> s in
     assert_equalI 1 isip "0.0.0.0"     0;
     assert_equalI 0 isip "not-ip"      0;
     assert_equalI 0 isip "192.168.x.1" 0
+  );
+
+  let test "mac_to_hex" -> t in
+  (
+    assert_equalS "0013d3845abc" mac_to_hex "\0\$13\$d3\$84\$5a\$bc"
   )
 );

@@ -39,3 +39,10 @@ fun isip s i=
     else let strget s i -> c in
     if (c<'0' || c>'9')&&c!='.' then 0
     else isip s i+1;;
+
+// MAC bytes as plain hex string (no separators), e.g. for URLs.
+// Note: boot/util.mtl has a colon-format webmac alias — distinct on purpose.
+fun _mac_to_hex key i=
+	if i<strlen key then (ctoh strget key i)::_mac_to_hex key i+1;;
+
+fun mac_to_hex key=strcatlist _mac_to_hex key 0;;

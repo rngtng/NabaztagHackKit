@@ -51,7 +51,8 @@ tasks:
     cmds:
       # the simulator always exits 0, so scan its output: assertion failures
       # are marked "!!", compile problems print Syntax/Typechecking/OM errors
-      - 'docker run --rm --init -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} | tee /dev/stderr | (! grep -qE "!!|Syntax error|Typechecking error|\?OM Error") > /dev/null'
+      # (2>&1: the compiler reports errors on stderr, which would bypass the pipe)
+      - 'docker run --rm --init -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} 2>&1 | tee /dev/stderr | (! grep -qE "!!|Syntax error|Typechecking error|\?OM Error") > /dev/null'
 
   clean:
     desc: 'Remove Docker image and build artifacts'
