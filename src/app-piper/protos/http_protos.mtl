@@ -1,17 +1,10 @@
-proto http_abort 1;;
-proto http_enable 2;;
+#include "lib/protos/http_client_protos.mtl"
+
 proto http_extract_args 2;;
-proto http_get_content 1;;
 proto http_get_header 1;;
 proto http_get_header_field 2;;
-proto http_inactive 1;;
-proto http_is_enabled 1;;
-proto http_request 5;;
 proto http_split_header_content 1;;
 
-const HTTP_NORMAL=0;;
-const HTTP_STREAM=1;;
-const HTTP_DIRECT=2;;
 
 const HTTP_STATE_SOLVE=0;;
 const HTTP_STATE_REACH=1;;
