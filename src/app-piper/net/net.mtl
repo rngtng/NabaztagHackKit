@@ -1,12 +1,12 @@
-#include protos/net_protos.mtl
-#include protos/icmp_protos.mtl
-#include protos/tcp_protos.mtl
-#include protos/udp_protos.mtl
-#include protos/arp_protos.mtl
-#include protos/dns_protos.mtl
-#include protos/dhcp_protos.mtl
+#include "protos/net_protos.mtl"
+#include "protos/icmp_protos.mtl"
+#include "protos/tcp_protos.mtl"
+#include "protos/udp_protos.mtl"
+#include "protos/arp_protos.mtl"
+#include "protos/dns_protos.mtl"
+#include "protos/dhcp_protos.mtl"
 
-#include ipv4/ipv4.mtl
+#include "ipv4/ipv4.mtl"
 
 const IP_PROTO  = 0;;
 const ARP_PROTO = 6;;
@@ -72,9 +72,9 @@ fun net_json=
         "}" :: nil
 ;;
 
-#include net/dhcp.mtl
-#include net/dns.mtl
-#include net/http.mtl
-#include net/ntp.mtl
-#include net/sock.mtl
-#include net/wifi.mtl
+#include "net/dhcp.mtl"
+#include "net/dns.mtl"
+#include "net/http.mtl"
+#include "net/ntp.mtl"
+#include "net/sock.mtl"
+#include "net/wifi.mtl"

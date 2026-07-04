@@ -1,5 +1,5 @@
-#include protos/http_protos.mtl
-#include protos/time_protos.mtl
+#include "protos/http_protos.mtl"
+#include "protos/time_protos.mtl"
 
 // debug
 #ifdef HTTP_DEBUG

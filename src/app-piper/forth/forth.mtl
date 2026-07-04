@@ -32,24 +32,24 @@ type Interpreter=[
 var forth_dictionary = nil;; // list of [Word Word] tuples (the first Word is the key, the second is the value)
 var forth_memory = nil;; // list of allocated memory blocks
 
-#include protos/ascii_protos.mtl
-#include protos/forth_protos.mtl
-#include forth/stack.mtl
-#include forth/logical.mtl
-#include forth/arithmetic.mtl
-#include forth/comparison.mtl
-#include forth/output.mtl
-#include forth/list.mtl
-#include forth/string.mtl
-#include forth/json.mtl
-#include forth/control.mtl
-#include forth/misc.mtl
-#include forth/net.mtl
-#include forth/nabaztag.mtl
-#include forth/interpreter.mtl
-#include forth/memory.mtl
-#include forth/task.mtl
-#include forth/dictionary.mtl
+#include "protos/ascii_protos.mtl"
+#include "protos/forth_protos.mtl"
+#include "forth/stack.mtl"
+#include "forth/logical.mtl"
+#include "forth/arithmetic.mtl"
+#include "forth/comparison.mtl"
+#include "forth/output.mtl"
+#include "forth/list.mtl"
+#include "forth/string.mtl"
+#include "forth/json.mtl"
+#include "forth/control.mtl"
+#include "forth/misc.mtl"
+#include "forth/net.mtl"
+#include "forth/nabaztag.mtl"
+#include "forth/interpreter.mtl"
+#include "forth/memory.mtl"
+#include "forth/task.mtl"
+#include "forth/dictionary.mtl"
 
 fun forth_word_list_to_array words =
     let 0 -> i in

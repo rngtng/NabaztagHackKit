@@ -1,8 +1,8 @@
-#include protos/chor_protos.mtl
-#include protos/palette_protos.mtl
-#include protos/info_protos.mtl
-#include protos/forth_protos.mtl
-#include protos/sleep_protos.mtl
+#include "protos/chor_protos.mtl"
+#include "protos/palette_protos.mtl"
+#include "protos/info_protos.mtl"
+#include "protos/forth_protos.mtl"
+#include "protos/sleep_protos.mtl"
 
 //--------------------------------------------------------------------------------------------------
 // Choregraphies

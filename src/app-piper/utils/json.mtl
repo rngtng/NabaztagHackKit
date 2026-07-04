@@ -1,7 +1,7 @@
-#include protos/ascii_protos.mtl
-#include protos/forth_protos.mtl
-#include protos/word_protos.mtl
-#include protos/json_protos.mtl
+#include "protos/ascii_protos.mtl"
+#include "protos/forth_protos.mtl"
+#include "protos/word_protos.mtl"
+#include "protos/json_protos.mtl"
 
 #ifdef JSON_DEBUG
 fun _json_debug str= Secho strcatlist "[json] " :: str :: nil; nil;;

@@ -1,9 +1,9 @@
-#include protos/trame_protos.mtl
-#include protos/palette_protos.mtl
-#include protos/info_protos.mtl
-#include protos/ping_protos.mtl
+#include "protos/trame_protos.mtl"
+#include "protos/palette_protos.mtl"
+#include "protos/info_protos.mtl"
+#include "protos/ping_protos.mtl"
 #ifdef XMPP
-#include protos/xmpp_protos.mtl
+#include "protos/xmpp_protos.mtl"
 #endif
 
 //--------------------------------------------------------------------------------------------------

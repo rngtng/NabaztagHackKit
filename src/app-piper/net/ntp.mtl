@@ -1,5 +1,5 @@
-#include protos/time_protos.mtl
-#include protos/ntp_protos.mtl
+#include "protos/time_protos.mtl"
+#include "protos/ntp_protos.mtl"
 
 //--------------------------------------------------------------------------------------------------
 // Simple Network Time Protocol client (RFC 2030)
