@@ -1,0 +1,22 @@
+/**
+ * Template app — assembly only.
+ * Everything below the "business logic" line comes from lib/ building blocks;
+ * app.mtl is the only file you need to touch for your own app.
+ */
+proto main 0;;
+
+// Building blocks
+#include "lib/net/tcp.mtl"
+#include "lib/net/http_server.mtl"
+#include "lib/forth.mtl"
+
+// Forth: core dictionary only (extend with your own word packs if needed)
+fun forth_init_dictionary= forth_init_core_dictionary;;
+
+// Business logic
+#include "app.mtl"
+
+fun main=
+    netstart;
+    starthttpsrv 80 #handle_request;
+    0;;

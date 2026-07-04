@@ -1,0 +1,33 @@
+/**
+ * The app's business logic: an HTTP-served Forth playground.
+ * GET  /      -> HTML page with an input box
+ * POST /eval  -> run the body as Forth, answer {"output": …, "stack": …}
+ */
+#include "lib/std/json.mtl"
+
+const PAGE="<!doctype html>
+<title>Nabaztag template app</title>
+<h1>Forth playground</h1>
+<form onsubmit=\"fetch('/eval',{method:'POST',body:code.value}).then(function(r){return r.text()}).then(function(t){out.textContent=t});return false\">
+<input id=code size=40 value=\"2 3 + .\"> <button>run</button>
+</form>
+<pre id=out></pre>";;
+
+fun _eval_forth code=
+    let forth_interpreter_setup code nil nil nil nil -> f in
+    (
+        forth_interpreter_loop f;
+        strcatlist
+            "{" ::
+            (json_str "output" strcatlist rev f.output nil) :: ", " ::
+            (json_str "stack" forth_list_to_str f.stack " ") ::
+            "}" :: nil
+    );;
+
+fun _request_body req=
+    let strstr req "\13\10\13\10" 0 -> i in
+    if i!=nil then strsub req i+4 (strlen req)-(i+4);;
+
+fun handle_request req=
+    if 0==(strstr req "POST /eval" 0) then _eval_forth _request_body req
+    else PAGE;;
