@@ -44,9 +44,9 @@ fun listentcp port cb= 0;;
 
 fun forth_init_dictionary= forth_init_core_dictionary;;
 
+// The dictionary is built once (lazily by forth_interpreter_setup);
+// rebuilding it per run exhausts the simulator heap.
 fun forth_run src=
-  set forth_dictionary=nil;
-  forth_init_dictionary;
   let forth_interpreter_setup src nil nil nil nil -> f in
   (
     forth_interpreter_loop f;
@@ -54,8 +54,6 @@ fun forth_run src=
   );;
 
 fun forth_run_stack src=
-  set forth_dictionary=nil;
-  forth_init_dictionary;
   let forth_interpreter_setup src nil nil nil nil -> f in
   (
     forth_interpreter_loop f;
@@ -90,5 +88,6 @@ fun lib_test=
 #include "test/lib/forth/control_test.mtl"
 #include "test/lib/forth/string_test.mtl"
 #include "test/lib/forth/list_test.mtl"
+#include "test/lib/forth/json_test.mtl"
 #include "test/lib/forth/output_test.mtl"
 0;;
