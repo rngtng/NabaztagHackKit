@@ -43,7 +43,7 @@ const LED_TIMEOUT = 600;; // 10 minutes
 #include "utils/utils.mtl"
 #include "utils/json.mtl"
 #include "utils/task.mtl"
-#include "utils/md5.mtl"
+#include "lib/std/md5.mtl"
 #include "utils/config.mtl"
 #include "utils/word.mtl"
 #include "utils/url.mtl"
