@@ -1,0 +1,13 @@
+const WEEKDAYS = {"Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"} ;;
+const MONTHS = {"Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"} ;;
+
+var time_low = nil ;;  // low part of the last value read from the time server
+var time_high = nil ;; // high part of the last value read from the time
+var _ntp_receive_time = 0;;  // uptime at the moment of the last NTP sync
+var ntp_server = "216.239.35.12";; // NTP server the time state syncs from
+
+proto time_date_local 0;;
+proto time_date_utc 0;;
+proto time_is_valid 0;;
+proto time_parse_date 1;;
+proto time_set 1;;
