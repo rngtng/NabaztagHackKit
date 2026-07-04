@@ -1,0 +1,52 @@
+/**
+ * VM-native TCP adapter — bridges the VM's tcpSend/tcpListen/tcpCb/tcpClose
+ * natives to the writetcp/closetcp/tcpcb/listentcp API that lib/net's
+ * sock/http_server/sse_server build on. Call netstart once, then listentcp.
+ * (Subset of src/boot/tcpudp_emu.mtl — TCP only, no UDP/DHCP. Apps running
+ * behind piper's MTL ipv4/ stack use its tcp_* wrappers instead.)
+ */
+var TCPWRITE=0;;
+var TCPREAD=1;;
+var TCPCLOSE=-1;;
+var TCPSTART=2;;
+
+var ltcp;;
+var netip="\127\0\0\1";;
+
+fun writetcp t msg i=
+    tcpSend t msg i nil;;
+
+fun _remtcp l t=
+    if l!=nil then let hd l->[tt _] in if t==tt then tl l
+    else (hd l)::_remtcp tl l t;;
+
+fun _updatetcp l t cb=
+    if l!=nil then let hd l->[tt _] in if t==tt then [t cb]::tl l
+    else (hd l)::_updatetcp tl l t cb;;
+
+fun closetcp t=
+    set ltcp=_remtcp ltcp t;
+    tcpClose t;;
+
+fun tcpcb t cb=
+    set ltcp=_updatetcp ltcp t cb;
+    cb;;
+
+fun listentcp port cb=
+    set ltcp=[tcpListen port cb]::ltcp;;
+
+fun nettcp t val msg=
+    if val==TCPSTART then
+        let listswitch ltcp atoi msg -> cb in
+        (
+            set ltcp=[t cb]::ltcp;
+            call cb [t val msg]
+        )
+    else let listswitch ltcp t -> cb in
+        call cb [t val msg];;
+
+fun netstart=
+    tcpCb #nettcp;
+    set ltcp=nil;
+    0;;
+
