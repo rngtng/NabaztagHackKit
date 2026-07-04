@@ -1,0 +1,13 @@
+let scenario "button_test" -> s in
+(
+  let test "event get and clear" -> t in
+  (
+    assert_nil button_get_event;
+    set _button_event=BUTTON_CLIC;
+    assert_equalI BUTTON_CLIC button_get_event;
+    assert_nil button_get_event;
+    set _button_event=BUTTON_DCLIC;
+    button_clear_event;
+    assert_nil button_get_event
+  )
+);

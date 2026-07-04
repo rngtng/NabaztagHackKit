@@ -139,8 +139,10 @@ outside Docker. Everything else is in-container.
    b64/url/md5/json/word/xmlparser/task/time/timezones/utils/forth-core;
    `src/app-template` + `task simulate:app` prove "new app = lib blocks +
    business logic"). Remaining, in rough order:
-   - `lib/hw` from `app-piper/hw` (leds/ears/button/rfid) — needs callback
-     seams for the chor/info/run coupling; then `lib/audio`, `lib/chor`
+   - ~~`lib/hw`~~ done 07-2026 (button/leds/ears/rfid/reclib-mic behind
+     `ears_touched_cb`/`ears_post_run_cb`/`rfid_poll` seams; LED animations
+     and record-upload flow stay app-side)
+   - `lib/audio` (playback/audiolib/midi), `lib/chor`
    - the `ipv4/` + wifi/dhcp/dns/ntp/http-client stack → lib, unlocking
      device-standalone template apps (and later boot/app convergence);
      `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)

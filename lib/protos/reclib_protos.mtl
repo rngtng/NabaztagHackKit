@@ -1,0 +1,5 @@
+proto reclib_rec_start 0;;
+proto reclib_rec_stop 0;;
+proto reclib_recriff 0;;
+
+var record_is_recording = 0;;

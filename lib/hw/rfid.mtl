@@ -1,0 +1,51 @@
+/**
+ * RFID presence detection on the rfidGet VM native.
+ * rfid_poll returns a freshly-seen valid tag id (or nil) with debouncing;
+ * what to do with the tag is app policy.
+ */
+
+var _rfid_last;;
+var _rfid_char = 2;;
+var _rid_int = 6;;
+var _rfid_last_time = 0;;
+
+fun _rfid_parse_char id index=
+	set _rfid_char = strget id index;
+	_rfid_char;;
+
+// number of non-zero bytes among the 6 id bytes (0 = no tag)
+fun _rfid_parse id =
+	set _rid_int = 6;
+	for i=0;i<6 do ( if(_rfid_parse_char id i) == 0 then set _rid_int = _rid_int - 1);
+	_rid_int;;
+
+/**
+ * Controls if a stamp is shown to the rabbit.
+ * Does not control wether we _should_ control or not (according to the interactive state, ...)
+ * Returns the rfid or nil.
+*/
+fun _rfid_check_presence=
+	let rfidGet -> rfid in
+	if (strcmp rfid _rfid_last) && (time_ms - _rfid_last_time > 750) then
+		rfid
+	else
+		nil;;
+
+/**
+ * Poll for a newly-presented tag. Returns the id once per presentation,
+ * nil otherwise (debounced: 750 ms between distinct reads, forgets the
+ * last tag after 1 s).
+ */
+fun rfid_poll=
+	if ((time_ms - _rfid_last_time) > 1000) then
+	(
+		set _rfid_last = "0000000"
+	);
+	let _rfid_check_presence -> rfid in
+	if rfid!=nil && (_rfid_parse rfid)!=0 then
+	(
+		set _rfid_last=rfid;
+		set _rfid_last_time = time_ms;
+		rfid
+	)
+	else nil;;

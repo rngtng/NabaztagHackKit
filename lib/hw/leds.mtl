@@ -1,0 +1,86 @@
+/**
+ * LED primitives on the `led` VM native: setters, override table,
+ * breathing oscillator, JSON status. Animation policy (what blinks when)
+ * lives in the app — see src/app-piper/hw/leds.mtl.
+ */
+#include "lib/protos/leds_protos.mtl"
+#include "lib/std/json.mtl"
+
+const LEDS_OSC = {
+    0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
+    9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
+    37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76
+    79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
+};;
+
+/**
+ * Triangle-ish breathing waveform: x (any int) -> 0..255
+ */
+fun leds_osc x=
+    let (x>>6)&3 -> q in
+    let x&255 -> x in
+    if q==0 then LEDS_OSC.x
+    else if q==1 then 255-LEDS_OSC.(127-x)
+    else if q==2 then 255-LEDS_OSC.(x-128)
+    else LEDS_OSC.(255-x);;
+
+/**
+ * Scale an RGB color by v/255 (channel-wise)
+ */
+fun leds_scale_color col v=
+    (col >> 16) * v / 255 * 0x010000 +
+    ((col >> 8) & 0xFF) * v / 255 * 0x000100 +
+    (col & 0xFF) * v / 255;;
+
+/**
+ * Set led i to the color rgbCode
+ */
+fun leds_set_color i col=
+    led i col;;
+
+/**
+ * Set led i to the color rgbCode, unless overridden
+ */
+fun leds_set_color_override i col=
+    leds_set_color i (if leds_override.i != -1 then leds_override.i else col);;
+
+/**
+ * Set all the leds to the color rgbCode
+ */
+fun leds_set_all col=
+    for i=0;i<5 do leds_set_color i col;;
+
+/**
+ * Turn off all the leds
+ */
+fun leds_turn_off=
+    leds_set_all RGB_BLACK;;
+
+/**
+ * Return LEDs overrides as JSON
+ */
+fun _leds_overrides_json=
+    strcatlist
+        "{\n"::
+            (json_int "nose" leds_override.LED_NOSE ) :: ",\n" ::
+            (json_int "left" leds_override.LED_BODY_LEFT ) :: ",\n" ::
+            (json_int "middle" leds_override.LED_BODY_MIDDLE ) :: ",\n" ::
+            (json_int "right" leds_override.LED_BODY_RIGHT ) :: ",\n" ::
+            (json_int "base" leds_override.LED_BASE ) :: "\n" ::
+        "}" :: nil;;
+
+/**
+ * Return leds status as JSON
+ */
+fun leds_json=
+    strcatlist
+        "{\n"::
+            (json_int "base_breathing" leds_base_breathing) :: ",\n" ::
+            (json_obj "overrides" _leds_overrides_json) :: "\n" ::
+        "}" :: nil;;
+
+/**
+ * Initialize the override table (no color forced)
+ */
+fun leds_setup=
+    set leds_override = tabnew -1 5;;

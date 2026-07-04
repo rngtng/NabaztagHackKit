@@ -1,5 +1,20 @@
 # Changes
 
+## v0.6.0 - 04-07-2026
+
+  * `lib/hw/` — rabbit hardware building blocks on VM natives:
+    `button` (click/double/long-click events), `leds` (setters, override
+    table, breathing oscillator), `ears` (motor state machine with
+    `ears_touched_cb` / `ears_post_run_cb` app seams), `rfid`
+    (`rfid_poll` debounced tag detection), `reclib` (microphone → WAV)
+  * app-piper keeps only policy: LED animations, RFID reaction
+    (jingle/chor/forth hook), record-upload flow, interactive ear hooks
+  * new `lib/protos/{button,leds,colors,ears,reclib}_protos.mtl`; app
+    protos are thin shims (plus app-only bits like the MASK_* consts)
+  * tests: `test/lib/hw/` — oscillator/scaling, ears position arithmetic
+    and go-target math, button events, RFID id parsing, WAV container
+    layout; suite now 423 assertions / 33 scenarios
+
 ## v0.5.0 - 04-07-2026
 
   * `src/app-template/` — blueprint proving "new app = lib blocks + business
