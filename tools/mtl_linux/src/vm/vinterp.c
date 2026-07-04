@@ -86,8 +86,8 @@ int tron=0;
 
 // execute une fonction
 // la pile doit contenir la liste d'argument, puis la fonction
-// la fonction est soit un numéro, soit un tuple [numéro liste]
-// on distingue le cas selon le fait que la valeur empilée est un pointeur ou un entier
+// la fonction est soit un numï¿½ro, soit un tuple [numï¿½ro liste]
+// on distingue le cas selon le fait que la valeur empilï¿½e est un pointeur ou un entier
 void interpGo()
 {
     int pc=-1;
@@ -200,7 +200,7 @@ void interpGo()
                 pcbase=VALTOINT(VSTACKGET(3));
                 ncall=VALTOINT(VSTACKGET(2));
                 callstackres=VALTOINT(VSTACKGET(1));
-                VCALLSTACKSET(callstack,0,VSTACKGET(0));	// recopie le résultat
+                VCALLSTACKSET(callstack,0,VSTACKGET(0));	// recopie le rï¿½sultat
                 vmem_stack=callstack;
                 callstack=ncall;
             }
@@ -913,6 +913,11 @@ void interpGo()
             break;
             case OPled:
                 sysLed(VALTOINT(VSTACKGET(1)),VALTOINT(VSTACKGET(0)));
+                VPULL();
+                break;
+            case OPledfade:
+                sysLedFade(VALTOINT(VSTACKGET(2)),VALTOINT(VSTACKGET(1)),VALTOINT(VSTACKGET(0)));
+                VPULL();
                 VPULL();
                 break;
             case OPmotorset:

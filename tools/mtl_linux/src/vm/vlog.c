@@ -287,7 +287,7 @@ int sysTime()
 
 int rndval;
 
-// retourne une valeur aléatoire entre 0 et 65535
+// retourne une valeur alï¿½atoire entre 0 et 65535
 int sysRand()
 {
     rndval=rndval*0x1234567+11;
@@ -442,7 +442,7 @@ void sysStrputword(unsigned char *src,int len,int ind,int val)
     src[ind]=val;
 }
 
-// lecture d'une chaîne décimale (s'arrête au premier caractère incorrect)
+// lecture d'une chaï¿½ne dï¿½cimale (s'arrï¿½te au premier caractï¿½re incorrect)
 int sysAtoi(char* src)
 {
     int x,c,s;
@@ -466,7 +466,7 @@ int sysAtoi(char* src)
     return (s?(-x):x);
 }
 
-// lecture d'une chaîne hexadécimale (s'arrête au premier caractère incorrect)
+// lecture d'une chaï¿½ne hexadï¿½cimale (s'arrï¿½te au premier caractï¿½re incorrect)
 int sysHtoi(char* src)
 {
     int x,c;
@@ -636,6 +636,13 @@ void sysLed(int led,int col)
 #ifdef VREAL
     set_led((UWORD)led,(UWORD)col);
 #endif
+}
+
+// simulator has no fade engine: jump straight to the target color
+void sysLedFade(int led,int col,int ms)
+{
+    (void)ms;
+    sysLed(led,col);
 }
 
 void sysMotorset(int motor,int sens)
