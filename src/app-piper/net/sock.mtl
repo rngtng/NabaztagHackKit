@@ -47,3 +47,10 @@ fun sock_send_and_close sock s =
     sock_send sock s;
     sock_close_after sock
     ;;
+
+/**
+ * sock_send with flipped arguments, for callback wiring:
+ * fixarg2 #sock_send_to sock yields fun(s) that sends s on sock.
+ */
+fun sock_send_to s sock=
+    sock_send sock s;;

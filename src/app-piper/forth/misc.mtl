@@ -4,107 +4,6 @@
  * This code is licensed under the MIT License
  */
 
-/**
- * : Begin a new word definition
- */
-fun forth_colon f=
-    if f.state == FORTH_STATE_COMPILATION then (
-        forth_abort_msg f ": Nested definitions not allowed"
-    ) else
-        let hd f.istack -> inter in (
-            // Enter compilation state
-            set f.state = FORTH_STATE_COMPILATION;
-            // Get the new word name
-            forth_interpreter_get_token f;
-            if !strcmp inter.token ";" then
-                forth_abort_msg f "Error: ';' without word name"
-            else
-                let forth_get_word inter.token -> new_word in (
-                    if new_word == nil then
-                        let [str:to_lower inter.token] -> key in (
-                        // Secho "Creating new word "; Secholn inter.token;
-                        set new_word = [code:nil];
-                        word_dict_set_w forth_dictionary key new_word
-                    );
-                    forth_rpush f new_word;
-                    set f.cstack = nil;
-                    nil
-                )
-        );;
-
-/**
- * ; End a word definition
- */
-fun forth_semi f=
-    if f.state != FORTH_STATE_COMPILATION then (
-        forth_abort_msg f "Error: ';' without matching ':'"
-    ) else
-        let forth_rpop f -> new_word in (
-            // Finish the new word definition
-            // Set the code field to the compiled code
-            set new_word.code = forth_word_list_to_array (rev f.cstack nil);
-            set f.cstack = nil;
-            set f.state = FORTH_STATE_NORMAL;
-            nil
-        );;
-
-fun forth_p f=
-    nil;;
-
-/**
- * CONSTANT (immediate) ( x "<spaces>name" -- )
- * Define a constant with the given name and value
- */
-fun forth_constant f=
-    // Get the new word name
-    forth_interpreter_get_token f;
-    let forth_pop f -> x in
-    let hd f.istack -> inter in
-    let forth_get_word inter.token -> new_word in
-        if new_word == nil then
-            let [str:to_lower inter.token] -> key in (
-                set new_word = [code:{x}];
-                word_dict_set_w forth_dictionary key new_word;
-                nil
-            )
-        else
-        (
-            set new_word.code = {x};
-            nil
-        );;
-
-/**
- * DEFINED? (immediate) ( "<spaces>name" -- flag )
- * Check if a word is defined in the dictionary
- */
-fun forth_defined_q f=
-    // Get the word name
-    forth_interpreter_get_token f;
-    let hd f.istack -> inter in
-    let forth_get_word inter.token -> word in
-    if word == nil then
-        forth_false f // not defined
-    else
-        forth_true f;; // defined
-
-/**
- * Helper function to print words in the dictionary
- */
-fun _forth_print_words f dict=
-    if dict==nil then nil
-    else let hd dict -> [name _]in (
-        forth_write f strcat " " name.str;
-        _forth_print_words f (tl dict)
-    );;
-
-/**
- * WORDS ( -- )
- * List the words in the dictionary
- */
-fun forth_words f=
-    _forth_print_words f forth_dictionary.dict;
-    forth_write f " \n";
-    nil;;
 
 /**
  * TIME&DATE ( -- sec min hour day month year)
@@ -156,7 +55,7 @@ fun forth_evaluate f=
         forth_interpreter_resume f
         // forth_abort_msg f "EVALUATE expects a string"
     ) else (
-        forth_interpreter_ex word.str f f.forth_sock f.forth_task #_forth_evaluate_cb
+        forth_interpreter_ex word.str f f.write_fn f.forth_task #_forth_evaluate_cb
     );;
 
 /**
