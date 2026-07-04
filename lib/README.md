@@ -42,12 +42,15 @@ lib/
 │
 ├── sys/             Runtime glue
 │   ├── task.mtl          Cooperative task scheduler (task_start/task_scheduler)
+│   ├── time.mtl          NTP-backed clock, date formatting/parsing
+│   ├── timezones.mtl     City-code → UTC-offset table
 │   ├── firmware.mtl      Firmware image helpers
 │   ├── bytecode.mtl      OTA bytecode ("amber") parsing/loading
 │   ├── system.mtl        System/OS helpers
-│   └── echo.mtl          Debug output helpers
+│   └── echo.mtl          Debug output helpers (dumps, MAC/IP echo)
 │
 ├── net/             Networking on VM-native TCP
+│   ├── tcp.mtl           VM adapter: tcpSend/tcpListen natives → writetcp/listentcp API
 │   ├── sock.mtl          Sock write/close helpers (writetcp/closetcp)
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
@@ -67,6 +70,10 @@ lib/
 Future building blocks (extraction from `src/app-piper` pending): `hw/`
 (leds/ears/button/rfid), `audio/`, `chor/`, and the `ipv4/` + wifi/dhcp/dns/ntp
 network stack.
+
+**Starting a new app:** copy `src/app-template/` — `main.mtl` assembles lib
+blocks, `app.mtl` is the business logic. `task simulate:app` runs it on
+http://localhost:8080.
 
 Note: the preprocessor treats **every file as `#pragma once`**, so modules can
 (and should) `#include` their own dependencies; consumers may include modules
@@ -163,19 +170,12 @@ The SSE server keeps connections open and fans each event to all registered
 clients. It handles partial writes via the cooperative task loop (no threads
 needed). Maximum ~4–5 concurrent clients given the 1 MB RAM budget.
 
-**Prerequisites:** The including file must define (or stub) these VM primitives
-before `#include "lib/net/sse_server.mtl"`:
-
-```mtl
-fun writetcp cnx msg offset= …;;
-fun closetcp cnx= …;;
-fun tcpcb cnx cb= …;;
-const TCPWRITE=0;;
-const TCPCLOSE=-1;;
-```
-
-In the firmware these come from `src/boot/tcpudp_emu.mtl`. In unit tests,
-stub them out — see `test/lib/_test.mtl` for the pattern.
+**Prerequisites:** the `writetcp`/`closetcp`/`tcpcb` primitives and TCP
+constants must be defined before including a `lib/net` server. Include
+`lib/net/tcp.mtl` (the VM-native adapter; call `netstart` in `main`) —
+that's what `src/app-template` and `test/sse_test_app.mtl` do. The boot
+uses its fuller `src/boot/tcpudp_emu.mtl` (adds UDP/DHCP); unit tests use
+the capturing stubs in `test/lib/_test.mtl`.
 
 ### JSON builder
 

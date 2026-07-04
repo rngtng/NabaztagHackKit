@@ -1,5 +1,22 @@
 # Changes
 
+## v0.5.0 - 04-07-2026
+
+  * `src/app-template/` — blueprint proving "new app = lib blocks + business
+    logic": composes the TCP adapter, HTTP server and Forth core; `app.mtl`
+    is a Forth playground (`POST /eval` runs code, answers output + stack);
+    run with the new `task simulate:app` (port 8080)
+  * `lib/net/tcp.mtl` — VM-native TCP adapter (tcpSend/tcpListen/tcpCb →
+    writetcp/listentcp API) extracted from the SSE test app
+  * `lib/sys/time.mtl` + `timezones.mtl` moved from app-piper with config/NTP
+    proto seams; **fixed two upstream date bugs**: the day calculation could
+    report the previous day (truncated low word), and HTTP date parsing never
+    matched month names (case mismatch)
+  * app-piper `utils/utils.mtl` deduplicated: 44 of 55 funs were lib/std
+    copies; itoanil/liststrlen/mac_to_hex/dump helpers landed in lib
+  * `task test` now also fails on compiler errors reported via stderr
+  * suite: 379 assertions / 28 scenarios
+
 ## v0.4.0 - 04-07-2026
 
   * `lib/` finalized as the canonical reusable MTL library: `std/` (pure data),
