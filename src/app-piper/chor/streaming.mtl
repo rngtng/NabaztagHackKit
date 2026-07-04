@@ -1,7 +1,7 @@
-#include protos/palette_protos.mtl
-#include protos/streaming_protos.mtl
+#include "protos/palette_protos.mtl"
+#include "protos/streaming_protos.mtl"
 #ifdef XMPP
-#include protos/xmpp_protos.mtl
+#include "protos/xmpp_protos.mtl"
 #endif
 
 // ********** loading resources

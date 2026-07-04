@@ -1,16 +1,16 @@
-#include protos/button_protos.mtl
-#include protos/word_protos.mtl
-#include protos/forth_protos.mtl
-#include protos/chor_protos.mtl
-#include protos/streaming_protos.mtl
-#include protos/midi_protos.mtl
+#include "protos/button_protos.mtl"
+#include "protos/word_protos.mtl"
+#include "protos/forth_protos.mtl"
+#include "protos/chor_protos.mtl"
+#include "protos/streaming_protos.mtl"
+#include "protos/midi_protos.mtl"
 #ifdef PING
-#include protos/ping_protos.mtl
+#include "protos/ping_protos.mtl"
 #endif
 #ifdef XMPP
-#include protos/xmpp_protos.mtl
+#include "protos/xmpp_protos.mtl"
 #endif
-#include protos/run_protos.mtl
+#include "protos/run_protos.mtl"
 
 // Main loop state
 var run;; // type Run

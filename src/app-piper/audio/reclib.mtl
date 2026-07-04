@@ -1,4 +1,4 @@
-#include protos/record_protos.mtl
+#include "protos/record_protos.mtl"
 
 var _reclib_lrec;;
 

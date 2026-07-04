@@ -1,9 +1,9 @@
-#include protos/trame_protos.mtl
-#include protos/dns_protos.mtl
-#include protos/task_protos.mtl
-#include protos/streaming_protos.mtl
-#include protos/http_protos.mtl
-#include protos/xmpp_protos.mtl
+#include "protos/trame_protos.mtl"
+#include "protos/dns_protos.mtl"
+#include "protos/task_protos.mtl"
+#include "protos/streaming_protos.mtl"
+#include "protos/http_protos.mtl"
+#include "protos/xmpp_protos.mtl"
 
 #ifdef XMPP_DEBUG
 fun _xmpp_debug str = Secholn str; nil ;;

@@ -1,7 +1,7 @@
-#include protos/trame_protos.mtl
-#include protos/ears_protos.mtl
-#include protos/ping_protos.mtl
-#include protos/http_protos.mtl
+#include "protos/trame_protos.mtl"
+#include "protos/ears_protos.mtl"
+#include "protos/ping_protos.mtl"
+#include "protos/http_protos.mtl"
 
 // ******************
 // The Ping
