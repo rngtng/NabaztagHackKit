@@ -75,6 +75,41 @@ tasks:
         vars:
           SOURCE: '{{.SIMU_BOOT_OUT}}/merged.mtl'
 
+  build:app:
+    desc: 'Build app bytecode. Preprocess files, then compile. Usage: task build:app [SOURCE=src/app-piper/main.mtl] [OUT=build/app]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
+      APP_OUT: '{{.OUT}}/app'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+          SIGN: 'false'
+
+  simulate:app:
+    desc: 'Preprocess and simulate an app. Served at http://localhost:8080. Usage: task simulate:app [SOURCE=src/app-piper/main.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
+      SIMU_APP_OUT: '{{.OUT}}/app_simu'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.SIMU_APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.SIMU_APP_OUT}}/merged.mtl'
+
   test:
     desc: 'Preprocess and run MTL unit tests. Usage: task test'
     dir: '{{.USER_WORKING_DIR}}'
