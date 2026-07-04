@@ -20,42 +20,57 @@ Grammar reference: [docs/grammar.md](docs/grammar.md)
 
 ```
 lib/
-├── protos/          Forward declarations (include before the implementing file)
-│   ├── sock_protos.mtl   Sock type definition — shared by http_server & sse_server
+├── protos/          Shared types & forward declarations
+│   ├── sock_protos.mtl   Sock type — shared by http_server & sse_server
 │   ├── sse_protos.mtl    SSE public API protos
-│   ├── forth_protos.mtl  Forth interpreter protos
+│   ├── forth_protos.mtl  Word/Forth types + interpreter protos
+│   ├── task_protos.mtl   Task/TaskStatus types + scheduler protos
 │   ├── ascii_protos.mtl
 │   └── word_protos.mtl
 │
-├── forth/           Forth interpreter (sub-modules, assembled by forth.mtl)
-│   ├── interpreter.mtl
-│   ├── stack.mtl / arithmetic.mtl / comparison.mtl / logical.mtl
-│   ├── control.mtl / list.mtl / string.mtl / output.mtl
-│   └── …
-│
-├── std  # Primitives
-│   ├── string.mtl        String helpers (strcat, strsub, itoa, …)
-│   ├── integer.mtl       Integer utilities
-│   ├── list.mtl          Linked-list helpers (hd, tl, rev, …)
+├── std/             Pure data primitives (no VM I/O)
+│   ├── string.mtl        String helpers (strstr, to_lower, pads, …)
+│   ├── integer.mtl       Integer/hex utilities
+│   ├── list.mtl          Linked-list helpers (listlen, rev, sort, …)
 │   ├── buffer.mtl        Byte-buffer utilities
 │   ├── b64.mtl           Base64 encode/decode
 │   ├── url.mtl           URL encode/decode
-│   ├── json.mtl          Minimal JSON builder/parser
+│   ├── json.mtl          JSON string builder
+│   ├── xmlparser.mtl     XML parser
 │   ├── md5.mtl           MD5 hash
 │   └── net.mtl           IP/MAC address conversions
 │
-├── net # Networking
-│   ├── sock.mtl          Sock write/close helpers (app-level, uses tcp_write/tcp_close)
+├── sys/             Runtime glue
+│   ├── task.mtl          Cooperative task scheduler (task_start/task_scheduler)
+│   ├── firmware.mtl      Firmware image helpers
+│   ├── bytecode.mtl      OTA bytecode ("amber") parsing/loading
+│   ├── system.mtl        System/OS helpers
+│   └── echo.mtl          Debug output helpers
+│
+├── net/             Networking on VM-native TCP
+│   ├── sock.mtl          Sock write/close helpers (writetcp/closetcp)
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
 │
-└── High-level
-    ├── forth.mtl         Forth interpreter entry point
-    ├── firmware.mtl      Firmware-level helpers
-    ├── bytecode.mtl      Bytecode utilities
-    ├── system.mtl        System/OS helpers
-    └── echo.mtl          Debug output helpers
+├── forth/           Forth interpreter (sub-modules, assembled by forth.mtl)
+│   ├── interpreter.mtl   Tokenizer + interpreter loop
+│   ├── compile.mtl       : ; ( constant defined? words
+│   ├── dictionary.mtl    forth_core_words + forth_init_core_dictionary
+│   ├── word.mtl          Word dict/list accessors
+│   ├── json.mtl          JSON parser producing Words + json-parse/json-get
+│   ├── stack.mtl / arithmetic.mtl / comparison.mtl / logical.mtl
+│   └── control.mtl / list.mtl / string.mtl / output.mtl
+│
+└── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
+
+Future building blocks (extraction from `src/app-piper` pending): `hw/`
+(leds/ears/button/rfid), `audio/`, `chor/`, and the `ipv4/` + wifi/dhcp/dns/ntp
+network stack.
+
+Note: the preprocessor treats **every file as `#pragma once`**, so modules can
+(and should) `#include` their own dependencies; consumers may include modules
+in any order without double-definition errors.
 
 ## Two TCP Layers
 
@@ -183,10 +198,12 @@ let mac_to_str mac_bytes -> s in …
 #### Wiring I/O at the app layer
 
 ```mtl
-// telnet REPL: wire sock_send as the write function
+// telnet REPL: wire the socket as the write function.
+// fixargN fixes the Nth argument, hence sock_send_to (string first).
 let sock_create cnx nil -> sock in
-let forth_interpreter_setup nil nil (fixarg2 #sock_send sock) nil nil -> f in
-    forth_interpreter_ex text f (fixarg2 #sock_send sock) nil cb;;
+let fixarg2 #sock_send_to sock -> write_fn in
+let forth_interpreter_setup nil nil write_fn nil nil -> f in
+    forth_interpreter_ex text f write_fn nil cb;;
 
 // background task: no I/O → output buffered in f.output
 forth_interpreter_ex text nil nil task nil;;
@@ -201,6 +218,7 @@ forth_interpreter_ex text nil nil task nil;;
 | `sock_write sock` | Flush the output buffer to the TCP connection |
 | `sock_close_after sock` | Mark for close; closes immediately if buffer is empty |
 | `sock_send_and_close sock s` | Send `s` then close |
+| `sock_send_to s sock` | `sock_send` with flipped args, for `fixarg2` callback wiring |
 
 #### http_server.mtl API
 
@@ -212,13 +230,24 @@ forth_interpreter_ex text nil nil task nil;;
 
 ## Testing
 
-Unit tests live in `test/lib/<module>_test.mtl` and are run via:
+**Every lib module ships a test** mirroring its path:
+`lib/<subdir>/<module>.mtl` → `test/lib/<subdir>/<module>_test.mtl`.
+The whole suite runs in the simulator via:
 
 ```sh
-task test:lib
+task test
 ```
 
-Each test file uses the framework from `test/lib/_test.mtl`:
+Failures are marked with `!!` in the output (the simulator always exits 0 —
+grep for `!!`).
+
+`test/lib/_test.mtl` provides capturing stubs for the VM TCP primitives
+(`writetcp` appends to `test_tcp_out`, `test_tcp_partial` simulates short
+writes) so `net/` servers are tested without hardware, and `forth_run` /
+`forth_run_stack` helpers that execute a Forth program against the core
+dictionary and return its buffered output / final stack rendering.
+
+Each test file uses the framework from `test/assertions.mtl`:
 
 ```mtl
 let scenario "my_module" -> s in

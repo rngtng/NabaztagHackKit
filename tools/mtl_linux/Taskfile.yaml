@@ -42,6 +42,17 @@ tasks:
       # PORT: maps container port 80 (HTTP config server) to the given host port.
       - 'docker run --rm --init -p {{.PORT}}:80 -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} {{.CLI_ARGS}}'
 
+  test:
+    desc: 'Run an MTL test program in the simulator; fails on "!!" assertion failures or compile errors.  Usage: task mtl:test SOURCE=<test>.mtl'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [SOURCE]
+    cmds:
+      # the simulator always exits 0, so scan its output: assertion failures
+      # are marked "!!", compile problems print Syntax/Typechecking/OM errors
+      - 'docker run --rm --init -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} | tee /dev/stderr | (! grep -qE "!!|Syntax error|Typechecking error|\?OM Error") > /dev/null'
+
   clean:
     desc: 'Remove Docker image and build artifacts'
     cmds:

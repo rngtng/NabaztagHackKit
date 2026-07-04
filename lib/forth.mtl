@@ -4,7 +4,8 @@
  * App-specific words (nabaztag hardware, net, tasks) are NOT included here;
  * include them separately and provide forth_init_dictionary.
  * I/O is abstracted via f.write_fn (output callback) and f.readline_cb (pending read).
- * The caller wires the transport: e.g. set f.write_fn = fixarg2 #sock_send my_sock.
+ * The caller wires the transport: e.g. set f.write_fn = fixarg2 #sock_send_to my_sock
+ * (fixargN fixes the Nth argument, so sock_send_to takes the string first).
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */

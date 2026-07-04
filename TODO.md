@@ -134,6 +134,19 @@ outside Docker. Everything else is in-container.
 
 # TODOs
 
+0. **Finish the lib extraction** (foundation landed 07-2026: std/sys/net/forth
+   + mirrored test suite; app-piper consumes lib for b64/url/md5/json/word/
+   xmlparser/task/forth-core). Remaining, in rough order:
+   - split `app-piper/utils/utils.mtl` (55-fn grab-bag): most helpers already
+     exist in `lib/std` — delete the duplicates, move the rest, keep
+     app-specific bits (`parse_color`, dump helpers)
+   - `utils/time.mtl` + `timezones.mtl` → `lib/sys` (needs an ntp proto seam);
+     `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)
+   - `lib/hw` from `app-piper/hw` (leds/ears/button/rfid), then `lib/audio`,
+     `lib/chor`, and the `ipv4/` + net stack
+   - template app (`src/app-template`) proving "new app = business logic only"
+   - `task test` should fail non-zero: grep the simulator output for `!!`
+
 1. **Buildable `boot.mtl`** — compose a modern boot from piper's frozen
    `boot/*.mtl` so the remote-load model is fully owned/rebuildable. Biggest new effort.
 2. **`dev:upload`** (Python) — POST a `.sim` to the rabbit's on-device config page so

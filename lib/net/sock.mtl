@@ -29,3 +29,10 @@ fun sock_send_and_close sock s =
 
 fun sock_create cnx callback =
     [sockCnx:cnx sockInput:""::nil sockSize:nil sockOutput:nil sockIndex:nil sockCloseAfter:0 sockCallback:callback];;
+
+/**
+ * sock_send with flipped arguments, for callback wiring:
+ * fixarg2 #sock_send_to sock yields fun(s) that sends s on sock.
+ */
+fun sock_send_to s sock=
+    sock_send sock s;;

@@ -1,5 +1,27 @@
 # Changes
 
+## v0.4.0 - 04-07-2026
+
+  * `lib/` finalized as the canonical reusable MTL library: `std/` (pure data),
+    `sys/` (task scheduler, firmware/bytecode/system/echo), `net/` (sock,
+    http_server, sse_server on VM-native TCP), `forth/` (interpreter core with
+    word helpers, core dictionary, compile words, JSON parser)
+  * removed 22 stale flat `lib/*.mtl` files (outdated duplicates + unused
+    Violet-era helpers)
+  * `app-piper` now consumes lib instead of bundling copies: b64, url, md5,
+    json, word, xmlparser, task scheduler, and the entire Forth core
+    (9 duplicated files + 92 dictionary entries removed); telnet REPL rewired
+    to the lib `write_fn`/`readline_cb` I/O abstraction
+  * test suite: 358 assertions / 27 scenarios (`task test`) — new md5, sock,
+    http_server, task, xmlparser, forth (stack/arithmetic/comparison/logical/
+    control/string/list/output/json) and fixarg-semantics suites;
+    test tree mirrors lib layout
+  * fixed upstream forth bugs found by the tests: ROT rotated backwards,
+    TUCK behaved like OVER, `*/` and `*/mod` divided by the wrong operand,
+    JSON true/false/null in containers looped until out-of-memory,
+    `write_fn` output path never compiled
+  * new `task build:app` compiles app bytecode (preprocess + mtl compile)
+
 ## v0.3.0 - 23-06-2026
 
   * added [dockerized Linux mtl](https://github.com/rngtng/mtl_linux) compiler and simulator under `tools/mtl_linux`

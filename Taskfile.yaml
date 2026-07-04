@@ -86,7 +86,7 @@ tasks:
         vars:
           SOURCE: '{{.SOURCE}}'
           OUT: '{{.TEST_OUT}}/merged.mtl'
-      - task: mtl:simulate
+      - task: mtl:test
         vars:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
