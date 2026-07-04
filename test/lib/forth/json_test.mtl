@@ -1,0 +1,22 @@
+let scenario "forth_json_test" -> s in
+(
+  let test "json_parse root must be object or array" -> t in
+  (
+    assert_nil json_parse "42";
+    assert_nil json_parse "\"hi\""
+  );
+
+  let test "json_parse structures" -> t in
+  (
+    // forth_word_fmt renders lists stack-style (top first), hence reversed
+    assert_equalS "[3 2 1]" forth_word_fmt json_parse "[1, 2, 3]";
+    assert_equalS "{a=1}" forth_word_fmt json_parse "{\"a\": 1}";
+    assert_equalS "[0 -1]" forth_word_fmt json_parse "[true, false]"
+  );
+
+  let test "word_get by path" -> t in
+  (
+    assert_equalS "7" forth_word_fmt word_get (json_parse "{\"a\": {\"b\": 7}}") "a.b";
+    assert_equalS "20" forth_word_fmt word_get (json_parse "{\"a\": [10, 20]}") "a[1]"
+  )
+);

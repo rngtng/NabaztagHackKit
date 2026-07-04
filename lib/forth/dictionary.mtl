@@ -9,6 +9,9 @@
  */
 
 fun forth_core_words=
+        // JSON
+        [ [str: "json-parse"       ] [func:#forth_json_parse ]] ::
+        [ [str: "json-get"         ] [func:#forth_json_get ]] ::
         // Compilation
         [ [str: ":"                ] [ func:#forth_colon]] ::
         [ [str: ";"                ] [ func:#forth_semi        flag:FORTH_IMMEDIATE]] ::
