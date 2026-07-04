@@ -9,7 +9,6 @@ fun itoanil l= if l==nil then '0'::nil else l;;
 fun webip ip= ip_to_str ip;;
 fun webmac key= mac_to_str key;;
 fun useparamip val= str_to_ip val;;
-fun remfromlist l t= listrem l t;;
 
 fun setleds col= for i=0;i<5 do led i col;;
 

@@ -62,5 +62,12 @@ let scenario "list_test" -> s in
       assert_equalI 2 arr.1;
       assert_equalI 3 arr.2
     )
+  );
+
+  let test "liststrlen" -> t in
+  (
+    assert_equalI 0 liststrlen nil 0;
+    assert_equalI 5 liststrlen "ab"::"cde"::nil 0;
+    assert_equalI 7 liststrlen "ab"::"cde"::nil 2
   )
 );

@@ -104,5 +104,11 @@ let scenario "integer_test" -> s in
     assert_equalI 0     CtoI3 "\0\0\0"   0;
     assert_equalI 255   CtoI3 "\0\0\255" 0;
     assert_equalI 65535 CtoI3 "\0\255\255" 0
+  );
+
+  let test "itoanil" -> t in
+  (
+    assert_equalS "0" listtostr itoanil nil;
+    assert_equalS "7" listtostr itoanil '7'::nil
   )
 );

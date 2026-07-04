@@ -1,5 +1,6 @@
 //----------- Data Dump
 #include "lib/std/list.mtl"
+#include "lib/std/integer.mtl"
 
 // echo a string list as string
 fun SLecho list=
@@ -25,3 +26,40 @@ fun ILecholn list=
 fun TLecho tlist=
   Secho TLtoS tlist
 ;;
+
+//----------- Hex/debug dumps
+fun MACecho src i0 ln=
+	for i=0;i<6 do (Secho ctoh strget src i0+i; Secho ".");	if ln then Secholn "";
+	src;;
+
+fun IPecho src i0 ln=
+	for i=0;i<4 do (Iecho strget src i0+i; Secho ".");if ln then Secholn "";
+	src;;
+
+fun dump s=
+	for i0=0;i0<strlen s;i0+16 do
+	(
+		Secho itoh4 i0;
+		Secho " ";
+		for i=0;i<16 do let strget s i0+i -> c in
+		(
+			Secho if c==nil then "  " else ctoh c;
+			Secho " "
+		);
+		Secho " ";
+		for i=0;i<16 do let strget s i0+i -> c in
+		(
+			Secho if c==nil then "  " else if c<32 then "." else ctoa c
+		);
+		Secholn ""
+	);
+
+	s;;
+
+fun dumpListI l0=
+    for l=l0;l!=nil;tl l do (Iecho hd l; Secho "::");
+    Secholn "nil";;
+
+fun dumpListS l0=
+    for l=l0;l!=nil;tl l do (Secho hd l; Secho " :: ");
+    Secholn "nil";;

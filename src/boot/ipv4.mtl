@@ -244,7 +244,7 @@ fun tcpSend2 mac tcp trame=
 var ltcp;;
 
 
-fun remtcp t=set t.stateT=STOFF; set ltcp=remfromlist ltcp t;;
+fun remtcp t=set t.stateT=STOFF; set ltcp=listrem ltcp t;;
 
 var counttcp;;
 

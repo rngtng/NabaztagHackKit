@@ -86,3 +86,6 @@ fun sqrt_ i i0 i1=
 
 fun sqrt i=
     sqrt_ i 0 256;;
+
+// '0' fallback for empty itoa-style char lists
+fun itoanil l=if l==nil then '0'::nil else l;;
