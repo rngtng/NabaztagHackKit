@@ -38,7 +38,7 @@ const LED_TIMEOUT = 600;; // 10 minutes
 
 #include "hw/leds.mtl"
 #include "hw/ears.mtl"
-#include "hw/button.mtl"
+#include "lib/hw/button.mtl"
 
 #include "utils/utils.mtl"
 #include "lib/std/json.mtl"
@@ -55,7 +55,7 @@ const LED_TIMEOUT = 600;; // 10 minutes
 #include "net/net.mtl"
 
 #include "audio/const_data.mtl"
-#include "audio/reclib.mtl"
+#include "lib/hw/reclib.mtl"
 #include "audio/audiolib.mtl"
 #include "audio/midi.mtl"
 #include "audio/record.mtl"
@@ -90,8 +90,11 @@ const LED_TIMEOUT = 600;; // 10 minutes
 fun main=
     // Set the loop callback
     loopcb #task_scheduler;
-    // Initialize the ears
+    // Initialize the ears; hook interactive mode + run-state reset waiters
+    // into the lib state machine
     ears_init;
+    set ears_touched_cb = #_ears_touched_interactive;
+    set ears_post_run_cb = #_ears_reset_check;
     // Load the configuration
     config_load;
     // Init the wifi and start the wifi job
