@@ -1,0 +1,68 @@
+let scenario "sock_test" -> s in
+(
+  let test "sock_create" -> t in
+  (
+    let sock_create 7 nil -> sock in
+    (
+      assert_equalI 7 sock.sockCnx;
+      assert_equalI 0 sock.sockCloseAfter;
+      assert_nil sock.sockOutput;
+      assert_nil sock.sockIndex
+    )
+  );
+
+  let test "sock_send full write" -> t in
+  (
+    test_tcp_reset;
+    let sock_create 7 nil -> sock in
+    (
+      sock_send sock "hello";
+      assert_equalS "hello" test_tcp_out;
+      assert_nil sock.sockOutput;
+      assert_equalI 0 test_tcp_closed
+    )
+  );
+
+  let test "sock_send partial write resumes" -> t in
+  (
+    test_tcp_reset;
+    set test_tcp_partial=3;
+    let sock_create 7 nil -> sock in
+    (
+      sock_send sock "abcdefgh";
+      assert_equalS "abc" test_tcp_out;
+      sock_write sock;
+      assert_equalS "abcdef" test_tcp_out;
+      sock_write sock;
+      assert_equalS "abcdefgh" test_tcp_out;
+      assert_nil sock.sockOutput;
+      assert_equalI 0 test_tcp_closed
+    )
+  );
+
+  let test "sock_close_after flushes then closes" -> t in
+  (
+    test_tcp_reset;
+    set test_tcp_partial=4;
+    let sock_create 7 nil -> sock in
+    (
+      sock_send sock "abcdefgh";
+      sock_close_after sock;
+      assert_equalI 0 test_tcp_closed;
+      sock_write sock;
+      assert_equalS "abcdefgh" test_tcp_out;
+      assert_equalI 1 test_tcp_closed
+    )
+  );
+
+  let test "sock_send_and_close" -> t in
+  (
+    test_tcp_reset;
+    let sock_create 7 nil -> sock in
+    (
+      sock_send_and_close sock "bye";
+      assert_equalS "bye" test_tcp_out;
+      assert_equalI 1 test_tcp_closed
+    )
+  )
+);

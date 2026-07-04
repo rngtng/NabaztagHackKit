@@ -1,0 +1,32 @@
+let scenario "forth_arithmetic_test" -> s in
+(
+  let test "+ - * /" -> t in
+  (
+    assert_equalS "5" forth_run_stack "2 3 +";
+    assert_equalS "4" forth_run_stack "7 3 -";
+    assert_equalS "42" forth_run_stack "6 7 *";
+    assert_equalS "3" forth_run_stack "10 3 /"
+  );
+
+  let test "mod /mod */" -> t in
+  (
+    assert_equalS "1" forth_run_stack "10 3 mod";
+    assert_equalS "1 3" forth_run_stack "10 3 /mod";
+    assert_equalS "6" forth_run_stack "10 2 3 */"
+  );
+
+  let test "1+ 1- 2+ 2-" -> t in
+  (
+    assert_equalS "6" forth_run_stack "5 1+";
+    assert_equalS "4" forth_run_stack "5 1-";
+    assert_equalS "7" forth_run_stack "5 2+";
+    assert_equalS "3" forth_run_stack "5 2-"
+  );
+
+  let test "min max abs" -> t in
+  (
+    assert_equalS "3" forth_run_stack "3 7 min";
+    assert_equalS "7" forth_run_stack "3 7 max";
+    assert_equalS "9" forth_run_stack "0 9 - abs"
+  )
+);

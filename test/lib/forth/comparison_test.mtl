@@ -1,0 +1,31 @@
+let scenario "forth_comparison_test" -> s in
+(
+  let test "< <= = > >= <>" -> t in
+  (
+    assert_equalS "-1" forth_run_stack "1 2 <";
+    assert_equalS "0" forth_run_stack "2 1 <";
+    assert_equalS "-1" forth_run_stack "2 2 <=";
+    assert_equalS "-1" forth_run_stack "2 2 =";
+    assert_equalS "0" forth_run_stack "1 2 =";
+    assert_equalS "-1" forth_run_stack "2 1 >";
+    assert_equalS "-1" forth_run_stack "2 2 >=";
+    assert_equalS "-1" forth_run_stack "1 2 <>";
+    assert_equalS "0" forth_run_stack "2 2 <>"
+  );
+
+  let test "zero comparisons" -> t in
+  (
+    assert_equalS "-1" forth_run_stack "0 0=";
+    assert_equalS "0" forth_run_stack "5 0=";
+    assert_equalS "-1" forth_run_stack "0 5 - <0";
+    assert_equalS "-1" forth_run_stack "5 >0";
+    assert_equalS "-1" forth_run_stack "5 0<>"
+  );
+
+  let test "string comparison" -> t in
+  (
+    assert_equalS "-1" forth_run_stack "\"abc\" \"abc\" =";
+    assert_equalS "0" forth_run_stack "\"abc\" \"abd\" =";
+    assert_equalS "-1" forth_run_stack "\"abc\" \"abd\" <"
+  )
+);

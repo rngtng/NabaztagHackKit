@@ -1,0 +1,20 @@
+let scenario "forth_logical_test" -> s in
+(
+  let test "true false" -> t in
+  (
+    assert_equalS "-1" forth_run_stack "true";
+    assert_equalS "0" forth_run_stack "false"
+  );
+
+  let test "and or xor invert" -> t in
+  (
+    assert_equalS "-1" forth_run_stack "true true and";
+    assert_equalS "0" forth_run_stack "true false and";
+    assert_equalS "-1" forth_run_stack "true false or";
+    assert_equalS "0" forth_run_stack "false false or";
+    assert_equalS "-1" forth_run_stack "true false xor";
+    assert_equalS "0" forth_run_stack "true true xor";
+    assert_equalS "0" forth_run_stack "true invert";
+    assert_equalS "-1" forth_run_stack "false invert"
+  )
+);

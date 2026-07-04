@@ -6,16 +6,66 @@
 #include "lib/std/b64.mtl"
 #include "lib/std/url.mtl"
 #include "lib/std/json.mtl"
+#include "lib/std/md5.mtl"
 
-// Stubs for TCP primitives required by lib/net modules at compile time.
-// Only pure functions are called in tests; TCP fns are never invoked.
+// Capturing stubs for the VM TCP primitives required by lib/net modules.
+// writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
 const TCPWRITE=0;;
 const TCPCLOSE=-1;;
-fun writetcp t msg i= 0;;
-fun closetcp t= 0;;
-fun tcpcb t cb= 0;;
+var test_tcp_out="";;
+var test_tcp_closed=0;;
+var test_tcp_partial;;
 
+fun test_tcp_reset=
+  set test_tcp_out="";
+  set test_tcp_closed=0;
+  set test_tcp_partial=nil;
+  0;;
+
+fun writetcp t msg i=
+  let if i==nil then 0 else i -> start in
+  let (strlen msg)-start -> remaining in
+  let if test_tcp_partial!=nil && test_tcp_partial<remaining then test_tcp_partial else remaining -> n in
+  (
+    set test_tcp_out=strcat test_tcp_out strsub msg start n;
+    start+n
+  );;
+
+fun closetcp t= set test_tcp_closed=1; 0;;
+fun tcpcb t cb= 0;;
+fun listentcp port cb= 0;;
+
+#include "lib/net/sock.mtl"
+#include "lib/net/http_server.mtl"
 #include "lib/net/sse_server.mtl"
+
+// Forth: core dictionary only; run a program, return buffered output / stack
+#include "lib/forth.mtl"
+
+fun forth_init_dictionary= forth_init_core_dictionary;;
+
+fun forth_run src=
+  set forth_dictionary=nil;
+  forth_init_dictionary;
+  let forth_interpreter_setup src nil nil nil nil -> f in
+  (
+    forth_interpreter_loop f;
+    strcatlist rev f.output nil
+  );;
+
+fun forth_run_stack src=
+  set forth_dictionary=nil;
+  forth_init_dictionary;
+  let forth_interpreter_setup src nil nil nil nil -> f in
+  (
+    forth_interpreter_loop f;
+    forth_list_to_str f.stack " "
+  );;
+
+var test_http_req;;
+fun test_http_handler req=
+  set test_http_req=req;
+  "<html>ok</html>";;
 
 fun cmpI a b= if a<b then -1 else 1;;
 fun gtI x a= x>a;;
@@ -29,5 +79,16 @@ fun lib_test=
 #include "test/lib/std/b64_test.mtl"
 #include "test/lib/std/url_test.mtl"
 #include "test/lib/std/json_test.mtl"
+#include "test/lib/std/md5_test.mtl"
+#include "test/lib/net/sock_test.mtl"
+#include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"
+#include "test/lib/forth/stack_test.mtl"
+#include "test/lib/forth/arithmetic_test.mtl"
+#include "test/lib/forth/comparison_test.mtl"
+#include "test/lib/forth/logical_test.mtl"
+#include "test/lib/forth/control_test.mtl"
+#include "test/lib/forth/string_test.mtl"
+#include "test/lib/forth/list_test.mtl"
+#include "test/lib/forth/output_test.mtl"
 0;;

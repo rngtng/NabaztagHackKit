@@ -1,0 +1,29 @@
+let scenario "forth_string_test" -> s in
+(
+  let test "string literals" -> t in
+  (
+    assert_equalS "hello" forth_run_stack "\"hello\""
+  );
+
+  let test "$repeat" -> t in
+  (
+    assert_equalS "ababab" forth_run_stack "\"ab\" 3 $repeat"
+  );
+
+  let test "lower upper" -> t in
+  (
+    assert_equalS "abc" forth_run_stack "\"AbC\" lower";
+    assert_equalS "ABC" forth_run_stack "\"AbC\" upper"
+  );
+
+  let test ">number" -> t in
+  (
+    assert_equalS "123" forth_run_stack "\"123\" >number"
+  );
+
+  let test "url-encode url-decode" -> t in
+  (
+    assert_equalS "a%20b" forth_run_stack "\"a b\" url-encode";
+    assert_equalS "a b" forth_run_stack "\"a%20b\" url-decode"
+  )
+);
