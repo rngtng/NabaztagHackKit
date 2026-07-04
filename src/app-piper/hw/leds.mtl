@@ -1,3 +1,8 @@
+/**
+ * LED animation policy — when to blink what, driven by app state
+ * (sleep/run/interactive/info/audio). The LED primitives, oscillator and
+ * override table come from lib/hw/leds.mtl.
+ */
 #include "protos/sleep_protos.mtl"
 #include "protos/ears_protos.mtl"
 #include "protos/record_protos.mtl"
@@ -5,26 +10,11 @@
 #include "protos/audiolib_protos.mtl"
 #include "protos/info_protos.mtl"
 #include "protos/interactive_protos.mtl"
-#include "protos/json_protos.mtl"
 #include "lib/protos/task_protos.mtl"
 #include "protos/leds_protos.mtl"
+#include "lib/hw/leds.mtl"
 
 var _leds_net_activity = 0;;
-
-const LEDS_OSC = {
-    0 0 0 0 0 0 1 1 2 3 3 4 5 6 7 8
-    9 10 12 13 15 16 18 19 21 23 25 27 29 31 33 35
-    37 39 42 44 46 49 51 54 56 59 62 64 67 70 73 76
-    79 81 84 87 90 93 96 99 103 106 109 112 115 118 121 124
-};;
-
-fun _leds_osc x=
-    let (x>>6)&3 -> q in
-    let x&255 -> x in
-    if q==0 then LEDS_OSC.x
-    else if q==1 then 255-LEDS_OSC.(127-x)
-    else if q==2 then 255-LEDS_OSC.(x-128)
-    else LEDS_OSC.(255-x);;
 
 /**
  * Run base led animation
@@ -33,11 +23,7 @@ fun _leds_base_animation=
     if !sleep_is_sleeping && !ears_detecting then
         let if leds_override.LED_BASE != -1 then leds_override.LED_BASE else RGB_GREEN -> base_color in
         if leds_base_breathing then
-            let _leds_osc time_ms>>4 -> v in
-            let (base_color >> 16) * v / 255 * 0x010000 +
-                ((base_color >> 8) & 0xFF) * v / 255 * 0x000100 +
-                (base_color & 0xFF) * v / 255 -> color in
-                leds_set_color LED_BASE color
+            leds_set_color LED_BASE (leds_scale_color base_color (leds_osc time_ms>>4))
         else
             leds_set_color LED_BASE base_color;
     0;;
@@ -86,53 +72,6 @@ fun _leds_nose_animation=
     0;;
 
 /**
- * Set led i to the color rgbCode
- */
-fun leds_set_color i col=
-    led i col;;
-
-/**
- * Set led i to the color rgbCode, with override
- */
-fun leds_set_color_override i col=
-    leds_set_color i (if leds_override.i != -1 then leds_override.i else col);;
-
-/**
- * Set all the leds to the color rgbCode
- */
-fun leds_set_all col=
-    for i=0;i<5 do leds_set_color i col;;
-
-/**
- * Turn off all the leds
- */
-fun leds_turn_off=
-    leds_set_all RGB_BLACK;;
-
-/**
- * Return LEDs overrides as JSON
- */
-fun _leds_overrides_json=
-    strcatlist
-        "{\n"::
-            (json_int "nose" leds_override.LED_NOSE ) :: ",\n" ::
-            (json_int "left" leds_override.LED_BODY_LEFT ) :: ",\n" ::
-            (json_int "middle" leds_override.LED_BODY_MIDDLE ) :: ",\n" ::
-            (json_int "right" leds_override.LED_BODY_RIGHT ) :: ",\n" ::
-            (json_int "base" leds_override.LED_BASE ) :: "\n" ::
-        "}" :: nil;;
-
-/**
- * Return leds status as JSON
- */
-fun leds_json=
-    strcatlist
-        "{\n"::
-            (json_int "base_breathing" leds_base_breathing) :: ",\n" ::
-            (json_obj "overrides" _leds_overrides_json) :: "\n" ::
-        "}" :: nil;;
-
-/**
  * Base led task
  */
 fun leds_base_task task=
@@ -162,6 +101,6 @@ fun leds_nose_task task=
  * Initialize the leds
  */
 fun leds_init=
-    set leds_override = tabnew -1 5;
+    leds_setup;
     task_start "nose-led" #leds_nose_task;
     task_start "base-led" #leds_base_task;;
