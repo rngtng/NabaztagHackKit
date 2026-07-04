@@ -4,7 +4,7 @@
  * This code is licensed under the MIT License
  */
 
-#include "protos/task_protos.mtl"
+#include "lib/protos/task_protos.mtl"
 
 fun _forth_task task text=
     forth_interpreter_ex text nil nil task nil; // TODO cb ?

@@ -1,7 +1,7 @@
 #include "utils/timezones.mtl"
 #include "protos/ntp_protos.mtl"
 #include "protos/json_protos.mtl"
-#include "protos/task_protos.mtl"
+#include "lib/protos/task_protos.mtl"
 #include "protos/time_protos.mtl"
 
 //--------------------------------------------------------------------------------------------------

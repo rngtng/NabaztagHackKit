@@ -1,4 +1,4 @@
-#include "protos/task_protos.mtl"
+#include "lib/protos/task_protos.mtl"
 
 // -------------------------------------------------------------------------------------------------
 // ICMP

@@ -2,7 +2,7 @@
 #include "protos/leds_protos.mtl"
 #include "protos/ears_protos.mtl"
 #include "protos/run_protos.mtl"
-#include "protos/task_protos.mtl"
+#include "lib/protos/task_protos.mtl"
 #include "protos/json_protos.mtl"
 
 /*

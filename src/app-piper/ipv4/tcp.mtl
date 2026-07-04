@@ -1,5 +1,5 @@
 #include "protos/tcp_protos.mtl"
-#include "protos/task_protos.mtl"
+#include "lib/protos/task_protos.mtl"
 #include "protos/arp_protos.mtl"
 
 const TFIN=0x01;;
