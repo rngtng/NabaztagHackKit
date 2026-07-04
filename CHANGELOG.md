@@ -1,5 +1,18 @@
 # Changes
 
+## v0.7.0 - 04-07-2026
+
+  * `lib/audio/` — `audiolib` (WAV playback engine: local sample lists or
+    HTTP streaming with flow-controlled buffering, button3 volume curve)
+    and `midi` (embedded notes/jingles); app keeps const_data assets and
+    the record-upload flow
+  * `lib/protos/http_client_protos.mtl` — the HTTP-client contract
+    lib/audio streams through (implemented by app net/http.mtl until the
+    lib/net client extraction)
+  * tests: `test/lib/audio/` (volume curve, silence padding, idle-state
+    predicates, MIDI table well-formedness); suite 435 assertions /
+    35 scenarios
+
 ## v0.6.0 - 04-07-2026
 
   * `lib/hw/` — rabbit hardware building blocks on VM natives:

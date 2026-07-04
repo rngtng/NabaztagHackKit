@@ -1,0 +1,12 @@
+let scenario "midi_test" -> s in
+(
+  let test "MIDI data tables are well-formed" -> t in
+  (
+    // every jingle index named in midi_protos must exist
+    assert_equal (tablen MIDI) > MIDI_RFID_OK;
+    // standard MIDI file header on notes and jingles
+    assert_equalS "MThd" strsub MIDI_NOTES.0 0 4;
+    assert_equalS "MThd" strsub MIDI.MIDI_RFID_OK 0 4;
+    assert_equalS "MThd" strsub MIDI.MIDI_START_RECORD 0 4
+  )
+);

@@ -142,7 +142,9 @@ outside Docker. Everything else is in-container.
    - ~~`lib/hw`~~ done 07-2026 (button/leds/ears/rfid/reclib-mic behind
      `ears_touched_cb`/`ears_post_run_cb`/`rfid_poll` seams; LED animations
      and record-upload flow stay app-side)
-   - `lib/audio` (playback/audiolib/midi), `lib/chor`
+   - ~~`lib/audio`~~ done 07-2026 (audiolib WAV engine + midi behind the
+     http-client contract; const_data assets + record upload flow stay app)
+   - `lib/chor`
    - the `ipv4/` + wifi/dhcp/dns/ntp/http-client stack → lib, unlocking
      device-standalone template apps (and later boot/app convergence);
      `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)

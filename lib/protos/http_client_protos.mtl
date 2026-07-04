@@ -1,0 +1,15 @@
+/**
+ * Contract for an HTTP client, used by lib/audio streaming playback.
+ * Implemented today by src/app-piper/net/http.mtl; a lib/net http client
+ * is a planned extraction (see TODO.md).
+ */
+proto http_abort 1;;
+proto http_enable 2;;
+proto http_get_content 1;;
+proto http_inactive 1;;
+proto http_is_enabled 1;;
+proto http_request 5;;
+
+const HTTP_NORMAL=0;;
+const HTTP_STREAM=1;;
+const HTTP_DIRECT=2;;
