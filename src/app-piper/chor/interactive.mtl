@@ -1,11 +1,11 @@
-#include protos/button_protos.mtl
-#include protos/trame_protos.mtl
-#include protos/interactive_protos.mtl
-#include protos/json_protos.mtl
-#include protos/http_protos.mtl
-#include protos/midi_protos.mtl
+#include "protos/button_protos.mtl"
+#include "protos/trame_protos.mtl"
+#include "protos/interactive_protos.mtl"
+#include "protos/json_protos.mtl"
+#include "protos/http_protos.mtl"
+#include "protos/midi_protos.mtl"
 #ifdef XMPP
-#include protos/xmpp_protos.mtl
+#include "protos/xmpp_protos.mtl"
 #endif
 
 //--------------------------------------------------------------------------------------------------

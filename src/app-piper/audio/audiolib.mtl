@@ -1,5 +1,5 @@
-#include protos/audiolib_protos.mtl
-#include protos/http_protos.mtl
+#include "protos/audiolib_protos.mtl"
+#include "protos/http_protos.mtl"
 
 // wav playback
 

@@ -1,8 +1,8 @@
-#include protos/interactive_protos.mtl
-#include protos/streaming_protos.mtl
-#include protos/record_protos.mtl
-#include protos/midi_protos.mtl
-#include protos/run_protos.mtl
+#include "protos/interactive_protos.mtl"
+#include "protos/streaming_protos.mtl"
+#include "protos/record_protos.mtl"
+#include "protos/midi_protos.mtl"
+#include "protos/run_protos.mtl"
 
 // **********************
 // Record

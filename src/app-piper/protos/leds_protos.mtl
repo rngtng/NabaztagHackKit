@@ -16,4 +16,4 @@ var leds_base_breathing = 1;; // Enable breathing effect on bottom base
 var leds_base_color = 0x00ff00;; // RRGGBB
 var leds_override;; // LEDs color override (array of 5 colors, -1 = no override)
 
-#include protos/colors.mtl
+#include "protos/colors.mtl"

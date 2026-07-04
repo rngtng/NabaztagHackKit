@@ -1,4 +1,4 @@
-#include protos/ascii_protos.mtl
+#include "protos/ascii_protos.mtl"
 
 fun strstr s p i=strfind s i p 0 nil;;
 fun itoanil l=if l==nil then '0'::nil else l;;

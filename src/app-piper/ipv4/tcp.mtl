@@ -1,6 +1,6 @@
-#include protos/tcp_protos.mtl
-#include protos/task_protos.mtl
-#include protos/arp_protos.mtl
+#include "protos/tcp_protos.mtl"
+#include "protos/task_protos.mtl"
+#include "protos/arp_protos.mtl"
 
 const TFIN=0x01;;
 const TSYN=0x02;;
