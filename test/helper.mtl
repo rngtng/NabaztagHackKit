@@ -1,5 +1,5 @@
-#include "lib/echo.mtl"
-#include "lib/system.mtl"
+#include "lib/sys/echo.mtl"
+#include "lib/sys/system.mtl"
 
 fun scenario name=
   SLecholn "\n##### "::name::": #####"::nil

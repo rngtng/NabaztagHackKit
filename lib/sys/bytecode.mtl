@@ -1,3 +1,6 @@
+// External dep: HTTP client providing response-body access (e.g. src/boot/http.mtl)
+proto httpgetcontent 1;;
+
 // Parse "amber" format bytecode from HTTP response body.
 // Returns bytecode binary string, or nil if not a valid amber payload.
 fun getbytecode res=

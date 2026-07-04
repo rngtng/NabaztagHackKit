@@ -1,4 +1,4 @@
-#include "lib/firmware"
+#include "lib/sys/firmware"
 
 // Boot wrappers that add LED feedback around the pure lib functions
 fun boot_getfirmware req=
