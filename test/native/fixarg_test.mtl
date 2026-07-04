@@ -1,0 +1,12 @@
+let scenario "fixarg_test" -> s in
+(
+  let test "fixarg2 fixes the 2nd argument" -> t in
+  (
+    assert_equalS "x|y" call (fixarg2 #test_fixarg_cat2 "y") ["x"]
+  );
+
+  let test "fixarg3 fixes the 3rd argument" -> t in
+  (
+    assert_equalS "a|b|c" call (fixarg3 #test_fixarg_cat3 "c") ["a" "b"]
+  )
+);
