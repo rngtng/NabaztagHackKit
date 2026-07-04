@@ -25,6 +25,18 @@ fun config_get_dst= 0;;
 #include "lib/hw/rfid.mtl"
 #include "lib/hw/reclib.mtl"
 
+// Stubs for the lib http-client contract (lib/protos/http_client_protos.mtl)
+// required by lib/audio streaming; never invoked in tests.
+fun http_request method url data cb mode= 0;;
+fun http_abort req= 0;;
+fun http_enable req en= 0;;
+fun http_is_enabled req= 0;;
+fun http_inactive req= 0;;
+fun http_get_content res= "";;
+
+#include "lib/audio/audiolib.mtl"
+#include "lib/audio/midi.mtl"
+
 // Capturing stubs for the VM TCP primitives required by lib/net modules.
 // writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
 const TCPWRITE=0;;
@@ -103,6 +115,8 @@ fun lib_test=
 #include "test/lib/hw/ears_test.mtl"
 #include "test/lib/hw/rfid_test.mtl"
 #include "test/lib/hw/reclib_test.mtl"
+#include "test/lib/audio/audiolib_test.mtl"
+#include "test/lib/audio/midi_test.mtl"
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"

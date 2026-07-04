@@ -1,0 +1,23 @@
+let scenario "audiolib_test" -> s in
+(
+  let test "volume curve from button" -> t in
+  (
+    assert_equalI 255 _audiolib_vol_from_button 255;
+    assert_equalI 1 _audiolib_vol_from_button 0;
+    assert_equalI 192 _audiolib_vol_from_button 128
+  );
+
+  let test "silence padding buffer" -> t in
+  (
+    assert_equalI 2048 strlen _audiolib_wav_get_zeros;
+    assert_equalI 0 strget _audiolib_wav_get_zeros 0;
+    assert_equalI 0 strget _audiolib_wav_get_zeros 2047
+  );
+
+  let test "idle state" -> t in
+  (
+    assert_equalI 0 audiolib_wav_running;
+    audiolib_wav_stop;
+    assert_equalI 0 audiolib_wav_running
+  )
+);

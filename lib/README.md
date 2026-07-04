@@ -62,6 +62,11 @@ lib/
 │   ├── rfid.mtl          Debounced tag detection (rfidGet) — rfid_poll
 │   └── reclib.mtl        Microphone capture → WAV/RIFF (recStart/recStop/recVol)
 │
+├── audio/           Sound on the play*/sndVol natives
+│   ├── audiolib.mtl      WAV playback engine: local sample lists or HTTP
+│   │                     streaming (flow-controlled buffering), button3 volume
+│   └── midi.mtl          Embedded MIDI notes/jingles played through audiolib
+│
 ├── forth/           Forth interpreter (sub-modules, assembled by forth.mtl)
 │   ├── interpreter.mtl   Tokenizer + interpreter loop
 │   ├── compile.mtl       : ; ( constant defined? words
@@ -74,8 +79,10 @@ lib/
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
 
-Future building blocks (extraction from `src/app-piper` pending): `audio/`
-(playback/midi), `chor/`, and the `ipv4/` + wifi/dhcp/dns/ntp network stack.
+Future building blocks (extraction from `src/app-piper` pending): `chor/`
+and the `ipv4/` + wifi/dhcp/dns/ntp network stack. `lib/audio` streaming
+depends on the HTTP-client contract (`lib/protos/http_client_protos.mtl`),
+implemented today by `src/app-piper/net/http.mtl`.
 
 `lib/hw` decouples from app policy via seams: LED *animations* (what blinks
 when) stay app-side on top of the lib primitives; the ears state machine
