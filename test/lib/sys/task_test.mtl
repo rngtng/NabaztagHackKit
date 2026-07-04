@@ -1,0 +1,35 @@
+let scenario "task_test" -> s in
+(
+  let test "task_start and task_get" -> t in
+  (
+    assert_nil task_get "t1";
+    task_start "t1" #test_task_fn;
+    assert_equalS "run" task_status_fmt task_get "t1"
+  );
+
+  let test "task_scheduler runs tasks" -> t in
+  (
+    set test_task_runs=0;
+    task_scheduler;
+    assert_equalI 1 test_task_runs;
+    task_scheduler;
+    assert_equalI 2 test_task_runs
+  );
+
+  let test "suspend resume stop" -> t in
+  (
+    let task_get "t1" -> task in
+    (
+      task_suspend task.task_id;
+      assert_equalS "suspend" task_status_fmt task_get "t1";
+      set test_task_runs=0;
+      task_scheduler;
+      assert_equalI 0 test_task_runs;
+      task_resume task.task_id;
+      assert_equalS "run" task_status_fmt task_get "t1";
+      task_stop task.task_id;
+      task_scheduler;
+      assert_nil task_get "t1"
+    )
+  )
+);

@@ -1,0 +1,18 @@
+let scenario "xmlparser_test" -> s in
+(
+  let test "ParseXML element, attribute, nested text" -> t in
+  (
+    let ParseXML "<a x=\"1\"><b>hi</b></a>" -> resp in
+    match resp.inXml with
+    (ContentElement root ->
+      assert_equalS "a" root.nameS;
+      assert_equalS "1" Xml_GetElementAttribute root "x";
+      let Xml_FindFirstElementNamed root "b" -> b in
+      (
+        assert_equalS "b" b.nameS;
+        assert_equalS "hi" Xmp_GetTextContent b
+      );
+      0) |
+    (_ -> failed "ContentElement" "other"; 0)
+  )
+);

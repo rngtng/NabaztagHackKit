@@ -7,6 +7,11 @@
 #include "lib/std/url.mtl"
 #include "lib/std/json.mtl"
 #include "lib/std/md5.mtl"
+#include "lib/std/xmlparser.mtl"
+#include "lib/sys/task.mtl"
+
+var test_task_runs=0;;
+fun test_task_fn task= set test_task_runs=test_task_runs+1; TaskRun;;
 
 // Capturing stubs for the VM TCP primitives required by lib/net modules.
 // writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
@@ -78,6 +83,8 @@ fun lib_test=
 #include "test/lib/std/url_test.mtl"
 #include "test/lib/std/json_test.mtl"
 #include "test/lib/std/md5_test.mtl"
+#include "test/lib/std/xmlparser_test.mtl"
+#include "test/lib/sys/task_test.mtl"
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"
