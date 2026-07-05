@@ -49,8 +49,18 @@ lib/
 │   ├── system.mtl        System/OS helpers
 │   └── echo.mtl          Debug output helpers (dumps, MAC/IP echo)
 │
-├── net/             Networking on VM-native TCP
-│   ├── tcp.mtl           VM adapter: tcpSend/tcpListen natives → writetcp/listentcp API
+├── net/             The full networking layer
+│   ├── ipv4/             ARP/IP/TCP/UDP/ICMP in MTL over raw 802.11 frames
+│   │                     (netSend/netCb natives — the device VM has no TCP);
+│   │                     tcpudp_emu.mtl is the SIMU backend of the same tcp_*
+│   │                     API; ipv4.mtl assembles and exports writetcp aliases
+│   ├── net.mtl           Frame dispatcher + net_init — include this for the stack
+│   ├── wifi.mtl          Association state machine (scan/auth/DHCP hand-off)
+│   ├── dhcp.mtl dns.mtl ntp.mtl   Clients
+│   ├── http.mtl          HTTP client (implements http_client_protos contract)
+│   ├── tcp.mtl           Bare-sim transport: tcpSend natives → writetcp API
+│   │                     (for stackless simulator apps; include EITHER this
+│   │                     OR the ipv4 stack, never both)
 │   ├── sock.mtl          Sock write/close helpers (writetcp/closetcp)
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
@@ -79,10 +89,10 @@ lib/
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
 
-Future building blocks (extraction from `src/app-piper` pending): `chor/`
-and the `ipv4/` + wifi/dhcp/dns/ntp network stack. `lib/audio` streaming
-depends on the HTTP-client contract (`lib/protos/http_client_protos.mtl`),
-implemented today by `src/app-piper/net/http.mtl`.
+Future building blocks (extraction from `src/app-piper` pending): `chor/`.
+Device configuration (wifi credentials, static IP, proxy, timezone) always
+stays app-side: lib modules declare `proto config_get_*` seams and the app
+supplies the accessors (see `src/app-template/app.mtl` for the full list).
 
 `lib/hw` decouples from app policy via seams: LED *animations* (what blinks
 when) stay app-side on top of the lib primitives; the ears state machine
@@ -99,19 +109,27 @@ Note: the preprocessor treats **every file as `#pragma once`**, so modules can
 (and should) `#include` their own dependencies; consumers may include modules
 in any order without double-definition errors.
 
-## Two TCP Layers
+## TCP transports
 
-There are two distinct TCP abstraction levels in this codebase. Mixing them
-causes "unknown label" compile errors.
+The servers (`sock`, `http_server`, `sse_server`) are written against the
+`writetcp` / `closetcp` / `tcpcb` / `listentcp` API. Two interchangeable
+transports provide it — **include exactly one**:
 
-| Layer | Where | Primitives used |
+| Transport | Include | Backend |
 |---|---|---|
-| **VM native** | `lib/` | `writetcp`, `closetcp`, `tcpcb`, `listentcp` |
-| **App wrapper** | `src/app/` | `tcp_write`, `tcp_close`, `tcp_set_cb`, `sock_send` |
+| Full stack | `lib/net/net.mtl` | device: MTL ARP/IP/TCP over raw frames; SIMU builds swap in `ipv4/tcpudp_emu.mtl` over the sim's TCP natives |
+| Bare simulator | `lib/net/tcp.mtl` | the sim's `tcpSend`/`tcpListen` natives directly — no stack, simulator-only |
 
-`lib/sse_server.mtl` and `lib/http_server.mtl` use VM-native calls and are
-suitable for inclusion in both lib-level tests and app code.
-`src/app/srv/` modules use the app-level wrappers.
+The stack additionally exposes the richer `tcp_open`/`tcp_write`/`tcp_set_cb`
+client API (used by the HTTP client and app servers). TCP callback event
+values (`TCPWRITE`/`TCPREAD`/`TCPCLOSE`/`TCPSTART`) live in
+`lib/protos/tcp_protos.mtl`.
+
+**Duplicate-definition rule** (load-bearing): a call site binds the most
+recent definition of a name at its point of compilation; later redefinitions
+do NOT rebind earlier call sites. That is how `tcpudp_emu.mtl` overrides the
+device TCP for everything included after it — and why an override must be
+included *before* its consumers.
 
 ## The Sock Type
 
