@@ -1,5 +1,17 @@
 # Changes
 
+## v0.9.0 - 05-07-2026
+
+  * `lib/chor/` — the choreography engine: the Violet chor-bytecode
+    interpreter (LED/palette/ear/MIDI commands, waits, conditional jumps)
+    and the classic color palettes, running on lib/hw + lib/audio; the app
+    schedules `chor_run_cmd` through `chor_started_cb`/`chor_stopped_cb`
+    seams. trame/streaming/interactive/info stay app-side (Violet server
+    protocol). Tests: palette rows/modes, engine end-to-end on a crafted
+    bytecode program. Suite 462 assertions / 40 scenarios.
+    This completes the planned lib extraction: std, sys, net (full stack),
+    hw, audio, chor, forth.
+
 ## v0.8.0 - 05-07-2026
 
   * **the network stack lives in `lib/net`** — ipv4/ (ARP/IP/TCP/UDP/ICMP in

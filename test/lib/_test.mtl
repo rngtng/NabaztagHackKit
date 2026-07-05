@@ -54,6 +54,12 @@ fun tcp_reset= 0;;
 
 #include "lib/audio/audiolib.mtl"
 #include "lib/audio/midi.mtl"
+#include "lib/chor/choreographic.mtl"
+
+var test_chor_started=0;;
+var test_chor_ended=0;;
+fun test_chor_started_cb args= set test_chor_started=args;;
+fun test_chor_end_cb args= set test_chor_ended=args; 0;;
 
 // Capturing stubs for the VM TCP primitives required by lib/net modules.
 // writetcp appends to test_tcp_out; test_tcp_partial simulates short writes.
@@ -135,6 +141,8 @@ fun lib_test=
 #include "test/lib/hw/reclib_test.mtl"
 #include "test/lib/audio/audiolib_test.mtl"
 #include "test/lib/audio/midi_test.mtl"
+#include "test/lib/chor/palette_test.mtl"
+#include "test/lib/chor/choreographic_test.mtl"
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"

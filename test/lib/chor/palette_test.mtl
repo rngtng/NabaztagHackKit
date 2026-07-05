@@ -1,0 +1,26 @@
+let scenario "palette_test" -> s in
+(
+  let test "palette_set_current" -> t in
+  (
+    palette_set_current 1;   // violet row
+    assert_equalI 0x5F00FF palette_current.0;
+    assert_equalI 0xFF0092 palette_current.6;
+    assert_equalI 0 palette_current.7
+  );
+
+  let test "palette_set_current_mode" -> t in
+  (
+    palette_set_current_mode 9;   // >= 8: random, resets to palette 0
+    assert_equalI 1 palette_current_is_random;
+    assert_equalI 0xFF0C00 palette_current.0;
+    palette_set_current_mode 2;   // fixed: lumiere (all white)
+    assert_equalI 0 palette_current_is_random;
+    assert_equalI 0xFFFFFF palette_current.0
+  );
+
+  let test "palette_set_current_color" -> t in
+  (
+    palette_set_current_color 3 0x123456;
+    assert_equalI 0x123456 palette_current.3
+  )
+);

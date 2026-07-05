@@ -1,0 +1,16 @@
+let scenario "choreographic_test" -> s in
+(
+  let test "engine runs a program and fires the seams" -> t in
+  (
+    // 4-byte header, initial wait, then: SET_LEDS_COLOR r=1 g=2 b=3, delay 0
+    set test_chor_started=0;
+    set test_chor_ended=0;
+    set chor_started_cb = #test_chor_started_cb;
+    chor_start_ex "\0\0\0\0\0\9\1\2\3\0" #test_chor_end_cb 42;
+    assert_equalI 42 test_chor_started;
+    assert_equalI 0 test_chor_ended;
+    chor_run_cmd 42;
+    assert_equalI 42 test_chor_ended;
+    set chor_started_cb = nil
+  )
+);
