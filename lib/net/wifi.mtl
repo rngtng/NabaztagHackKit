@@ -49,6 +49,8 @@ var _wifi_try;;
 #include "lib/std/net.mtl"
 #include "lib/std/json.mtl"
 #include "lib/sys/task.mtl"
+#include "lib/sys/echo.mtl"
+#include "lib/hw/ears.mtl"
 #include "lib/hw/leds.mtl"
 
 // App-provided configuration accessors (device config lives app-side)

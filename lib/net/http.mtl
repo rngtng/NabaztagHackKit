@@ -1,6 +1,13 @@
+#include "lib/std/url.mtl"
+#include "lib/std/net.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/integer.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/json.mtl"
+#include "lib/sys/echo.mtl"
 #include "lib/protos/http_client_protos.mtl"
 #include "lib/protos/tcp_protos.mtl"
-#include "lib/protos/time_protos.mtl"
+#include "lib/sys/time.mtl"
 
 // App-provided configuration accessors (device config lives app-side)
 proto config_get_proxy 0;;
