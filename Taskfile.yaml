@@ -141,40 +141,37 @@ tasks:
         vars:
           SOURCE: '{{.APP_OUT}}/merged.mtl'
 
-  build:app:piper:
-    desc: 'Build app bytecode. Preprocess files, then compile. Usage: task build:app [SOURCE=src/app-piper/main.mtl] [OUT=build/app]'
+  build:app:template:
+    desc: 'Build app-template via build:app. Usage: task build:app:template [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
-      APP_OUT: '{{.OUT}}/app'
     cmds:
-      - task: preprocessor:preprocess
+      - task: build:app
         vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-      - task: mtl:compile
+          TARGET: app-template
+
+  simulate:app:template:
+    desc: 'Simulate app-template via simulate:app. HTTP UI at http://localhost:8080. Usage: task simulate:app:template [OUT=build] [PORT=8080]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: simulate:app
         vars:
-          SOURCE: '{{.APP_OUT}}/merged.mtl'
-          OUT: '{{.APP_OUT}}'
-          SIGN: 'false'
+          TARGET: app-template
+
+  build:app:piper:
+    desc: 'Build app-piper via build:app. Usage: task build:app:piper [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: build:app
+        vars:
+          TARGET: app-piper
 
   simulate:app:piper:
-    desc: 'Preprocess and simulate an app. Served at http://localhost:8080. Usage: task simulate:app [SOURCE=src/app-piper/main.mtl] [OUT=build]'
+    desc: 'Simulate app-piper via simulate:app. HTTP UI at http://localhost:8080. Usage: task simulate:app:piper [OUT=build] [PORT=8080]'
     dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
-      SIMU_APP_OUT: '{{.OUT}}/app_simu'
     cmds:
-      - task: preprocessor:preprocess
+      - task: simulate:app
         vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.SIMU_APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-          DEFINES: 'SIMU'
-      - task: mtl:simulate
-        vars:
-          SOURCE: '{{.SIMU_APP_OUT}}/merged.mtl'
+          TARGET: app-piper
 
   build:app:sse:
     desc: 'Build SSE server. Usage: task build:sse [OUT=build/sse]'
