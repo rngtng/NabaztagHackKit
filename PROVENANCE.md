@@ -79,3 +79,55 @@ Local changes on top of the vendored sources:
   Exit 0 or 124 (timed out while still running) is a pass; anything else (e.g. 139,
   segfault) fails the task — the same VM interpreter never exits on its own, so a
   bounded smoke run is the only meaningful pass/fail signal.
+Per `CLAUDE.md`'s vendoring rule ("copy sources in, don't submodule — record
+origin repo + commit + local changes"). This is the backport bridge: what came
+from where, and what changed here so fixes can flow back upstream.
+
+## Where each part came from
+
+| Path | Origin | Notes |
+|---|---|---|
+| `tools/mtl_linux/` | `rngtng/mtl_linux` (dockerized in `9037084`) | MTL compiler + simulator (Linux/macOS port of Sylvain Huet's original toolchain) |
+| `tools/preprocessor/` | written for this repo | pcpp-based `#include`/`#ifdef` preprocessor replacing piper's Perl one |
+| `src/firmware/` | `nabgcc` fork (`2894846`, dockerized `ed3972c`) | C bytecode VM + drivers ported to `arm-none-eabi-gcc`; WPA2 branch |
+| `src/boot/` | the original Violet/IAR boot (via `firmware_nabaztag`), split into modules | frozen recovery path — WiFi provisioning + `bc.jsp` fetch; not rebuilt from lib |
+| `src/app-piper/` (business-logic layers: srv/, run/, chor/ protocol layers, config, app forth words) | `nabaztag-piper` (ServerlessNabaztag fork), added `3ccbf2d` | the app; most of its former bulk is now `lib/` (see below) |
+| `lib/net/`, `lib/hw/`, `lib/audio/`, `lib/chor/` engine, `lib/forth/` word packs | extracted from `nabaztag-piper`'s `src/app-piper/{net,ipv4,hw,audio,chor}` | generic building blocks pulled out behind seams — see `lib/README.md` for the seam contract and CHANGELOG v0.4.0–v0.9.0 for the extraction history |
+| `lib/forth/` interpreter core (interpreter, stack/arithmetic/comparison/logical/string/list/control/compile, JSON parser) | nabaztag-piper's Forth interpreter | Copyright (c) 2025 Andrea Bonomi, MIT License (see file headers) |
+| `lib/std/`, `lib/sys/` | mix of `mtl_library`'s curated stdlib and material extracted from `nabaztag-piper`'s `utils/` | — |
+| Docs under `bytecode/_docs/`, MTL grammar/opcode references | `mtl_library` + the original `NabaztagHackKit` Ruby gem's `_docs/` | kept across the v1→v2 reboot |
+
+Openocd JTAG guide/adapter configs (`8b0885c`) are original to this repo (the
+host-side flashing exception noted in `CLAUDE.md`).
+
+## Local changes vs. upstream (for backporting)
+
+Bugs found and fixed here while building the `lib/` test suite — all present in
+upstream `nabaztag-piper` at the commit vendored in `3ccbf2d`:
+
+- **Forth `ROT`** rotated the wrong direction; **`TUCK`** behaved like `OVER`
+  (`lib/forth/stack.mtl`).
+- **Forth `*/` and `*/mod`** divided by the wrong stack operand
+  (`lib/forth/arithmetic.mtl`).
+- **JSON parser**: bare `true`/`false`/`null` inside an array or object never
+  advanced the parse cursor, looping until the simulator ran out of memory
+  (`lib/forth/json.mtl`).
+- **Forth `write_fn` I/O path** (the socket/telnet output abstraction) had never
+  actually been compiled — invalid call syntax plus a backwards `fixarg` binding
+  (`lib/forth/output.mtl`).
+- **`lib/sys/time.mtl` day calculation** could report the previous day (the
+  `h*512/675` shortcut truncated the low word's contribution).
+- **`lib/sys/time.mtl` month parsing** (`_time_parse_month`) compared a
+  lower-cased input against the original-case `MONTHS` table, so HTTP `Date:`
+  headers never parsed.
+
+None of these are behavioral choices — each is pinned by a test in `test/lib/`
+that documents the expected behavior; see the corresponding `CHANGELOG.md`
+entries for full descriptions.
+
+## Vendoring hygiene
+
+- Never vendor secrets: `conf.bin`-style credential files ship only as
+  sanitized `*.sample`, git- and docker-ignored for the real file.
+- Build artifacts are excluded via `.gitignore`/`.dockerignore` and rebuilt in
+  Docker — nothing generated is committed.
