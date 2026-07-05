@@ -99,16 +99,14 @@ tasks:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
   verify:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template all build.'
+    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse all build.'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: test
       - task: build:boot
-      - task: build:app
-      - task: build:app
-        vars:
-          SOURCE: src/app-template/main.mtl
-          OUT: '{{.OUT}}/tpl'
+      - task: build:app:piper
+      - task: build:app:template
+      - task: build:app:sse
 
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'

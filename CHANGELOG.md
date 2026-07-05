@@ -1,5 +1,20 @@
 # Changes
 
+## v2.0.0-alpha10 - 05-07-2026
+
+  * fix [#37](https://github.com/rngtng/NabaztagHackKit/issues/37): `app-sse`
+    now runs on hardware. It followed the simulator-only `lib/net/tcp.mtl` +
+    `netstart` path unconditionally, but the firmware VM has no native TCP
+    (`tcpListen`/`tcpSend`/… are simulator opcodes), so it silently did
+    nothing on-device. `main.mtl` now picks its transport with the `SIMU`
+    define like `app-template` — device builds compile the full `lib/net`
+    stack (wifi/DHCP/DNS/IP/TCP) with `config_get_*` seams — and drives the
+    broadcaster as a scheduler task so it coexists with the ipv4 TCP/DHCP/DNS
+    tasks.
+  * `task verify` now actually runs: the `build:app` steps had lost their
+    `TARGET`, so the task aborted immediately. It chains
+    piper + template + sse device builds, guarding the #37 regression.
+
 ## v2.0.0-alpha9 - 05-07-2026
 
   * `lib/chor/` — the choreography engine: the Violet chor-bytecode
