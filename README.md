@@ -116,3 +116,25 @@ The boot image handles WiFi provisioning (serves a captive-portal config page) a
 - [ccarlo64/firmware_nabaztag](https://github.com/ccarlo64/firmware_nabaztag) — WPA2 firmware
 - [RedoXyde/nabgcc](https://github.com/RedoXyde/nabgcc) — GCC-based firmware
 - [andreax79/ServerlessNabaztag](https://github.com/andreax79/ServerlessNabaztag)
+- https://github.com/RedoXyde/nabgcc/issues/9
+- https://github.com/RedoXyde/nabgcc/blob/wpa2/inc/common.h
+- https://github.com/ccarlo64/firmware_nabaztag
+- https://github.com/rngtng/mtl_linux
+- https://github.com/rngtng/mtl_library/commits/master/_docs/commands.md
+- https://github.com/andreax79/ServerlessNabaztag
+- https://github.com/jsapede/nabaztag-piper/network
+- https://github.com/jsapede/nabaztag-piper/commit/3d92eec8b777a7ccfd67cae4436bf3e4fffa7f2a
+- https://github.com/trcwm/Newbaztag/tree/master
+- https://github.com/vladger/NabaztagGPT
+- https://github.com/Desperado88/nabaztag-home-assistant-2025
+- https://www.journaldulapin.com/2018/04/19/tagtag-wpa2/
+- https://www.journaldulapin.com/2017/09/10/debriquer-nabaztag/
+- https://wk.redox.ws/dev/nab/v3/links
+- https://wk.redox.ws/dev/nab/v2/mod_serial
+- https://web.archive.org/web/20201028193157/http://petertyser.com/nabaztag-nabaztagtag-dissection/
+- https://nabaztag.com/controller
+- https://nabaztag.forumactif.fr/f4-rabbitz-life
+- https://www.hackster.io/rngtng/nabaztaginjector-an-arduino-rfid-hack-5f8df3
+- https://nabaztag.forumactif.fr/t13446-port-serie-uart-du-karotz-boot
+- https://nabazlab.sourceforge.net/index_en.htm
+- https://nabaztag.forumactif.fr/t15437-guide-ressusciter-son-nabaztagtag-v2-avec-upgrade-en-wpa-2-et-openjabnab

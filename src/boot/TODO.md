@@ -1,16 +1,5 @@
 # boot/ — stdlib extraction roadmap
 
-## ~~Quick wins (dead code / duplicates)~~ ✓ done
-
-| # | What | Resolved |
-|---|------|---------|
-| 1 | 57-line `/* */` block: `_wavcbhttp`, `wavstarthttp`, `wavtime` | Deleted from `boot.mtl` |
-| 2 | `wifiConnected` — duplicate of `wifiReady` | Deleted from `wifi.mtl` |
-| 3 | `confGetbin` — duplicate of `confGet` | Deleted; callers updated to `confGet` |
-| 4 | Stray `/*"disabled=\"disabled\""*/` comment | Deleted from `config_server.mtl` |
-
-Note: `confSetbin` (same body as `confSet`) kept — has real callers in `config_server.mtl`.
-
 ## What's here
 
 `src/boot/` is the original monolithic `boot.mtl` split into focused modules.
@@ -24,63 +13,6 @@ Three of those modules are already stdlib candidates with clean interfaces:
 
 The remaining modules (`config.mtl`, `ipv4.mtl`, `dns.mtl`, `http.mtl`, `wifi.mtl`,
 …) are either boot-specific or duplicates of code that already lives in `src/app/`.
-
----
-
-## Path to lib/
-
-### 1. bytecode_loader.mtl → lib/bytecode.mtl
-
-Move as-is. The only dep is `httpgetcontent` (from `http.mtl`).
-For a proper stdlib module declare the dependency as a forward proto:
-
-```
-proto httpgetcontent 1;;   // required: include http.mtl before this
-```
-
-Then any MTL app can load remote bytecode:
-```
-httprequest "GET" url nil #load_bytecode HTTP_NORMAL;
-```
-
-**One open question**: `_bootcbhttp` (in `boot_loop.mtl`) calls `envset envmake`
-before delegating to `load_bytecode`. This is boot-specific (save wifi state so
-the new bytecode restores it). In a generic lib, expose a pre-load callback:
-
-```
-fun load_bytecode_with httpreq res pre_cb=
-    if pre_cb != nil then call pre_cb [];
-    load_bytecode httpreq res;;
-```
-
-### 2. firmware.mtl → lib/firmware.mtl
-
-Move as-is after one change: remove the `setleds` calls from `getfirmware` and
-`firmware_flash`. LED feedback is hardware-UX, not firmware-logic. Pass an
-optional progress callback instead:
-
-```
-fun getfirmware req on_decode=
-    ...
-    if on_decode != nil then call on_decode [0xff0000];  // red = decoding
-    getbinary ...;;
-
-fun firmware_flash req on_success=
-    let getfirmware req nil -> firm in
-    if firm != nil then
-    (
-        if on_success != nil then call on_success [0xffffff];
-        flashFirmware firm 0x13fb6754 0x0407FE58
-    );;
-```
-
-Callers pass a LED callback or `nil`.
-
-### 3. http_server.mtl → lib/http_server.mtl
-
-Already structured for lib use (private internals prefixed `_httpsrv_`).
-Deps: `writetcp`, `closetcp`, `tcpcb`, `listentcp` (from ipv4.mtl / tcp stack).
-Declare as protos at the top of the file and it's self-contained.
 
 ---
 
