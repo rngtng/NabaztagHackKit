@@ -94,6 +94,11 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 
 **Control** (only valid inside `: ... ;`) — `if` / `else` / `then`, `begin` / `until`, `case` / `of` / `endof` / `endcase`, plus the lower-level `jmp` / `?jmp`, `abort` (clears both stacks), `exit`
 
+**Meta**
+| Word | Effect |
+|---|---|
+| `evaluate` | `str --` run a string as nested Forth code against the same interpreter state |
+
 **Memory** (`forth_memory.mtl`, a generic cell allocator — no hardware/config cells, unlike app-piper's version)
 | Word | Effect |
 |---|---|
@@ -111,6 +116,8 @@ Try it:
 curl -s -d ': square dup * ; 5 square' localhost:8080/eval
 curl -s -d ': count5 0 begin 1+ dup 5 >= until ; count5' localhost:8080/eval
 curl -s -d ': pick10 if 10 else 20 then ; true pick10' localhost:8080/eval
+curl -s -d '"2 3 +" evaluate .' localhost:8080/eval
+# -> {"output": "5", "stack": ""}
 ```
 
 Memory persists across `/eval` calls **for as long as the process runs**
