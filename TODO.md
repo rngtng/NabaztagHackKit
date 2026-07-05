@@ -146,7 +146,8 @@ outside Docker. Everything else is in-container.
      http-client contract; const_data assets + record upload flow stay app)
    - ~~ipv4/wifi/dhcp/dns/ntp/http stack~~ done 07-2026 (lib/net; template
      app builds device-standalone; config via app-side config_get_* seams)
-   - `lib/chor` — the last app-piper block worth extracting
+   - ~~`lib/chor`~~ done 07-2026 (engine + palettes; trame/streaming/
+     interactive/info stay app-side as Violet-protocol layers)
    - boot/app convergence: port src/boot onto lib/net (deliberately deferred —
      boot is the recovery path and stays frozen until lib/net is device-proven)
    - `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)

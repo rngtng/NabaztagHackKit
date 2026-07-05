@@ -77,6 +77,13 @@ lib/
 │   │                     streaming (flow-controlled buffering), button3 volume
 │   └── midi.mtl          Embedded MIDI notes/jingles played through audiolib
 │
+├── chor/            Choreography engine
+│   ├── choreographic.mtl Violet chor-bytecode interpreter (LEDs, palette,
+│   │                     ear moves, random MIDI, waits, conditional jumps)
+│   │                     — app schedules chor_run_cmd via chor_started_cb /
+│   │                     chor_stopped_cb seams
+│   └── palette.mtl       The 7 classic color palettes + current-palette state
+│
 ├── forth/           Forth interpreter (sub-modules, assembled by forth.mtl)
 │   ├── interpreter.mtl   Tokenizer + interpreter loop
 │   ├── compile.mtl       : ; ( constant defined? words
@@ -89,8 +96,9 @@ lib/
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
 
-Future building blocks (extraction from `src/app-piper` pending): `chor/`.
-Device configuration (wifi credentials, static IP, proxy, timezone) always
+All planned building blocks are extracted; app-piper retains only the
+Violet-server protocol layers (trame/streaming/interactive/info), its servers,
+run loop, config, and app Forth words. Device configuration (wifi credentials, static IP, proxy, timezone) always
 stays app-side: lib modules declare `proto config_get_*` seams and the app
 supplies the accessors (see `src/app-template/app.mtl` for the full list).
 
