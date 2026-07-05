@@ -1,7 +1,7 @@
 proto main 0;;
 
-#include "test/helper.mtl"
-#include "test/assertions.mtl"
+#include "test/_helper.mtl"
+#include "test/_assertions.mtl"
 
 //-------------------- MAIN
 #include "test/lib/_test.mtl"
