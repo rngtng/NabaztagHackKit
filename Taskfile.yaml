@@ -31,6 +31,13 @@ includes:
       IMAGE: nabaztag-sdk-firmware
       DIR: ./src/firmware/
 
+  testvm: # Native C VM smoke-test harness, built from the firmware's own vm/net sources (tools/testvm)
+    internal: true
+    taskfile: ./tools/testvm/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-testvm
+      DIR: ./tools/testvm/
+
 tasks:
   clean:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
@@ -38,6 +45,7 @@ tasks:
       - task: mtl:clean
       - task: preprocessor:clean
       - task: firmware:clean
+      - task: testvm:clean
       - rm -rf '{{.OUT}}'
 
   build:boot:
@@ -103,6 +111,19 @@ tasks:
       - rm -rf '{{.FIRMWARE_OUT}}'
       - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
       - rm -rf src/firmware/obj src/firmware/src/bc.c
+
+  test:firmware:
+    desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires build:boot first. Usage: task test:firmware [SOURCE=build/boot/dumpbc.c] [DURATION=5]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
+      DURATION: '{{.DURATION | default 5}}'
+    cmds:
+      - task: testvm:test
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          SOCK_DIR: '{{.OUT}}'
+          DURATION: '{{.DURATION}}'
 
   # ----------------------------------------------------------
   build:app:
