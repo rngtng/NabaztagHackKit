@@ -4,6 +4,7 @@
  * POST /eval  -> run the body as Forth, answer {"output": …, "stack": …}
  */
 #include "lib/std/json.mtl"
+#include "forth_memory.mtl"
 
 #ifndef SIMU
 // ---- Device configuration (edit these) -------------------------------
@@ -27,6 +28,23 @@ fun config_get_proxy_ip= "\0\0\0\0";;
 fun config_get_proxy_port= 0;;
 // -----------------------------------------------------------------------
 #endif
+
+// Forth: core dictionary + memory/variable words (mirrors
+// src/app-piper/forth/dictionary.mtl's "Memory" section)
+fun app_forth_words=
+    [ [str: "allocate-cell"] [func:#forth_allocate_cell]] ::
+    [ [str: "free-cell"    ] [func:#forth_free_cell]] ::
+    [ [str: "@"            ] [func:#forth_fetch]] ::
+    [ [str: "!"            ] [func:#forth_store]] ::
+    [ [str: "?"            ] [func:#forth_q]] ::
+    [ [str: "+!"           ] [func:#forth_plus_store]] ::
+    [ [str: "variable"     ] [func:#forth_variable flag:FORTH_IMMEDIATE]] ::
+    [ [str: "state"        ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
+    nil;;
+
+fun forth_init_dictionary=
+    set forth_dictionary = [dict: conc app_forth_words forth_core_words];
+    0;;
 
 const PAGE="<!doctype html>
 <title>Nabaztag template app</title>

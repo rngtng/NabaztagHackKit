@@ -94,6 +94,7 @@ from where, and what changed here so fixes can flow back upstream.
 | `src/app-piper/` (business-logic layers: srv/, run/, chor/ protocol layers, config, app forth words) | `nabaztag-piper` (ServerlessNabaztag fork), added `3ccbf2d` | the app; most of its former bulk is now `lib/` (see below) |
 | `lib/net/`, `lib/hw/`, `lib/audio/`, `lib/chor/` engine, `lib/forth/` word packs | extracted from `nabaztag-piper`'s `src/app-piper/{net,ipv4,hw,audio,chor}` | generic building blocks pulled out behind seams — see `lib/README.md` for the seam contract and CHANGELOG v0.4.0–v0.9.0 for the extraction history |
 | `lib/forth/` interpreter core (interpreter, stack/arithmetic/comparison/logical/string/list/control/compile, JSON parser) | nabaztag-piper's Forth interpreter | Copyright (c) 2025 Andrea Bonomi, MIT License (see file headers) |
+| `src/app-template/forth_memory.mtl` | trimmed copy of `src/app-piper/forth/memory.mtl` | generic cell allocator + `@ ! ? +! variable`; dropped the Nabaztag/config "special address" cells (`server-url`, `leds-*`, `info-*`, …) that tie the piper version to hardware globals app-template doesn't have, keeping only the generic `state` cell. Copyright (c) 2025 Andrea Bonomi, MIT License (see file header) |
 | `lib/std/`, `lib/sys/` | mix of `mtl_library`'s curated stdlib and material extracted from `nabaztag-piper`'s `utils/` | — |
 | Docs under `bytecode/_docs/`, MTL grammar/opcode references | `mtl_library` + the original `NabaztagHackKit` Ruby gem's `_docs/` | kept across the v1→v2 reboot |
 

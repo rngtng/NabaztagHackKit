@@ -1,0 +1,253 @@
+/**
+ * Forth memory/variable words — generic cell allocator + @ ! ? +! variable.
+ * Ported from src/app-piper/forth/memory.mtl, stripped of the Nabaztag/config
+ * "special address" cells (server-url, ears, leds, ...) that app-piper wires
+ * to its own hardware globals; app-template keeps only the generic STATE cell.
+ * Copyright (c) 2025 Andrea Bonomi
+ * This code is licensed under the MIT License
+ */
+
+const FORTH_MEMORY_BLOCK_SIZE = 30;;
+const FORTH_MEMORY_LIMIT = 1<<29;;
+const FORTH_MEMORY_STATE = 1<<29;;
+
+type MemoryBlock = [
+    memory_block_size   // size of the memory block
+    memory_bitmap       // bitmap of used/free cells
+    memory_cells        // table (array) of cells
+];;
+
+/**
+ * Find the first free bit in the bitmap.
+ * Returns the index of the free bit, or nil if none found.
+ */
+fun _forth_memory_find_free_bit block=
+    let nil -> found in (
+        for i=0; (i<block.memory_block_size)&&(found==nil); i+1 do
+            if (block.memory_bitmap & (1<<i)) == 0 then
+                set found = i;
+        found
+    );;
+
+fun _forth_memory_add_block l a=
+    if l==nil then
+        a::nil
+    else
+        (hd l)::_forth_memory_add_block tl l a;;
+
+/**
+ * Add a new memory block to the forth_memory list.
+ * Returns the new memory block.
+ */
+fun forth_memory_add_block=
+    let [memory_block_size:FORTH_MEMORY_BLOCK_SIZE memory_bitmap:0 memory_cells:tabnew nil FORTH_MEMORY_BLOCK_SIZE] -> block in (
+        set forth_memory = _forth_memory_add_block forth_memory block;
+        block
+    );;
+
+/**
+ * Allocate a cell from the memory manager.
+ * Returns the address (index) of the allocated cell.
+ */
+fun forth_memory_alloc_cell=
+    let 0 -> addr in
+    let 0 -> found in
+    let nil -> block in (
+        // search for a block with free space
+        for p=forth_memory; (p!=nil) && (!found); tl p do (
+            let hd p -> block in
+            let _forth_memory_find_free_bit block -> t in
+                if t != nil then (
+                    set found = 1;
+                    set block.memory_bitmap = block.memory_bitmap | (1<<t);
+                    set addr = addr + t
+                )
+                else
+                    set addr = addr + block.memory_block_size
+        );
+        // if no block found, add a new block
+        if !found then (
+            let forth_memory_add_block -> block in
+                // allocate first cell in new block
+                set block.memory_bitmap = block.memory_bitmap | (1<<0)
+        );
+        addr
+    );;
+
+/**
+ * Free a cell in the memory manager at the given address.
+ * addr: address (index) of the cell to free
+ */
+fun forth_memory_free_cell addr=
+    let nil -> cell in
+    let nil -> block in (
+        for p=forth_memory; (p!=nil) && (cell==nil); tl p do (
+            let hd p -> block in
+            if addr < block.memory_block_size then
+            (
+                // free the cell at addr
+                set block.memory_bitmap = block.memory_bitmap & ~(1<<addr);
+                set cell = block.memory_cells.(addr);
+                nil
+            )
+            else
+            (
+                set addr = addr - block.memory_block_size
+            )
+        );
+        cell
+    );;
+
+/**
+ * Get a special cell from the memory manager at the given address.
+ * addr: address (index) of the special cell to get
+ */
+fun _forth_memory_get_special f addr=
+    if addr == FORTH_MEMORY_STATE then
+        [int:f.state]
+    else
+        nil;;
+
+/**
+ * Set a special cell in the memory manager at the given address.
+ * addr: address (index) of the special cell to set
+ * value: cell to set
+ */
+fun _forth_memory_set_special f addr value=
+    nil;;
+
+/**
+ * Get a cell from the memory manager at the given address.
+ * addr: address (index) of the cell to get
+ */
+fun forth_memory_get_cell f addr=
+    if addr & FORTH_MEMORY_LIMIT then
+        _forth_memory_get_special f addr
+    else
+        let nil -> cell in
+        let nil -> block in (
+            for p=forth_memory; (p!=nil) && (cell==nil); tl p do (
+                let hd p -> block in
+                if addr < block.memory_block_size then
+                (
+                    set cell = block.memory_cells.(addr);
+                    nil
+                )
+                else
+                (
+                    set addr = addr - block.memory_block_size
+                )
+            );
+            cell
+        );;
+
+/**
+ * Set a cell in the memory manager at the given address.
+ * addr: address (index) of the cell to set
+ * value: cell to set
+ */
+fun forth_memory_set_cell f addr value=
+    if addr & FORTH_MEMORY_LIMIT then
+        _forth_memory_set_special f addr value
+    else
+        let nil -> block in (
+            for p=forth_memory; (p!=nil) && (block==nil); tl p do (
+                let hd p -> block in
+                if addr < block.memory_block_size then
+                (
+                    set block.memory_cells.(addr) = value;
+                    nil
+                )
+                else
+                (
+                    set addr = addr - block.memory_block_size
+                )
+            );
+            nil
+        );;
+
+/**
+ * ALLOCATE-CELL ( -- addr )  Allocate a cell from memory and return its address.
+ */
+fun forth_allocate_cell f=
+    let forth_memory_alloc_cell -> addr in
+        forth_push f [int:addr];
+    nil;;
+
+/**
+ * FREE-CELL ( addr -- )  Free a cell in memory at the given address.
+ */
+fun forth_free_cell f=
+    let forth_pop f -> addr in
+        forth_memory_free_cell addr.int;
+    nil;;
+
+/**
+ * @ ( addr -- value )  Fetch a value from memory at the given address.
+ */
+fun forth_fetch f=
+    let forth_pop f -> addr in
+    let forth_memory_get_cell f addr.int -> value in
+        forth_push f value;
+    nil;;
+
+/**
+ * ! ( value addr -- )  Store a value into memory at the given address.
+ */
+fun forth_store f=
+    let forth_pop f -> addr in
+    let forth_pop f -> value in
+        forth_memory_set_cell f addr.int value;
+    nil;;
+
+/**
+ * ? ( addr -- )  Prints the contents of the address, followed by one space
+ */
+fun forth_q f=
+    let forth_pop f -> addr in
+    let forth_memory_get_cell f addr.int -> value in
+        forth_write f forth_word_fmt value;
+    forth_write f " ";;
+
+/**
+ * +! ( n addr -- )  Adds a number to the contents of the address
+ */
+fun forth_plus_store f=
+    let forth_pop f -> addr in
+    let forth_pop f -> value in
+    let forth_memory_get_cell f addr.int -> old_value in
+        forth_memory_set_cell f addr.int [int:(old_value.int + value.int)];
+    nil;;
+
+/**
+ * Add a variable to the dictionary
+ * name: name of the variable
+ * addr: address of the variable
+ */
+fun forth_add_variable name addr=
+    let [code: {[int:addr]}] -> new_cell in  // Create the cell code to return the address
+    let [str:to_lower name] -> name in
+        // Create the new word
+        word_dict_set_w forth_dictionary name new_cell;
+    nil;;
+
+/**
+ * VARIABLE (immediate) ( -- addr )  Define a variable and allocate a word for it.
+ */
+fun forth_variable f=
+    if f.state == FORTH_STATE_COMPILATION then (
+        forth_abort_msg f "VARIABLE cannot be used in compilation mode"
+    ) else (
+        let hd f.istack -> inter in (
+            // Get the new word name
+            forth_interpreter_get_token f;
+            // Check if the variable is already defined
+            if (forth_get_word inter.token) != nil then
+                nil // Variable already defined
+            else
+                // Allocate a new cell for the variable and add the new variable to the dictionary
+                let forth_memory_alloc_cell -> addr in
+                    forth_add_variable inter.token addr
+        )
+    );
+    nil;;
