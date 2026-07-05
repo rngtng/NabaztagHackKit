@@ -1,0 +1,172 @@
+#include "lib/protos/task_protos.mtl"
+#include "lib/protos/arp_protos.mtl"
+
+const ARP_REQUEST = 1;;
+const ARP_REPLY = 2;;
+
+const ARP_TIME_DELAY = 1000;; // Delay between ARP periodic task (in ms)
+const GRATUITOUS_ARP_DELAY = 60 * 1000;; // Delay between gratuitous arp (in ms)
+
+var arp_table;; // list of [ip mac]
+var _arp_reqs;; // list of [ip time cb]
+
+/**
+ * Create an ARP packet
+ */
+fun _arp_create_pkg op ipsrc macdst ipdst=
+    strcatlist
+    // AAAA03000000 Source address
+    // 0806 ARP
+    // 0001 hardware type (ethernet)
+    // 0800 protocol type (IPv4)
+    // 06 hardware address length (mac address length)
+    // 04 protocol address length (ip address length)
+    // 00 operation (high)
+    //                       | arp   | eth   | ipv4  |len|len|op
+    "\$aa\$aa\$03\$00\$00\$00\$08\$06\$00\$01\$08\$00\$06\$04\$00"::
+    (ctoa op):: // operation (low)
+    mymac::     // sender mac address
+    netip::     // sender ip
+    macdst::    // target mac address
+    ipdst       // target ip
+    ::nil;;
+
+fun _arp_send_request ip=
+    // Send ARP Request "ARP, Request who-has <ip> (Broadcast) tell <netip>, length 28"
+    netSend (_arp_create_pkg ARP_REQUEST netip macbroadcast ip) 0 nil macbroadcast 0 1;;
+
+fun _arp_send_reply ip=
+    // Send ARP Reply "ARP, Reply <netip> is-at <mymac> (oui Unknown), length 28"
+    netSend (_arp_create_pkg ARP_REPLY netip macbroadcast ip) 0 nil macbroadcast 0 1;;
+
+fun arp_send_gratuitous=
+    // Send Gratuitous ARP Reply "ARP, Reply <netip> is-at <mymac> (oui Unknown), length 28"
+    _arp_send_reply netip;;
+
+fun _arp_filter_ip l src =
+    if l!=nil then let hd l->[ip _ _] in if !vstrcmp src 8+14 ip 0 4  then _arp_filter_ip tl l src
+    else (hd l)::_arp_filter_ip tl l src;;
+
+fun _arp_check l src=
+    if l!=nil then let hd l->[ip _ cb] in
+    (
+        if !vstrcmp src 8+14 ip 0 4 then
+        let strsub src 8+8 6 -> mac in
+        (
+            Secho "found MAC target : "; MACecho mac 0 1;
+            set arp_table=[ip mac]::arp_table;
+            call cb [mac]
+        );
+        _arp_check tl l src
+    );
+    nil;;
+
+fun arp_handler src mac=
+    let strget src 8+7-> op in
+    if op==ARP_REQUEST then
+    (
+        if !vstrcmp src 32 netip 0 4 then
+            netSend (_arp_create_pkg ARP_REPLY netip strsub src 16 6 strsub src 22 4) 0 nil mac 0 1;
+        nil
+    )
+    else if op==ARP_REPLY then
+        let _arp_reqs->l in
+        (
+            set _arp_reqs=_arp_filter_ip _arp_reqs src;
+            _arp_check l src
+        )
+    ;
+    0;;
+
+fun _arp_subnet_ip ip i=
+    if i<0 then 1
+    else if ((strget ip i)^(strget netip i))&(strget netmask i) then 0
+    else _arp_subnet_ip ip i-1;;
+
+fun _arp_subnet ip=
+    _arp_subnet_ip ip 3;;
+
+/**
+ * ARP request
+ * ip: target ip
+ * cb: callback function called with the found mac address as parameter
+ */
+fun arp_req ip cb=
+    let (if _arp_subnet ip then ip else netgateway) /* 0 1 */ -> ip in
+    let listswitchstr arp_table ip -> mac in
+    if mac!=nil then call cb [mac]
+    else
+    (
+        _arp_send_request ip;
+        set _arp_reqs=[ip time cb]::_arp_reqs;  // ### attention à la taille de la liste
+        0
+    );;
+
+/**
+ * Reset ARP table and pending requests
+ */
+fun arp_reset=
+    set arp_table=nil;
+    set _arp_reqs=nil;
+    0;;
+
+fun _arp_filter l dt=
+    if l!=nil then let hd l->[ip t _] in if (time-t)>dt then
+        _arp_filter tl l dt
+    else
+    (
+        _arp_send_request ip;
+        (hd l)::_arp_filter tl l dt
+    );;
+
+/**
+ * ARP task
+ */
+fun arp_task task=
+    set _arp_reqs=_arp_filter _arp_reqs 10;
+    TaskRun;;
+
+/**
+ * Periodic sending of gratuitous ARP
+ */
+fun arp_periodic_send_gratuitous_arp_task task=
+    arp_send_gratuitous;
+    TaskRun;;
+
+/**
+ * Initialize ARP task
+ */
+fun arp_init=
+	arp_reset;
+    task_start_ex "arp" ARP_TIME_DELAY #arp_task;
+#ifdef SERVERLESS
+    // Initialize periodic sending of gratuitous ARP
+    task_start_ex "send_gratuitous_arp" GRATUITOUS_ARP_DELAY #arp_periodic_send_gratuitous_arp_task;
+#endif
+    0;;
+
+/**
+ * Format a ARP table item in JSON format
+ * ip: ip address
+ * mac: mac address
+ */
+fun arp_table_format_json ip mac=
+    strcatlist
+        "{ "::
+            (json_str "mac" mac_to_str mac) :: ", " ::
+            (json_str "ip" ip_to_str ip) :: "\n" ::
+        " }" :: nil;;
+
+/**
+ * Return the ARP table in JSON format
+ */
+fun arp_table_json=
+    let "[\n" -> result in
+    let listlen arp_table -> n in (
+        for l=arp_table;l!=nil; tl l do
+            let hd l -> [ip mac] in
+            let if nil!=tl l then ",\n" else "\n" -> sep in
+            set result = strcatlist result::(arp_table_format_json ip mac)::sep::nil;
+        set result = strcat result "]";
+        result
+    );;

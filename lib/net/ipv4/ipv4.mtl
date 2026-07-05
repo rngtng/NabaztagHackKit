@@ -1,0 +1,18 @@
+#include "lib/net/ipv4/arp.mtl"
+#include "lib/net/ipv4/udp.mtl"
+#include "lib/net/ipv4/tcp.mtl"
+#include "lib/net/ipv4/udp.mtl"
+#include "lib/net/ipv4/icmp.mtl"
+// make sure the tcpudp emulation stuff gets loaded after the "real" code to override it all
+#ifdef SIMU
+#include "lib/net/ipv4/tcpudp_emu.mtl"
+#endif
+
+// Aliases: the writetcp/closetcp/tcpcb/listentcp API that lib/net's
+// sock/http_server/sse_server build on, mapped onto this stack's tcp_*.
+// (On bare simulator builds without this stack, lib/net/tcp.mtl provides
+// the same API directly over the tcpSend natives — include exactly one.)
+fun writetcp t msg i= tcp_write t msg i;;
+fun closetcp t= tcp_close t;;
+fun tcpcb t cb= tcp_set_cb t cb;;
+fun listentcp port cb= tcp_listen port cb;;

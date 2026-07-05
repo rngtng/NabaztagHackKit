@@ -1,0 +1,15 @@
+let scenario "dns_test" -> s in
+(
+  let test "server list add and format" -> t in
+  (
+    set netdnslist=nil;
+    dns_add_new_srv "\1\2\3\4" 0;
+    assert_equalS "(1) - 1.2.3.4 " dns_list_to_str;
+    dns_add_new_srv "\8\8\8\8" 1;
+    assert_equalS "(2) - 8.8.8.8 1.2.3.4 " dns_list_to_str;
+    // re-adding an existing server must not duplicate it
+    dns_add_new_srv "\1\2\3\4" 0;
+    assert_equalS "(2) - 8.8.8.8 1.2.3.4 " dns_list_to_str;
+    set netdnslist=nil
+  )
+);

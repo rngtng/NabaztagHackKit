@@ -9,4 +9,7 @@
  */
 
 type Sock=[sockCnx sockInput sockSize sockOutput sockIndex sockCloseAfter sockCallback];;
-
+proto sock_close_after 1;;
+proto sock_send 2;;
+proto sock_send_and_close 2;;
+proto sock_write 1;;

@@ -1,0 +1,3 @@
+#include "lib/protos/time_protos.mtl"
+
+proto ntp_get_time 0;;

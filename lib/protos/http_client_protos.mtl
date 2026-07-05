@@ -13,3 +13,21 @@ proto http_request 5;;
 const HTTP_NORMAL=0;;
 const HTTP_STREAM=1;;
 const HTTP_DIRECT=2;;
+
+proto http_extract_args 2;;
+proto http_get_header 1;;
+proto http_get_header_field 2;;
+proto http_split_header_content 1;;
+
+
+const HTTP_STATE_SOLVE=0;;
+const HTTP_STATE_REACH=1;;
+const HTTP_STATE_CONNECTED=2;;
+
+const HTTP_DEF_PROTO="http://";;	// en-tête normal (mais ici facultatif) d'une requête http
+const HTTP_HEADER_SEP = "\13\n\13\n";; // HTTP header separator
+const HTTP_CONTENT_END = "\13\n";;
+const HTTP_CONTENT_LENGTH = "content-length: ";; // lowerrcase
+const HTTP_AUTHORIZATION = "authorization: ";; // lowerrcase
+const HTTP_DATE = "date: ";; // lowerrcase
+const HTTP_BASIC = "Basic";;
