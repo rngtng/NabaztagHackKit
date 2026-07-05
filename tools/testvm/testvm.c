@@ -11,8 +11,8 @@
 #include "vm/vinterp.h"
 #include "vm/vloader.h"
 #include "vm/vlog.h"
+#include "hal/uart.h"
 
-uint8_t dbg_buffer[50];
 extern const uint8_t dumpbc[];
 
 uint32_t counter_timer, counter_timer_s;
@@ -50,7 +50,7 @@ int main(void)
     vmemInit(0);
     loaderInit((uint8_t *)dumpbc);
 
-    consolestr("dumpShort" EOL);
+    putst_uart((uint8_t *)"dumpShort" EOL);
     vmemDumpShort();
     vmemDump();
     uint32_t i;
@@ -78,20 +78,20 @@ void dump(uint8_t *src, int32_t len)
 {
     int32_t i, j;
     uint8_t buffer[64];
-    consolestr(EOL);
+    putst_uart((uint8_t *)EOL);
     for (i = 0; i < len; i += 16)
     {
-        sprintf((char*)buffer, "%04lx ", i);
-        consolestr(buffer);
+        sprintf((char*)buffer, "%04x ", i);
+        putst_uart(buffer);
         for (j = 0; j < 16; j++) if (i + j < len)
         {
             sprintf((char*)buffer, "%02x ", src[i + j]);
-            consolestr(buffer);
+            putst_uart(buffer);
         }
-        else consolestr((uint8_t*)"   ");
+        else putst_uart((uint8_t*)"   ");
         for (j = 0; j < 16; j++) if (i + j < len)
             putch_uart(((src[i + j] >= 32) && (src[i + j] < 128)) ? src[i + j] : '.');
-        consolestr(EOL);
+        putst_uart((uint8_t *)EOL);
     }
 }
 

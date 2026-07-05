@@ -2,14 +2,14 @@ version: '3'
 
 vars:
   IMAGE: '{{.IMAGE | default "testvm"}}'
-  DIR: '{{.DIR | default "../"}}'   # build context = src/firmware/
+  DIR: '{{.DIR | default "."}}'
 
 tasks:
   image:
-    internal: true
+    internal: true   # sources are mounted at runtime, not baked in; Dockerfile only needs the toolchain
+    dir: '{{.DIR}}'
     cmds:
-      # Dockerfile lives in testvm/ but context is src/firmware/ so ../src/vm etc. are reachable
-      - docker build -t {{.IMAGE}} -f {{.DIR}}testvm/Dockerfile {{.DIR}}
+      - docker build -t {{.IMAGE}} .
 
   simulate:
     desc: 'Build and run testvm against boot bytecode. Requires build:boot first. Usage: task testvm:simulate [SOURCE=build/boot/dumpbc.c] [SOCK_DIR=build]'
@@ -19,19 +19,43 @@ tasks:
       SOURCE: '{{.SOURCE | default "build/boot/dumpbc.c"}}'
       SOCK_DIR: '{{.SOCK_DIR | default "."}}'
     cmds:
-      - cp '{{.SOURCE}}' src/firmware/testvm/bc.c
+      - cp '{{.SOURCE}}' tools/testvm/bc.c
       - mkdir -p {{.SOCK_DIR}}
-      - defer: rm -f src/firmware/testvm/bc.c
+      - defer: rm -f tools/testvm/bc.c
+      # firmware's vm/net sources mount at /work; testvm's own sources overlay at /work/testvm
       - 'docker run --rm --init
           -v "$(realpath src/firmware):/work"
+          -v "$(realpath tools/testvm):/work/testvm"
           -v "$(realpath {{.SOCK_DIR}}):/sock"
           -w /work/testvm
           {{.IMAGE}}
           sh -c "make && ./testvm"'
 
+  test:
+    desc: 'Build testvm and smoke-test it against boot bytecode for a bounded run. Requires build:boot first. Usage: task testvm:test [SOURCE=build/boot/dumpbc.c] [SOCK_DIR=build] [DURATION=5]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "build/boot/dumpbc.c"}}'
+      SOCK_DIR: '{{.SOCK_DIR | default "."}}'
+      DURATION: '{{.DURATION | default 5}}'
+    cmds:
+      - cp '{{.SOURCE}}' tools/testvm/bc.c
+      - mkdir -p {{.SOCK_DIR}}
+      - defer: rm -f tools/testvm/bc.c
+      # a clean exit (0) or a timeout while still running (124) both mean the VM
+      # survived DURATION seconds without crashing (segfault -> 139); that's a pass
+      - 'docker run --rm --init
+          -v "$(realpath src/firmware):/work"
+          -v "$(realpath tools/testvm):/work/testvm"
+          -v "$(realpath {{.SOCK_DIR}}):/sock"
+          -w /work/testvm
+          {{.IMAGE}}
+          sh -c "make && (timeout {{.DURATION}} ./testvm; ec=\$?; [ \$ec -eq 0 ] || [ \$ec -eq 124 ]) "'
+
   clean:
     desc: 'Remove testvm build artifacts and Docker image'
     cmds:
       - docker rmi {{.IMAGE}} || true
-      - rm -f src/firmware/testvm/testvm src/firmware/testvm/bc.c
-      - rm -Rf src/firmware/testvm/obj
+      - rm -f tools/testvm/testvm tools/testvm/bc.c
+      - rm -Rf tools/testvm/obj
