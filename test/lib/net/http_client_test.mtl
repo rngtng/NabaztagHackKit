@@ -1,0 +1,43 @@
+let scenario "http_client_test" -> s in
+(
+  let test "http_get_header_field" -> t in
+  (
+    let "HTTP/1.0 200 OK\13\nContent-Length: 42\13\nHost: rabbit\13\n\13\n" -> header in
+    (
+      assert_equalS "42" http_get_header_field header HTTP_CONTENT_LENGTH;
+      assert_equalS "rabbit" http_get_header_field header "host: ";
+      assert_nil http_get_header_field header "cookie: "
+    )
+  );
+
+  let test "http_split_header_content" -> t in
+  (
+    let http_split_header_content "HTTP/1.0 200 OK\13\nA: b\13\n\13\nhello" -> [header content] in
+    (
+      assert_equalS "HTTP/1.0 200 OK\13\nA: b\13\n\13\n" header;
+      assert_equalS "hello" content
+    );
+    let http_split_header_content "no separator here" -> [header content] in
+    (
+      assert_equalS "no separator here" header;
+      assert_nil content
+    )
+  );
+
+  let test "http_extract_args" -> t in
+  (
+    let http_extract_args "l=ff0000&n=abc%20d" 0 -> args in
+    (
+      let hd args -> [k v] in
+      (
+        assert_equalI 'l' k;
+        assert_equalS "ff0000" v
+      );
+      let hd tl args -> [k v] in
+      (
+        assert_equalI 'n' k;
+        assert_equalS "abc d" v
+      )
+    )
+  )
+);

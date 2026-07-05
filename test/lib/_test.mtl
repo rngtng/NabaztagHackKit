@@ -25,14 +25,32 @@ fun config_get_dst= 0;;
 #include "lib/hw/rfid.mtl"
 #include "lib/hw/reclib.mtl"
 
-// Stubs for the lib http-client contract (lib/protos/http_client_protos.mtl)
-// required by lib/audio streaming; never invoked in tests.
-fun http_request method url data cb mode= 0;;
-fun http_abort req= 0;;
-fun http_enable req en= 0;;
-fun http_is_enabled req= 0;;
-fun http_inactive req= 0;;
-fun http_get_content res= "";;
+// lib/net client modules under test, isolated from the ipv4 stack:
+// call sites bind the most recent definition at their point of compilation,
+// so these transport/config stubs must precede the includes.
+fun config_get_net_dns= "\8\8\8\8";;
+fun config_get_proxy= 0;;
+fun config_get_proxy_ip= "\0\0\0\0";;
+fun config_get_proxy_port= 0;;
+fun net_init= 0;;
+fun regudp port cb= 0;;
+fun unregudp port= 0;;
+fun udp_send local localp dst dstp content mac= 0;;
+fun tcp_open local localp dst dstp cb= nil;;
+fun tcp_close t= 0;;
+fun tcp_write t msg i= strlen msg;;
+fun tcp_set_cb t cb= 0;;
+fun tcp_set_enabled t v= 0;;
+fun tcp_is_enabled t= 1;;
+fun tcp_listen port cb= 0;;
+fun tcp_handler src mac= 0;;
+fun tcp_init= 0;;
+fun tcp_reset= 0;;
+
+#include "lib/protos/net_protos.mtl"
+#include "lib/net/dns.mtl"
+#include "lib/net/ntp.mtl"
+#include "lib/net/http.mtl"
 
 #include "lib/audio/audiolib.mtl"
 #include "lib/audio/midi.mtl"
@@ -120,6 +138,9 @@ fun lib_test=
 #include "test/lib/net/sock_test.mtl"
 #include "test/lib/net/http_server_test.mtl"
 #include "test/lib/net/sse_server_test.mtl"
+#include "test/lib/net/http_client_test.mtl"
+#include "test/lib/net/dns_test.mtl"
+#include "test/lib/net/ntp_test.mtl"
 #include "test/lib/forth/stack_test.mtl"
 #include "test/lib/forth/arithmetic_test.mtl"
 #include "test/lib/forth/comparison_test.mtl"

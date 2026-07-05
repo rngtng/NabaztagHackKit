@@ -1,0 +1,12 @@
+let scenario "ntp_test" -> s in
+(
+  let test "request payload" -> t in
+  (
+    let _ntp_request_payload -> p in
+    (
+      assert_equalI 48 strlen p;
+      // LI=0 VN=3 Mode=3 (client)
+      assert_equalI 0x1b strget p 0
+    )
+  )
+);
