@@ -1,5 +1,5 @@
 #include "protos/trame_protos.mtl"
-#include "protos/dns_protos.mtl"
+#include "lib/protos/dns_protos.mtl"
 #include "lib/protos/task_protos.mtl"
 #include "protos/streaming_protos.mtl"
 #include "protos/http_protos.mtl"
