@@ -63,8 +63,9 @@ see above); pass `SIGN=false` for raw bytecode such as the simulator loads.
 
 ## Simulate
 
-    task simulate SOURCE=app.mtl                    # run app.mtl in the simulator
-    task simulate SOURCE=app.mtl -- --mac 0013...   # pass extra mtl_simu options after --
+    task simulate SOURCE=app.mtl                              # run app.mtl in the simulator
+    task simulate SOURCE=app.mtl -- --mac 0013...             # pass extra mtl_simu options after --
+    task simulate SOURCE=app.mtl -- --serverurl host.example/path  # override CONF_SERVERURL for this run
 
 The simulator runs in the foreground; stop it with a single `Ctrl+C` (the
 container uses `--init` so the signal reaches the simulator). Anything after
