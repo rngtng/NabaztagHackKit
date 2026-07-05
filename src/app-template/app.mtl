@@ -40,6 +40,7 @@ fun app_forth_words=
     [ [str: "+!"           ] [func:#forth_plus_store]] ::
     [ [str: "variable"     ] [func:#forth_variable flag:FORTH_IMMEDIATE]] ::
     [ [str: "state"        ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
+    [ [str: "evaluate"     ] [func:#forth_evaluate flag:FORTH_ASYNC]] ::
     nil;;
 
 fun forth_init_dictionary=

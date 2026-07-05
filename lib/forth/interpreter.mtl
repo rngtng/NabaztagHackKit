@@ -333,3 +333,23 @@ fun forth_interpreter_ex text f write_fn task cb=
  */
 fun forth_interpreter text=
     forth_interpreter_ex text nil nil nil nil;;
+
+/**
+ * Callback to resume the outer interpreter after EVALUATE completes.
+ * Pops the nested interpreter context pushed by forth_interpreter_setup.
+ */
+fun _forth_evaluate_cb f=
+    set f.istack = tl f.istack;
+    forth_interpreter_resume f;;
+
+/**
+ * EVALUATE ( str -- )
+ * Evaluate a string as nested Forth code against the same interpreter state.
+ */
+fun forth_evaluate f=
+    let forth_pop f -> word in
+    if word.str == nil then (
+        forth_push f word;
+        forth_interpreter_resume f
+    ) else
+        forth_interpreter_ex word.str f f.write_fn f.forth_task #_forth_evaluate_cb;;
