@@ -1,6 +1,6 @@
 #include "lib/std/list.mtl"
 #include "lib/std/string.mtl"
-#include "lib/protos/sock_protos.mtl"
+#include "lib/net/sock.mtl"
 
 // #define SSE_DEBUG
 
@@ -57,6 +57,7 @@ fun sse_remove_client cnx=
     _sse_debug "client disconnected";
 #endif
     set _sse_clients = _sse_remove_rec _sse_clients cnx;
+    closetcp cnx;
     0;;
 
 /**
