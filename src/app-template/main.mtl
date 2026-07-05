@@ -22,8 +22,7 @@ proto main 0;;
 #include "lib/forth.mtl"
 #include "lib/sys/task.mtl"
 
-// Forth: core dictionary only (extend with your own word packs if needed)
-fun forth_init_dictionary= forth_init_core_dictionary;;
+// Forth: dictionary + word packs are wired up in app.mtl (extend there)
 
 // Business logic
 #include "app.mtl"

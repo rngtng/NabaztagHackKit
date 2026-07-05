@@ -18,13 +18,12 @@ curl -s -d '2 3 + .' localhost:8080/eval
 
 ## Forth commands available today
 
-`main.mtl` wires `fun forth_init_dictionary= forth_init_core_dictionary;;`
-(`lib/forth/dictionary.mtl`), so `/eval` only gets the **generic core** — no
-hardware, network, memory/variable, or task words. Those exist (see
-`src/app-piper/forth/dictionary.mtl`) but aren't included here — an app adds
-them by prepending its own entries to `forth_core_words` before calling
-`forth_init_core_dictionary` (see `src/app-piper/forth/dictionary.mtl` for
-the pattern).
+`app.mtl` wires `forth_init_dictionary` to
+`set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
+(mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
+the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
+word pack (`forth_memory.mtl`) — no hardware, network, or task words. Add
+more by extending `app_forth_words` the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -95,11 +94,34 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 
 **Control** (only valid inside `: ... ;`) — `if` / `else` / `then`, `begin` / `until`, `case` / `of` / `endof` / `endcase`, plus the lower-level `jmp` / `?jmp`, `abort` (clears both stacks), `exit`
 
+**Memory** (`forth_memory.mtl`, a generic cell allocator — no hardware/config cells, unlike app-piper's version)
+| Word | Effect |
+|---|---|
+| `allocate-cell` | `-- addr` |
+| `free-cell` | `addr --` |
+| `variable` | `"name" --` (immediate) define a variable, allocating a cell for it |
+| `@` | `addr -- x` fetch |
+| `!` | `x addr --` store |
+| `+!` | `x addr --` add to the cell in place |
+| `?` | `addr --` print the cell's contents |
+| `state` | `-- addr` the interpreter state cell (0 normal, -1 compiling); `state @` to read it |
+
 Try it:
 ```sh
 curl -s -d ': square dup * ; 5 square' localhost:8080/eval
 curl -s -d ': count5 0 begin 1+ dup 5 >= until ; count5' localhost:8080/eval
 curl -s -d ': pick10 if 10 else 20 then ; true pick10' localhost:8080/eval
+```
+
+Memory persists across `/eval` calls **for as long as the process runs**
+(the simulator/device is one long-lived process; a restart resets
+`forth_memory`/`forth_dictionary` and any variables defined so far):
+```sh
+curl -s -d 'variable counter  0 counter !' localhost:8080/eval
+curl -s -d '1 counter +!  counter @' localhost:8080/eval
+# -> {"output": "", "stack": "1"}
+curl -s -d '1 counter +!  counter @' localhost:8080/eval
+# -> {"output": "", "stack": "2"}
 ```
 
 ## Build device bytecode
