@@ -8,7 +8,7 @@
 #include "protos/json_protos.mtl"
 #include "protos/http_protos.mtl"
 #include "protos/info_protos.mtl"
-#include "protos/ntp_protos.mtl"
+#include "lib/protos/ntp_protos.mtl"
 
 // debug
 #ifdef HTTP_SERVER_DEBUG

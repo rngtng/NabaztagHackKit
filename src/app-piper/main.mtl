@@ -52,7 +52,7 @@ const LED_TIMEOUT = 600;; // 10 minutes
 #include "lib/std/xmlparser.mtl"
 #include "lib/sys/time.mtl"
 
-#include "net/net.mtl"
+#include "lib/net/net.mtl"
 
 #include "audio/const_data.mtl"
 #include "lib/hw/reclib.mtl"
