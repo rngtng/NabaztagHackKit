@@ -212,6 +212,16 @@ int handle_options(int argc, char **argv)
             }
             PropSet("SOURCE", argv[i]);
         }
+        else if (!strcmp(argv[i], "--serverurl"))
+        {
+            ++i;
+            if (i>=argc)
+            {
+                usage();
+                return 0;
+            }
+            PropSet("SERVERURL", argv[i]);
+        }
         else if (!strcmp(argv[i], "--logs"))
         {
             ++i;
@@ -282,6 +292,7 @@ void usage()
            "          --mac MACADDR: permet de preciser une adresse mac pour le lapin\n" \
            "          --boot: comme si on mettait \"BOOT firmware\" dans config.txt\n" \
            "          --source SOURCE: compile et charge le bytecode present dans le fichier SOURCE\n" \
+           "          --serverurl URL: surcharge CONF_SERVERURL (sinon lu depuis config.txt)\n" \
            "          --logs <log1>,...,<logn>: specifie les types de logs qu'on veut afficher, entre init,vm,simunet,simuleds et simuaudio, separes par des virgules\n" \
            "          --logfile <filename>: specifie le fichier dans lequel ecrire les logs du lapin\n" \
            "          --maxlogsize <n>: specifie qu'un fichier de log ne peut depasser <n> octets\n" \

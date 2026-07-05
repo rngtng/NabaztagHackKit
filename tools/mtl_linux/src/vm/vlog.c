@@ -10,6 +10,7 @@
 #include<stdio.h>
 #include<time.h>
 #include <sys/time.h>
+#include "properties.h"
 #endif
 #ifdef VREAL
 #include "ML674061.h"
@@ -119,6 +120,19 @@ int sysLoad(char *dst,int i,int ldst,char *filename,int j,int len)
     f=fopen(filename,"rb");
     if (!f)
     {
+        // No on-disk conf.bin in the simulator: synthesize the server URL
+        // field (CONF_SERVERURL is always offset 0) from config.txt /
+        // --serverurl, same trick netMac() uses for MAC.
+        if (!strcmp(filename,"conf.bin") && i==0)
+        {
+            char *url=PropGet("SERVERURL");
+            memset(dst,0,len);
+            if (url && url[0])
+            {
+                strncpy(dst,url,len-1);
+            }
+            return len;
+        }
         return 0;
     }
     fseek(f,j,SEEK_SET);
