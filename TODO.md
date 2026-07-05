@@ -134,6 +134,26 @@ outside Docker. Everything else is in-container.
 
 # TODOs
 
+## Next session: start here
+
+The planned `lib/` extraction (item 0 below) is complete as of 07-2026 —
+std/sys/net/hw/audio/chor/forth, all with mirrored tests and seams. The
+natural next step is no longer refactoring; it's **validating on real
+hardware**:
+
+1. Flash a rabbit: `task build:firmware` (needs a `bc.c` from
+   `task build:boot`) → OpenOCD/JTAG per `src/firmware/` and the debrick guide
+   in the repo root. This is the first time lib/net's wifi/DHCP/DNS stack runs
+   on an actual radio instead of the simulator — treat it as the real test.
+2. Once flashed and reachable, revisit **boot/app convergence**: port
+   `src/boot` onto `lib/net` now that the stack is device-proven (was
+   deliberately deferred until this point — see the note in item 0).
+3. `dev:upload` script (item 2 below) remains genuinely unimplemented and
+   would make the hardware loop above much faster to iterate on.
+
+Run `scripts/claude-setup.sh` at the start of the session, and `task verify`
+before every commit — see `CLAUDE.md`.
+
 0. **Finish the lib extraction** (foundation landed 07-2026: std/sys/net/forth
    + mirrored test suite that fails non-zero; app-piper consumes lib for
    b64/url/md5/json/word/xmlparser/task/time/timezones/utils/forth-core;
