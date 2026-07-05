@@ -1,3 +1,9 @@
+#include "lib/std/net.mtl"
+#include "lib/std/string.mtl"
+#include "lib/std/integer.mtl"
+#include "lib/std/list.mtl"
+#include "lib/std/json.mtl"
+#include "lib/sys/echo.mtl"
 #include "lib/protos/dhcp_protos.mtl"
 #include "lib/protos/dns_protos.mtl"
 

@@ -2,13 +2,25 @@
  * Template app — assembly only.
  * Everything below the "business logic" line comes from lib/ building blocks;
  * app.mtl is the only file you need to touch for your own app.
+ *
+ * Transports (include exactly one):
+ *  - simulator (task simulate:app, SIMU defined): lib/net/tcp.mtl bridges the
+ *    sim's TCP natives — no network stack needed
+ *  - device (task build:app): lib/net/net.mtl brings the full MTL stack
+ *    (wifi/ARP/IP/TCP/DHCP/DNS), configured via the config_get_* accessors
+ *    defined in app.mtl
  */
 proto main 0;;
 
 // Building blocks
+#ifdef SIMU
 #include "lib/net/tcp.mtl"
+#else
+#include "lib/net/net.mtl"
+#endif
 #include "lib/net/http_server.mtl"
 #include "lib/forth.mtl"
+#include "lib/sys/task.mtl"
 
 // Forth: core dictionary only (extend with your own word packs if needed)
 fun forth_init_dictionary= forth_init_core_dictionary;;
@@ -17,6 +29,12 @@ fun forth_init_dictionary= forth_init_core_dictionary;;
 #include "app.mtl"
 
 fun main=
+    loopcb #task_scheduler;
+#ifdef SIMU
     netstart;
+#else
+    net_init;
+    wifi_init 0;
+#endif
     starthttpsrv 80 #handle_request;
     0;;

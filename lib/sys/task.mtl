@@ -1,5 +1,6 @@
 #include "lib/protos/task_protos.mtl"
 #include "lib/std/list.mtl"
+#include "lib/std/json.mtl"
 
 //--------------------------------------------------------------------------------------------------
 // Tasks
