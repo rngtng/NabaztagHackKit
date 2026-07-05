@@ -134,54 +134,43 @@ outside Docker. Everything else is in-container.
 
 # TODOs
 
-## Next session: start here
+The actionable roadmap now lives in **GitHub Issues** — this section keeps only
+the standing context. Run `scripts/claude-setup.sh` at the start of the session,
+and `task verify` before every commit — see `CLAUDE.md`.
 
-The planned `lib/` extraction (item 0 below) is complete as of 07-2026 —
-std/sys/net/hw/audio/chor/forth, all with mirrored tests and seams. The
-natural next step is no longer refactoring; it's **validating on real
-hardware**:
+## Where the SDK stands (07-2026)
 
-1. Flash a rabbit: `task build:firmware` (needs a `bc.c` from
-   `task build:boot`) → OpenOCD/JTAG per `src/firmware/` and the debrick guide
-   in the repo root. This is the first time lib/net's wifi/DHCP/DNS stack runs
-   on an actual radio instead of the simulator — treat it as the real test.
-2. Once flashed and reachable, revisit **boot/app convergence**: port
-   `src/boot` onto `lib/net` now that the stack is device-proven (was
-   deliberately deferred until this point — see the note in item 0).
-3. `dev:upload` script (item 2 below) remains genuinely unimplemented and
-   would make the hardware loop above much faster to iterate on.
+The planned `lib/` extraction is **complete**: std/sys/net/hw/audio/chor/forth,
+all with mirrored tests and seams that fail non-zero. app-piper consumes lib for
+b64/url/md5/json/word/xmlparser/task/time/timezones/utils/forth-core, and
+`src/app-template` + `task simulate:app` prove "new app = lib blocks + business
+logic". What deliberately stayed app-side: LED animations and record-upload
+flow (`lib/hw`), const_data assets + record upload (`lib/audio`), config via
+`config_get_*` seams (`lib/net`), trame/streaming/interactive/info Violet-protocol
+layers (`lib/chor`), and `utils/sleep.mtl` (coupled to run/chor/streaming state).
 
-Run `scripts/claude-setup.sh` at the start of the session, and `task verify`
-before every commit — see `CLAUDE.md`.
+The natural next step is no longer refactoring — it's **validating on real
+hardware**, then converging boot onto the proven stack. That work is tracked as
+issues:
 
-0. **Finish the lib extraction** (foundation landed 07-2026: std/sys/net/forth
-   + mirrored test suite that fails non-zero; app-piper consumes lib for
-   b64/url/md5/json/word/xmlparser/task/time/timezones/utils/forth-core;
-   `src/app-template` + `task simulate:app` prove "new app = lib blocks +
-   business logic"). Remaining, in rough order:
-   - ~~`lib/hw`~~ done 07-2026 (button/leds/ears/rfid/reclib-mic behind
-     `ears_touched_cb`/`ears_post_run_cb`/`rfid_poll` seams; LED animations
-     and record-upload flow stay app-side)
-   - ~~`lib/audio`~~ done 07-2026 (audiolib WAV engine + midi behind the
-     http-client contract; const_data assets + record upload flow stay app)
-   - ~~ipv4/wifi/dhcp/dns/ntp/http stack~~ done 07-2026 (lib/net; template
-     app builds device-standalone; config via app-side config_get_* seams)
-   - ~~`lib/chor`~~ done 07-2026 (engine + palettes; trame/streaming/
-     interactive/info stay app-side as Violet-protocol layers)
-   - boot/app convergence: port src/boot onto lib/net (deliberately deferred —
-     boot is the recovery path and stays frozen until lib/net is device-proven)
-   - `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)
+## Open roadmap → GitHub Issues
 
-1. **Buildable `boot.mtl`** — compose a modern boot from piper's frozen
-   `boot/*.mtl` so the remote-load model is fully owned/rebuildable. Biggest new effort.
-2. **`dev:upload`** (Python) — POST a `.sim` to the rabbit's on-device config page so
-   firmware updates skip the manual browser step. **No such script exists today**, but
-   the device side already supports it: `boot.mtl`'s `startconfigserver` + `getbinary` +
-   `reboot` (page 3) accept an uploaded image. This is a small, high-value win — automate
-   the HTTP POST that the config page performs.
-3. Add simple pyhton? `http_server`  to server apps to boot and/or mtl_linux's simu
-4. UX/UI for simulator: `mtl_simu` is a console app, but a simple Web UI would be nice for debugging & interactions
-   - serial output console, LED, ear, button, rfid, etc.
-
+- **[#46](https://github.com/rngtng/NabaztagHackKit/issues/46)** — Validate
+  `lib/net` on real hardware (flash a rabbit via JTAG). First time the
+  wifi/DHCP/DNS stack runs on an actual radio; unblocks the boot work below.
+- **[#47](https://github.com/rngtng/NabaztagHackKit/issues/47)** — boot/app
+  convergence: port `src/boot` onto `lib/net` (deferred until #46 proves the
+  stack on-device; boot is the recovery path and stays frozen until then).
+- **[#48](https://github.com/rngtng/NabaztagHackKit/issues/48)** — Buildable
+  `boot.mtl`: compose a modern, rebuildable boot from piper's frozen
+  `boot/*.mtl`. Biggest new effort.
+- **[#49](https://github.com/rngtng/NabaztagHackKit/issues/49)** — `dev:upload`
+  (Python): POST a `.sim` to the rabbit's on-device config page. Small,
+  high-value; makes the hardware loop faster to iterate.
+- **[#39](https://github.com/rngtng/NabaztagHackKit/issues/39)** — Extend the
+  simulator to serve `bc.jsp` + assets from a local (Python?) http server.
+- **[#43](https://github.com/rngtng/NabaztagHackKit/issues/43)** /
+  **[#42](https://github.com/rngtng/NabaztagHackKit/issues/42)** — Simulator
+  Web UI (retro pixel look) + input support (button / ear / RFID).
 
 **Tie-break** → when in doubt, prefer **nabaztag-piper**.
