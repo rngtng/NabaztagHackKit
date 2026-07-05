@@ -1,24 +1,75 @@
+/**
+ * app-sse — Server-Sent Events example.
+ * Streams SSE on port 80 and broadcasts a "tick" event every 2s to all clients.
+ *
+ * Transports (include exactly one, chosen by the SIMU define — same pattern as
+ * app-template):
+ *  - simulator (task simulate:app:sse, SIMU defined): lib/net/tcp.mtl bridges
+ *    the sim's TCP natives — no network stack needed.
+ *  - device (task build:app:sse): lib/net/net.mtl brings the full MTL stack
+ *    (wifi/ARP/IP/TCP/DHCP/DNS), configured via the config_get_* accessors
+ *    below. The real firmware VM has NO native TCP (tcpListen/tcpSend/… are
+ *    simulator-only opcodes), so the earlier lib/net/tcp.mtl + netstart build
+ *    silently did nothing on hardware — that was issue #37.
+ *
+ * The ipv4 stack drives TCP/DHCP/DNS from the task scheduler, so the main loop
+ * runs task_scheduler and the broadcaster is registered as a periodic task
+ * (not wired straight into loopcb).
+ */
 proto main 0;;
 
+// Building blocks
+#ifdef SIMU
 #include "lib/net/tcp.mtl"
+#else
+#include "lib/net/net.mtl"
+#endif
 #include "lib/net/sse_server.mtl"
+#include "lib/sys/task.mtl"
+
+#ifndef SIMU
+// ---- Device configuration (edit these) -------------------------------
+// The lib/net stack reads its settings through these accessors.
+// Crypt values (lib/net/wifi.mtl): 0=open 16=WEP 32=WPA 64=WPA2.
+// For WPA/WPA2 supply the precomputed PMK for your SSID+passphrase.
+fun config_get_wifi_ssid= "MyNetwork";;
+fun config_get_wifi_crypt= 0;;
+fun config_get_wifi_auth= 0;;
+fun config_get_wifi_key0= "";;
+fun config_get_wifi_pmk= "";;
+fun config_get_dhcp= 1;;                    // 0: use the static settings below
+fun config_get_dst= 0;;
+fun config_get_city_code= "UTC";;
+fun config_get_net_ip= "\192\168\1\52";;
+fun config_get_netmask= "\255\255\255\0";;
+fun config_get_net_gw= "\192\168\1\1";;
+fun config_get_net_dns= "\192\168\1\1";;
+fun config_get_proxy= 0;;
+fun config_get_proxy_ip= "\0\0\0\0";;
+fun config_get_proxy_port= 0;;
+// -----------------------------------------------------------------------
+#endif
 
 var _tick = 0;;
-var _last_broadcast = nil;;
 
 fun sse_on_accept cnx val msg=
     if val==TCPSTART then sse_accept_client cnx;;
 
-fun sse_loop=
-    let time_ms -> now in
-    if _last_broadcast==nil || now - _last_broadcast >= 2000 then
-    (
-        set _last_broadcast = now;
-        set _tick = _tick + 1;
-        sse_broadcast "test" strcatlist "\"tick\": " :: (itoa _tick) :: nil
-    );;
+// Broadcast a tick to every connected client. Runs as a scheduler task
+// (period 2000ms) so it coexists with the ipv4 TCP/DHCP/DNS tasks on device.
+fun sse_broadcast_task task=
+    set _tick = _tick + 1;
+    sse_broadcast "test" strcatlist "\"tick\": " :: (itoa _tick) :: nil;
+    TaskRun;;
 
 fun main=
+    loopcb #task_scheduler;
+#ifdef SIMU
     netstart;
+#else
+    net_init;
+    wifi_init 0;
+#endif
     listentcp 80 #sse_on_accept;
-    loopcb #sse_loop;;
+    task_start_ex "sse_broadcast" 2000 #sse_broadcast_task;
+    0;;
