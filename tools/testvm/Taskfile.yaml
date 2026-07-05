@@ -1,0 +1,37 @@
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "testvm"}}'
+  DIR: '{{.DIR | default "../"}}'   # build context = src/firmware/
+
+tasks:
+  image:
+    internal: true
+    cmds:
+      # Dockerfile lives in testvm/ but context is src/firmware/ so ../src/vm etc. are reachable
+      - docker build -t {{.IMAGE}} -f {{.DIR}}testvm/Dockerfile {{.DIR}}
+
+  simulate:
+    desc: 'Build and run testvm against boot bytecode. Requires build:boot first. Usage: task testvm:simulate [SOURCE=build/boot/dumpbc.c] [SOCK_DIR=build]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "build/boot/dumpbc.c"}}'
+      SOCK_DIR: '{{.SOCK_DIR | default "."}}'
+    cmds:
+      - cp '{{.SOURCE}}' src/firmware/testvm/bc.c
+      - mkdir -p {{.SOCK_DIR}}
+      - defer: rm -f src/firmware/testvm/bc.c
+      - 'docker run --rm --init
+          -v "$(realpath src/firmware):/work"
+          -v "$(realpath {{.SOCK_DIR}}):/sock"
+          -w /work/testvm
+          {{.IMAGE}}
+          sh -c "make && ./testvm"'
+
+  clean:
+    desc: 'Remove testvm build artifacts and Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true
+      - rm -f src/firmware/testvm/testvm src/firmware/testvm/bc.c
+      - rm -Rf src/firmware/testvm/obj
