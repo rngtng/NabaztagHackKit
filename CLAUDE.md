@@ -65,6 +65,15 @@ short `README.md`. Verify by actually running the task in Docker — not just "i
 - **No local function definitions** (`let fun` is invalid). Hoist to top level.
 - **`if-then` without `else`** leaves the false branch typed as `I` (0).
   Always add `else nil` when returning a list.
+- **Duplicate `fun` definitions are legal; call sites bind the most recent
+  definition at their point of compilation.** Later redefinitions do NOT rebind
+  earlier call sites (piper's `tcpudp_emu.mtl` override relies on this). Put
+  overrides/stubs BEFORE their consumers' includes.
+- **Duplicate definitions still share one type.** The checker unifies the
+  signatures of all definitions of a name — a stub must be type-compatible
+  with the real implementation (e.g. can't pass `I` where the real one takes `Tcp`).
+- **`(expr).field` doesn't parse as a function argument** — bind it first:
+  `let sock.sockCnx -> cnx in f cnx.field`.
 
 ## Working agreement
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /

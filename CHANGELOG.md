@@ -1,5 +1,26 @@
 # Changes
 
+## v0.8.0 - 05-07-2026
+
+  * **the network stack lives in `lib/net`** — ipv4/ (ARP/IP/TCP/UDP/ICMP in
+    MTL over raw 802.11 frames + the SIMU tcpudp_emu backend), wifi
+    association, DHCP/DNS/NTP/HTTP clients, and the frame dispatcher; device
+    configuration stays app-side behind `config_get_*` proto seams
+  * one Sock implementation: the ipv4 assembly exports writetcp/closetcp/
+    tcpcb/listentcp aliases, so the lib servers run on the stack; app-piper's
+    net/sock.mtl copy is gone. lib/net/http.mtl closes the audiolib
+    http-client seam; ntp closes the lib/sys/time seam
+  * `src/app-template` is device-capable: SIMU builds use the bare tcp.mtl
+    transport, device builds compile the full stack (461 funs) configured by
+    an "edit these" block in app.mtl
+  * lib/net modules are self-contained (own std/sys/hw includes); TCP event
+    consts canonical in lib/protos/tcp_protos.mtl
+  * tests: http client header machinery, DNS server-list handling, NTP
+    payload; suite 451 assertions / 38 scenarios
+  * CLAUDE.md gotchas: duplicate-definition binding rule (call sites bind the
+    most recent definition at their point of compilation), shared types
+    across redefinitions
+
 ## v0.7.0 - 04-07-2026
 
   * `lib/audio/` — `audiolib` (WAV playback engine: local sample lists or

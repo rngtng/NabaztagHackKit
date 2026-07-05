@@ -144,10 +144,12 @@ outside Docker. Everything else is in-container.
      and record-upload flow stay app-side)
    - ~~`lib/audio`~~ done 07-2026 (audiolib WAV engine + midi behind the
      http-client contract; const_data assets + record upload flow stay app)
-   - `lib/chor`
-   - the `ipv4/` + wifi/dhcp/dns/ntp/http-client stack → lib, unlocking
-     device-standalone template apps (and later boot/app convergence);
-     `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)
+   - ~~ipv4/wifi/dhcp/dns/ntp/http stack~~ done 07-2026 (lib/net; template
+     app builds device-standalone; config via app-side config_get_* seams)
+   - `lib/chor` — the last app-piper block worth extracting
+   - boot/app convergence: port src/boot onto lib/net (deliberately deferred —
+     boot is the recovery path and stays frozen until lib/net is device-proven)
+   - `utils/sleep.mtl` stays app-side (coupled to run/chor/streaming state)
 
 1. **Buildable `boot.mtl`** — compose a modern boot from piper's frozen
    `boot/*.mtl` so the remote-load model is fully owned/rebuildable. Biggest new effort.
