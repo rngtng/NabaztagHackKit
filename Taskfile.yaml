@@ -75,41 +75,6 @@ tasks:
         vars:
           SOURCE: '{{.SIMU_BOOT_OUT}}/merged.mtl'
 
-  build:app:
-    desc: 'Build app bytecode. Preprocess files, then compile. Usage: task build:app [SOURCE=src/app-piper/main.mtl] [OUT=build/app]'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
-      APP_OUT: '{{.OUT}}/app'
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-      - task: mtl:compile
-        vars:
-          SOURCE: '{{.APP_OUT}}/merged.mtl'
-          OUT: '{{.APP_OUT}}'
-          SIGN: 'false'
-
-  simulate:app:
-    desc: 'Preprocess and simulate an app. Served at http://localhost:8080. Usage: task simulate:app [SOURCE=src/app-piper/main.mtl] [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
-      SIMU_APP_OUT: '{{.OUT}}/app_simu'
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.SIMU_APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-          DEFINES: 'SIMU'
-      - task: mtl:simulate
-        vars:
-          SOURCE: '{{.SIMU_APP_OUT}}/merged.mtl'
-
   test:
     desc: 'Preprocess and run MTL unit tests. Usage: task test'
     dir: '{{.USER_WORKING_DIR}}'
@@ -138,3 +103,92 @@ tasks:
       - rm -rf '{{.FIRMWARE_OUT}}'
       - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
       - rm -rf src/firmware/obj src/firmware/src/bc.c
+
+  # ----------------------------------------------------------
+  build:app:
+    desc: 'Build app Usage: task build:app TARGET=app1|app2 [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    requires:
+      vars: [TARGET]
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/{{.TARGET}}/main.mtl
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+
+  simulate:app:
+    desc: 'Simulate app MVP in MTL simulator. HTTP UI at http://localhost:8080. Usage: task simulate:app TARGET=app1|app2'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    requires:
+      vars: [TARGET]
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: src/{{.TARGET}}/main.mtl
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+
+  build:app:piper:
+    desc: 'Build app bytecode. Preprocess files, then compile. Usage: task build:app [SOURCE=src/app-piper/main.mtl] [OUT=build/app]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
+      APP_OUT: '{{.OUT}}/app'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+          SIGN: 'false'
+
+  simulate:app:piper:
+    desc: 'Preprocess and simulate an app. Served at http://localhost:8080. Usage: task simulate:app [SOURCE=src/app-piper/main.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default "src/app-piper/main.mtl"}}'
+      SIMU_APP_OUT: '{{.OUT}}/app_simu'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.SIMU_APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.SIMU_APP_OUT}}/merged.mtl'
+
+  build:app:sse:
+    desc: 'Build SSE server. Usage: task build:sse [OUT=build/sse]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: build:app
+        vars:
+          TARGET: app-sse
+
+  simulate:app:sse:
+    desc: 'Simulate SSE server. Usage: task simulate:sse [OUT=build/sse]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: simulate:app
+        vars:
+          TARGET: app-sse
+
