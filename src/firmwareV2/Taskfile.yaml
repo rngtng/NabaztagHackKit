@@ -1,0 +1,37 @@
+# firmwareV2 - bring-up build for the eLua-successor (Lua 5.4) port to the
+# Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI). Every target runs in the Docker
+# toolchain (see Dockerfile), so the only host requirements are Docker + Task.
+#
+#   task firmwareV2:compile            -> bin/hello.{elf,hex,bin}  (M0)
+#   task firmwareV2:compile APP=blink  -> bin/blink.{elf,hex,bin}  (M1, later)
+#
+# Artifacts land in bin/ (and obj/) on the host via a bind mount.
+# Flashing over JTAG (bin/*.elf) is added in M2 (#90); see tools/openocd.
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabaztag-sdk-firmwarev2"}}'
+  DIR: '{{.DIR | default "."}}'
+  APP: '{{.APP | default "hello"}}'
+
+tasks:
+  image:
+    internal: true   # built on demand as a dep; rebuilt when the toolchain changes
+    dir: '{{.DIR}}'
+    cmds:
+      - docker build -t {{.IMAGE}} .
+
+  compile:
+    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:compile [APP=hello]'
+    dir: '{{.DIR}}'
+    cmds:
+      - task: image
+      # bind-mount the tree at /work; obj/ and bin/ land back on the host.
+      - 'docker run --rm -v "$(realpath .):/work" {{.IMAGE}} make APP={{.APP}}'
+
+  clean:
+    desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker image'
+    dir: '{{.DIR}}'
+    cmds:
+      - rm -rf bin obj
+      - docker rmi {{.IMAGE}} || true

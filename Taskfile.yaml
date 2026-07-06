@@ -31,6 +31,13 @@ includes:
       IMAGE: nabaztag-sdk-firmware
       DIR: ./src/firmware/
 
+  firmwareV2: # eLua-successor V2 firmware bring-up (Lua 5.4) — ARM7TDMI/ML67Q4051 (#87)
+    internal: true
+    taskfile: ./src/firmwareV2/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-firmwarev2
+      DIR: ./src/firmwareV2/
+
   testvm: # Native C VM smoke-test harness, built from the firmware's own vm/net sources (tools/testvm)
     internal: true
     taskfile: ./tools/testvm/Taskfile.yaml
@@ -52,6 +59,7 @@ tasks:
       - task: mtl:clean
       - task: preprocessor:clean
       - task: firmware:clean
+      - task: firmwareV2:clean
       - task: testvm:clean
       - rm -rf '{{.OUT}}'
 
@@ -106,7 +114,7 @@ tasks:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
   verify:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse all build.'
+    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV2 all build.'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: test
@@ -114,6 +122,15 @@ tasks:
       - task: build:app:piper
       - task: build:app:template
       - task: build:app:sse
+      - task: build:firmwareV2
+
+  build:firmwareV2:
+    desc: 'Build a V2 firmware bring-up app (ARM7TDMI/ML67Q4051, issue #87). Usage: task build:firmwareV2 [APP=hello]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: firmwareV2:compile
+        vars:
+          APP: '{{.APP | default "hello"}}'
 
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'

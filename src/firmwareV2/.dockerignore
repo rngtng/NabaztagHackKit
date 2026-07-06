@@ -1,0 +1,4 @@
+# keep the build context small; these are rebuilt inside the image
+bin/
+obj/
+backups/
