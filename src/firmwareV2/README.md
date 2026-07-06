@@ -22,11 +22,43 @@ Host needs only Docker + Task; the ARM toolchain lives in the Docker image.
 ```sh
 task build:firmwareV2            # -> bin/hello.{elf,hex,bin}  (M0, toolchain check)
 task build:firmwareV2 APP=blink  # -> bin/blink.{elf,hex,bin}  (M1, LED blink)
+task build:firmwareV2 APP=lua    # -> bin/lua.{elf,hex,bin}    (M4, Lua 5.4 REPL)
 ```
 
 `arm-none-eabi-gcc` + newlib-nano, `-mcpu=arm7tdmi -mthumb -mthumb-interwork`,
 linked against [`sys/ml67q4051.ld`](sys/ml67q4051.ld) with our own startup
-(`-nostartfiles`). One selectable app from `src/app/` at a time (`APP=`).
+(`-nostartfiles`) and `--gc-sections` (drops unreferenced code; the vector table
+and startup are `KEEP`-guarded in the linker script). One selectable app from
+`src/app/` at a time (`APP=`).
+
+## Lua runtime (M4, #92)
+`APP=lua` boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
+[`PROVENANCE.md`](../../PROVENANCE.md)) and drops into a REPL. The glue lives in
+[`src/app/lua.c`](src/app/lua.c): a trimmed `luaL_openlibs`, an embedded demo
+chunk, the REPL loop (`luaL_loadstring`/`lua_pcall`), and the two things a hosted
+Lua assumes but bare metal lacks -
+
+- **Console:** newlib `_read`/`_write` route stdin/stdout through **ARM
+  semihosting** (`svc 0xAB`), the M3 (#91) no-UART console. So `print()` and the
+  prompt reach the GDB/OpenOCD console on hardware and the simulator off it.
+- **Heap:** `_sbrk` hands out the **1 MB external RAM** window (`0xD0000000`, set
+  up by `init.s`' EMC init) - the 16 KB internal RAM is too small for a Lua state.
+
+Config, tuned to the **124 KB internal-flash budget** (`luaconf.h` sets
+`LUA_32BITS` - 32-bit int + 32-bit float, no FPU/`double`/`long long`):
+
+- **Stdlib = base + string + table** only. Dropped: `math` (~16 KB of libm trig),
+  `io`/`os`/`package`/`debug`/`loadlib`/`coroutine`/`utf8`. `base`'s
+  `dofile`/`loadfile` are removed in `lua/lbaselib.c` (no filesystem).
+- **Integer math is exact; float *printing* does not work yet.** newlib-nano
+  omits float support from `printf` unless forced with `-u _printf_float`, which
+  costs ~7.6 KB and does **not** fit (even base+string+float overflows 124 KB). So
+  `print(1+1)` → `2` (the #92 DoD, exact), `10//3` → `3`, but a float value like
+  `1/2` currently prints as `.0`. Float *arithmetic* is still correct internally;
+  only the string rendering is stubbed. Proper float output waits until code moves
+  off the internal flash (M6 external flash) or a smaller custom formatter lands.
+
+Result: `bin/lua.elf` ~125 KB `.text` (fits 124 KB). See [Simulate](#simulate-no-hardware).
 
 ## Simulate (no hardware)
 Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
@@ -36,6 +68,19 @@ Unicorn Engine, issue #96) - no JTAG, no device:
 task simulate:firmwareV2                        # run bin/hello.elf, report reaching main
 task simulate:firmwareV2 APP=blink ARGS=-v      # -v logs every peripheral (MMIO) write
 task simulate:firmwareV2 APP=blink ARGS="-v -n 8000000"  # bigger budget: see a full blink cycle
+task simulate:firmwareV2 APP=lua ARGS="-n 60000000"      # M4: boots Lua, runs print(1+1) over the semihost console
+```
+
+Lua needs a large instruction budget (interpreter bring-up); the semihosting
+console output is printed in the run summary. To drive the **REPL** with typed
+input, feed the simulator's `SYS_READC` via `--input` (backslash escapes
+interpreted; runs the container directly, as Task re-parses `ARGS` through a shell
+that trips on `()`):
+
+```sh
+docker run --rm -v "$PWD/src/firmwareV2/bin:/mnt:ro" nabaztag-sdk-firmwarev2-sim \
+  -n 120000000 --input 'print(10//3, 10%3)\nprint(string.rep("ab",3))\n' /mnt/lua.elf
+#  -> semihost output = '... > 3\t1\n> ababab\n> '
 ```
 
 It maps the real memory regions, loads the ELF, runs from `Reset_Handler`, stubs
@@ -68,8 +113,11 @@ src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks nose LED 1 red
+src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
+lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
 ```
+The `lua/` tree is vendored upstream (PUC-Rio) - see [`PROVENANCE.md`](../../PROVENANCE.md).
 The `sys/` tree, `inc/common.h`, and the `hal/` sources are **copied** from
 `src/firmware` (the vendored `nabgcc` port) - see [`PROVENANCE.md`](../../PROVENANCE.md).
 This layer is otherwise self-contained and does not depend on `src/firmware` at
@@ -82,7 +130,7 @@ build time.
 | M1 | Bare-metal LED blink | #89 | done (sim); hardware confirm pending M2 |
 | M2 | JTAG flash workflow (Task targets) | #90 | |
 | M3 | Semihosting console feasibility | #91 | |
-| M4 | Lua 5.4 core + REPL | #92 | |
+| M4 | Lua 5.4 core + REPL | #92 | done (sim); hardware confirm pending M2/M3 |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
 | - | tooling: Unicorn simulator | #96 | first cut done |

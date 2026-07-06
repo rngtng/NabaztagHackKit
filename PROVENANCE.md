@@ -83,6 +83,41 @@ Per `CLAUDE.md`'s vendoring rule ("copy sources in, don't submodule — record
 origin repo + commit + local changes"). This is the backport bridge: what came
 from where, and what changed here so fixes can flow back upstream.
 
+## `src/firmwareV2/lua/`
+
+- **Origin:** https://github.com/lua/lua — PUC-Rio Lua, the reference C
+  implementation. Vendored from the official release tarball
+  `https://www.lua.org/ftp/lua-5.4.7.tar.gz`.
+- **Version:** **Lua 5.4.7** (2024). Tarball SHA-256
+  `9fbf5e28ef86c69858f6d3d34eccc32e911c1a28b4120ff3e84aaa70cfbf1e30`.
+- **Contents:** the tarball's `src/` `*.c` + `*.h` **verbatim** (the whole core +
+  all stdlib source; `Makefile` and `lua.hpp` omitted). The build compiles only a
+  subset (see the Makefile's `LUA_CORE`/`LUA_LIB`): core + `base`/`string`/`table`.
+  The standalone `lua.c`/`luac.c` are present but unused — our own REPL is
+  `src/firmwareV2/src/app/lua.c`. Keeping the full `src/` verbatim keeps the
+  backport diff to exactly the two files below.
+- **Local changes (2, both for the 124 KB flash budget / no-FPU ARM7TDMI target):**
+  - `luaconf.h` — `LUA_32BITS` default flipped `0 → 1` (32-bit `int` integers +
+    32-bit `float`; the chip has no FPU, so `long long`/`double` would pull in
+    expensive soft-float and 64-bit helpers). One-line change, marked in-file.
+  - `lbaselib.c` — removed the `"dofile"` and `"loadfile"` entries from
+    `base_funcs[]` (their `luaL_loadfilex`→`fopen` path pulls ~8.5 KB of newlib
+    stdio; this target has no filesystem). `"load"` (in-memory, used by the REPL)
+    is kept. The now-unused static functions are dropped by `--gc-sections`.
+- **License:** MIT (the license text is embedded in `lua/lua.h`).
+- **Role:** the M4 (#92) Lua runtime. Twin to nothing in this repo — a fresh
+  vendored dependency, not a copy of `src/firmware`.
+
+**Note on the M4 host changes** (in `src/firmwareV2/`, not the vendored `lua/`):
+`sys/ml67q4051.ld` gained `--gc-sections` support (`KEEP` on `.intvec`/`.startup`,
+plus `__extram_start__`/`__extram_end__` for the ExtRAM `_sbrk` heap) and the
+Makefile an `APP=lua` build variant. `sim/simulate.py` (#96) was fixed to load
+ELF segments at their **physical (load) address** rather than the virtual address
+— init.s does an LMA→VMA `.data` copy, so loading at the VMA left the flash LMA
+blank and the boot copy clobbered `.data` (newlib's `_impure_ptr` → NULL, crashing
+the first stdio/malloc call); it also gained `--input` to feed the REPL over
+semihosting `SYS_READC`.
+
 ## Where each part came from
 
 | Path | Origin | Notes |
@@ -91,7 +126,8 @@ from where, and what changed here so fixes can flow back upstream.
 | `tools/preprocessor/` | written for this repo | pcpp-based `#include`/`#ifdef` preprocessor replacing piper's Perl one |
 | `tools/mockserver/` | written for this repo | stdlib-only Python mock HTTP file server (#39) — logs requests, serves an app's `src/<app>/assets/` so the sim can fetch `init.forth`/`bc.jsp`/`*.mp3` end-to-end (`task simulate:app:*:mock`) |
 | `src/firmware/` | `nabgcc` fork (`2894846`, dockerized `ed3972c`) | C bytecode VM + drivers ported to `arm-none-eabi-gcc`; WPA2 branch |
-| `src/firmwareV2/` | original to this repo; ARM7TDMI startup/linker/register base **copied from `src/firmware/` @ `3a37cef`** | eLua-successor Lua 5.4 port to the V2 (ML67Q4051), issue #87. `sys/{ml67q4051.ld,asm/*.s,src/irq.c,inc/*.h}`, `inc/common.h`, and the HAL `src/hal/{led.c,spi.c}` + `inc/hal/{led.h,spi.h}` (LED/SPI, added at M1 #89) are verbatim copies of the vendored `nabgcc` startup/HAL, so a VM/register fix in `src/firmware` may apply here too (grep the sibling). Local change: `common.h` drops the `utils/debug.h` (UART) include - the V2 board has no UART. `src/app/blink.c` (M1) is original to this repo and uses a software busy-loop delay rather than the timer-IRQ `utils/delay.c` (the interrupt controller/timer are not brought up until later). `sim/simulate.py` (#96) gained an instant-SPI-completion stub at M1 (a data-register write sets the `SPIF` flag) so SPI-polling drivers can run. The Lua runtime itself will be vendored at M4 (#92). |
+| `src/firmwareV2/lua/` | PUC-Rio **Lua 5.4.7** (`lua.org/ftp`, `lua/lua`) | vendored interpreter for the M4 (#92) Lua REPL; 2 local edits (`luaconf.h`, `lbaselib.c`) - see section above |
+| `src/firmwareV2/` | original to this repo; ARM7TDMI startup/linker/register base **copied from `src/firmware/` @ `3a37cef`** | eLua-successor Lua 5.4 port to the V2 (ML67Q4051), issue #87. `sys/{ml67q4051.ld,asm/*.s,src/irq.c,inc/*.h}`, `inc/common.h`, and the HAL `src/hal/{led.c,spi.c}` + `inc/hal/{led.h,spi.h}` (LED/SPI, added at M1 #89) are verbatim copies of the vendored `nabgcc` startup/HAL, so a VM/register fix in `src/firmware` may apply here too (grep the sibling). Local change: `common.h` drops the `utils/debug.h` (UART) include - the V2 board has no UART. `src/app/blink.c` (M1) is original to this repo and uses a software busy-loop delay rather than the timer-IRQ `utils/delay.c` (the interrupt controller/timer are not brought up until later). `sim/simulate.py` (#96) gained an instant-SPI-completion stub at M1 (a data-register write sets the `SPIF` flag) so SPI-polling drivers can run, and at M4 (#92) an ELF-load-at-physical-address fix + `--input` REPL feeding. M4 also added `--gc-sections`/`KEEP`/ExtRAM-heap symbols to `sys/ml67q4051.ld` and an `APP=lua` build variant. The Lua 5.4 runtime is vendored under `src/firmwareV2/lua/` (see its own section above). |
 | `src/boot/` | the original Violet/IAR boot (via `firmware_nabaztag`), split into modules | frozen recovery path — WiFi provisioning + `bc.jsp` fetch; not rebuilt from lib |
 | `src/app-piper/` (business-logic layers: srv/, run/, chor/ protocol layers, config, app forth words) | `nabaztag-piper` (ServerlessNabaztag fork), added `3ccbf2d` | the app; most of its former bulk is now `lib/` (see below) |
 | `lib/net/`, `lib/hw/`, `lib/audio/`, `lib/chor/` engine, `lib/forth/` word packs | extracted from `nabaztag-piper`'s `src/app-piper/{net,ipv4,hw,audio,chor}` | generic building blocks pulled out behind seams — see `lib/README.md` for the seam contract and CHANGELOG v0.4.0–v0.9.0 for the extraction history |

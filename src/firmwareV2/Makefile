@@ -21,6 +21,20 @@ C_FILES += $(wildcard src/hal/*.c)
 C_FILES += $(wildcard sys/src/*.c)
 AS_FILES = $(wildcard sys/asm/*.s)
 
+# M4 (#92): the Lua app additionally links the vendored Lua 5.4 core (lua/).
+# We compile the core + a trimmed set of stdlibs (base/string/table) to fit the
+# 124 KB flash budget: no math (pulls ~16 KB of libm trig), no io/os/package/
+# debug/loadlib/coroutine/utf8 (no filesystem, OS, or dynamic loading on this
+# target; the rest do not earn their flash here). The standalone lua.c/luac.c and
+# linit.c are replaced by our own REPL + openlibs in src/app/lua.c. base's
+# dofile/loadfile are dropped in lua/lbaselib.c. See the src/app/lua.c header.
+LUA_CORE = lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject \
+           lopcodes lparser lstate lstring ltable ltm lundump lvm lzio
+LUA_LIB  = lauxlib lbaselib lstrlib ltablib
+ifeq ($(APP),lua)
+  C_FILES += $(patsubst %,lua/%.c,$(LUA_CORE) $(LUA_LIB))
+endif
+
 # Compiler options (ARM7TDMI, no FPU, Thumb/interwork - same set as src/firmware)
 CFLAGS  =
 CFLAGS += --specs=nosys.specs
@@ -39,10 +53,22 @@ LDFLAGS  =
 LDFLAGS += --specs=nosys.specs
 LDFLAGS += -Wl,-Map,obj/$(TARGET).map
 LDFLAGS += -nostartfiles
+LDFLAGS += -Wl,--gc-sections           # drop unreferenced code/data (paired with -f*-sections)
 LDFLAGS += -mcpu=arm7tdmi -T$(LDSCRIPT)
 
 # newlib-nano + math + nosys syscall stubs
 LIBS = -lc_nano -lm -lnosys
+
+# M4 (#92): the Lua app needs the vendored headers on the include path.
+# NB: newlib-nano's float-capable printf (-u _printf_float) is deliberately NOT
+# forced - it costs ~7.6 KB and does not fit in 124 KB (even base+string+float
+# overflows). So float *printing* is stubbed (a float like 1/2 prints as ".0");
+# integer results (the #92 DoD, `print(1+1)`) are exact and float arithmetic is
+# still correct internally. Re-add `LDFLAGS += -Wl,-u,_printf_float` once code
+# moves off internal flash (M6) or a lib is dropped to make room.
+ifeq ($(APP),lua)
+  CFLAGS  += -Ilua
+endif
 
 # Toolchain
 CC      = arm-none-eabi-gcc
@@ -68,6 +94,11 @@ bin: bin/$(TARGET).elf
 dis: bin/$(TARGET).elf
 	$(NM) -lS $< > obj/$(TARGET).sym
 	$(DUMP) -d $< > obj/$(TARGET).dis
+
+# Vendored Lua is compiled for size (-Os, to fit the 124 KB flash budget) and
+# with relaxed warnings (it is not our code to fix); our own sources keep the
+# strict -Wall -Wextra -Wpedantic and default -O1 set above.
+obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)

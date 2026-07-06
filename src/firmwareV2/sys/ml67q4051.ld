@@ -21,8 +21,8 @@ SECTIONS
   /* first section is .text which is used for code */
   .text :
   {
-    *(.intvec)
-    *(.startup.*)
+    KEEP(*(.intvec))             /* vector table: entered by HW, not referenced */
+    KEEP(*(.startup.*))          /* reset/clock/EMC bring-up - keep under --gc-sections */
     *(.text.*)                   /* remaining code */
     *(.glue_7t) *(.glue_7)
   } >IntROM
@@ -78,6 +78,11 @@ SECTIONS
   . = ALIGN(4);
   PROVIDE(__heap_start__ = .);
   PROVIDE(__heap_end__ = ALIGN(__stack_end__ - 0x100  ,8));
+
+  /* External RAM heap window (M4, #92): 16 KB IntRAM is too small for a Lua
+   * state, so firmwareV2's _sbrk hands out this 1 MB ExtRAM region instead. */
+  PROVIDE(__extram_start__ = ORIGIN(ExtRAM));
+  PROVIDE(__extram_end__   = ORIGIN(ExtRAM) + LENGTH(ExtRAM));
 
   _end = .;
   PROVIDE (end = .);

@@ -88,7 +88,7 @@ def in_periph(addr):
 
 
 class Sim:
-    def __init__(self, elf_path, budget, verbose):
+    def __init__(self, elf_path, budget, verbose, stdin=b""):
         self.budget = budget
         self.verbose = verbose
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
@@ -96,6 +96,8 @@ class Sim:
         self.periph_writes = 0
         self.reached_main = False
         self.console = bytearray()   # semihosting output
+        self.stdin = stdin           # bytes fed to SYS_READC (console input)
+        self.stdin_pos = 0
         self.entry = None
         self.main_addr = None
         self._load(elf_path)
@@ -111,9 +113,16 @@ class Sim:
             for seg in elf.iter_segments():
                 if seg["p_type"] != "PT_LOAD":
                     continue
-                vaddr, data = seg["p_vaddr"], seg.data()
+                # Load each segment's file bytes at its PHYSICAL (load) address,
+                # exactly like a flash programmer writes the ROM image - NOT at the
+                # virtual address. They differ for the .data segment (LMA in flash,
+                # VMA in RAM): init.s copies .data LMA->VMA and zeroes .bss at boot.
+                # Writing at the VMA instead would leave the flash LMA blank, so
+                # that boot-time copy would clobber .data with zeros (e.g. newlib's
+                # _impure_ptr -> NULL, crashing the first stdio/malloc call).
+                paddr, data = seg["p_paddr"], seg.data()
                 if data:
-                    self.uc.mem_write(vaddr, data)
+                    self.uc.mem_write(paddr, data)
             symtab = elf.get_section_by_name(".symtab")
             if symtab:
                 syms = symtab.get_symbol_by_name("main")
@@ -188,7 +197,13 @@ class Sim:
                 s += b
             self.console += s
         elif op == 0x07:                                 # SYS_READC
-            uc.reg_write(UC_ARM_REG_R0, 0)               # no input yet (M3)
+            # Feed --input bytes one at a time; 0 once exhausted (console EOF).
+            if self.stdin_pos < len(self.stdin):
+                ch = self.stdin[self.stdin_pos]
+                self.stdin_pos += 1
+            else:
+                ch = 0
+            uc.reg_write(UC_ARM_REG_R0, ch)
 
     def _on_main(self, uc, address, size, _ud):
         if not self.reached_main:
@@ -222,8 +237,12 @@ def main():
                     help="max instructions to execute (default 300000)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="log every peripheral (MMIO) write")
+    ap.add_argument("-i", "--input", default="",
+                    help=r"console input fed to SYS_READC (e.g. 'print(2+2)\n'); "
+                         r"backslash escapes like \n and \t are interpreted")
     args = ap.parse_args()
-    sys.exit(Sim(args.elf, args.budget, args.verbose).run())
+    stdin = args.input.encode("latin1").decode("unicode_escape").encode("latin1")
+    sys.exit(Sim(args.elf, args.budget, args.verbose, stdin).run())
 
 
 if __name__ == "__main__":
