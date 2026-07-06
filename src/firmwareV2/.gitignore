@@ -1,0 +1,5 @@
+# build artifacts - rebuilt in Docker
+/bin/
+/obj/
+# JTAG flash backups (M2, #90) - never commit device dumps
+/backups/
