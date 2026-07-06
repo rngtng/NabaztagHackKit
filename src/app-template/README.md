@@ -22,10 +22,11 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
-word pack (`forth_memory.mtl`), the shared time/date pack
-(`lib/forth/time.mtl`, over `lib/sys/time.mtl`), and a task-control pack
-(`forth_task.mtl`, over `lib/sys/task.mtl`) — no hardware or network words.
-Add more by extending `app_forth_words` the same way.
+word pack (`forth_memory.mtl`) plus two shared opt-in packs — the time/date
+pack (`lib/forth/time.mtl`, over `lib/sys/time.mtl`) and the task-control pack
+(`lib/forth/task.mtl`, over `lib/sys/task.mtl`), both shared with app-piper —
+and no hardware or network words. Add more by extending `app_forth_words` the
+same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -137,8 +138,8 @@ curl -s -d 'utc>string' localhost:8080/eval
 # -> {"output": "", "stack": "Mon, 00  0000 00:00:00 GMT"}
 ```
 
-**Task** (`forth_task.mtl`, exposing `lib/sys/task.mtl`'s scheduler — the same
-one `main.mtl` already runs via `loopcb #task_scheduler`). A backgrounded word
+**Task** (`lib/forth/task.mtl`, exposing `lib/sys/task.mtl`'s scheduler — the
+same one `main.mtl` already runs via `loopcb #task_scheduler`). A backgrounded word
 runs on the scheduler thread, so it can loop or repeat without blocking the
 HTTP handler that serves `/eval`.
 

@@ -1,0 +1,74 @@
+// Word-level coverage for lib/forth/task.mtl. The scheduler mechanics live in
+// test/lib/sys/task_test.mtl; here we check the Forth wrappers pop their args
+// in the documented order and push the documented flags. A single interpreter
+// is reused (setup builds the core dictionary lazily once — see _test.mtl).
+let scenario "forth_task_test" -> s in
+let forth_interpreter_setup "" nil nil nil nil -> f in
+(
+  let test "task-start ( text delay name -- ) registers a running task" -> t in
+  (
+    assert_nil task_get "ft1";
+    forth_push f [str:"1 1 +"]; // text
+    forth_push f [int:500];     // delay -> period_ms
+    forth_push f [str:"ft1"];   // name
+    forth_task_start f;
+    assert_nil f.stack;         // all three args consumed
+    let task_get "ft1" -> task in
+    (
+      assert_equalS "run" task_status_fmt task;
+      assert_equalI 500 task.task_period_ms
+    )
+  );
+
+  let test "task-suspend ( id -- flag ) suspends and pushes true" -> t in
+  (
+    let task_get "ft1" -> task in
+    (
+      forth_push f [int:task.task_id];
+      forth_task_suspend f;
+      assert_equalS "suspend" task_status_fmt task_get "ft1";
+      let forth_pop f -> flag in assert_equalI FORTH_TRUE flag.int
+    )
+  );
+
+  let test "task-resume ( id -- flag ) resumes and pushes true" -> t in
+  (
+    let task_get "ft1" -> task in
+    (
+      forth_push f [int:task.task_id];
+      forth_task_resume f;
+      assert_equalS "run" task_status_fmt task_get "ft1";
+      let forth_pop f -> flag in assert_equalI FORTH_TRUE flag.int
+    )
+  );
+
+  let test ".tasks ( -- ) lists the task by name and status" -> t in
+  (
+    set f.output = nil;
+    forth_dot_tasks f;
+    let strcatlist rev f.output nil -> out in
+    (
+      assert_equalI 1 (if (strstr out "ft1" 0) != nil then 1 else 0);
+      assert_equalI 1 (if (strstr out "run" 0) != nil then 1 else 0)
+    )
+  );
+
+  let test "task-stop ( id -- flag ) pushes true and the scheduler drops it" -> t in
+  (
+    let task_get "ft1" -> task in
+    (
+      forth_push f [int:task.task_id];
+      forth_task_stop f;
+      let forth_pop f -> flag in assert_equalI FORTH_TRUE flag.int;
+      task_scheduler; // removes tasks left in TaskStop
+      assert_nil task_get "ft1"
+    )
+  );
+
+  let test "task-stop ( id -- flag ) pushes false for an unknown id" -> t in
+  (
+    forth_push f [int:9999];
+    forth_task_stop f;
+    let forth_pop f -> flag in assert_equalI FORTH_FALSE flag.int
+  )
+);

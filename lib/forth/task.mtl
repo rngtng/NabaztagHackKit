@@ -1,17 +1,25 @@
 /**
- * Task words for Forth interpreter
+ * Forth task-control word pack — exposes lib/sys/task.mtl's scheduler to
+ * Forth scripts (task-start/stop/suspend/resume, .tasks).
+ *
+ * Opt-in pack, NOT part of forth_core_words: it references lib/sys/task.mtl
+ * (task_start_ex/task_stop/task_suspend/task_resume/_tasks/task_status_fmt,
+ * the Task type and TaskRun) and the `fixarg2` VM native. It does NOT
+ * #include lib/sys/task.mtl itself — that would breach the "no lib/forth/*
+ * reaches into lib/sys via #include" boundary. The consumer (app assembly)
+ * is responsible for pulling lib/sys/task.mtl into the compiled program
+ * ahead of this pack, and for running `loopcb #task_scheduler`.
+ *
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */
-
-#include "lib/protos/task_protos.mtl"
 
 fun _forth_task task text=
     forth_interpreter_ex text nil nil task nil; // TODO cb ?
     TaskRun;;
 
 /**
- * START-TASK ( text delay name -- )
+ * TASK-START ( text delay name -- )
  * Start a new task with the given name, delay, and text to execute.
  */
 fun forth_task_start f=
@@ -22,7 +30,7 @@ fun forth_task_start f=
     nil;;
 
 /**
- * STOP-TASK ( task-id -- flag )
+ * TASK-STOP ( task-id -- flag )
  * Stop the task with the given task id.
  */
 fun forth_task_stop f=
@@ -33,7 +41,7 @@ fun forth_task_stop f=
         forth_false f;;
 
 /**
- * SUSPEND-TASK ( task-id -- flag )
+ * TASK-SUSPEND ( task-id -- flag )
  * Suspend the task with the given task id.
  */
 fun forth_task_suspend f=
@@ -44,7 +52,7 @@ fun forth_task_suspend f=
         forth_false f;;
 
 /**
- * RESUME-TASK ( task-id -- flag )
+ * TASK-RESUME ( task-id -- flag )
  * Resume the task with the given task id.
  */
 fun forth_task_resume f=
@@ -73,7 +81,7 @@ fun _forth_print_tasks f tasks=
 
 /**
  * .TASKS ( -- )
- * List the words in the dictionary
+ * List the running tasks and their status
  */
 fun forth_dot_tasks f=
     _forth_print_tasks f _tasks;
