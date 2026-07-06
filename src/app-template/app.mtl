@@ -6,6 +6,7 @@
 #include "lib/std/json.mtl"
 #include "forth_memory.mtl"
 #include "forth_time.mtl"
+#include "forth_task.mtl"
 
 #ifdef SIMU
 // lib/sys/time.mtl reads the timezone/DST config through these accessors;
@@ -57,6 +58,12 @@ fun app_forth_words=
     [ [str: "ms"           ] [func:#forth_ms flag:FORTH_ASYNC]] ::
     [ [str: "update-time"  ] [func:#forth_update_time]] ::
     [ [str: "time?"        ] [func:#forth_time_q]] ::
+    // Task (forth_task.mtl, over lib/sys/task.mtl's scheduler)
+    [ [str: "task-start"   ] [func:#forth_task_start]] ::
+    [ [str: "task-stop"    ] [func:#forth_task_stop]] ::
+    [ [str: "task-suspend" ] [func:#forth_task_suspend]] ::
+    [ [str: "task-resume"  ] [func:#forth_task_resume]] ::
+    [ [str: ".tasks"       ] [func:#forth_dot_tasks]] ::
     nil;;
 
 fun forth_init_dictionary=

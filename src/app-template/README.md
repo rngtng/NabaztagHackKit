@@ -22,9 +22,10 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
-word pack (`forth_memory.mtl`) and a time/date pack (`forth_time.mtl`, over
-`lib/sys/time.mtl`) — no hardware, network, or task words. Add more by
-extending `app_forth_words` the same way.
+word pack (`forth_memory.mtl`), a time/date pack (`forth_time.mtl`, over
+`lib/sys/time.mtl`), and a task-control pack (`forth_task.mtl`, over
+`lib/sys/task.mtl`) — no hardware or network words. Add more by extending
+`app_forth_words` the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -134,6 +135,35 @@ curl -s -d 'uptime .' localhost:8080/eval
 # -> {"output": "0", "stack": ""}
 curl -s -d 'utc>string' localhost:8080/eval
 # -> {"output": "", "stack": "Mon, 00  0000 00:00:00 GMT"}
+```
+
+**Task** (`forth_task.mtl`, exposing `lib/sys/task.mtl`'s scheduler — the same
+one `main.mtl` already runs via `loopcb #task_scheduler`). A backgrounded word
+runs on the scheduler thread, so it can loop or repeat without blocking the
+HTTP handler that serves `/eval`.
+
+| Word | Effect | Notes |
+|---|---|---|
+| `task-start` | `text delay name --` | run `text` (a Forth string) every `delay` ms as a task named `name`; the task id is shown by `.tasks` (ids start at 1) |
+| `task-stop` | `task-id -- flag` | remove the task; `flag` is true if that id existed |
+| `task-suspend` | `task-id -- flag` | pause the task (stays listed as `suspend`) |
+| `task-resume` | `task-id -- flag` | resume a suspended task |
+| `.tasks` | `--` | print the task table: id, status, name, last-run-ms `/`period-ms |
+
+Background a word that increments a variable every second, then watch it climb
+(memory persists across `/eval` calls — see below):
+
+```sh
+curl -s -d 'variable counter  0 counter !' localhost:8080/eval
+curl -s -d '"1 counter +!" 1000 "inc" task-start' localhost:8080/eval
+curl -s -d '.tasks' localhost:8080/eval
+# -> {"output": "    1 run     inc                           -1/1000\n \n", "stack": ""}
+sleep 3
+curl -s -d 'counter @' localhost:8080/eval
+# -> {"output": "", "stack": "3"}
+curl -s -d '1 task-suspend .' localhost:8080/eval   # freeze it (-1 = true)
+curl -s -d '1 task-resume  .' localhost:8080/eval   # or resume
+curl -s -d '1 task-stop    .' localhost:8080/eval   # or remove it entirely
 ```
 
 Try it:
