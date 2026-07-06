@@ -5,6 +5,14 @@
  */
 #include "lib/std/json.mtl"
 #include "forth_memory.mtl"
+#include "forth_time.mtl"
+
+#ifdef SIMU
+// lib/sys/time.mtl reads the timezone/DST config through these accessors;
+// the simulator has no real clock, so a fixed UTC/no-DST config is enough.
+fun config_get_dst= 0;;
+fun config_get_city_code= "UTC";;
+#endif
 
 #ifndef SIMU
 // ---- Device configuration (edit these) -------------------------------
@@ -40,6 +48,15 @@ fun app_forth_words=
     [ [str: "+!"           ] [func:#forth_plus_store]] ::
     [ [str: "variable"     ] [func:#forth_variable flag:FORTH_IMMEDIATE]] ::
     [ [str: "state"        ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
+    // Time (forth_time.mtl, over lib/sys/time.mtl)
+    [ [str: "time&date"    ] [func:#forth_time_and_date]] ::
+    [ [str: "local>string" ] [func:#forth_local_to_string]] ::
+    [ [str: "utc>string"   ] [func:#forth_utc_to_string]] ::
+    [ [str: "time-ms"      ] [func:#forth_time_ms]] ::
+    [ [str: "uptime"       ] [func:#forth_uptime]] ::
+    [ [str: "ms"           ] [func:#forth_ms flag:FORTH_ASYNC]] ::
+    [ [str: "update-time"  ] [func:#forth_update_time]] ::
+    [ [str: "time?"        ] [func:#forth_time_q]] ::
     nil;;
 
 fun forth_init_dictionary=
