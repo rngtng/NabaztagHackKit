@@ -5,7 +5,6 @@
  */
 #include "lib/std/json.mtl"
 #include "forth_memory.mtl"
-#include "forth_time.mtl"
 #include "forth_task.mtl"
 
 #ifdef SIMU
@@ -13,6 +12,10 @@
 // the simulator has no real clock, so a fixed UTC/no-DST config is enough.
 fun config_get_dst= 0;;
 fun config_get_city_code= "UTC";;
+// The simulator transport (lib/net/tcp.mtl) links no UDP/DNS stack, so the
+// real ntp_get_time (lib/net/net.mtl) isn't compiled in; stub the fetch the
+// `update-time` word drives. On device the full net stack provides it.
+fun ntp_get_time= 0;;
 #endif
 
 #ifndef SIMU
@@ -49,7 +52,7 @@ fun app_forth_words=
     [ [str: "+!"           ] [func:#forth_plus_store]] ::
     [ [str: "variable"     ] [func:#forth_variable flag:FORTH_IMMEDIATE]] ::
     [ [str: "state"        ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
-    // Time (forth_time.mtl, over lib/sys/time.mtl)
+    // Time (lib/forth/time.mtl, over lib/sys/time.mtl)
     [ [str: "time&date"    ] [func:#forth_time_and_date]] ::
     [ [str: "local>string" ] [func:#forth_local_to_string]] ::
     [ [str: "utc>string"   ] [func:#forth_utc_to_string]] ::

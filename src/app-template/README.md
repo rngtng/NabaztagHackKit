@@ -22,10 +22,10 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
-word pack (`forth_memory.mtl`), a time/date pack (`forth_time.mtl`, over
-`lib/sys/time.mtl`), and a task-control pack (`forth_task.mtl`, over
-`lib/sys/task.mtl`) — no hardware or network words. Add more by extending
-`app_forth_words` the same way.
+word pack (`forth_memory.mtl`), the shared time/date pack
+(`lib/forth/time.mtl`, over `lib/sys/time.mtl`), and a task-control pack
+(`forth_task.mtl`, over `lib/sys/task.mtl`) — no hardware or network words.
+Add more by extending `app_forth_words` the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -113,7 +113,7 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 | `?` | `addr --` print the cell's contents |
 | `state` | `-- addr` the interpreter state cell (0 normal, -1 compiling); `state @` to read it |
 
-**Time** (`forth_time.mtl`, thin wrappers over `lib/sys/time.mtl`)
+**Time** (`lib/forth/time.mtl`, thin wrappers over `lib/sys/time.mtl`, shared with app-piper)
 | Word | Effect | Notes |
 |---|---|---|
 | `uptime` | `-- s` | seconds since the process started |

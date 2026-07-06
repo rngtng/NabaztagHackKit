@@ -92,10 +92,26 @@ fun listentcp port cb= 0;;
 #include "lib/net/http_server.mtl"
 #include "lib/net/sse_server.mtl"
 
-// Forth: core dictionary only; run a program, return buffered output / stack
+// Forth: core dictionary + the opt-in time pack (its deps — lib/sys/time.mtl,
+// ntp, config_get_* — are all included/stubbed above); run a program, return
+// buffered output / stack
 #include "lib/forth.mtl"
+#include "lib/forth/time.mtl"
 
-fun forth_init_dictionary= forth_init_core_dictionary;;
+fun _forth_test_time_words=
+    [ [str: "time&date"    ] [func:#forth_time_and_date]] ::
+    [ [str: "local>string" ] [func:#forth_local_to_string]] ::
+    [ [str: "utc>string"   ] [func:#forth_utc_to_string]] ::
+    [ [str: "time-ms"      ] [func:#forth_time_ms]] ::
+    [ [str: "uptime"       ] [func:#forth_uptime]] ::
+    [ [str: "ms"           ] [func:#forth_ms flag:FORTH_ASYNC]] ::
+    [ [str: "update-time"  ] [func:#forth_update_time]] ::
+    [ [str: "time?"        ] [func:#forth_time_q]] ::
+    nil;;
+
+fun forth_init_dictionary=
+    set forth_dictionary = [dict: conc _forth_test_time_words forth_core_words];
+    0;;
 
 // The dictionary is built once (lazily by forth_interpreter_setup);
 // rebuilding it per run exhausts the simulator heap.
@@ -159,4 +175,5 @@ fun lib_test=
 #include "test/lib/forth/list_test.mtl"
 #include "test/lib/forth/json_test.mtl"
 #include "test/lib/forth/output_test.mtl"
+#include "test/lib/forth/time_test.mtl"
 0;;
