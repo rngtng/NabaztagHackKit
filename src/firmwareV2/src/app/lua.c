@@ -132,16 +132,42 @@ static const char DEMO[] =
     "print('firmwareV2 Lua ' .. _VERSION)\n"
     "print('1+1 =', 1 + 1)\n";
 
+#define REPL_LINE 256
+
+/* Compile a REPL line, trying expression form ("return <line>") first - so a
+ * bare expression like `2+3` evaluates and echoes - then falling back to
+ * statement form (`x = 5`, `for ...`). Mirrors the stock `lua` prompt. Leaves the
+ * compiled chunk on the stack on success, or an error message on failure. */
+static int load_line(lua_State *L, const char *line)
+{
+  char expr[REPL_LINE + 8];
+  snprintf(expr, sizeof expr, "return %s", line);
+  if (luaL_loadstring(L, expr) == LUA_OK)
+    return LUA_OK;
+  lua_pop(L, 1); /* drop the "return ..." compile error, try as a statement */
+  return luaL_loadstring(L, line);
+}
+
 static void repl(lua_State *L)
 {
-  char line[256];
+  char line[REPL_LINE];
   sh_puts("> ");
   while (fgets(line, sizeof line, stdin) != NULL) {
-    if (luaL_loadstring(L, line) == LUA_OK) {
-      if (lua_pcall(L, 0, 0, 0) != LUA_OK)
-        report(L);
+    if (load_line(L, line) != LUA_OK) {
+      report(L); /* syntax error */
     } else {
-      report(L);
+      int base = lua_gettop(L) - 1; /* stack height below the chunk */
+      if (lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
+        report(L);
+      } else {
+        int nres = lua_gettop(L) - base; /* values the chunk returned */
+        if (nres > 0) {                  /* echo them via print() */
+          lua_getglobal(L, "print");
+          lua_insert(L, base + 1);
+          if (lua_pcall(L, nres, 0, 0) != LUA_OK)
+            report(L);
+        }
+      }
     }
     sh_puts("> ");
   }
