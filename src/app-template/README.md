@@ -21,9 +21,9 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `app.mtl` wires `forth_init_dictionary` to
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
-the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
-word pack (`forth_memory.mtl`) plus two shared opt-in packs — the time/date
-pack (`lib/forth/time.mtl`, over `lib/sys/time.mtl`) and the task-control pack
+the **generic core** (`lib/forth/dictionary.mtl`, which now includes the
+memory/variable words) plus two shared opt-in packs — the time/date pack
+(`lib/forth/time.mtl`, over `lib/sys/time.mtl`) and the task-control pack
 (`lib/forth/task.mtl`, over `lib/sys/task.mtl`), both shared with app-piper —
 and no hardware or network words. Add more by extending `app_forth_words` the
 same way.
@@ -102,7 +102,7 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 |---|---|
 | `evaluate` | `str --` run a string as nested Forth code against the same interpreter state |
 
-**Memory** (`forth_memory.mtl`, a generic cell allocator — no hardware/config cells, unlike app-piper's version)
+**Memory** (`lib/forth/memory.mtl`, part of the core — a generic cell allocator with no hardware/config cells, unlike app-piper's richer version)
 | Word | Effect |
 |---|---|
 | `allocate-cell` | `-- addr` |

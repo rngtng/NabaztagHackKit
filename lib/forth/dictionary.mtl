@@ -12,6 +12,15 @@ fun forth_core_words=
         // JSON
         [ [str: "json-parse"       ] [func:#forth_json_parse ]] ::
         [ [str: "json-get"         ] [func:#forth_json_get ]] ::
+        // Memory
+        [ [str: "allocate-cell"    ] [func:#forth_allocate_cell]] ::
+        [ [str: "free-cell"        ] [func:#forth_free_cell]] ::
+        [ [str: "@"                ] [func:#forth_fetch]] ::
+        [ [str: "!"                ] [func:#forth_store]] ::
+        [ [str: "?"                ] [func:#forth_q]] ::
+        [ [str: "+!"               ] [func:#forth_plus_store]] ::
+        [ [str: "variable"         ] [func:#forth_variable     flag:FORTH_IMMEDIATE]] ::
+        [ [str: "state"            ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
         // Compilation
         [ [str: ":"                ] [ func:#forth_colon]] ::
         [ [str: ";"                ] [ func:#forth_semi        flag:FORTH_IMMEDIATE]] ::
