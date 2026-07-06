@@ -24,7 +24,8 @@ lib/
 │   ├── sock_protos.mtl   Sock type — shared by http_server & sse_server
 │   ├── sse_protos.mtl    SSE public API protos
 │   ├── forth_protos.mtl  Word/Forth types + interpreter protos
-│   ├── task_protos.mtl   Task/TaskStatus types + scheduler protos
+│   ├── task_type.mtl     Bare Task/TaskStatus types (no scheduler protos)
+│   ├── task_protos.mtl   task_type.mtl + scheduler protos
 │   ├── ascii_protos.mtl
 │   └── word_protos.mtl
 │
