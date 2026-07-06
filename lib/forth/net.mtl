@@ -1,0 +1,65 @@
+/**
+ * Forth network word pack — thin wrappers over lib/net's HTTP client
+ * (lib/net/http.mtl) and WiFi/IP state (lib/net/wifi.mtl, lib/net/ipv4).
+ *
+ * DEVICE-ONLY. Unlike lib/forth/hw.mtl (whose led/motor natives exist in the
+ * simulator too), these words need the full MTL net stack: `http_request`
+ * lives in lib/net/http.mtl and `wifi_mac_addr` in lib/net/wifi.mtl, both
+ * pulled in only by lib/net/net.mtl (the device build). The simulator's
+ * transport (lib/net/tcp.mtl) links neither, so include this pack — and its
+ * dictionary entries — under `#ifndef SIMU` only. See src/app-template for the
+ * wiring and #57 for why documenting a word that "works" in the simulator but
+ * not on the rabbit is a bug (#37).
+ *
+ * Migrated from src/app-piper/forth/net.mtl (Copyright (c) 2025 Andrea Bonomi,
+ * MIT). Deliberately excludes piper's `tcp-listen`, whose callback is hardwired
+ * to app-piper's telnet Forth server (src/app-piper/srv/telnet_server.mtl) —
+ * an app service, not a lib building block — mirroring how lib/forth/hw.mtl
+ * drops piper's non-raw words.
+ */
+
+// The HTTP client callback resumes the interpreter with content then header on
+// top, so a `http-get ( url -- content header )` leaves content below header.
+fun _forth_http_req_cb http res f=
+    let http_split_header_content res -> [header content] in (
+        forth_push f [str:content];
+        forth_push f [str:header];
+        forth_interpreter_resume f;  // resume the suspended (async) interpreter
+        0
+    );;
+
+/**
+ * HTTP-GET ( url -- content header )
+ * Perform an HTTP GET request; leaves the response body and header on the
+ * stack. Async (FORTH_ASYNC): the interpreter suspends until the reply lands.
+ * HTTPS is not supported (plain http:// only).
+ */
+fun forth_http_get f=
+    let forth_pop f -> url in
+	http_request "GET" url.str nil (fixarg3 #_forth_http_req_cb f) HTTP_NORMAL;
+    nil;;
+
+/**
+ * HTTP-POST ( payload url -- content header )
+ * Perform an HTTP POST request with `payload` as the body; leaves the response
+ * body and header on the stack. Async. HTTPS is not supported.
+ */
+fun forth_http_post f=
+    let forth_pop f -> url in
+    let forth_pop f -> payload in
+	http_request "POST" url.str payload.str (fixarg3 #_forth_http_req_cb f) HTTP_NORMAL;
+    nil;;
+
+/**
+ * MAC ( -- mac )
+ * Push the MAC address of the WiFi interface as a human-readable string.
+ */
+fun forth_mac f=
+    forth_push f [str:wifi_mac_addr];;
+
+/**
+ * IP ( -- ip )
+ * Push the current IP address of the WiFi interface as a dotted-quad string.
+ */
+fun forth_ip f=
+    forth_push f [str:ip_to_str netip];;
