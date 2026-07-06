@@ -18,25 +18,15 @@ fun ntp_get_time= 0;;
 #endif
 
 #ifndef SIMU
-// ---- Device configuration (edit these) -------------------------------
-// The lib/net stack reads its settings through these accessors.
-// Crypt values (lib/net/wifi.mtl): 0=open 16=WEP 32=WPA 64=WPA2.
-// For WPA/WPA2 supply the precomputed PMK for your SSID+passphrase.
-fun config_get_wifi_ssid= "MyNetwork";;
-fun config_get_wifi_crypt= 0;;
-fun config_get_wifi_auth= 0;;
-fun config_get_wifi_key0= "";;
-fun config_get_wifi_pmk= "";;
-fun config_get_dhcp= 1;;                    // 0: use the static settings below
-fun config_get_dst= 0;;
-fun config_get_city_code= "UTC";;
-fun config_get_net_ip= "\192\168\1\52";;
-fun config_get_netmask= "\255\255\255\0";;
-fun config_get_net_gw= "\192\168\1\1";;
-fun config_get_net_dns= "\192\168\1\1";;
-fun config_get_proxy= 0;;
-fun config_get_proxy_ip= "\0\0\0\0";;
-fun config_get_proxy_port= 0;;
+// ---- Device configuration --------------------------------------------
+// Sensible defaults for all ~15 config_get_* accessors live in
+// lib/net/config_defaults.mtl. Override only what differs by #define-ing it
+// BEFORE the include (crypt: 0=open 16=WEP 32=WPA 64=WPA2; supply the
+// precomputed PMK for WPA/WPA2), e.g.:
+//   #define CONFIG_WIFI_SSID  "MyNetwork"
+//   #define CONFIG_WIFI_CRYPT 64
+//   #define CONFIG_WIFI_PMK   "…"
+#include "lib/net/config_defaults.mtl"
 // -----------------------------------------------------------------------
 #endif
 

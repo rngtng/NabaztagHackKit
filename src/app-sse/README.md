@@ -32,5 +32,7 @@ has **no native TCP** (`tcpListen`/`tcpSend`/… are simulator-only opcodes),
 so the earlier `lib/net/tcp.mtl` + `netstart` build silently did nothing on
 hardware — that was [#37](https://github.com/rngtng/NabaztagHackKit/issues/37).
 
-Edit the `config_get_*` accessors at the top of `main.mtl` (WiFi SSID/crypt,
-DHCP, static IP fallback) for your network before uploading.
+The device build gets its network settings from `lib/net/config_defaults.mtl`
+(the shared defaults), included by the `#ifndef SIMU` block in `main.mtl`. For
+your own network, `#define` the fields that differ (WiFi SSID/crypt/PMK, DHCP,
+static IP fallback, proxy) before that include — see `lib/README.md`.
