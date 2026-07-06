@@ -150,6 +150,7 @@ fun lib_test=
 #include "test/lib/net/dns_test.mtl"
 #include "test/lib/net/ntp_test.mtl"
 #include "test/lib/forth/stack_test.mtl"
+#include "test/lib/forth/interpreter_test.mtl"
 #include "test/lib/forth/arithmetic_test.mtl"
 #include "test/lib/forth/comparison_test.mtl"
 #include "test/lib/forth/logical_test.mtl"
