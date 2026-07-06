@@ -46,6 +46,23 @@ tasks:
       # mount the built ELFs read-only; simulate.py is the image entrypoint
       - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.IMAGE}}-sim {{.ARGS}} /mnt/{{.APP}}.elf'
 
+  repl:
+    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua feeds a script, or omit it for a live interactive prompt. Usage: task firmwareV2:repl [SCRIPT=path/to.lua] [N=budget]'
+    dir: '{{.DIR}}'
+    interactive: true
+    cmds:
+      - task: compile
+        vars:
+          APP: lua
+      - task: sim-image
+      # With SCRIPT: mount the built ELF + the Lua file (read-only) and feed it
+      # verbatim to the semihosting console. Without SCRIPT: run interactively
+      # (-it) so SYS_READC/WRITEC read/echo your real terminal - a live REPL.
+      - >-
+        {{if .SCRIPT}}docker run --rm -v "$(realpath bin):/mnt:ro" -v "$(realpath {{.SCRIPT}}):/in.lua:ro"
+        {{.IMAGE}}-sim -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
+        --rm -it -v "$(realpath bin):/mnt:ro" {{.IMAGE}}-sim --interactive /mnt/lua.elf{{end}}
+
   clean:
     desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker images'
     dir: '{{.DIR}}'

@@ -72,16 +72,20 @@ task simulate:firmwareV2 APP=lua ARGS="-n 60000000"      # M4: boots Lua, runs p
 ```
 
 Lua needs a large instruction budget (interpreter bring-up); the semihosting
-console output is printed in the run summary. To drive the **REPL** with typed
-input, feed the simulator's `SYS_READC` via `--input` (backslash escapes
-interpreted; runs the container directly, as Task re-parses `ARGS` through a shell
-that trips on `()`):
+console output is printed in the run summary. To drive the **REPL** yourself, use
+`task repl:firmwareV2` - a live prompt, or a script fed in:
 
 ```sh
-docker run --rm -v "$PWD/src/firmwareV2/bin:/mnt:ro" nabaztag-sdk-firmwarev2-sim \
-  -n 120000000 --input 'print(10//3, 10%3)\nprint(string.rep("ab",3))\n' /mnt/lua.elf
-#  -> semihost output = '... > 3\t1\n> ababab\n> '
+task repl:firmwareV2                                               # live interactive prompt (type Lua, Ctrl-D to exit)
+task repl:firmwareV2 SCRIPT=src/firmwareV2/examples/repl-demo.lua  # feed a .lua file, print the transcript
 ```
+
+The live prompt reads your terminal via semihosting `SYS_READC` (needs a TTY);
+`SCRIPT=` feeds the file verbatim (real newlines, no escaping). Each REPL line is
+its own chunk, so `local`s do not persist across lines - use globals to carry
+state (same as the stock `lua` prompt). Under the hood these mount `bin/lua.elf`
+into the [`sim/`](sim/) container; the raw simulator also takes `--input
+'…\n…'` (inline, backslash escapes) and `--interactive` if you drive it directly.
 
 It maps the real memory regions, loads the ELF, runs from `Reset_Handler`, stubs
 peripheral pages (logging GPIO/LED writes), models **instant SPI completion** (a
