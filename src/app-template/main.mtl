@@ -21,6 +21,7 @@ proto main 0;;
 #include "lib/net/http_server.mtl"
 #include "lib/forth.mtl"
 #include "lib/sys/task.mtl"
+#include "lib/sys/time.mtl"
 
 // Forth: dictionary + word packs are wired up in app.mtl (extend there)
 

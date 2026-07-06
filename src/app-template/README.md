@@ -22,8 +22,9 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`) plus a small memory/variable
-word pack (`forth_memory.mtl`) — no hardware, network, or task words. Add
-more by extending `app_forth_words` the same way.
+word pack (`forth_memory.mtl`) and a time/date pack (`forth_time.mtl`, over
+`lib/sys/time.mtl`) — no hardware, network, or task words. Add more by
+extending `app_forth_words` the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -110,6 +111,30 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 | `+!` | `x addr --` add to the cell in place |
 | `?` | `addr --` print the cell's contents |
 | `state` | `-- addr` the interpreter state cell (0 normal, -1 compiling); `state @` to read it |
+
+**Time** (`forth_time.mtl`, thin wrappers over `lib/sys/time.mtl`)
+| Word | Effect | Notes |
+|---|---|---|
+| `uptime` | `-- s` | seconds since the process started |
+| `time-ms` | `-- ms` | monotonic millisecond clock |
+| `time?` | `-- flag` | true once the wall clock has been synced from the time server |
+| `update-time` | `--` | trigger an NTP fetch (device only; no-op in the simulator, which has no UDP stack) |
+| `time&date` | `-- sec min hour day month year` | local wall-clock fields |
+| `local>string` | `-- str` | local time as `Day, DD Mon YYYY HH:MM:SS <city>` |
+| `utc>string` | `-- str` | UTC time as `Day, DD Mon YYYY HH:MM:SS GMT` |
+| `ms` | `delay --` | sleep `delay` ms (async; yields to the scheduler) |
+
+The wall-clock words read the timezone/DST config through `config_get_city_code`
+/ `config_get_dst` (device values live in `app.mtl`; the simulator uses a fixed
+`UTC` / no-DST stub). Without a synced clock — always the case in the simulator —
+they report zeros / the epoch.
+
+```sh
+curl -s -d 'uptime .' localhost:8080/eval
+# -> {"output": "0", "stack": ""}
+curl -s -d 'utc>string' localhost:8080/eval
+# -> {"output": "", "stack": "Mon, 00  0000 00:00:00 GMT"}
+```
 
 Try it:
 ```sh
