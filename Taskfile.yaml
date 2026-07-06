@@ -135,6 +135,12 @@ tasks:
           SOCK_DIR: '{{.OUT}}'
           DURATION: '{{.DURATION}}'
 
+  test:firmware-bugs:
+    desc: 'Reproduce the flagged firmware VM memory-safety bugs under AddressSanitizer (issue #66). Fails while any bug is still present; passes once fixed.'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: testvm:bugs
+
   # ----------------------------------------------------------
   build:app:
     desc: 'Build app Usage: task build:app TARGET=app1|app2 [OUT=build]'
