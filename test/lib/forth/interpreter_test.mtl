@@ -1,0 +1,27 @@
+let scenario "forth_interpreter_test" -> s in
+(
+  let test "evaluate runs a string as nested Forth code" -> t in
+  (
+    assert_equalS "5" forth_run "\"2 3 +\" evaluate ."
+  );
+
+  let test "evaluate shares the data stack with the outer program" -> t in
+  (
+    assert_equalS "3" forth_run "1 2 \"+\" evaluate ."
+  );
+
+  let test "evaluate leaves its results on the stack" -> t in
+  (
+    assert_equalS "1 2 3" forth_run_stack "\"1 2 3\" evaluate"
+  );
+
+  let test "evaluate on a non-string pushes it back unevaluated" -> t in
+  (
+    assert_equalS "5" forth_run "5 evaluate ."
+  );
+
+  let test "outer program continues correctly after evaluate returns" -> t in
+  (
+    assert_equalS "5 30" forth_run "\"2 3 +\" evaluate . space \"10 20 +\" evaluate ."
+  )
+);

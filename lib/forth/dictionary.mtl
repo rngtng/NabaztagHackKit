@@ -111,6 +111,8 @@ fun forth_core_words=
         [ [str: "endcase"          ] [ func:#forth_endcase     flag:FORTH_IMMEDIATE]] ::
         [ [str: "of"               ] [ func:#forth_of          flag:FORTH_IMMEDIATE]] ::
         [ [str: "endof"            ] [ func:#forth_endof       flag:FORTH_IMMEDIATE]] ::
+        // Meta
+        [ [str: "evaluate"         ] [func:#forth_evaluate     flag:FORTH_ASYNC]] ::
         nil;;
 
 fun forth_init_core_dictionary=
