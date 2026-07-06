@@ -1,0 +1,31 @@
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabaztag-sdk-mockserver"}}'
+  DIR: '{{.DIR | default "."}}'
+
+tasks:
+  image:
+    internal: true   # built on demand as a dep; rebuilt when server.py/Dockerfile change
+    cmds:
+      - docker build -t {{.IMAGE}} {{.DIR}}
+    sources:
+      - Dockerfile
+      - server.py
+
+  serve:
+    desc: 'Run the mock file server standalone, serving an assets dir. Usage: task mockserver:serve ASSETS=src/app-piper/assets [PORT=8081]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [ASSETS]
+    vars:
+      PORT: '{{.PORT | default 8081}}'
+    cmds:
+      # container listens on 80; publish to host PORT. Assets mounted read-only.
+      - 'docker run --rm --init -p {{.PORT}}:80 -v "$(realpath {{.ASSETS}}):/assets:ro" {{.IMAGE}}'
+
+  clean:
+    desc: 'Remove the mockserver Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true

@@ -38,11 +38,13 @@ tasks:
       vars: [SOURCE]
     vars:
       PORT: '{{.PORT | default 8080}}'
+      NETWORK: '{{.NETWORK | default ""}}'   # optional user-defined docker network to join (lets the sim reach the mock file server)
     cmds:
       # cwd = /src so the baked config.txt is found; SOURCE is mounted into /work and passed via --source.
       # --init: run tini as PID 1 so the sim (no SIGINT handler) is a child and a single Ctrl+C stops it.
       # PORT: maps container port 80 (HTTP config server) to the given host port.
-      - 'docker run --rm --init -p {{.PORT}}:80 -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} {{.CLI_ARGS}}'
+      # NETWORK: when set, join a shared docker network so outbound requests can reach a sibling mock server.
+      - 'docker run --rm --init {{if .NETWORK}}--network {{.NETWORK}} {{end}}-p {{.PORT}}:80 -v "$(dirname $(realpath {{.SOURCE}})):/work" {{.IMAGE}} /src/mtl_simu --source /work/{{base .SOURCE}} {{.CLI_ARGS}}'
 
   test:
     desc: 'Run an MTL test program in the simulator; fails on "!!" assertion failures or compile errors.  Usage: task mtl:test SOURCE=<test>.mtl'
