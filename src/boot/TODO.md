@@ -36,10 +36,14 @@ See the tracking issue below.
 ## Open roadmap → GitHub Issues
 
 - **[#47](https://github.com/rngtng/NabaztagHackKit/issues/47)** — boot/app
-  convergence: port `src/boot` onto `lib/net` (deferred until
-  [#46](https://github.com/rngtng/NabaztagHackKit/issues/46) proves the stack
-  on-device). Includes the module-by-module unification plan for
-  `config.mtl`/`wifi.mtl`/`http.mtl`/`ipv4.mtl`/`dns.mtl`.
+  convergence part 1 (done): device `ipv4.mtl`/`dns.mtl`/`http.mtl` now compose
+  `lib/net` (PR #101). The stack was proven on-device in
+  [#46](https://github.com/rngtng/NabaztagHackKit/issues/46) first.
+- **[#103](https://github.com/rngtng/NabaztagHackKit/issues/103)** — boot/app
+  convergence part 2: unify `config.mtl`'s flash layout (needs a magic-versioning
+  decision for legacy-blob migration) and converge `wifi.mtl` onto
+  `lib/net/wifi.mtl` (needs its `// TODO` master-mode entry to read the button).
+  Both gated on a real JTAG flash test.
 - **[#51](https://github.com/rngtng/NabaztagHackKit/issues/51)** — migrate
   `boot.mtl`'s MTL-level `ifdef BOOT { }` blocks to preprocessor `#ifdef BOOT`
   for consistency with the rest of the conditional-include scheme.
