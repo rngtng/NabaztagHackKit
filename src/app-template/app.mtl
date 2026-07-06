@@ -41,7 +41,7 @@ fun app_forth_words=
     [ [str: "ms"           ] [func:#forth_ms flag:FORTH_ASYNC]] ::
     [ [str: "update-time"  ] [func:#forth_update_time]] ::
     [ [str: "time?"        ] [func:#forth_time_q]] ::
-    // Task (forth_task.mtl, over lib/sys/task.mtl's scheduler)
+    // Task (lib/forth/task.mtl, over lib/sys/task.mtl's scheduler)
     [ [str: "task-start"   ] [func:#forth_task_start]] ::
     [ [str: "task-stop"    ] [func:#forth_task_stop]] ::
     [ [str: "task-suspend" ] [func:#forth_task_suspend]] ::
