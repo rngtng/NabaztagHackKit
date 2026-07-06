@@ -29,9 +29,26 @@ tasks:
       # bind-mount the tree at /work; obj/ and bin/ land back on the host.
       - 'docker run --rm -v "$(realpath .):/work" {{.IMAGE}} make APP={{.APP}}'
 
+  sim-image:
+    internal: true   # Unicorn simulator image (#96); rebuilt when sim/ changes
+    dir: '{{.DIR}}/sim'
+    cmds:
+      - docker build -t {{.IMAGE}}-sim .
+
+  simulate:
+    desc: 'Run a bring-up app in the Unicorn simulator, no hardware (#96). Usage: task firmwareV2:simulate [APP=hello] [ARGS=-v]'
+    dir: '{{.DIR}}'
+    cmds:
+      - task: compile
+        vars:
+          APP: '{{.APP}}'
+      - task: sim-image
+      # mount the built ELFs read-only; simulate.py is the image entrypoint
+      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.IMAGE}}-sim {{.ARGS}} /mnt/{{.APP}}.elf'
+
   clean:
-    desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker image'
+    desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker images'
     dir: '{{.DIR}}'
     cmds:
       - rm -rf bin obj
-      - docker rmi {{.IMAGE}} || true
+      - docker rmi {{.IMAGE}} {{.IMAGE}}-sim || true

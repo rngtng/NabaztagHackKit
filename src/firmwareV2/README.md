@@ -28,6 +28,22 @@ task firmwareV2:compile APP=blink  # -> bin/blink.{elf,hex,bin}  (M1, later)
 linked against [`sys/ml67q4051.ld`](sys/ml67q4051.ld) with our own startup
 (`-nostartfiles`). One selectable app from `src/app/` at a time (`APP=`).
 
+## Simulate (no hardware)
+Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
+Unicorn Engine, issue #96) - no JTAG, no device:
+
+```sh
+task simulate:firmwareV2                 # run bin/hello.elf, report reaching main
+task simulate:firmwareV2 APP=blink ARGS=-v   # -v logs every peripheral (MMIO) write
+```
+
+It maps the real memory regions, loads the ELF, runs from `Reset_Handler`, stubs
+peripheral pages (logging GPIO/LED writes), and implements ARM semihosting on the
+SWI vector so a future console/REPL (M3/M4) runs in software. It models only
+stubbed peripherals - **no timing, audio, WiFi, RFID, or real timers** - so it
+validates code paths + GPIO + console, not analog behaviour. QEMU isn't used: it
+has no ML67Q4051 machine and our memory map doesn't fit its stock boards.
+
 ## Layout
 ```
 sys/                ARM7TDMI startup, linker, OKI register defs (copied from src/firmware)
@@ -38,6 +54,7 @@ sys/                ARM7TDMI startup, linker, OKI register defs (copied from src
   inc/*.h           ml674061.h (GPIO/SPI/IRQ regs), irq.h
 inc/common.h        GPIO/register macros (debug/UART include stripped - no UART here)
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
+sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
 ```
 The `sys/` tree and `inc/common.h` are **copied** from `src/firmware` (the vendored
 `nabgcc` port) - see [`PROVENANCE.md`](../../PROVENANCE.md). This layer is otherwise
@@ -53,6 +70,7 @@ self-contained and does not depend on `src/firmware` at build time.
 | M4 | Lua 5.4 core + REPL | #92 | |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
+| - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
 Not wired yet - lands in **M2** ([#90](https://github.com/rngtng/NabaztagHackKit/issues/90)).

@@ -132,6 +132,15 @@ tasks:
         vars:
           APP: '{{.APP | default "hello"}}'
 
+  simulate:firmwareV2:
+    desc: 'Run a V2 firmware app in the Unicorn simulator, no hardware (#96). Usage: task simulate:firmwareV2 [APP=hello] [ARGS=-v]'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: firmwareV2:simulate
+        vars:
+          APP: '{{.APP | default "hello"}}'
+          ARGS: '{{.ARGS}}'
+
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
     dir: '{{.USER_WORKING_DIR}}'
