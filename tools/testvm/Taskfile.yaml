@@ -53,9 +53,22 @@ tasks:
           {{.IMAGE}}
           sh -c "make && (timeout {{.DURATION}} ./testvm; ec=\$?; [ \$ec -eq 0 ] || [ \$ec -eq 124 ]) "'
 
+  bugs:
+    desc: 'Build & run the firmware VM bug-reproduction harness under AddressSanitizer (issue #66). Exits nonzero while any flagged bug still reproduces.'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      # same mount layout as simulate/test: firmware at /work, this layer at /work/testvm
+      - 'docker run --rm --init
+          -v "$(realpath src/firmware):/work"
+          -v "$(realpath tools/testvm):/work/testvm"
+          -w /work/testvm
+          {{.IMAGE}}
+          sh ./run-bugrepro.sh'
+
   clean:
     desc: 'Remove testvm build artifacts and Docker image'
     cmds:
       - docker rmi {{.IMAGE}} || true
-      - rm -f tools/testvm/testvm tools/testvm/bc.c
+      - rm -f tools/testvm/testvm tools/testvm/bc.c tools/testvm/bugrepro
       - rm -Rf tools/testvm/obj

@@ -30,3 +30,27 @@ task testvm:simulate SOURCE=build/boot/dumpbc.c
 `SIGN=false` — the same format the simulator loads, not the signed device-flash
 format). A button push can be simulated by writing one byte to the `button.sock`
 Unix datagram socket under `SOCK_DIR` (default `.`, or `build/` via `test:firmware`).
+
+## Bug reproduction harness (issue #66)
+
+`bugrepro.c` + `run-bugrepro.sh` build the real firmware VM sources under
+AddressSanitizer and drive the exact buggy code paths for the memory-safety
+issues flagged in issue #66. No bytecode file is needed — each scenario either
+calls a firmware helper directly or hand-assembles a few opcodes and enters the
+real `interpGo()`.
+
+```
+task test:firmware-bugs      # build + run all scenarios under ASan
+```
+
+Scenarios (selected internally by `bugrepro <name>`):
+
+| scenario    | firmware code                       | bug                                              |
+|-------------|-------------------------------------|--------------------------------------------------|
+| `syscmp`    | `vlog.c` `sysCmp()`                 | length not clamped when one operand overruns → OOB read |
+| `store`     | `vinterp.c` `OPstore`               | `(i>=0)||(i<VSIZE(p))` bounds guard is a tautology → OOB write |
+| `setstruct` | `vinterp.c` `OPsetstruct`           | same tautology guard → OOB write                 |
+
+This is a **regression guard**: it exits nonzero (and prints the ASan report
+with the offending `vinterp.c`/`vlog.c` line) while a bug is still present, and
+runs clean once the guard is fixed.

@@ -9,6 +9,7 @@
 *.bin
 /src/firmware/bin
 /tools/testvm/testvm
+/tools/testvm/bugrepro
 /tools/testvm/bc.c
 *.lst
 *.d
