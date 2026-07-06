@@ -22,11 +22,12 @@ curl -s -d '2 3 + .' localhost:8080/eval
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`, which now includes the
-memory/variable words) plus two shared opt-in packs — the time/date pack
-(`lib/forth/time.mtl`, over `lib/sys/time.mtl`) and the task-control pack
-(`lib/forth/task.mtl`, over `lib/sys/task.mtl`), both shared with app-piper —
-and no hardware or network words. Add more by extending `app_forth_words` the
-same way.
+memory/variable words) plus three shared opt-in packs — the time/date pack
+(`lib/forth/time.mtl`, over `lib/sys/time.mtl`), the task-control pack
+(`lib/forth/task.mtl`, over `lib/sys/task.mtl`), and the hardware pack
+(`lib/forth/hw.mtl`, over `lib/hw/leds.mtl` + `lib/hw/ears.mtl`) — all shared
+with app-piper, and no network words. Add more by extending `app_forth_words`
+the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
 
@@ -169,6 +170,30 @@ curl -s -d '1 task-suspend .' localhost:8080/eval   # freeze it (-1 = true)
 curl -s -d '1 task-resume  .' localhost:8080/eval   # or resume
 curl -s -d '1 task-stop    .' localhost:8080/eval   # or remove it entirely
 ```
+
+**Hardware** (`lib/forth/hw.mtl`) — thin wrappers over the VM's `led` /
+`motorset` / `motorget` natives via `lib/hw/leds.mtl` + `lib/hw/ears.mtl`.
+These natives exist in the simulator too, so they run under
+`task simulate:app:template` — LED writes appear as `[simuleds] led N 0x……`
+in the sim's stdout, and the sim models the ear motors — but physical
+confirmation needs a flashed rabbit ([#46]). `main.mtl` calls `ears_init` to
+start the ears state-machine task.
+
+| Word | Effect | Notes |
+|---|---|---|
+| `led!` | `color led# --` | set LED `led#` (0=nose 1=left 2=middle 3=right 4=base) to a 24-bit RGB color |
+| `leds-off` | `--` | turn all LEDs off |
+| `ears` | `-- left-pos right-pos` | current ear positions (0..16); reads `?`/nil until the ears finish homing |
+| `move-ear` | `ear pos dir --` | move `ear` (0=left 1=right) to `pos`, turning `dir` (0=forward, non-zero=backward); no-op until homed |
+
+```sh
+curl -s -d '16711680 0 led!' localhost:8080/eval   # nose -> red (0xFF0000)
+curl -s -d 'leds-off' localhost:8080/eval           # all LEDs off
+curl -s -d '0 5 0 move-ear' localhost:8080/eval     # left ear -> position 5, forward
+curl -s -d 'ears .s' localhost:8080/eval            # show both ear positions
+```
+
+[#46]: https://github.com/rngtng/NabaztagHackKit/issues/46
 
 Try it:
 ```sh
