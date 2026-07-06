@@ -1,5 +1,15 @@
 # Changes
 
+## Unreleased
+
+  * fix [#81](https://github.com/rngtng/NabaztagHackKit/issues/81): add
+    `task build:sim`. It wires the whole web-upload pipeline into one target —
+    `build:boot` → `build:firmware` → sign (`mkfirmware:sign`) → verify
+    (`mkfirmware:verify`) → `build/firmware/Nab.sim`. The `mkfirmware` tool is
+    now `include`d in the root Taskfile, and the verify step confirms the
+    signed `.sim` is well-formed (sentinels + declared length) so the produced
+    file would be accepted by the config page.
+
 ## v2.0.0-alpha10 - 05-07-2026
 
   * fix [#37](https://github.com/rngtng/NabaztagHackKit/issues/37): `app-sse`

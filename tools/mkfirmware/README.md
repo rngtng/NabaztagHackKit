@@ -14,10 +14,15 @@ Run directly from this directory:
 
 ## Full build pipeline
 
-The full pipeline — compile C firmware, then sign it — is:
+From the repo root, one task chains boot → firmware → sign → verify:
+
+    task build:sim                            # → build/firmware/Nab.sim (signed + verified)
+
+It runs, in order:
 
     task build:boot                           # 1. build boot bytecode → build/boot/
-    task build:firmware                       # 2. compile C firmware  → build/firmware/
-    cd tools/mkfirmware && task sign SOURCE=../../build/firmware/Nab.bin
+    task build:firmware                       # 2. compile C firmware  → build/firmware/Nab.bin
+    task mkfirmware:sign   SOURCE=... OUT=...  # 3. sign  → build/firmware/Nab.sim
+    task mkfirmware:verify FILE=...            # 4. check the .sim is well-formed
 
-The resulting `firmware.sim` can be uploaded via the rabbit's blue-LED config page.
+The resulting `Nab.sim` can be uploaded via the rabbit's blue-LED config page.
