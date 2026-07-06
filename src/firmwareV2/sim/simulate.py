@@ -88,7 +88,7 @@ def in_periph(addr):
 
 
 class Sim:
-    def __init__(self, elf_path, budget, verbose, stdin=b""):
+    def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False):
         self.budget = budget
         self.verbose = verbose
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
@@ -98,6 +98,9 @@ class Sim:
         self.console = bytearray()   # semihosting output
         self.stdin = stdin           # bytes fed to SYS_READC (console input)
         self.stdin_pos = 0
+        # Interactive: read SYS_READC live from the real terminal and echo the
+        # semihosting console straight to stdout, so you can type at the REPL.
+        self.interactive = interactive
         self.entry = None
         self.main_addr = None
         self._load(elf_path)
@@ -187,7 +190,7 @@ class Sim:
         op = uc.reg_read(UC_ARM_REG_R0)
         arg = uc.reg_read(UC_ARM_REG_R1)
         if op == 0x03:                                   # SYS_WRITEC
-            self.console += uc.mem_read(arg, 1)
+            self._console_out(uc.mem_read(arg, 1))
         elif op == 0x04:                                 # SYS_WRITE0
             s = bytearray()
             while True:
@@ -195,54 +198,91 @@ class Sim:
                 if b == b"\x00":
                     break
                 s += b
-            self.console += s
+            self._console_out(bytes(s))
         elif op == 0x07:                                 # SYS_READC
-            # Feed --input bytes one at a time; 0 once exhausted (console EOF).
-            if self.stdin_pos < len(self.stdin):
-                ch = self.stdin[self.stdin_pos]
-                self.stdin_pos += 1
-            else:
-                ch = 0
-            uc.reg_write(UC_ARM_REG_R0, ch)
+            uc.reg_write(UC_ARM_REG_R0, self._console_in())
+
+    def _console_out(self, data):
+        """Semihosting console write: echo live in interactive mode, else buffer."""
+        self.console += data
+        if self.interactive:
+            sys.stdout.buffer.write(data)
+            sys.stdout.flush()
+
+    def _console_in(self):
+        """One SYS_READC byte: live from the terminal (interactive) or from the
+        pre-supplied --input/--input-file buffer; 0 on EOF (ends the REPL)."""
+        if self.interactive:
+            b = sys.stdin.buffer.read(1)
+            if b:
+                return b[0]
+            # Real EOF (Ctrl-D / closed pipe): stop now instead of letting the
+            # firmware's post-REPL `for(;;)` spin out the huge interactive budget.
+            self.uc.emu_stop()
+            return 0
+        if self.stdin_pos < len(self.stdin):
+            ch = self.stdin[self.stdin_pos]
+            self.stdin_pos += 1
+            return ch
+        return 0
 
     def _on_main(self, uc, address, size, _ud):
         if not self.reached_main:
             self.reached_main = True
-            print(f"  -> reached main() @ 0x{address:08x}", flush=True)
+            # stderr in interactive mode so it stays out of the live REPL stream.
+            log = sys.stderr if self.interactive else sys.stdout
+            print(f"  -> reached main() @ 0x{address:08x}", file=log, flush=True)
 
     # -- run --------------------------------------------------------------------
     def run(self):
         u = self.uc
+        # In interactive mode keep stdout pure REPL; diagnostics go to stderr.
+        log = sys.stderr if self.interactive else sys.stdout
         print(f"entry = 0x{self.entry:08x}"
               + (f", main = 0x{self.main_addr:08x}" if self.main_addr else "")
-              + f", budget = {self.budget} insns")
+              + f", budget = {self.budget} insns", file=log)
         try:
             u.emu_start(self.entry, 0xFFFFFFF0, count=self.budget)
         except UcError as e:
-            print(f"  emulation stopped: {e}", flush=True)
+            print(f"  emulation stopped: {e}", file=log, flush=True)
         pc = u.reg_read(UC_ARM_REG_PC)
-        print("--- result ---")
-        print(f"  final PC        = 0x{pc:08x}")
-        print(f"  reached main    = {self.reached_main}")
-        print(f"  peripheral wr   = {self.periph_writes}")
-        if self.console:
-            print(f"  semihost output = {self.console.decode('latin1')!r}")
+        print("--- result ---", file=log)
+        print(f"  final PC        = 0x{pc:08x}", file=log)
+        print(f"  reached main    = {self.reached_main}", file=log)
+        print(f"  peripheral wr   = {self.periph_writes}", file=log)
+        # Interactive already streamed the console live; only dump it in batch mode.
+        if self.console and not self.interactive:
+            print(f"  semihost output = {self.console.decode('latin1')!r}", file=log)
         return 0 if self.reached_main else 1
 
 
 def main():
     ap = argparse.ArgumentParser(description="Unicorn simulator for firmwareV2 ELFs")
     ap.add_argument("elf", help="path to the ELF to run (e.g. bin/hello.elf)")
-    ap.add_argument("-n", "--budget", type=int, default=300_000,
-                    help="max instructions to execute (default 300000)")
+    ap.add_argument("-n", "--budget", type=int, default=None,
+                    help="max instructions to execute (default 300000, or ~2e9 "
+                         "when interactive)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="log every peripheral (MMIO) write")
     ap.add_argument("-i", "--input", default="",
                     help=r"console input fed to SYS_READC (e.g. 'print(2+2)\n'); "
                          r"backslash escapes like \n and \t are interpreted")
+    ap.add_argument("-f", "--input-file",
+                    help="read console input from this file verbatim (real "
+                         "newlines, no escaping) - overrides --input")
+    ap.add_argument("-I", "--interactive", action="store_true",
+                    help="live REPL: read SYS_READC from this terminal and echo "
+                         "the console to stdout (run the container with -it)")
     args = ap.parse_args()
-    stdin = args.input.encode("latin1").decode("unicode_escape").encode("latin1")
-    sys.exit(Sim(args.elf, args.budget, args.verbose, stdin).run())
+    if args.input_file:
+        with open(args.input_file, "rb") as fh:
+            stdin = fh.read()
+    else:
+        stdin = args.input.encode("latin1").decode("unicode_escape").encode("latin1")
+    # Interactive sessions run open-ended (stop on Ctrl-D/EOF), so default to a
+    # large budget; batch runs keep the small default unless overridden.
+    budget = args.budget if args.budget is not None else (2_000_000_000 if args.interactive else 300_000)
+    sys.exit(Sim(args.elf, budget, args.verbose, stdin, args.interactive).run())
 
 
 if __name__ == "__main__":

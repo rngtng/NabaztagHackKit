@@ -148,6 +148,20 @@ tasks:
           APP: '{{.APP | default "hello"}}'
           ARGS: '{{.ARGS}}'
 
+  repl:firmwareV2:
+    desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt. Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [N=budget]'
+    dir: '{{.USER_WORKING_DIR}}'
+    interactive: true
+    cmds:
+      # Resolve SCRIPT to an absolute path here (cwd = where the user ran task) so
+      # the leaf task's bind mount works regardless of its own dir; empty when
+      # omitted, which the leaf treats as "run the interactive prompt".
+      - task: firmwareV2:repl
+        vars:
+          SCRIPT:
+            sh: '[ -n "{{.SCRIPT}}" ] && realpath "{{.SCRIPT}}" || true'
+          N: '{{.N}}'
+
   build:firmware:
     desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
     dir: '{{.USER_WORKING_DIR}}'
