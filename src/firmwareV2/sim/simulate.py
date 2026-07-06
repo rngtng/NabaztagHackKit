@@ -62,6 +62,15 @@ PERIPH_WINDOWS = [
     (0xF0000000, 0xF1000000),   # USB device controller (ML60842)
 ]
 
+# SPI0/SPI1: after each byte, the firmware busy-waits on the SPIF (transfer-
+# complete) bit of the status register SPSR<n> before proceeding. We model no SPI
+# engine and no timing, so a transfer "completes" instantly: a write to the data
+# register SPDWR<n> sets SPIF in SPSR<n>, releasing that busy-wait. Without this,
+# any SPI user (LED driver, flash, audio) spins forever on a flag that never sets.
+#   SPI0_BASE = 0xB7B02000, SPI1_BASE = 0xB7B03000; SPSR = base+0x08, SPDWR = +0x0C.
+SPI_SPIF = 0x20
+SPI_DATA_TO_STATUS = {0xB7B0200C: 0xB7B02008, 0xB7B0300C: 0xB7B03008}
+
 # Named registers worth decoding in the write log (esp. the LED lines).
 #   PCR_BASE0 = 0xB7A00000, stride 0x1000; PO<n> = base+0. PCB_RELEASE == LLC2_4c.
 PO2, PO4 = 0xB7A02000, 0xB7A04000
@@ -70,6 +79,7 @@ NAMED_REGS = {
     0x78100000: "BWC", 0x78100008: "RAMAC", 0x7810000C: "IO0AC",
     PO2: "PO2 (MODE_LED=bit7)",
     PO4: "PO4 (CS_LED=bit5, CS_AUDIO_AMP=bit6)",
+    0xB7B0200C: "SPDWR0 (SPI0 data)", 0xB7B0300C: "SPDWR1 (SPI1 = LED bus)",
 }
 
 
@@ -142,6 +152,12 @@ class Sim:
             tag = f" {name}" if name else ""
             print(f"  MMIO w 0x{address:08x} <- 0x{value:0{size * 2}x}{tag}",
                   flush=True)
+        # Instant SPI completion: writing a data register sets SPIF in its status
+        # register so the firmware's transfer-complete poll returns immediately.
+        status = SPI_DATA_TO_STATUS.get(address)
+        if status is not None:
+            cur = int.from_bytes(uc.mem_read(status, 4), "little")
+            uc.mem_write(status, (cur | SPI_SPIF).to_bytes(4, "little"))
 
     def _on_intr(self, uc, intno, _ud):
         """ARM semihosting on SWI. Exercised from M3; harmless before then."""

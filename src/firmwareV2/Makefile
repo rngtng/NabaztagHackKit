@@ -5,7 +5,7 @@
 # startup in sys/. Toolchain flags mirror src/firmware (proven on this chip).
 #
 #   make APP=hello     -> bin/hello.{elf,hex,bin}   (M0, #88 - toolchain check)
-#   make APP=blink     -> bin/blink.{elf,hex,bin}   (M1, #89 - LED, not yet)
+#   make APP=blink     -> bin/blink.{elf,hex,bin}   (M1, #89 - LED blink)
 #
 # All targets run inside the Docker toolchain image (see Dockerfile); the only
 # host requirement is Docker + Task. Artifacts land in bin/ (and obj/).
