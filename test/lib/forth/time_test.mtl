@@ -1,0 +1,36 @@
+let scenario "forth_time_test" -> s in
+(
+  // Seed a known NTP timestamp so the wall-clock words are deterministic:
+  // 2004-06-01 12:00:00 UTC = [50278 60992] hi/lo (see time_test.mtl).
+  set time_high=50278; set time_low=60992;
+  set _ntp_receive_time=time;    // zero drift (tiny race on a second tick)
+  set test_city_code="UTC";
+  _time_calculate;
+
+  let test "time&date pushes sec min hour day month year" -> t in
+  (
+    assert_equalS "0 0 12 1 6 2004" forth_run_stack "time&date"
+  );
+
+  let test "utc>string / local>string" -> t in
+  (
+    assert_equalS "Tue, 01 Jun 2004 12:00:00 GMT" forth_run_stack "utc>string";
+    // local == UTC here (UTC city code, DST stubbed to 0)
+    assert_equalS "Tue, 01 Jun 2004 12:00:00 UTC" forth_run_stack "local>string"
+  );
+
+  let test "time? reflects time_is_valid" -> t in
+  (
+    set time_high=0; set time_low=0;
+    assert_equalS "0" forth_run_stack "time?";
+    set time_high=1;
+    assert_equalS "-1" forth_run_stack "time?"
+  );
+
+  let test "uptime / time-ms run and push a poppable value" -> t in
+  (
+    // native clocks are non-deterministic; just prove the words push one
+    // item each that a later word can consume, leaving the sentinel
+    assert_equalS "42" forth_run_stack "uptime drop time-ms drop 42"
+  )
+);

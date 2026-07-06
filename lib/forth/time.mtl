@@ -1,20 +1,20 @@
 /**
- * Forth time/date words — thin wrappers over lib/sys/time.mtl.
- * Ported verbatim from src/app-piper/forth/misc.mtl (the time subset);
- * lib/sys/time.mtl is included by main.mtl, so these just read its
- * time_local/time_utc state and the VM's time/time_ms natives.
+ * Forth time/date word pack — thin wrappers over lib/sys/time.mtl.
+ * Opt-in (not part of forth_core_words): unlike the core word files this
+ * reaches into the time/NTP/task subsystems, so consumers must have
+ * lib/sys/time.mtl (and, for update-time, a real ntp_get_time) in the
+ * compiled program and provide the config_get_dst/config_get_city_code
+ * accessors lib/sys/time.mtl declares. Shared by src/app-piper and
+ * src/app-template; wire the word entries into the app dictionary.
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */
 
-#ifdef SIMU
-// The simulator transport (lib/net/tcp.mtl) links only TCP — no UDP/DNS
-// stack, so lib/net/ntp.mtl's real ntp_get_time isn't compiled in. Stub it:
-// the simulator has no real clock to sync anyway. On device the full net
-// stack (lib/net/net.mtl) provides the real definition, which wins because
-// it's included earlier (call sites bind the most recent definition).
-fun ntp_get_time= 0;;
-#endif
+// update-time drives an NTP fetch. The full net stack (lib/net/net.mtl)
+// provides the real definition; a transport without UDP/DNS (the simulator's
+// lib/net/tcp.mtl) must supply its own stub. Declared here so the wrappers
+// compile against it regardless of which the consumer links.
+proto ntp_get_time 0;;
 
 /**
  * TIME&DATE ( -- sec min hour day month year)

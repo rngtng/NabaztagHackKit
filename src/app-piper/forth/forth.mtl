@@ -10,6 +10,7 @@
 #include "protos/ascii_protos.mtl"
 #include "protos/forth_protos.mtl"
 #include "lib/forth.mtl"
+#include "lib/forth/time.mtl"
 #include "forth/misc.mtl"
 #include "forth/net.mtl"
 #include "forth/nabaztag.mtl"
