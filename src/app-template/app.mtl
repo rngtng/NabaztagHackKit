@@ -47,6 +47,11 @@ fun app_forth_words=
     [ [str: "task-suspend" ] [func:#forth_task_suspend]] ::
     [ [str: "task-resume"  ] [func:#forth_task_resume]] ::
     [ [str: ".tasks"       ] [func:#forth_dot_tasks]] ::
+    // Hardware (lib/forth/hw.mtl, over lib/hw/leds.mtl + lib/hw/ears.mtl)
+    [ [str: "led!"         ] [func:#forth_led_store]] ::
+    [ [str: "leds-off"     ] [func:#forth_leds_off]] ::
+    [ [str: "ears"         ] [func:#forth_ears]] ::
+    [ [str: "move-ear"     ] [func:#forth_move_ear]] ::
     nil;;
 
 fun forth_init_dictionary=

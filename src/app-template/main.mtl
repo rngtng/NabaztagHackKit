@@ -22,8 +22,14 @@ proto main 0;;
 #include "lib/forth.mtl"
 #include "lib/sys/task.mtl"
 #include "lib/sys/time.mtl"
+// Hardware: the `led`/`motorset`/`motorget` natives are VM opcodes present in
+// the simulator too, so — unlike the net stack — no #ifdef SIMU guard.
+// ears.mtl already pulls in leds.mtl; both listed for clarity.
+#include "lib/hw/leds.mtl"
+#include "lib/hw/ears.mtl"
 #include "lib/forth/time.mtl"   // opt-in Forth time/date word pack
 #include "lib/forth/task.mtl"   // opt-in Forth task-control word pack
+#include "lib/forth/hw.mtl"     // opt-in Forth hardware word pack (LEDs + ears)
 
 // Forth: dictionary + word packs are wired up in app.mtl (extend there)
 
@@ -32,6 +38,7 @@ proto main 0;;
 
 fun main=
     loopcb #task_scheduler;
+    ears_init;   // start the ears state-machine task (LEDs need no init)
 #ifdef SIMU
     netstart;
 #else

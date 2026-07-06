@@ -1,0 +1,53 @@
+/**
+ * Forth hardware word pack — thin wrappers over lib/hw/leds.mtl and
+ * lib/hw/ears.mtl, which in turn wrap the VM's `led` / `motorset` / `motorget`
+ * natives. Opt-in (not part of forth_core_words): consumers must include
+ * lib/hw/leds.mtl + lib/hw/ears.mtl in the compiled program and call ears_init
+ * once (it starts the ears state-machine task the move words drive).
+ *
+ * The three natives are VM opcodes present in BOTH the firmware and the
+ * mtl_linux simulator, so — unlike the net words — these need no #ifdef SIMU
+ * split and are exercisable under `task simulate:app`: LED writes surface as
+ * `led N 0x……` sim log lines and the simulator models the ear motors
+ * (see tools/mtl_linux/src/simu/linux/simu.c). Physical confirmation still
+ * needs a flashed rabbit (#46). Shared by src/app-template and available to
+ * app-piper; wire the word entries into the app dictionary.
+ */
+
+/**
+ * LED! ( color led# -- )
+ * Set LED led# (0=nose 1=left 2=middle 3=right 4=base) to a 24-bit RGB color.
+ */
+fun forth_led_store f=
+    let forth_pop f -> led in
+    let forth_pop f -> col in
+    leds_set_color led.int col.int;
+    nil;;
+
+/**
+ * LEDS-OFF ( -- )
+ * Turn all LEDs off.
+ */
+fun forth_leds_off f=
+    leds_turn_off;
+    nil;;
+
+/**
+ * EARS ( -- left-pos right-pos )
+ * Push the current ear positions (0..EARS_HOLES-1), left ear first.
+ */
+fun forth_ears f=
+    forth_push f [int:ears_get_position EARS_LEFT];
+    forth_push f [int:ears_get_position EARS_RIGHT];;
+
+/**
+ * MOVE-EAR ( ear pos dir -- )
+ * Move ear (0=left 1=right) to position pos, turning in direction dir
+ * (0=forward, non-zero=backward). A no-op until the ears finish homing.
+ */
+fun forth_move_ear f=
+    let forth_pop f -> dir in
+    let forth_pop f -> pos in
+    let forth_pop f -> ear in
+    ears_go ear.int pos.int dir.int;
+    nil;;
