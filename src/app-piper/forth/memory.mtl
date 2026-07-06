@@ -44,11 +44,9 @@ const FORTH_MEMORY_AUTOHALFTIME_ENABLED = (1<<29) + 45;;
 const FORTH_MEMORY_AUTOSURPRISE_ENABLED = (1<<29) + 46;;
 const FORTH_MEMORY_AUTOTAICHI_ENABLED  = (1<<29) + 47;;
 
-type MemoryBlock = [
-    memory_block_size   // size of the memory block
-    memory_bitmap       // bitmap of used/free cells
-    memory_cells        // table (array) of cells
-];;
+// `type MemoryBlock` now comes from lib/forth/memory.mtl (included first via
+// lib/forth.mtl). Redeclaring it here would create a second, incompatible
+// nominal type for the shared `forth_memory` global and fail typechecking.
 
 /**
  * Find the first free bit in the bitmap.

@@ -175,6 +175,7 @@ fun lib_test=
 #include "test/lib/forth/string_test.mtl"
 #include "test/lib/forth/list_test.mtl"
 #include "test/lib/forth/json_test.mtl"
+#include "test/lib/forth/memory_test.mtl"
 #include "test/lib/forth/output_test.mtl"
 #include "test/lib/forth/time_test.mtl"
 #include "test/lib/forth/task_test.mtl"

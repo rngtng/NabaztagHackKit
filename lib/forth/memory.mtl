@@ -2,7 +2,7 @@
  * Forth memory/variable words — generic cell allocator + @ ! ? +! variable.
  * Ported from src/app-piper/forth/memory.mtl, stripped of the Nabaztag/config
  * "special address" cells (server-url, ears, leds, ...) that app-piper wires
- * to its own hardware globals; app-template keeps only the generic STATE cell.
+ * to its own hardware globals; only the generic STATE cell is kept.
  * Copyright (c) 2025 Andrea Bonomi
  * This code is licensed under the MIT License
  */

@@ -4,7 +4,6 @@
  * POST /eval  -> run the body as Forth, answer {"output": …, "stack": …}
  */
 #include "lib/std/json.mtl"
-#include "forth_memory.mtl"
 
 #ifdef SIMU
 // lib/sys/time.mtl reads the timezone/DST config through these accessors;
@@ -40,17 +39,9 @@ fun config_get_proxy_port= 0;;
 // -----------------------------------------------------------------------
 #endif
 
-// Forth: core dictionary + memory/variable words (mirrors
-// src/app-piper/forth/dictionary.mtl's "Memory" section)
+// Forth: opt-in word packs layered on the generic core (memory/variable words
+// now live in forth_core_words). Extend this list to add your own words.
 fun app_forth_words=
-    [ [str: "allocate-cell"] [func:#forth_allocate_cell]] ::
-    [ [str: "free-cell"    ] [func:#forth_free_cell]] ::
-    [ [str: "@"            ] [func:#forth_fetch]] ::
-    [ [str: "!"            ] [func:#forth_store]] ::
-    [ [str: "?"            ] [func:#forth_q]] ::
-    [ [str: "+!"           ] [func:#forth_plus_store]] ::
-    [ [str: "variable"     ] [func:#forth_variable flag:FORTH_IMMEDIATE]] ::
-    [ [str: "state"        ] [code:{[int:FORTH_MEMORY_STATE]}]] ::
     // Time (lib/forth/time.mtl, over lib/sys/time.mtl)
     [ [str: "time&date"    ] [func:#forth_time_and_date]] ::
     [ [str: "local>string" ] [func:#forth_local_to_string]] ::

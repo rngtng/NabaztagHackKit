@@ -86,4 +86,5 @@ fun forth_get_word name=
 #include "lib/forth/control.mtl"
 #include "lib/forth/compile.mtl"
 #include "lib/forth/interpreter.mtl"
+#include "lib/forth/memory.mtl"
 #include "lib/forth/dictionary.mtl"
