@@ -1,4 +1,28 @@
-// --------------- DNS debut
+// Boot DNS resolver.
+//
+// Device build (#47): converged onto lib/net/dns.mtl (the boot copy this
+// replaced was a near-verbatim ancestor of it). The lib client keys off a
+// netdnslist and runs a periodic task; boot's historical names map on top.
+//
+// Simulator build: keeps boot's original single-server resolver over the
+// tcpudp_emu UDP shim (simulate:boot is unaffected by the device convergence).
+//
+// boot_dns_set / boot_dns_primary abstract the one storage difference
+// (lib netdnslist vs the sim's single netdns var) so wifi.mtl's env
+// save/restore is identical on both builds.
+
+#ifndef SIMU
+
+#include "lib/net/dns.mtl"
+
+fun startdnsclient= dns_client_init;;
+fun dnstime= 0;;   // periodic retries now run as the dns_client task
+fun boot_dns_set ip= dns_add_new_srv ip 1;;
+fun boot_dns_primary= if netdnslist==nil then "\0\0\0\0" else hd netdnslist;;
+
+#else
+
+// --------------- DNS (simulator: single-server resolver over tcpudp_emu) ---
 fun parsequ s i= let strfind s i "\0" 0 nil -> j in	j+5;;
 
 fun parsequs s i n=	if n<=0 then i else parsequs s parsequ s i n-1;;
@@ -9,23 +33,19 @@ fun skipname s i=
 	else (strfind s i "\0" 0 nil)+1;;
 
 fun parseans s i n=
-	Secholn "parseans";
 	if n<=0 then nil
 	else let skipname s i -> j in
-	let Iecholn strgetword s j -> typ in
+	let strgetword s j -> typ in
 	if typ==1 then
 		strcatlist (itoa strget s j+10)::"."::(itoa strget s j+11)::"."::
 		(itoa strget s j+12)::"."::(itoa strget s j+13)::nil
 	else parseans s (j+10+strgetword s j+8) n-1;;
 
 fun parsemsg s=
-	Secholn "parsemsg";
-	let Iecholn strgetword s 0 -> id in
-	let Iecholn strgetword s 2 -> code in
-	let Iecholn strgetword s 4 -> nbqu in
-	let Iecholn strgetword s 6 -> nbans in
+	let strgetword s 4 -> nbqu in
+	let strgetword s 6 -> nbans in
 	if nbans==0 then nil
-	else let Iecholn parsequs s 12 nbqu -> i in
+	else let parsequs s 12 nbqu -> i in
 	parseans s i nbans;;
 
 fun filterdns src=
@@ -51,7 +71,7 @@ fun dnsreq domain cb=
 	if ip!=nil then call cb[ip]
 	else let question dnsid domain -> tramedns in
 	(
-		udpsend netip 999 netdns 53 dump tramedns nil;
+		udpsend netip 999 netdns 53 tramedns nil;
 		set ldnsreq=[idD:dnsid domainD:domain reqD:tramedns timeoutD:time+5 cbD:cb t0D:time_ms]::ldnsreq;
 		nil
 	);
@@ -60,23 +80,16 @@ fun dnsreq domain cb=
 fun selectbyid d v= d.idD==v;;
 
 fun cbnetdns msg mac ipfrom=
-	Secholn "cbnetdns";
-	dump msg;
-	let Iecholn strgetword msg 0 -> id in
-	let Secholn parsemsg msg -> ip in
+	let parsemsg msg -> ip in
+	let strgetword msg 0 -> id in
 	let hd select ldnsreq id #selectbyid -> x in
 	if x!=nil then
 	(
-		Secholn "dns found";
 		set ldnsreq=listrem ldnsreq x;
-		if ip!=nil then set ldns=[x.domainD ip]::ldns;	// ### attention à la taille de la liste
+		if ip!=nil then set ldns=[x.domainD ip]::ldns;
 		call x.cbD [ip]
 	)
-	else
-	(
-		Secholn "request not found";
-		nil
-	);
+	else nil;
 	0;;
 
 fun filterdnsdead l=if l!=nil then let hd l-> d in if d.timeoutD==nil then filterdnsdead tl l else (hd l)::filterdnsdead tl l;;
@@ -92,12 +105,11 @@ fun dnstime=
 	(
 		set d.t0D=time_ms;
 		let question d.idD d.domainD -> tramedns in
-			udpsend netip 999 netdns 53 dump tramedns nil;
+			udpsend netip 999 netdns 53 tramedns nil;
 		nil
 	);
 	set ldnsreq=filterdnsdead ldnsreq;
 	0;;
-
 
 fun startdnsclient=
 	regudp 999 #cbnetdns;
@@ -105,4 +117,8 @@ fun startdnsclient=
 	set ldns=nil;
 	0;;
 
-// --------------- DNS fin
+fun boot_dns_set ip= set netdns=ip;;
+fun boot_dns_primary= netdns;;
+// --------------- DNS fin ---
+
+#endif

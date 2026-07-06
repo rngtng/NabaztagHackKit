@@ -1,0 +1,16 @@
+// Satisfy lib/net's app-side `config_get_*` proto seam from boot's own
+// confGet* accessors (src/boot/config.mtl). lib/net keeps device config
+// app-side (see lib/net/config_defaults.mtl); boot is that "app".
+//
+// Only the accessors the boot device stack actually reads are wired here:
+// dhcp (lib/net/dhcp.mtl), net_dns (lib/net/dns.mtl), proxy* (lib/net/http.mtl).
+// config_dst / config_city_code are read by lib/sys/time.mtl (pulled in by
+// lib/net/http.mtl); boot has no clock/timezone need, so they return fixed
+// UTC/no-DST values.
+fun config_get_dhcp= confGetDhcp;;
+fun config_get_net_dns= confGetNetdns;;
+fun config_get_proxy= confGetProxy;;
+fun config_get_proxy_ip= confGetProxyip;;
+fun config_get_proxy_port= confGetProxyport;;
+fun config_get_dst= 0;;
+fun config_get_city_code= "UTC";;

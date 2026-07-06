@@ -43,7 +43,7 @@ fun scanunserialize s n i0=
 
 
 fun envmake =
-	strcatlist netip::netmask::netgateway::netdns::scanserialize wifiscans;;
+	strcatlist netip::netmask::netgateway::boot_dns_primary::scanserialize wifiscans;;
 
 fun envrestore s =
 	if s!=nil then
@@ -51,7 +51,7 @@ fun envrestore s =
 		set netip=strsub s 0 4;
 		set netmask=strsub s 4 4;
 		set netgateway=strsub s 8 4;
-		set netdns=strsub s 12 4;
+		boot_dns_set strsub s 12 4;
 		let htoi strsub s 16 8 -> nscan in
 		set wifiscans=scanunserialize s nscan 24;
 		0
@@ -101,7 +101,7 @@ fun wifiInit rescan=
 			(
 				set netmask=confGetNetmask;
 				set netgateway=confGetNetgateway;
-				set netdns=confGetNetdns;
+				boot_dns_set confGetNetdns;
 				set netip=confGetNetip
 			);
 			0

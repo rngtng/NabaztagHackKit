@@ -86,6 +86,9 @@ fun _wavtestcb i=
 const TESTDELAY=7000;;
 
 fun loop=
+#ifndef SIMU
+	task_scheduler;   // drive lib/net's ARP/TCP/UDP/DHCP/DNS periodic tasks
+#endif
 	if !master then
 	(
 		if !wavrunning then
