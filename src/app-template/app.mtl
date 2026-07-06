@@ -5,7 +5,6 @@
  */
 #include "lib/std/json.mtl"
 #include "forth_memory.mtl"
-#include "forth_task.mtl"
 
 #ifdef SIMU
 // lib/sys/time.mtl reads the timezone/DST config through these accessors;

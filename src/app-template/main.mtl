@@ -23,6 +23,7 @@ proto main 0;;
 #include "lib/sys/task.mtl"
 #include "lib/sys/time.mtl"
 #include "lib/forth/time.mtl"   // opt-in Forth time/date word pack
+#include "lib/forth/task.mtl"   // opt-in Forth task-control word pack
 
 // Forth: dictionary + word packs are wired up in app.mtl (extend there)
 

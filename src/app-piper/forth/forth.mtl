@@ -15,7 +15,7 @@
 #include "forth/net.mtl"
 #include "forth/nabaztag.mtl"
 #include "forth/memory.mtl"
-#include "forth/task.mtl"
+#include "lib/forth/task.mtl"
 #include "forth/dictionary.mtl"
 
 fun _forth_init_cb _=

@@ -92,11 +92,12 @@ fun listentcp port cb= 0;;
 #include "lib/net/http_server.mtl"
 #include "lib/net/sse_server.mtl"
 
-// Forth: core dictionary + the opt-in time pack (its deps — lib/sys/time.mtl,
-// ntp, config_get_* — are all included/stubbed above); run a program, return
-// buffered output / stack
+// Forth: core dictionary + the opt-in time/task packs under test (their deps —
+// lib/sys/{time,task}.mtl, ntp, config_get_* — are all included/stubbed above);
+// run a program, return buffered output / stack
 #include "lib/forth.mtl"
 #include "lib/forth/time.mtl"
+#include "lib/forth/task.mtl"
 
 fun _forth_test_time_words=
     [ [str: "time&date"    ] [func:#forth_time_and_date]] ::
@@ -176,4 +177,5 @@ fun lib_test=
 #include "test/lib/forth/json_test.mtl"
 #include "test/lib/forth/output_test.mtl"
 #include "test/lib/forth/time_test.mtl"
+#include "test/lib/forth/task_test.mtl"
 0;;
