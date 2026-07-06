@@ -31,6 +31,13 @@ includes:
       IMAGE: nabaztag-sdk-firmware
       DIR: ./src/firmware/
 
+  mkfirmware: # Sign a firmware .bin → .sim for web upload (tools/mkfirmware)
+    internal: true
+    taskfile: ./tools/mkfirmware/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-mkfirmware
+      DIR: ./tools/mkfirmware/
+
   firmwareV2: # eLua-successor V2 firmware bring-up (Lua 5.4) — ARM7TDMI/ML67Q4051 (#87)
     internal: true
     taskfile: ./src/firmwareV2/Taskfile.yaml
@@ -154,6 +161,23 @@ tasks:
       - rm -rf '{{.FIRMWARE_OUT}}'
       - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
       - rm -rf src/firmware/obj src/firmware/src/bc.c
+
+  build:sim:
+    desc: 'Build the full firmware and sign it for web upload → build/firmware/Nab.sim. Chains build:boot → build:firmware → sign → verify. Usage: task build:sim [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      FIRMWARE_OUT: '{{.OUT}}/firmware'
+    cmds:
+      - task: build:boot
+      - task: build:firmware
+      - task: mkfirmware:sign
+        vars:
+          SOURCE: '{{.FIRMWARE_OUT}}/Nab.bin'
+          OUT: '{{.FIRMWARE_OUT}}/Nab.sim'
+      - task: mkfirmware:verify
+        vars:
+          FILE: '{{.FIRMWARE_OUT}}/Nab.sim'
+      - 'echo "[firmware] {{.FIRMWARE_OUT}}/Nab.sim ready — upload via the config page (blue LEDs)"'
 
   test:firmware:
     desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires build:boot first. Usage: task test:firmware [SOURCE=build/boot/dumpbc.c] [DURATION=5]'
