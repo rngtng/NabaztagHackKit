@@ -38,6 +38,13 @@ includes:
       IMAGE: nabaztag-sdk-testvm
       DIR: ./tools/testvm/
 
+  mockserver: # Mock HTTP file server for end-to-end simulation (tools/mockserver)
+    internal: true
+    taskfile: ./tools/mockserver/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-mockserver
+      DIR: ./tools/mockserver/
+
 tasks:
   clean:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
@@ -177,6 +184,33 @@ tasks:
       - task: mtl:simulate
         vars:
           SOURCE: '{{.APP_OUT}}/merged.mtl'
+          NETWORK: '{{.NETWORK}}'       # empty unless simulate:app:mock joins a shared network
+          CLI_ARGS: '{{.CLI_ARGS}}'     # forward -- extra args (e.g. --serverurl) to mtl_simu
+
+  simulate:app:mock:
+    desc: 'Simulate an app end-to-end with the mock file server (issue #39). Serves src/<TARGET>/assets over HTTP and points the sim at it. Usage: task simulate:app:mock TARGET=app-piper'
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [TARGET]
+    vars:
+      NET: nabaztag-mocknet
+      MOCK_IP: 172.30.0.10
+      ASSETS: 'src/{{.TARGET}}/assets'
+    cmds:
+      - task: mockserver:image
+      # shared network + mock container the sim can reach at a fixed IP (literal IP => sim skips DNS)
+      - docker network create --subnet 172.30.0.0/24 {{.NET}} >/dev/null 2>&1 || true
+      - defer: docker network rm {{.NET}} >/dev/null 2>&1 || true
+      - docker rm -f nabaztag-mock >/dev/null 2>&1 || true
+      - 'docker run -d --rm --name nabaztag-mock --network {{.NET}} --ip {{.MOCK_IP}} -v "$(realpath {{.ASSETS}}):/assets:ro" nabaztag-sdk-mockserver >/dev/null'
+      - defer: docker stop nabaztag-mock >/dev/null 2>&1 || true
+      # stream the mock's request log alongside the sim output (-u: unbuffered, so lines appear live)
+      - docker logs -f nabaztag-mock 2>&1 | sed -u 's/^/[mock] /' &
+      - task: simulate:app
+        vars:
+          TARGET: '{{.TARGET}}'
+          NETWORK: '{{.NET}}'
+          CLI_ARGS: '--serverurl {{.MOCK_IP}} {{.CLI_ARGS}}'
 
   build:app:template:
     desc: 'Build app-template via build:app. Usage: task build:app:template [OUT=build]'
@@ -207,6 +241,14 @@ tasks:
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: simulate:app
+        vars:
+          TARGET: app-piper
+
+  simulate:app:piper:mock:
+    desc: 'Simulate app-piper end-to-end with the mock file server (serves src/app-piper/assets, e.g. init.forth). Usage: task simulate:app:piper:mock'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: simulate:app:mock
         vars:
           TARGET: app-piper
 

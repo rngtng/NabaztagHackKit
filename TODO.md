@@ -167,8 +167,14 @@ issues:
 - **[#49](https://github.com/rngtng/NabaztagHackKit/issues/49)** — `dev:upload`
   (Python): POST a `.sim` to the rabbit's on-device config page. Small,
   high-value; makes the hardware loop faster to iterate.
-- **[#39](https://github.com/rngtng/NabaztagHackKit/issues/39)** — Extend the
-  simulator to serve `bc.jsp` + assets from a local (Python?) http server.
+- **[#39](https://github.com/rngtng/NabaztagHackKit/issues/39)** ✅ — Extend the
+  simulator to serve `bc.jsp` + assets from a local Python http server.
+  Done: `tools/mockserver/` (stdlib `http.server`, logs every request, serves
+  files from an app's `src/<app>/assets/` folder). Run end-to-end with
+  `task simulate:app:piper:mock` — the sim joins a shared docker network and is
+  pointed at the mock's fixed IP (`--serverurl`), so piper fetches `init.forth`
+  (and anything it references) from the mock. App-layer path wired + verified;
+  serving `bc.jsp` for the boot flow is a generic follow-on (same server).
 - **[#43](https://github.com/rngtng/NabaztagHackKit/issues/43)** /
   **[#42](https://github.com/rngtng/NabaztagHackKit/issues/42)** — Simulator
   Web UI (retro pixel look) + input support (button / ear / RFID).

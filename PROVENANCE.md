@@ -89,6 +89,7 @@ from where, and what changed here so fixes can flow back upstream.
 |---|---|---|
 | `tools/mtl_linux/` | `rngtng/mtl_linux` (dockerized in `9037084`) | MTL compiler + simulator (Linux/macOS port of Sylvain Huet's original toolchain) |
 | `tools/preprocessor/` | written for this repo | pcpp-based `#include`/`#ifdef` preprocessor replacing piper's Perl one |
+| `tools/mockserver/` | written for this repo | stdlib-only Python mock HTTP file server (#39) — logs requests, serves an app's `src/<app>/assets/` so the sim can fetch `init.forth`/`bc.jsp`/`*.mp3` end-to-end (`task simulate:app:*:mock`) |
 | `src/firmware/` | `nabgcc` fork (`2894846`, dockerized `ed3972c`) | C bytecode VM + drivers ported to `arm-none-eabi-gcc`; WPA2 branch |
 | `src/boot/` | the original Violet/IAR boot (via `firmware_nabaztag`), split into modules | frozen recovery path — WiFi provisioning + `bc.jsp` fetch; not rebuilt from lib |
 | `src/app-piper/` (business-logic layers: srv/, run/, chor/ protocol layers, config, app forth words) | `nabaztag-piper` (ServerlessNabaztag fork), added `3ccbf2d` | the app; most of its former bulk is now `lib/` (see below) |
