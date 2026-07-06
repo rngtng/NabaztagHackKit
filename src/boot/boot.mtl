@@ -1,6 +1,10 @@
 // VLISP - Feb 06 - by Sylvain Huet
 // Metal
 
+// Boot runs the config-portal access-point (master) mode, so pull in lib/net's
+// master-mode symbols (netip_master, dhcp_start_srv, …).
+#define WIFI_MASTER_MODE
+
 proto main 0;;
 
 #ifdef SIMU
@@ -24,23 +28,27 @@ const HARDWARE=4;;
 type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW;;
 var wifi;;
 
+// On the device build these live in lib/protos/net_protos.mtl (pulled in by
+// ipv4.mtl). The simulator's tcpudp_emu.mtl doesn't include that header, so
+// declare them here for the SIMU build only.
+#ifdef SIMU
 var netip="\0\0\0\0";;
 var netmask="\255\255\255\0";;
 var netgateway="\0\0\0\0";;
-var netdns="\0\0\0\0";;
-
 var mymac;;
-
 const macbroadcast="\$ff\$ff\$ff\$ff\$ff\$ff";;
 const ipbroadcast="\$ff\$ff\$ff\$ff";;
-
-var master=0;;
-
 const netip_empty="\0\0\0\0";;
-
 const netip_master="\192\168\0\1";;
 const netmask_master="\255\255\255\0";;
 const netgateway_master="\192\168\0\1";;
+#endif
+
+// The simulator resolver keeps a single DNS server here; on device the DNS
+// server list lives in lib/net's netdnslist (boot_dns_* in dns.mtl bridges).
+var netdns="\0\0\0\0";;
+
+var master=0;;
 
 var wifiscans;;
 
@@ -58,6 +66,7 @@ const FIRMWARE="\0\0\0\13";;
 
 #include "util.mtl"
 #include "config.mtl"
+#include "config_seam.mtl"
 
 ifndef SIMU
 {

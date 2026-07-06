@@ -5,7 +5,18 @@ The boot image is the first program that runs on the Nabaztag. It handles two re
 - **WiFi provisioning** — serves a captive-portal config page so the user can enter SSID/key
 - **OTA firmware upgrade** — downloads and flashes new firmware over HTTP
 
-It has its own minimal TCP/IP, HTTP, and DNS stack (no dependency on `lib/`) to keep the flash footprint small.
+On the **device build** the TCP/IP, DHCP, DNS and HTTP layers are the shared
+`lib/net` stack (the same one the apps run, device-proven in
+[#46](https://github.com/rngtng/NabaztagHackKit/issues/46)); `ipv4.mtl` /
+`dns.mtl` / `http.mtl` are now thin wrappers that compose `lib/net` and alias
+boot's historical call names onto it (see
+[#47](https://github.com/rngtng/NabaztagHackKit/issues/47)). The **simulator
+build** (`SIMU`) still uses boot's own compact resolver/client over the
+`tcpudp_emu.mtl` shim, so `simulate:boot` is unaffected.
+
+Still boot-local (not yet converged, tracked in #47): `config.mtl` (the flash
+layout) and `wifi.mtl` (boot keeps its own WiFi state machine + config-portal
+master mode rather than lib/net/wifi's task).
 
 ## Source layout
 
@@ -15,13 +26,14 @@ It has its own minimal TCP/IP, HTTP, and DNS stack (no dependency on `lib/`) to 
 | `main.mtl` | `main` function + hardware self-test loop |
 | `boot_loop.mtl` | Main WiFi provisioning loop |
 | `config.mtl` | Persistent config read/write (SSID, key, IP, …) |
+| `config_seam.mtl` | Satisfies `lib/net`'s `config_get_*` accessors from boot's `confGet*` |
 | `config_server.mtl` | HTTP server for the provisioning UI |
 | `firmware.mtl` | OTA firmware download and flash |
 | `wifi.mtl` | WiFi state machine (scan, associate, DHCP) |
-| `http.mtl` | Minimal HTTP client |
-| `http_server.mtl` | Minimal HTTP server |
-| `dns.mtl` | DNS resolver |
-| `ipv4.mtl` | IPv4/ARP/TCP/UDP stack |
+| `http.mtl` | HTTP client — device: wraps `lib/net/http.mtl`; SIMU: boot's own |
+| `http_server.mtl` | Minimal HTTP server (`lib/net/http_server.mtl`) |
+| `dns.mtl` | DNS resolver — device: wraps `lib/net/dns.mtl`; SIMU: boot's own |
+| `ipv4.mtl` | IPv4/ARP/TCP/UDP + DHCP — device: composes `lib/net`; boot API aliases |
 | `tcpudp_emu.mtl` | Simulator shim (replaces `ipv4.mtl` when `SIMU` is defined) |
 | `util.mtl` | String/list utilities |
 
