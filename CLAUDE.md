@@ -106,6 +106,21 @@ lib module" live in `test/README.md` — read it before touching `test/lib/_test
   branch that doesn't advance its cursor) or rebuilding a big structure (a
   dictionary, a table) on every call instead of once at init.
 
+## Firmware C VM gotchas
+- **The firmware VM and the `mtl_linux` simulator VM are twin copies of the same
+  C** (`src/firmware/src/vm/` vs `tools/mtl_linux/src/vm/`). A VM bug or fix almost
+  always applies to both — grep the sibling before concluding a divergence is
+  intentional, and patch both when fixing.
+- **`_bytecode` aliases `_vmem_heap`** (bytecode + heap + downward value stack share
+  one `int32_t[VMEM_LENGTH]` array). Stack words are tagged: low bit = pointer,
+  else int; a "pointer" is a *word index*, not an address. GC **reboots** on OOM.
+- **To exercise the real VM natively**, use `tools/testvm` — build under
+  AddressSanitizer via `task test:firmware-bugs`. Its `README.md` has the VM
+  internals cheat-sheet (value tagging, block layout, how to drive `interpGo()`
+  from a few hand-assembled opcodes with no bytecode file). ASan only catches
+  accesses that leave the whole heap array, so drive indices past `VMEM_LENGTH`
+  or call helpers on separate `malloc`'d buffers.
+
 ## Working agreement
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
 `TODO.md` / `PROVENANCE.md` in sync as decisions land. Surface genuine forks as decisions;
