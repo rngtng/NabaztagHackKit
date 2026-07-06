@@ -16,17 +16,30 @@ curl -s -d '2 3 + .' localhost:8080/eval
 # -> {"output": "5", "stack": ""}
 ```
 
+**Guided tour of every word.** `examples/demo.forth` is a single, heavily
+commented script that exercises each word pack below (net words are shown but
+left commented — they need the device build). Run the whole file through
+`/eval` in one shot:
+
+```sh
+task simulate:app:template
+curl -s --noproxy localhost \
+     --data-binary @src/app-template/examples/demo.forth \
+     localhost:8080/eval
+```
+
 ## Forth commands available today
 
 `app.mtl` wires `forth_init_dictionary` to
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
 (mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`, which now includes the
-memory/variable words) plus three shared opt-in packs — the time/date pack
+memory/variable words) plus four shared opt-in packs — the time/date pack
 (`lib/forth/time.mtl`, over `lib/sys/time.mtl`), the task-control pack
-(`lib/forth/task.mtl`, over `lib/sys/task.mtl`), and the hardware pack
-(`lib/forth/hw.mtl`, over `lib/hw/leds.mtl` + `lib/hw/ears.mtl`) — all shared
-with app-piper, and no network words. Add more by extending `app_forth_words`
+(`lib/forth/task.mtl`, over `lib/sys/task.mtl`), the hardware pack
+(`lib/forth/hw.mtl`, over `lib/hw/leds.mtl` + `lib/hw/ears.mtl`), and — on the
+**device build only** — the network pack (`lib/forth/net.mtl`, over
+`lib/net`'s HTTP client + WiFi). Add more by extending `app_forth_words`
 the same way.
 
 Stack effect notation: `( before -- after )`, top of stack on the right.
@@ -194,6 +207,36 @@ curl -s -d 'ears .s' localhost:8080/eval            # show both ear positions
 ```
 
 [#46]: https://github.com/rngtng/NabaztagHackKit/issues/46
+
+**Net** (`lib/forth/net.mtl`, over `lib/net`'s HTTP client `http.mtl` + WiFi
+`wifi.mtl`) — **device build only.** These are compiled in exclusively under
+`#ifndef SIMU`: `http_request`/`wifi_mac_addr` live in the full MTL net stack
+(`lib/net/net.mtl`), which the simulator's transport (`lib/net/tcp.mtl`) does
+not link. Under `task simulate:app:template` they are therefore **not defined**
+(`defined? http-get` → `0`); use `task build:app:template` and flash a rabbit
+([#46]). Documenting a word that "works" in the simulator but not on the device
+is the bug tracked in [#57]/[#37].
+
+| Word | Effect | Notes |
+|---|---|---|
+| `http-get` | `url -- content header` | HTTP GET; async. Plain `http://` only (no HTTPS). Leaves the body below the header — `drop` the header to keep the body. |
+| `http-post` | `payload url -- content header` | HTTP POST with `payload` as the body; async. |
+| `mac` | `-- mac` | WiFi MAC address as a string |
+| `ip` | `-- ip` | current IP address as a dotted-quad string |
+
+```sh
+# device build only — not available under the simulator
+curl -s -d 'mac . cr ip . cr' localhost:8080/eval
+curl -s -d '"http://example.com/" http-get drop . cr' localhost:8080/eval
+```
+
+`tcp-listen` (piper's fifth net word) is intentionally **not** migrated: it
+hardwires app-piper's telnet Forth server (`src/app-piper/srv/telnet_server.mtl`),
+an app service rather than a lib building block — the same line the hardware
+pack draws around piper's non-raw words.
+
+[#57]: https://github.com/rngtng/NabaztagHackKit/issues/57
+[#37]: https://github.com/rngtng/NabaztagHackKit/issues/37
 
 Try it:
 ```sh

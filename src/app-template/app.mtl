@@ -52,6 +52,14 @@ fun app_forth_words=
     [ [str: "leds-off"     ] [func:#forth_leds_off]] ::
     [ [str: "ears"         ] [func:#forth_ears]] ::
     [ [str: "move-ear"     ] [func:#forth_move_ear]] ::
+#ifndef SIMU
+    // Net (lib/forth/net.mtl, over lib/net's http.mtl + wifi.mtl) — device
+    // build only; the simulator's lib/net/tcp.mtl links no HTTP client / WiFi.
+    [ [str: "http-get"     ] [func:#forth_http_get  flag:FORTH_ASYNC]] ::
+    [ [str: "http-post"    ] [func:#forth_http_post flag:FORTH_ASYNC]] ::
+    [ [str: "mac"          ] [func:#forth_mac]] ::
+    [ [str: "ip"           ] [func:#forth_ip]] ::
+#endif
     nil;;
 
 fun forth_init_dictionary=

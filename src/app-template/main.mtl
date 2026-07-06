@@ -30,6 +30,9 @@ proto main 0;;
 #include "lib/forth/time.mtl"   // opt-in Forth time/date word pack
 #include "lib/forth/task.mtl"   // opt-in Forth task-control word pack
 #include "lib/forth/hw.mtl"     // opt-in Forth hardware word pack (LEDs + ears)
+#ifndef SIMU
+#include "lib/forth/net.mtl"    // opt-in Forth net word pack (device stack only)
+#endif
 
 // Forth: dictionary + word packs are wired up in app.mtl (extend there)
 
