@@ -127,9 +127,12 @@ Stack effect notation: `( before -- after )`, top of stack on the right.
 | `ms` | `delay --` | sleep `delay` ms (async; yields to the scheduler) |
 
 The wall-clock words read the timezone/DST config through `config_get_city_code`
-/ `config_get_dst` (device values live in `app.mtl`; the simulator uses a fixed
-`UTC` / no-DST stub). Without a synced clock — always the case in the simulator —
-they report zeros / the epoch.
+/ `config_get_dst`. On device these (and the WiFi/IP/proxy accessors) come from
+`lib/net/config_defaults.mtl`, included by `app.mtl`'s `#ifndef SIMU` block;
+override any field by `#define`-ing `CONFIG_CITY_CODE` / `CONFIG_DST` / … before
+that include (see `lib/README.md`). The simulator uses a fixed `UTC` / no-DST
+stub. Without a synced clock — always the case in the simulator — they report
+zeros / the epoch.
 
 ```sh
 curl -s -d 'uptime .' localhost:8080/eval

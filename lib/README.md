@@ -62,6 +62,8 @@ lib/
 │   │                     (for stackless simulator apps; include EITHER this
 │   │                     OR the ipv4 stack, never both)
 │   ├── sock.mtl          Sock write/close helpers (writetcp/closetcp)
+│   ├── config_defaults.mtl  Default config_get_* bodies for demo apps; #define
+│   │                     CONFIG_* to override before including (see below)
 │   ├── http_server.mtl   Single-request HTTP/1.0 server (closes after response)
 │   └── sse_server.mtl    Persistent SSE server (keeps connections open)
 │
@@ -100,7 +102,21 @@ All planned building blocks are extracted; app-piper retains only the
 Violet-server protocol layers (trame/streaming/interactive/info), its servers,
 run loop, config, and app Forth words. Device configuration (wifi credentials, static IP, proxy, timezone) always
 stays app-side: lib modules declare `proto config_get_*` seams and the app
-supplies the accessors (see `src/app-template/app.mtl` for the full list).
+supplies the accessors. app-piper derives them from the persistent flash blob;
+demo apps get sensible defaults from **`lib/net/config_defaults.mtl`** — the one
+canonical copy of the ~15 accessor bodies. In a device build (`#ifndef SIMU`),
+`#define` only the fields that differ, *before* including it:
+
+```
+#define CONFIG_WIFI_SSID  "MyNetwork"
+#define CONFIG_WIFI_CRYPT 64            // 0=open 16=WEP 32=WPA 64=WPA2
+#define CONFIG_WIFI_PMK   "…"           // precomputed PMK for WPA/WPA2
+#include "lib/net/config_defaults.mtl"
+```
+
+The preprocessor is a real cpp, so `#define X val` substitutes the token and the
+header's `#ifndef` guards let the app-side `#define` win — no include-order
+gotcha. A new device app sets a few fields, not all fifteen.
 
 `lib/hw` decouples from app policy via seams: LED *animations* (what blinks
 when) stay app-side on top of the lib primitives; the ears state machine

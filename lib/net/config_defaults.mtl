@@ -1,0 +1,91 @@
+/**
+ * Shared device-config defaults for example apps.
+ *
+ * The lib/net stack reads its settings through the `config_get_*` proto seam
+ * (declared in lib/net/wifi.mtl, dhcp.mtl, dns.mtl, http.mtl). app-piper fills
+ * that seam from the persistent flash blob; demo apps that just hardcode a
+ * network used to restate all ~15 accessors verbatim. This header is the one
+ * canonical copy of those bodies.
+ *
+ * Usage: from a device build (#ifndef SIMU), #define only the fields that
+ * differ from the defaults BEFORE including this file, then include it. Every
+ * field you don't set falls back to the default below:
+ *
+ *   #define CONFIG_WIFI_SSID  "MyNetwork"
+ *   #define CONFIG_WIFI_CRYPT 64            // 0=open 16=WEP 32=WPA 64=WPA2
+ *   #define CONFIG_WIFI_PMK   "…"           // precomputed PMK for WPA/WPA2
+ *   #include "lib/net/config_defaults.mtl"
+ *
+ * (The preprocessor is a real cpp — `#define X val` substitutes the token, and
+ * the `#ifndef` guards below let an earlier app-side `#define` win, so there is
+ * no include-order gotcha to worry about.)
+ */
+
+// ---- WiFi ----
+#ifndef CONFIG_WIFI_SSID
+#define CONFIG_WIFI_SSID "MyNetwork"
+#endif
+#ifndef CONFIG_WIFI_CRYPT
+#define CONFIG_WIFI_CRYPT 0
+#endif
+#ifndef CONFIG_WIFI_AUTH
+#define CONFIG_WIFI_AUTH 0
+#endif
+#ifndef CONFIG_WIFI_KEY0
+#define CONFIG_WIFI_KEY0 ""
+#endif
+#ifndef CONFIG_WIFI_PMK
+#define CONFIG_WIFI_PMK ""
+#endif
+
+// ---- IP ----  (0: use DHCP; 1: use the static settings below)
+#ifndef CONFIG_DHCP
+#define CONFIG_DHCP 1
+#endif
+#ifndef CONFIG_NET_IP
+#define CONFIG_NET_IP "\192\168\1\52"
+#endif
+#ifndef CONFIG_NETMASK
+#define CONFIG_NETMASK "\255\255\255\0"
+#endif
+#ifndef CONFIG_NET_GW
+#define CONFIG_NET_GW "\192\168\1\1"
+#endif
+#ifndef CONFIG_NET_DNS
+#define CONFIG_NET_DNS "\192\168\1\1"
+#endif
+
+// ---- Time ----
+#ifndef CONFIG_DST
+#define CONFIG_DST 0
+#endif
+#ifndef CONFIG_CITY_CODE
+#define CONFIG_CITY_CODE "UTC"
+#endif
+
+// ---- HTTP proxy ----
+#ifndef CONFIG_PROXY
+#define CONFIG_PROXY 0
+#endif
+#ifndef CONFIG_PROXY_IP
+#define CONFIG_PROXY_IP "\0\0\0\0"
+#endif
+#ifndef CONFIG_PROXY_PORT
+#define CONFIG_PROXY_PORT 0
+#endif
+
+fun config_get_wifi_ssid= CONFIG_WIFI_SSID;;
+fun config_get_wifi_crypt= CONFIG_WIFI_CRYPT;;
+fun config_get_wifi_auth= CONFIG_WIFI_AUTH;;
+fun config_get_wifi_key0= CONFIG_WIFI_KEY0;;
+fun config_get_wifi_pmk= CONFIG_WIFI_PMK;;
+fun config_get_dhcp= CONFIG_DHCP;;
+fun config_get_dst= CONFIG_DST;;
+fun config_get_city_code= CONFIG_CITY_CODE;;
+fun config_get_net_ip= CONFIG_NET_IP;;
+fun config_get_netmask= CONFIG_NETMASK;;
+fun config_get_net_gw= CONFIG_NET_GW;;
+fun config_get_net_dns= CONFIG_NET_DNS;;
+fun config_get_proxy= CONFIG_PROXY;;
+fun config_get_proxy_ip= CONFIG_PROXY_IP;;
+fun config_get_proxy_port= CONFIG_PROXY_PORT;;
