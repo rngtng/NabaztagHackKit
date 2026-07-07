@@ -226,6 +226,7 @@ fun _wifi_auth=
  * Check WIFI connection status
  */
 fun _wifi_check =
+#ifndef WIFI_NO_AUTO_RECONNECT
     if netState==RT2501_S_IDLE then
     match wifi with
     (initW -> nil)
@@ -239,7 +240,9 @@ fun _wifi_check =
 #endif
         0
     )
-    ;;
+    ;
+#endif
+    nil;;
 
 /**
  * WIFI task

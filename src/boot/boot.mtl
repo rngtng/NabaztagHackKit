@@ -5,6 +5,15 @@
 // master-mode symbols (netip_master, dhcp_start_srv, …).
 #define WIFI_MASTER_MODE
 
+// Opt boot out of lib/net/wifi.mtl's auto-reconnect (_wifi_check). During
+// station association netState reads IDLE for a tick or two before it reaches
+// CONNECTED; _wifi_check treats that transient IDLE as "wifi lost" and yanks
+// the machine to reconnectW, aborting the association mid-flight (thrash - it
+// never connects). Boot does its own retry in boot_loop (BOOT_WIFITIMEOUT ->
+// wifi_init + next AP) and never calls ears_init, so lib's ears_stop on the
+// reconnect path is wrong for boot too. Apps keep the default behaviour. (#103)
+#define WIFI_NO_AUTO_RECONNECT
+
 proto main 0;;
 
 #ifdef SIMU
