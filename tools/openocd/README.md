@@ -15,6 +15,26 @@ Configs in this dir:
 | [`nabaztagv2.cfg`](nabaztagv2.cfg) | FTDI Bus Blaster |
 | [`target/ml67q4051.cfg`](target/ml67q4051.cfg) | the chip + 128 KB flash bank (shared by both) |
 
+## Flash a firmwareV2 app in one command (M2, #90)
+
+Once the Pi is set up (steps 1 + wiring below, one-time), flashing is a single
+task from the repo root - it builds the app, ships this repo's configs + ELF to
+the Pi, drives OpenOCD + gdb, verifies the write, and tears the bridge down:
+
+```sh
+task flash:firmwareV2                       # APP defaults to hello (M0)
+task flash:firmwareV2 APP=blink             # M1 - visible LED blink
+task flash:firmwareV2 APP=blink PI_HOST=me@other-pi.local
+```
+
+The task wraps [`flash.py`](flash.py). It aborts if the JTAG chain check
+(IDCODE `0x3f0f0f0f`) fails, before touching flash - the same make-or-break gate
+as the manual flow. The manual steps below are the fallback for debricking /
+debugging and document what the task does under the hood.
+
+> `flash.py` runs OpenOCD with only `-f nabaztag-pi.cfg`, so that config must set
+> the JTAG clock (`adapter_khz`) itself - it does.
+
 ## Why a custom OpenOCD
 
 - Flash is a single 128 KB bank based at `0x08000000`.
@@ -176,3 +196,16 @@ The rabbit should boot (LEDs / ears move). Done.
   but reliable for 128 KB; only a final failure matters.
 - **Inspect interactively** → `telnet localhost 4444` while OpenOCD runs, then
   `halt`, `reg`, `flash banks`.
+
+## Generalising
+
+`flash.py`'s defaults (`--host tobi@jtag.local`, native-GPIO `nabaztag-pi.cfg`,
+`--remote-dir openocd`) suit the current single-rig setup; every one is an
+overridable flag, so another Pi/user/adapter needs no code change - just args
+(or new `PI_HOST=` etc. on the task).
+
+What is *structurally* Pi-specific is the remote model itself: scp/ssh + `sudo`
+(for `/dev/mem`). A local FTDI probe (Bus Blaster + `nabaztagv2.cfg`, OpenOCD on
+this host, no ssh/sudo) would be a `--local` path. `flash.py` keeps
+copy/start/stop in their own functions so that day it's a branch, not a rewrite;
+it isn't built yet (no probe on hand to test against).
