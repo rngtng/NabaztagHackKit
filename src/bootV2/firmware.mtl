@@ -1,0 +1,13 @@
+#include "lib/sys/firmware"
+
+// Boot wrappers that add LED feedback around the pure lib functions
+fun boot_getfirmware req=
+	setleds 0xff0000;
+	getfirmware req;;
+
+fun boot_firmware_flash req=
+	let firmware_flash req -> r in
+	(
+		setleds 0xffffff;
+		r
+	);;

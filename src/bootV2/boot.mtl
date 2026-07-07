@@ -1,6 +1,19 @@
 // VLISP - Feb 06 - by Sylvain Huet
 // Metal
 
+// Boot runs the config-portal access-point (master) mode, so pull in lib/net's
+// master-mode symbols (netip_master, dhcp_start_srv, …).
+#define WIFI_MASTER_MODE
+
+// Opt boot out of lib/net/wifi.mtl's auto-reconnect (_wifi_check). During
+// station association netState reads IDLE for a tick or two before it reaches
+// CONNECTED; _wifi_check treats that transient IDLE as "wifi lost" and yanks
+// the machine to reconnectW, aborting the association mid-flight (thrash - it
+// never connects). Boot does its own retry in boot_loop (BOOT_WIFITIMEOUT ->
+// wifi_init + next AP) and never calls ears_init, so lib's ears_stop on the
+// reconnect path is wrong for boot too. Apps keep the default behaviour. (#103)
+#define WIFI_NO_AUTO_RECONNECT
+
 proto main 0;;
 
 #ifdef SIMU
@@ -21,69 +34,69 @@ const HARDWARE=4;;
 }
 
 
-type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW;;
-var wifi;;
+// The Wifi type, `wifi`/`_wifi_master`/`_wifi_scans` state and the RT2501/
+// IEEE80211 constants are all owned by the wifi module (wifi.mtl, included
+// below): lib/net/wifi.mtl on device, boot's own state machine on SIMU. It is
+// included *before* config_server.mtl so those symbols (and the shared mutable
+// _wifi_* vars) resolve to a single declaration ahead of their first use.
 
+// On the device build these live in lib/protos/net_protos.mtl (pulled in by
+// ipv4.mtl). The simulator's tcpudp_emu.mtl doesn't include that header, so
+// declare them here for the SIMU build only.
+#ifdef SIMU
 var netip="\0\0\0\0";;
 var netmask="\255\255\255\0";;
 var netgateway="\0\0\0\0";;
-var netdns="\0\0\0\0";;
-
 var mymac;;
-
 const macbroadcast="\$ff\$ff\$ff\$ff\$ff\$ff";;
 const ipbroadcast="\$ff\$ff\$ff\$ff";;
-
-var master=0;;
-
 const netip_empty="\0\0\0\0";;
-
 const netip_master="\192\168\0\1";;
 const netmask_master="\255\255\255\0";;
 const netgateway_master="\192\168\0\1";;
+#endif
 
-var wifiscans;;
-
-const IEEE80211_CRYPT_NONE=0;;
-const IEEE80211_CRYPT_WEP=16;;
-const IEEE80211_CRYPT_WPA=32;;
-const IEEE80211_CRYPT_WPA2=64;;
-const IEEE80211_CRYPT_WPA_UNSUPPORTED=255;;
-
-const IEEE80211_AUTH_OPEN=0;;
-const IEEE80211_AUTH_SHARED=1;;
+// The simulator resolver keeps a single DNS server here; on device the DNS
+// server list lives in lib/net's netdnslist (boot_dns_* in dns.mtl bridges).
+var netdns="\0\0\0\0";;
 
 const FIRMWARE="\0\0\0\13";;
 
 
-#include "util"
-#include "config"
+#include "util.mtl"
+#include "config.mtl"
+#include "config_seam.mtl"
 
 ifndef SIMU
 {
 
-#include "ipv4"
+#include "ipv4.mtl"
 
 }
 else
 {
 
-#include "tcpudp_emu"
+#include "tcpudp_emu.mtl"
 
 }
 
-#include "dns"
+#include "dns.mtl"
+
+// WiFi state machine + config-portal master mode. Included before
+// config_server.mtl (which reads _wifi_scans / _wifi_master and the IEEE80211
+// crypt constants) so those symbols are declared once, ahead of first use.
+#include "wifi.mtl"
 
 ifdef BOOT
 {
-#include "config_server"
+#include "config_server.mtl"
 }
 else
 {
 fun startconfigserver port=	0;;
 }
 
-#include "http"
+#include "http.mtl"
 
 ifdef AUDIOLIB {
 
@@ -178,9 +191,6 @@ fun wavstartlocal l=
 	_wavstartnow
 	;;
 
-fun itobin4 i=strcatlist (ctoa i)::(ctoa i>>8)::(ctoa i>>16)::(ctoa i>>24)::nil;;
-fun itobin2 i=strcatlist (ctoa i)::(ctoa i>>8)::nil;;
-
 fun mkwav freq channel bps=
 	let strcatlist
 		"WAVEfmt "::(itobin4 0x12)::
@@ -254,14 +264,9 @@ fun wavtime =
 
 //-------------------
 
-
-
-
-#include "wifi"
-
 ifdef BOOT
 {
-#include "boot_loop"
+#include "boot_loop.mtl"
 }
 
 ifdef RECLIB {
@@ -297,16 +302,6 @@ fun cbrec s=
 	set lrec=s::lrec;
 	0;;
 
-fun itobin4 i=
-	let strnew 4 -> s in
-	(
-		strset s 0 i;
-		strset s 1 i>>8;
-		strset s 2 i>>16;
-		strset s 3 i>>24;
-		s
-	);;
-
 fun liststrlen l r=	if l==nil then r else liststrlen tl l r+strlen hd l;;
 
 fun mkriff ldata=
@@ -338,5 +333,5 @@ fun recriff =
 
 
 ifdef BOOT {
-#include "main"
+#include "main.mtl"
 }

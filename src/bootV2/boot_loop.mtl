@@ -1,4 +1,4 @@
-#include "bytecode_loader"
+#include "bytecode_loader.mtl"
 
 const BOOT_HTTPTIMEOUT=10;;
 const BOOT_WIFITIMEOUT=20;;
@@ -32,17 +32,18 @@ fun _bootcbhttp httpreq res=
 	load_bytecode httpreq res;;
 
 
+// The Violet platform auth (&l=login &p=pwd) is dead; only v/m/h remain.
 fun boot_url url =
-	Secholn strcatlist url::"/bc.jsp?v="::(webip FIRMWARE)::"&m="::(webmac netMac)::"&l="::(webmac confGetLogin)::"&p="::(webmac confGetPwd)::"&h="::(itoa HARDWARE)::nil;;
+	Secholn strcatlist url::"/bc.jsp?v="::(webip FIRMWARE)::"&m="::(webmac netMac)::"&h="::(itoa HARDWARE)::nil;;
 
 fun boot_loop=
-	if wifitry!=nil && time-wifitry>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre réseau
+	if _wifi_try!=nil && time-_wifi_try>BOOT_WIFITIMEOUT && httpboot==nil then	// essayer un autre réseau
 	(
-		wifiInit 0;
+		wifi_init 0;
 		resetudp;
 		set httpboot=nil;
 		netSetmode IEEE80211_M_MANAGED nil 11;
-		set wifiscans=tl wifiscans;
+		set _wifi_scans=tl _wifi_scans;
 		nil
 	)
 	else
@@ -50,7 +51,10 @@ fun boot_loop=
 	let confGetServerUrl -> url in
 //	let "nabdev.no-ip.org:8080/vl" -> url in
 	(
-		if wifiReady then set httpboot=httprequest "GET" boot_url url nil #_bootcbhttp HTTP_NORMAL;
+		// Only fetch bytecode once fully in station state (associated + IP), not
+		// merely radio-connected - match wifi==stationW (lib's wifi_connected is
+		// the weaker "associated" check).
+		if (match wifi with (stationW -> 1)|(_ -> 0)) then set httpboot=httprequest "GET" boot_url url nil #_bootcbhttp HTTP_NORMAL;
 		0
 	)
 	else let httpstart httpboot -> t0 in

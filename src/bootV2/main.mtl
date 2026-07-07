@@ -86,11 +86,16 @@ fun _wavtestcb i=
 const TESTDELAY=7000;;
 
 fun loop=
-	if !master then
+#ifndef SIMU
+	task_scheduler;   // drive lib/net's ARP/TCP/UDP/DHCP/DNS periodic tasks
+#endif
+	if !_wifi_master then
 	(
 		if !wavrunning then
 		(
-			wifiRun;
+#ifdef SIMU
+			wifi_run;   // sim has no task scheduler; drive the wifi machine here
+#endif
 			boot_leds;
 			boot_loop
 		)
@@ -117,7 +122,11 @@ fun loop=
 	)
 	else if !tests then
 	(
-		wifiRun
+#ifdef SIMU
+		wifi_run   // config-portal path (device: driven by task_scheduler)
+#else
+		0
+#endif
 	)
 	else
 	(
@@ -250,18 +259,23 @@ fun loop=
 
 fun main=
 	MACecho netMac 0 1;
-	Secho "button :";
-	Iecholn set master=button2;
-	Secholn ":started";
 	confInit;
-	wifiInit 1;
+	// wifi_init reads the button once and sets _wifi_master (held = config
+	// portal / master mode). Don't read button2 anywhere before this.
+	wifi_init 1;
+	Secho "master :"; Iecholn _wifi_master;
+	Secholn ":started";
+#ifndef SIMU
+	// Device: bring the config portal up once master (AP) mode is established
+	// (the sim's wifi_run calls startconfigserver inline instead).
+	set wifi_master_cb = #boot_start_config_portal;
+#endif
 	loopcb	#loop;
 
 	netstart;
-//	startconfigserver 8080;
 	sndVol button3;
 //	wavstartlocal midi_start::nil;
 
 	set start=time_ms;
-	setleds if master then 0xff else 0xff00ff;
+	setleds if _wifi_master then 0xff else 0xff00ff;
 	0;;
