@@ -84,7 +84,52 @@ int _read(int fd, char *ptr, int len)
   if (c <= 0)
     return 0;             /* no input (simulator) -> EOF, ends the REPL */
   ptr[0] = (char)c;
-  return 1;               /* one char per call; fgets reassembles the line */
+  return 1;               /* one char per call; sh_gets reassembles the line */
+}
+
+/* Read one line into buf (keeps the trailing '\n', NUL-terminates), built on
+ * the single-char _read syscall. Replaces fgets() so the REPL needs no newlib
+ * stdio FILE layer (M7.1, #107). Returns NULL on immediate EOF, like fgets. */
+static char *sh_gets(char *buf, int size)
+{
+  int i = 0;
+  for (;;) {
+    char c;
+    if (_read(0, &c, 1) != 1) {   /* EOF / no input (simulator) */
+      if (i == 0)
+        return NULL;
+      break;
+    }
+    if (i < size - 1)
+      buf[i++] = c;
+    if (c == '\n')
+      break;
+  }
+  buf[i] = '\0';
+  return buf;
+}
+
+/* ---- Lua console output (M7.1, #107) ------------------------------------- */
+/* luaconf.h routes lua_writestring/writeline/writestringerror here so print()
+ * and the error/panic paths write straight to the semihosting _write syscall,
+ * never linking newlib's buffered-FILE layer (~6 KB). */
+void luai_writestring(const char *s, size_t l)
+{
+  _write(1, s, (int)l);
+}
+
+/* Every lua_writestringerror call site (lauxlib panic/warn) uses a "%s"-style
+ * format with one const char* arg. snprintf uses the string vfprintf path
+ * (already linked for lua_number2str), not the FILE layer. */
+void luai_writestringerror(const char *fmt, const char *arg)
+{
+  char b[128];
+  int n = snprintf(b, sizeof b, fmt, arg);
+  if (n <= 0)
+    return;
+  if (n > (int)sizeof b)
+    n = (int)sizeof b;
+  _write(2, b, n);
 }
 
 /* Heap = the 1 MB external RAM window; IntRAM is too small for a Lua state. */
@@ -213,7 +258,7 @@ static void repl(lua_State *L)
 {
   char line[REPL_LINE];
   sh_puts("> ");
-  while (fgets(line, sizeof line, stdin) != NULL) {
+  while (sh_gets(line, sizeof line) != NULL) {
     if (load_line(L, line) != LUA_OK) {
       report(L); /* syntax error */
     } else {
@@ -249,7 +294,6 @@ static void init_hw(void)
 
 int main(void)
 {
-  setvbuf(stdout, NULL, _IONBF, 0); /* semihosting console: no buffering */
   init_hw();                        /* LEDs + button, for the nab bindings */
 
   lua_State *L = luaL_newstate();

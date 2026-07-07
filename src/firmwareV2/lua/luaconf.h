@@ -798,6 +798,22 @@
 ** without modifying the main part of the file.
 */
 
+/*
+** firmwareV2 (M7.1, #107): route Lua's console output through ARM semihosting
+** instead of the newlib stdio FILE layer. The stock lua_writestring/writeline/
+** writestringerror (lauxlib.h) call fwrite/fprintf/fflush on stdout/stderr,
+** which drags in the whole buffered-FILE machinery (~6 KB: findfp/fflush/
+** fvwrite/freopen/fread/setvbuf). Our console is per-char semihosting (see
+** src/app/lua.c), so that buffering is dead weight. Defining the macros here
+** (before lauxlib.h's `#if !defined` guards) routes them to helpers that write
+** straight to the _write syscall. Every lua_writestringerror call site uses a
+** single "%s"-style format with a const char* argument, so the helper takes one.
+*/
+extern void luai_writestring (const char *s, size_t l);
+extern void luai_writestringerror (const char *fmt, const char *arg);
+#define lua_writestring(s,l)       luai_writestring((s), (l))
+#define lua_writeline()            luai_writestring("\n", 1)
+#define lua_writestringerror(s,p)  luai_writestringerror((s), (p))
 
 
 
