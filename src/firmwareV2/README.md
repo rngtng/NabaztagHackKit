@@ -50,20 +50,24 @@ Config, tuned to the **124 KB internal-flash budget** (`luaconf.h` sets
 - **Stdlib = base + string + table** only. Dropped: `math` (~16 KB of libm trig),
   `io`/`os`/`package`/`debug`/`loadlib`/`coroutine`/`utf8`. `base`'s
   `dofile`/`loadfile` are removed in `lua/lbaselib.c` (no filesystem).
-- **Integer math is exact; float *printing* still does not work.** newlib-nano
-  omits float support from `printf` unless forced with `-u _printf_float`, so
-  `print(1+1)` → `2` (the #92 DoD, exact), `10//3` → `3`, but a float value like
-  `1/2` prints as `.0`. Float *arithmetic* is correct internally; only the string
-  rendering is stubbed. Full float output waits on the M7.5 (#114) custom
-  formatter (deferred).
-- **Number I/O is libm/gdtoa-free (M7, #106).** To reclaim internal flash, the
-  number paths were moved off newlib: decimal `string→number` uses a compact
+- **Integer math is exact; float *printing* is approximate.** `print(1+1)` → `2`
+  (the #92 DoD, exact), `10//3` → `3`. Our custom formatter (M7.5, below) renders
+  a float as its integer part + `.0`, so whole-valued floats are correct
+  (`print(2^10)` → `1024.0`) but fractional digits are dropped (`1/2` → `0.0`,
+  `5.5%2` → `1.0` though the value is `1.5`). Float *arithmetic* is correct
+  internally; only the decimal string rendering is stubbed - a real dtoa is
+  future work (the flash-cheap way was never the blocker; correctness is).
+- **Number I/O is newlib-free (M7, #106).** To reclaim internal flash the number
+  paths were moved off newlib entirely: decimal `string→number` uses a compact
   parser instead of `strtof` (M7.2 #108); `^` and float `%` are computed without
   libm (M7.3 #109) - integer exponents exact, fractional `^` returns NaN
-  (`math.sqrt` etc. are unavailable anyway). Decimal float *parsing* is now
-  slightly looser than IEEE last-ulp; integer literals are unaffected.
+  (`math.sqrt` etc. are unavailable anyway); and `snprintf`/`vsnprintf` are a
+  compact in-tree implementation (M7.5 #114) so number formatting + `string.format`
+  no longer pull newlib's buffered-FILE layer. Decimal float *parsing* is slightly
+  looser than IEEE last-ulp; integer literals and `string.format` integer/string
+  conversions are exact.
 
-Result: `bin/lua.elf` `.text` **96484 B** of the 124 KB budget (**~30 KB free**
+Result: `bin/lua.elf` `.text` **94976 B** of the 124 KB budget (**~32 KB free**
 after M7 #106; was ~48 B). See [Simulate](#simulate-no-hardware).
 
 ## Simulate (no hardware)
@@ -146,7 +150,7 @@ build time.
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
-| M7 | Reclaim internal flash budget | #106 | M7.1-M7.4 done (sim-verified): **48 B → ~30 KB free** by moving Lua's console + number I/O off newlib (`strtof`/gdtoa, libm `powf`/`fmodf`, stdio FILE layer, signal machinery). M7.5 (#114, custom `snprintf` to drop the last ~12 KB) deferred - target already 2× met. |
+| M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
