@@ -118,6 +118,7 @@ src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
+src/app/console.c   M3 semihosting-console probe (#91) - svc 0xAB SYS_WRITEC, proves the no-UART console on hardware
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -134,8 +135,8 @@ build time.
 | M0 | Scaffold build layer | #88 | done (hardware-confirmed: PC parks in `main`) |
 | M1 | Bare-metal LED blink | #89 | done (sim + hardware) - see LED-map note below |
 | M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
-| M3 | Semihosting console feasibility | #91 | |
-| M4 | Lua 5.4 core + REPL | #92 | done (sim); hardware confirm pending M3 |
+| M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
+| M4 | Lua 5.4 core + REPL | #92 | done (sim); console path proven on hardware (M3); REPL hardware bring-up pending |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | needs the LED-map fix first (see M1 note) |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
 | - | tooling: Unicorn simulator | #96 | first cut done |

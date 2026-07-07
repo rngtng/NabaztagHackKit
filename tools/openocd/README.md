@@ -174,6 +174,44 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
+## Semihosting console (M3, #91)
+
+The board has **no UART**, so the firmwareV2 Lua REPL (M4) does console I/O over
+**ARM semihosting** - the app issues Thumb `svc 0xAB` and OpenOCD services the
+`SYS_WRITEC`/`SYS_READC` syscalls. This is **proven on hardware** with the
+`console` probe (`src/firmwareV2/src/app/console.c`), but the ML67's ARM7TDMI
+needs one non-obvious tweak:
+
+- Its **EmbeddedICE is version 1 → no vector catch**, so `arm semihosting enable`
+  falls back to a **software** breakpoint at the SWI vector `0x8`. `0x8` is
+  **flash-mapped read-only**, so that write fails (`Unable to set 32 bit software
+  breakpoint at address 00000008`) and nothing traps.
+- Fix: drop the dead soft breakpoint and set a **hardware** one (ARM7TDMI has 2
+  watchpoint units; a HW breakpoint needs no memory write). `arm_semihosting()`
+  keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
+  serviced identically.
+
+Run it (console.elf already built with `task build:firmwareV2 APP=console`):
+
+```sh
+sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
+  -c init -c "reset halt" \
+  -c "flash write_image erase console.elf" \
+  -c "arm semihosting enable" \
+  -c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" \
+  -c "resume"
+```
+
+`SYS_WRITEC` output lands on **OpenOCD's stdout** (it calls `putchar`);
+`SYS_READC` reads OpenOCD's stdin. Expected: `M3 WRITEC OK`, then the CPU idles
+in `main`. `SYS_WRITE0` (whole-string) is best avoided - OpenOCD 0.8.0's read
+loop ran away on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use)
+is stable.
+
+> Cleaner follow-up: patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD`
+> on cores without vector catch - then plain `arm semihosting enable` works with
+> no `rbp`/`bp` dance. Deferred (needs an OpenOCD rebuild).
+
 ## Troubleshooting
 
 - **`flash driver 'ml67q40xx' not found`** → you're running the apt OpenOCD, not
