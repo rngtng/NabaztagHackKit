@@ -815,6 +815,20 @@ extern void luai_writestringerror (const char *fmt, const char *arg);
 #define lua_writeline()            luai_writestring("\n", 1)
 #define lua_writestringerror(s,p)  luai_writestringerror((s), (p))
 
+/*
+** firmwareV2 (M7.2, #108): replace strtof for decimal string->number with a
+** compact parser (luai_str2number in src/app/lua.c). strtof pulls newlib's
+** double strtod + gdtoa multi-precision path (~14 KB: strtod/mprec/gethex/
+** hexnan). Integer literals never reach here - luaO_str2num tries l_str2int
+** first; only decimal float literals/coercions do. The target is integer-first
+** with float *printing* already stubbed (#92), so reduced last-ulp precision is
+** acceptable. Hex-float parsing (lua_strx2number, Lua's own) is unaffected.
+*/
+#undef lua_str2number
+/* LUA_NUMBER (the macro), not lua_Number - the typedef is in lua.h, which has
+** not been reached yet at this point of luaconf.h. Both resolve to float. */
+extern LUA_NUMBER luai_str2number (const char *s, char **endptr);
+#define lua_str2number(s,p)        luai_str2number((s), (p))
 
 
 
