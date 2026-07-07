@@ -34,13 +34,22 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Openocd / hardware flashing (firmwareV2)
 - JTAG flashing is the one host-side exception (USB). hence openocd on a raspberry Pi
   (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
-- **Flash a firmwareV2 app with `task flash:firmwareV2 [APP=…]`** - never hand-roll
-  scp+openocd+gdb. IDCODE `0x3f0f0f0f` on connect = CPU alive / wiring good.
+- **Flash a firmwareV2 app with `task flash:firmwareV2 [APP=…]`**; **read its
+  console (print/REPL) with `task repl:firmwareV2:hw [APP=… SCRIPT=…]`** - never
+  hand-roll scp+openocd+gdb (the raw ssh+openocd path gets denied, and both are
+  now taskified). IDCODE `0x3f0f0f0f` on connect = CPU alive / wiring good.
+- **Confirm a peripheral EXISTS before writing a driver/binding for it.** Read
+  `docs/hardware-dissection.md` (the board teardown / chip list) first, and if the
+  rig is up, probe it (e.g. read a device id over the bus) BEFORE building. A wired
+  chip-select pin is NOT proof of a populated chip - M6 (#94) built a whole AT45
+  flash driver against a `CS_FLASH` pin for a chip the LLC2_4c board doesn't have,
+  then had to revert. The cheapest disqualifying test comes first, not last.
 - **Semihosting console (M3+)**: the ARM7TDMI EmbeddedICE is **v1, no vector catch**,
   so openocd's auto soft-bp at the SWI vector `0x8` fails (flash is read-only there).
   Must use a **HW breakpoint at 0x8** + `rbp 0x8`; set it AFTER the final `reset halt`
-  (reset wipes the ICE watchpoint regs). Full recipe: `tools/openocd/README.md`.
-  Cleaner fix still TODO: patch openocd `arm7_9_setup_semihosting` to `BKPT_HARD`.
+  (reset wipes the ICE watchpoint regs). `task repl:firmwareV2:hw` does this for you;
+  full recipe in `tools/openocd/README.md`. Cleaner fix still TODO: patch openocd
+  `arm7_9_setup_semihosting` to `BKPT_HARD`.
 - **Read the openocd/VM source before iterating on hardware** - a semihosting/flash
   hunch is cheap to confirm in `~/nabgcc/openocd-0.8.0/src` on the Pi; each hardware
   round-trip (flash 124 KB ≈ 13 s, per-char semihosting) is not. Predict, then test.

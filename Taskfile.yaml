@@ -160,6 +160,18 @@ tasks:
           APP: '{{.APP}}'
       - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
 
+  repl:firmwareV2:hw:
+    desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge (M3/M4, #91/#92) - the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP: '{{.APP | default "lua"}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    cmds:
+      - task: build:firmwareV2
+        vars:
+          APP: '{{.APP}}'
+      - python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf {{if .SCRIPT}}--input {{.SCRIPT}}{{end}}
+
   repl:firmwareV2:
     desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt. Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [N=budget]'
     dir: '{{.USER_WORKING_DIR}}'

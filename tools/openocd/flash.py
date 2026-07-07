@@ -109,6 +109,45 @@ def stop_openocd(a):
     ssh(a.host, "sudo pkill -x openocd || true", check=False)
 
 
+def semihosting_run(a):
+    """Flash + run over the ARM semihosting console (M3 #91 / M4 #92), capturing
+    the device's console output.
+
+    Unlike the gdb path, OpenOCD runs in the FOREGROUND here: the app's console
+    I/O flows through OpenOCD's own stdin/stdout (SYS_READC/SYS_WRITEC), so we
+    pipe --input (if any) to its stdin and read the device output from stdout.
+
+    The ML67's EmbeddedICE is v1 (no vector catch), so `arm semihosting enable`'s
+    auto soft-breakpoint at the SWI vector 0x8 fails (0x8 is read-only flash). We
+    replace it with a HARDWARE breakpoint at 0x8, set AFTER the final `reset halt`
+    (reset wipes the ICE watchpoint regs). See tools/openocd/README.md.
+    """
+    print(f"[flash+run] {a.elf.name} over semihosting (timeout {a.run_timeout}s)")
+    remote = (
+        f"cd {a.remote_dir} && sudo timeout {a.run_timeout} {a.openocd} -f {a.cfg} "
+        f'-c init -c "reset halt" '
+        f'-c "flash write_image erase {a.elf.name}" '
+        f'-c "arm semihosting enable" '
+        f'-c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"'
+    )
+    stdin = open(a.input, "r") if a.input else subprocess.DEVNULL
+    try:
+        r = sh(["ssh", a.host, remote], stdin=stdin,
+               capture_output=True, check=False)
+    finally:
+        if a.input:
+            stdin.close()
+    out = (r.stdout or "") + (r.stderr or "")
+    print(out, flush=True)
+    # Same make-or-break gate as the gdb path: no IDCODE => chain/wiring bad,
+    # and nothing after it (flash/console) can be trusted.
+    if f"tap/device found: {IDCODE}" not in out:
+        raise SystemExit(
+            "\nFAIL: JTAG chain not confirmed (IDCODE missing). Check wiring / "
+            "power. See tools/openocd/README.md.")
+    stop_openocd(a)  # timeout should have ended it; make sure.
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -127,6 +166,16 @@ def parse_args():
     p.add_argument("--gdb", default="gdb-multiarch", help="gdb binary on the Pi")
     p.add_argument("--timeout", type=int, default=20,
                    help="seconds to wait for the IDCODE before giving up (default: 20)")
+    p.add_argument("--semihosting", action="store_true",
+                   help="flash + run over the ARM semihosting console and capture "
+                        "the device output, instead of the gdb load+reset path "
+                        "(M3/M4; needed to read print()/REPL output on hardware)")
+    p.add_argument("--input", type=Path, default=None,
+                   help="[--semihosting] local file fed to the device's stdin "
+                        "(e.g. a .lua REPL script); omit to just capture boot output")
+    p.add_argument("--run-timeout", type=int, default=120,
+                   help="[--semihosting] seconds to let the device run before "
+                        "OpenOCD is killed (default: 120; per-char console is slow)")
     return p.parse_args()
 
 
@@ -134,6 +183,16 @@ def main():
     a = parse_args()
     if not a.elf.is_file():
         raise SystemExit(f"ELF not found: {a.elf} (build it first: task build:firmwareV2)")
+    if a.input and not a.input.is_file():
+        raise SystemExit(f"--input file not found: {a.input}")
+
+    if a.semihosting:
+        print(f"Flashing + running {a.elf} on {a.host} over semihosting\n")
+        copy_to_pi(a)
+        semihosting_run(a)
+        print(f"\nDone. Console output above; {a.elf.name} was flashed and run.")
+        return
+
     print(f"Flashing {a.elf} to {a.host} via JTAG\n")
     copy_to_pi(a)
     start_openocd(a)
