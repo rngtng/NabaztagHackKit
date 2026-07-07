@@ -266,7 +266,7 @@ task build:app:template
 
 Note: running standalone **on the rabbit** additionally needs WiFi/DHCP/DNS
 bring-up, which still lives in `src/app-piper/{ipv4,net}` — extracting that
-stack into `lib/` is a planned follow-up (see TODO.md). Until then, device
+stack into `lib/` is a planned follow-up (tracked in GitHub Issues). Until then, device
 apps follow the app-piper pattern; this template is the simulator-first
 blueprint for composing lib blocks.
 

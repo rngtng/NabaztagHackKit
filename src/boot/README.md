@@ -53,3 +53,17 @@ Runs with `SIMU` and `BOOT` defined. Config UI is served at `http://localhost:80
 | `RECLIB` | Include audio recording support |
 
 Without `BOOT`, the file compiles as a bare WiFi/network library (used for testing).
+
+## `lib/` migration status
+
+`src/boot/` is the original monolithic `boot.mtl` split into focused modules. Three
+have already **migrated** to thin wrappers over `lib/`; the rest are still full
+duplicates of their `lib/net` (and per-app `utils/config.mtl`) counterparts. Boot/app
+convergence is tracked in [GitHub Issues](https://github.com/rngtng/NabaztagHackKit/issues).
+
+| Module | `lib/` status |
+|--------|---------------|
+| `bytecode_loader.mtl` | Done — `#include "lib/sys/bytecode"` |
+| `firmware.mtl` | Done — wraps `lib/sys/firmware` with boot's LED feedback |
+| `http_server.mtl` | Done — `#include "lib/net/http_server"` |
+| `config.mtl`, `ipv4.mtl`, `dns.mtl`, `http.mtl`, `wifi.mtl` | still duplicates of `lib/net` — pending on-device validation |
