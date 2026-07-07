@@ -1,8 +1,9 @@
 # Provenance
 
-Sources are **vendored** (copied, not submodules — see [NABAZTAG_SDK.md](NABAZTAG_SDK.md)
-§5). Each entry records origin repo + commit so changes can be diffed and backported
-upstream. "Local changes" lists everything we altered from the vendored copy.
+Sources are **vendored** (copied, not submodules — rationale in
+[NABAZTAG_SDK.md](NABAZTAG_SDK.md)). Each entry records origin repo + commit so changes
+can be diffed and backported upstream. "Local changes" lists everything we altered from
+the vendored copy.
 
 ## `tools/mtl_linux/`
 - **Origin:** https://github.com/rngtng/mtl_linux — the MTL toolchain: **compiler AND

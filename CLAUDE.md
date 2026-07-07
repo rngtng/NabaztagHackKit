@@ -1,7 +1,7 @@
 # NabaztagSDK — working conventions
 
 Apply these by default; they're the rules we converged on, so I shouldn't need
-re-steering. Rationale lives in `NABAZTAG_SDK.md`; roadmap in `TODO.md`; vendored-source
+re-steering. Rationale lives in `NABAZTAG_SDK.md`; roadmap in GitHub Issues; vendored-source
 origins in `PROVENANCE.md`. (Global `~/.claude/CLAUDE.md` rules still apply — concise,
 `fd`/`rg`, `uv`, prefer Taskfile, commit per change, code minimalism.)
 
@@ -123,5 +123,5 @@ lib module" live in `test/README.md` — read it before touching `test/lib/_test
 
 ## Working agreement
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
-`TODO.md` / `PROVENANCE.md` in sync as decisions land. Surface genuine forks as decisions;
+`PROVENANCE.md` in sync as decisions land (roadmap → GitHub Issues). Surface genuine forks as decisions;
 otherwise pick the convention above and proceed.
