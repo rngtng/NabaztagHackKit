@@ -21,8 +21,8 @@ SECTIONS
   /* first section is .text which is used for code */
   .text :
   {
-    *(.intvec)
-    *(.startup.*)
+    KEEP(*(.intvec))             /* vector table: entered by HW, not referenced - keep under --gc-sections */
+    KEEP(*(.startup.*))          /* reset/clock bring-up - keep under --gc-sections */
     *(.text.*)                   /* remaining code */
     *(.glue_7t) *(.glue_7)
   } >IntROM
@@ -38,7 +38,7 @@ SECTIONS
   /* Bytecode */
   .bytecode :
   {
-    *(.bytecode.*)
+    KEEP(*(.bytecode.*))         /* embedded boot bytecode - keep under --gc-sections */
   } >IntROM
   _etext = . ;
   PROVIDE (etext = .);

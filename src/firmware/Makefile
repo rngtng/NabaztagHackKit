@@ -40,7 +40,7 @@ LDSCRIPT = sys/ml67q4051.ld
 # Linker options
 LD_FLAGS =
 LDFLAGS += --specs=nosys.specs
-#~ LDFLAGS +=  -Wl,--gc-sections
+LDFLAGS += -Wl,--gc-sections    # drop unreferenced code/data (paired with -f*-sections); KEEP guards the vectors/startup/bytecode in ml67q4051.ld
 #~ LDFLAGS += -Wl,-s
 LDFLAGS += -Wl,-Map,obj/$(TARGET).map
 LDFLAGS += -nostartfiles
