@@ -34,11 +34,18 @@ bring-up + hold-button config-portal path - see #103.
   `lib/net` (PR #101). The stack was proven on-device in
   [#46](https://github.com/rngtng/NabaztagHackKit/issues/46) first.
 - **[#103](https://github.com/rngtng/NabaztagHackKit/issues/103)** — boot/app
-  convergence part 2 (code landed, builds + `simulate:boot` green): `config.mtl`
-  layout unified (align-only, no legacy migration) and `wifi.mtl` converged onto
-  `lib/net/wifi.mtl` with button-driven master mode. **Still open until the real
-  JTAG flash test** confirms WiFi bring-up *and* the hold-button config-portal
-  recovery path on hardware.
+  convergence part 2 (done): `config.mtl` layout unified (align-only, no legacy
+  migration) and `wifi.mtl` converged onto `lib/net/wifi.mtl` with button-driven
+  master mode. Builds + `simulate:boot` green; **hardware-verified**: JTAG-flashed
+  via `task flash:firmware`, the hold-button **config-portal path works on the
+  real device** (AP + DHCP + HTTP config + persisted creds). Fixed two boot-only
+  bugs found on hardware: lib's auto-reconnect thrash (boot now sets
+  `WIFI_NO_AUTO_RECONNECT`) and an `ears_stop` on uninitialised ears.
+- **[#125](https://github.com/rngtng/NabaztagHackKit/issues/125)** — the boot
+  station path still can't associate on hardware: `netState` goes
+  `RT2501_S_BROKEN`. Below the MTL boundary (`netScan`/`netAuth` are called
+  identically to boot's old machine) — a C-firmware/RT2501 station-auth issue in
+  this never-before-flashable `src/firmware` image, split out from #103.
 - **[#51](https://github.com/rngtng/NabaztagHackKit/issues/51)** — migrate
   `boot.mtl`'s MTL-level `ifdef BOOT { }` blocks to preprocessor `#ifdef BOOT`
   for consistency with the rest of the conditional-include scheme.
