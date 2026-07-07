@@ -116,7 +116,7 @@ inc/hal/{led,spi}.h HAL headers (copied from src/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
-src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks nose LED 1 red
+src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks LED_RGB_1 red (belly on LLC2_4c - see LED-map note)
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -130,19 +130,31 @@ build time.
 ## Milestones (see the #87 sub-issues)
 | | | Issue | Status |
 |---|---|---|---|
-| M0 | Scaffold build layer | #88 | done |
-| M1 | Bare-metal LED blink | #89 | done (sim); hardware confirm pending M2 |
-| M2 | JTAG flash workflow (Task targets) | #90 | |
+| M0 | Scaffold build layer | #88 | done (hardware-confirmed: PC parks in `main`) |
+| M1 | Bare-metal LED blink | #89 | done (sim + hardware) - see LED-map note below |
+| M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
 | M3 | Semihosting console feasibility | #91 | |
-| M4 | Lua 5.4 core + REPL | #92 | done (sim); hardware confirm pending M2/M3 |
-| M5 | Lua bindings: LEDs, buttons, ears | #93 | |
+| M4 | Lua 5.4 core + REPL | #92 | done (sim); hardware confirm pending M3 |
+| M5 | Lua bindings: LEDs, buttons, ears | #93 | needs the LED-map fix first (see M1 note) |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
-Not wired yet - lands in **M2** ([#90](https://github.com/rngtng/NabaztagHackKit/issues/90)).
-Until then, flash `bin/*.elf` manually with OpenOCD + GDB per
-[`tools/openocd/README.md`](../../tools/openocd/README.md).
+```sh
+task flash:firmwareV2            # APP=hello (M0)
+task flash:firmwareV2 APP=blink  # M1, visible LED blink
+```
+Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge. Builds, ships
+this repo's configs + ELF to the Pi, drives OpenOCD + gdb, verifies the write.
+Setup + wiring + the manual fallback: [`tools/openocd/README.md`](../../tools/openocd/README.md).
+
+## Known issue: LED index -> physical map (feeds M5, #93)
+`blink` drives `LED_RGB_1` and the code calls it the **nose** LED, but on
+hardware (board `LLC2_4c`) it lights a **belly** LED. So `led.h`'s `LED_RGB_*`
+index-to-physical mapping (inherited from `src/firmware`) is mislabeled for this
+revision. Bring-up is unaffected, but the map must be corrected before exposing
+LEDs to Lua (M5). Now trivially probeable: flash `blink` variants driving each
+`LED_RGB_*` + colour and record which physical LED responds.
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
