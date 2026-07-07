@@ -43,17 +43,34 @@ void vlsi_write_sci(uint8_t reg, uint16_t val)
   WriteSPI(reg);
   WriteSPI(val >> 8);
   WriteSPI(val);
+  /* Each WriteSPI clocks in a byte that WriteSPI itself never consumes. Drain
+   * the RX FIFO here so it cannot fill across successive SCI writes and shift
+   * later reads (observed: SCI_STATUS mis-read + a corrupted SDI feed). */
+  while (get_wvalue(SPSR0) & SPSR0_RFD)
+    get_value(SPDRR0);
   CS_AUDIO_SCI_SET;
 }
 
-/* Feed a small fixed buffer to the SDI (data) interface, respecting DREQ. Used
- * for the 8-byte sine-test control sequences. */
+/* Wait for DREQ (INT_AUDIO) high, bounded so a wedged chip cannot hang us. */
+static void wait_dreq(void)
+{
+  unsigned long guard = 0;
+  while (!(INT_AUDIO_READ & INT_AUDIO_BIT) && ++guard < 1000000UL)
+    CLR_WDT;
+}
+
+/* Feed a small fixed control buffer to the SDI (data) interface. Waits for DREQ
+ * before each byte (bounded) rather than aborting when it is momentarily low -
+ * the 8-byte sine-test sequence must be delivered in full, and DREQ can dip
+ * right after the preceding SCI writes. */
 static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
 {
-  uint32_t i = 0;
+  uint32_t i;
   CS_AUDIO_SDI_CLEAR;
-  while (i < len && (INT_AUDIO_READ & INT_AUDIO_BIT))
-    WriteSPI(data[i++]);
+  for (i = 0; i < len; i++) {
+    wait_dreq();
+    WriteSPI(data[i]);
+  }
   CS_AUDIO_SDI_SET;
 }
 

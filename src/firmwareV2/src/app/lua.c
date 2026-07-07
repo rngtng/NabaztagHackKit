@@ -546,7 +546,7 @@ static int nab_beep(lua_State *L)
   luaL_argcheck(L, freq >= 0 && freq <= 255, 1, "0..255");
   luaL_argcheck(L, ms >= 0 && ms <= 10000, 2, "0..10000");
 
-  vlsi_ampli(1);
+  vlsi_ampli(1);                   /* plays at the current nab.volume setting */
   vlsi_sine((uint8_t)freq, 1);
   for (volatile unsigned long i = 0; i < (unsigned long)ms * 3000UL; i++)
     CLR_WDT;                       /* ~ms; no timer, so approximate */
