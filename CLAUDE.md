@@ -53,9 +53,14 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - **Read the openocd/VM source before iterating on hardware** - a semihosting/flash
   hunch is cheap to confirm in `~/nabgcc/openocd-0.8.0/src` on the Pi; each hardware
   round-trip (flash 124 KB ≈ 13 s, per-char semihosting) is not. Predict, then test.
-- **lua.elf sits on the 124 KB flash cliff (~48 B free).** Before adding bindings,
-  pick a real lever (drop a stdlib, or move code to external flash) - do NOT keep
-  shaving error strings. `task build:firmwareV2 APP=lua` fails loudly on overflow.
+- **lua.elf flash budget: ~30 KB free of 124 KB after M7 (#106); was ~48 B.**
+  M7 reclaimed it by moving Lua's number I/O + console off newlib (custom decimal
+  parser vs `strtof`, libm-free `^`/`%`, semihosting console, custom `abort`) -
+  the `luai_*` helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
+  Local-config block. The last ~12 KB (stdio FILE layer, pulled by `snprintf` in
+  number formatting) needs a custom `snprintf` - deferred as M7.5 (#114). When
+  adding bindings, pick a real lever (see M7), not error-string shaving.
+  `task build:firmwareV2 APP=lua` fails loudly on overflow.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):

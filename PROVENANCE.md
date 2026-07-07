@@ -97,10 +97,15 @@ from where, and what changed here so fixes can flow back upstream.
   The standalone `lua.c`/`luac.c` are present but unused — our own REPL is
   `src/firmwareV2/src/app/lua.c`. Keeping the full `src/` verbatim keeps the
   backport diff to exactly the two files below.
-- **Local changes (2, both for the 124 KB flash budget / no-FPU ARM7TDMI target):**
+- **Local changes (2 files, all for the 124 KB flash budget / no-FPU ARM7TDMI target):**
   - `luaconf.h` — `LUA_32BITS` default flipped `0 → 1` (32-bit `int` integers +
     32-bit `float`; the chip has no FPU, so `long long`/`double` would pull in
     expensive soft-float and 64-bit helpers). One-line change, marked in-file.
+    The `Local configuration` block also carries the **M7 flash-reclaim overrides**
+    (#106), each marked in-file and implemented by `luai_*` helpers in
+    `src/app/lua.c`: `lua_writestring`/`writeline`/`writestringerror` → semihosting
+    (M7.1 #107); `lua_str2number` → a compact decimal parser instead of `strtof`
+    (M7.2 #108); `luai_numpow`/`luai_nummod` → libm-free `^`/`%` (M7.3 #109).
   - `lbaselib.c` — removed the `"dofile"` and `"loadfile"` entries from
     `base_funcs[]` (their `luaL_loadfilex`→`fopen` path pulls ~8.5 KB of newlib
     stdio; this target has no filesystem). `"load"` (in-memory, used by the REPL)
