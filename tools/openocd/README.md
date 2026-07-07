@@ -204,7 +204,22 @@ sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
 
 `SYS_WRITEC` output lands on **OpenOCD's stdout** (it calls `putchar`);
 `SYS_READC` reads OpenOCD's stdin. Expected: `M3 WRITEC OK`, then the CPU idles
-in `main`. `SYS_WRITE0` (whole-string) is best avoided - OpenOCD 0.8.0's read
+in `main`.
+
+The **Lua REPL (M4) runs the same way** - flash `lua.elf` and pipe Lua into
+OpenOCD's stdin; results come back on stdout (per-char, so it is slow):
+
+```sh
+printf '1+1\n6*7\n10//3\nprint("lua on rabbit ok")\n' | sudo timeout 160 \
+  /usr/local/bin/openocd -f nabaztag-pi.cfg \
+  -c init -c "reset halt" -c "flash write_image erase lua.elf" \
+  -c "arm semihosting enable" \
+  -c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"
+```
+
+Prints the banner + `> 2 / 42 / 3 / lua on rabbit ok`. Integer math is exact;
+float *printing* is still stubbed (see the firmwareV2 README) - stick to integer
+ops for clean output. `timeout` ends the otherwise-forever OpenOCD server loop. `SYS_WRITE0` (whole-string) is best avoided - OpenOCD 0.8.0's read
 loop ran away on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use)
 is stable.
 
