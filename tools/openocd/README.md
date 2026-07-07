@@ -191,7 +191,24 @@ needs one non-obvious tweak:
   keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
   serviced identically.
 
-Run it (console.elf already built with `task build:firmwareV2 APP=console`):
+### One command (M3/M4): `task repl:firmwareV2:hw`
+
+This recipe is now wrapped in a task - the single command to flash an app and
+read its console (`print()` / the REPL) on the rabbit:
+
+```sh
+task repl:firmwareV2:hw                                   # APP=lua, capture boot output
+task repl:firmwareV2:hw APP=console                       # the M3 probe
+task repl:firmwareV2:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
+```
+
+It builds the app, ships it, and drives the exact OpenOCD chain below
+(`flash.py --semihosting`: flash + `arm semihosting enable` + the HW-bp-at-`0x8`
+dance + `resume`), piping `SCRIPT` to the device's stdin and printing what comes
+back. `--run-timeout` bounds the run (console is per-char, slow). The manual
+chain below is the fallback / what the task does under the hood.
+
+Run it manually (console.elf already built with `task build:firmwareV2 APP=console`):
 
 ```sh
 sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
@@ -223,11 +240,11 @@ ops for clean output. `timeout` ends the otherwise-forever OpenOCD server loop. 
 loop ran away on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use)
 is stable.
 
-> Follow-ups (deferred), so hardware runs stop being hand-driven:
-> 1. Patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD` on cores without
->    vector catch - then plain `arm semihosting enable` works, no `rbp`/`bp` dance
->    (needs an OpenOCD rebuild).
-> 2. Fold this recipe into a task (e.g. `flash.py --semihosting` / `task repl:firmwareV2:hw`)
+> Follow-ups:
+> 1. (deferred) Patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD` on
+>    cores without vector catch - then plain `arm semihosting enable` works, no
+>    `rbp`/`bp` dance (needs an OpenOCD rebuild).
+> 2. **Done** - folded into `flash.py --semihosting` / `task repl:firmwareV2:hw`,
 >    so the console/REPL is one command instead of a hand-typed `-c` chain + pipe.
 
 ## Troubleshooting
