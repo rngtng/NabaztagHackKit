@@ -24,7 +24,9 @@
  * sees EOF and exits. On hardware the REPL reads real keystrokes over the console.
  */
 #include <errno.h>
+#include <stdarg.h>   /* vsnprintf override (M7.5, #114) */
 #include <stddef.h>
+#include <stdint.h>   /* uintptr_t in the %p path (M7.5, #114) */
 #include <stdio.h>
 #include <string.h>   /* strcmp - LED-name lookup in the nab binding */
 
@@ -119,8 +121,7 @@ void luai_writestring(const char *s, size_t l)
 }
 
 /* Every lua_writestringerror call site (lauxlib panic/warn) uses a "%s"-style
- * format with one const char* arg. snprintf uses the string vfprintf path
- * (already linked for lua_number2str), not the FILE layer. */
+ * format with one const char* arg. snprintf is our own (M7.5, below). */
 void luai_writestringerror(const char *fmt, const char *arg)
 {
   char b[128];
@@ -130,6 +131,215 @@ void luai_writestringerror(const char *fmt, const char *arg)
   if (n > (int)sizeof b)
     n = (int)sizeof b;
   _write(2, b, n);
+}
+
+/* ---- compact vsnprintf/snprintf, overriding newlib (M7.5, #114) ---------- */
+/* Overriding these strong symbols is the last flash-reclaim lever: Lua's number
+ * formatting (lua_number2str/lua_integer2str/lua_pointer2str) and string.format
+ * route through snprintf, and newlib's snprintf (_svfprintf_r) drags in the
+ * buffered-FILE layer (~12 KB) via __sinit's CHECK_INIT. This implementation
+ * needs no FILE machinery.
+ *
+ * Supports the conversions Lua emits: d i u o x X c s p % - with flags
+ * (-+space 0 #), width and precision (both incl '*'), and length modifiers
+ * (h/hh/l/ll/L/z/t/j, parsed; values are fetched as `long` since LUA_32BITS
+ * makes lua_Integer and pointers 32-bit, so no 64-bit divide helpers are
+ * pulled). Float conversions (f e g a, any case) stay approximate - integer
+ * part + ".0" - float printing is still not properly supported (was already
+ * stubbed pre-M7; a real dtoa is future work). */
+
+#define PF_LEFT  1
+#define PF_PLUS  2
+#define PF_SPACE 4
+#define PF_ZERO  8
+#define PF_ALT   16
+
+/* unsigned -> digits (forward order) in out[]; returns the digit count. */
+static int pf_utoa(char *out, unsigned long v, int base, int upper)
+{
+  const char *dig = upper ? "0123456789ABCDEF" : "0123456789abcdef";
+  char rev[32];
+  int i = 0;
+  do {
+    rev[i++] = dig[v % (unsigned)base];
+    v /= (unsigned)base;
+  } while (v);
+  for (int j = 0; j < i; j++)
+    out[j] = rev[i - 1 - j];
+  return i;
+}
+
+static void pf_emit(char **d, char *end, size_t *n, char c)
+{
+  if (*d < end)
+    *(*d)++ = c;
+  (*n)++;
+}
+
+static void pf_pad(char **d, char *end, size_t *n, char c, int count)
+{
+  while (count-- > 0)
+    pf_emit(d, end, n, c);
+}
+
+int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
+{
+  char *d = buf;
+  char *end = (size > 0) ? buf + size - 1 : buf;   /* reserve room for NUL */
+  size_t n = 0;
+
+  for (; *fmt; fmt++) {
+    if (*fmt != '%') {
+      pf_emit(&d, end, &n, *fmt);
+      continue;
+    }
+    fmt++;                                          /* skip '%' */
+
+    int flags = 0;
+    for (;; fmt++) {
+      if (*fmt == '-')      flags |= PF_LEFT;
+      else if (*fmt == '+') flags |= PF_PLUS;
+      else if (*fmt == ' ') flags |= PF_SPACE;
+      else if (*fmt == '0') flags |= PF_ZERO;
+      else if (*fmt == '#') flags |= PF_ALT;
+      else break;
+    }
+
+    int width = 0;
+    if (*fmt == '*') {
+      width = va_arg(ap, int);
+      if (width < 0) { flags |= PF_LEFT; width = -width; }
+      fmt++;
+    } else {
+      while (*fmt >= '0' && *fmt <= '9')
+        width = width * 10 + (*fmt++ - '0');
+    }
+
+    int prec = -1;
+    if (*fmt == '.') {
+      fmt++;
+      if (*fmt == '*') { prec = va_arg(ap, int); fmt++; }
+      else { prec = 0; while (*fmt >= '0' && *fmt <= '9') prec = prec * 10 + (*fmt++ - '0'); }
+      if (prec < 0) prec = -1;
+    }
+
+    int islong = 0;                                 /* fetch value as long? */
+    for (;;) {
+      if (*fmt == 'l') { islong = 1; fmt++; }
+      else if (*fmt == 'h' || *fmt == 'L' || *fmt == 'j' || *fmt == 'z' || *fmt == 't') fmt++;
+      else break;
+    }
+
+    char conv = *fmt;
+    if (conv == '\0') break;
+
+    char tmp[32];
+    const char *body = tmp;
+    int blen = 0;
+    char sign = 0;
+    const char *prefix = "";
+    int is_num = 0;
+
+    switch (conv) {
+      case 'd': case 'i': {
+        long v = islong ? va_arg(ap, long) : (long)va_arg(ap, int);
+        unsigned long uv;
+        if (v < 0) { sign = '-'; uv = (unsigned long)(-(v + 1)) + 1; }
+        else { uv = (unsigned long)v; sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0; }
+        blen = pf_utoa(tmp, uv, 10, 0);
+        is_num = 1;
+        break;
+      }
+      case 'u': case 'o': case 'x': case 'X': {
+        unsigned long uv = islong ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
+        int base = (conv == 'o') ? 8 : (conv == 'u') ? 10 : 16;
+        blen = pf_utoa(tmp, uv, base, conv == 'X');
+        if ((flags & PF_ALT) && uv != 0)
+          prefix = (conv == 'o') ? "0" : (conv == 'X') ? "0X" : "0x";
+        is_num = 1;
+        break;
+      }
+      case 'p': {
+        unsigned long uv = (unsigned long)(uintptr_t)va_arg(ap, void *);
+        prefix = "0x";
+        blen = pf_utoa(tmp, uv, 16, 0);
+        is_num = 1;
+        prec = -1;
+        break;
+      }
+      case 'c':
+        tmp[0] = (char)va_arg(ap, int);
+        blen = 1;
+        break;
+      case 's': {
+        const char *s = va_arg(ap, const char *);
+        if (s == NULL) s = "(null)";
+        body = s;
+        while (s[blen] && (prec < 0 || blen < prec)) blen++;
+        break;
+      }
+      case '%':
+        tmp[0] = '%';
+        blen = 1;
+        break;
+      case 'f': case 'F': case 'e': case 'E':
+      case 'g': case 'G': case 'a': case 'A': {
+        double dv = va_arg(ap, double);
+        long iv = (long)dv;
+        if (iv < 0 || (dv < 0 && iv == 0)) sign = '-';
+        else sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0;
+        unsigned long uv = (iv < 0) ? (unsigned long)(-(iv + 1)) + 1 : (unsigned long)iv;
+        blen = pf_utoa(tmp, uv, 10, 0);
+        tmp[blen++] = '.';
+        tmp[blen++] = '0';
+        is_num = 1;
+        prec = -1;
+        break;
+      }
+      default:                                       /* unknown: emit literally */
+        pf_emit(&d, end, &n, '%');
+        pf_emit(&d, end, &n, conv);
+        continue;
+    }
+
+    int zeros = 0;
+    if (is_num && prec >= 0) {                        /* precision = min digits */
+      if (blen < prec) zeros = prec - blen;
+      flags &= ~PF_ZERO;                              /* precision disables '0' */
+    }
+
+    int preflen = 0;
+    while (prefix[preflen]) preflen++;
+    int total = (sign ? 1 : 0) + preflen + zeros + blen;
+    int pad = (width > total) ? width - total : 0;
+
+    if (!(flags & PF_LEFT) && !(flags & PF_ZERO))
+      pf_pad(&d, end, &n, ' ', pad);
+    if (sign)
+      pf_emit(&d, end, &n, sign);
+    for (int i = 0; i < preflen; i++)
+      pf_emit(&d, end, &n, prefix[i]);
+    if (!(flags & PF_LEFT) && (flags & PF_ZERO))
+      pf_pad(&d, end, &n, '0', pad);
+    pf_pad(&d, end, &n, '0', zeros);
+    for (int i = 0; i < blen; i++)
+      pf_emit(&d, end, &n, body[i]);
+    if (flags & PF_LEFT)
+      pf_pad(&d, end, &n, ' ', pad);
+  }
+
+  if (size > 0)
+    *d = '\0';
+  return (int)n;
+}
+
+int snprintf(char *buf, size_t size, const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  int r = vsnprintf(buf, size, fmt, ap);
+  va_end(ap);
+  return r;
 }
 
 /* ---- decimal string -> Lua number (M7.2, #108) --------------------------- */
