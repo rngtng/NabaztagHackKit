@@ -683,6 +683,7 @@ int main(void)
   repl(L);
 
   lua_close(L);
+  sh_puts("<<FV_DONE>>\n");   /* tell flash.py the run is done (early-exit) */
   for (;;) {
   } /* bare metal: main never returns */
   return 0;
