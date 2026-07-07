@@ -116,7 +116,8 @@ inc/hal/{led,spi}.h HAL headers (copied from src/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
-src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks LED_RGB_1 red (belly on LLC2_4c - see LED-map note)
+src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
+src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -148,13 +149,24 @@ Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge. Builds, ships
 this repo's configs + ELF to the Pi, drives OpenOCD + gdb, verifies the write.
 Setup + wiring + the manual fallback: [`tools/openocd/README.md`](../../tools/openocd/README.md).
 
-## Known issue: LED index -> physical map (feeds M5, #93)
-`blink` drives `LED_RGB_1` and the code calls it the **nose** LED, but on
-hardware (board `LLC2_4c`) it lights a **belly** LED. So `led.h`'s `LED_RGB_*`
-index-to-physical mapping (inherited from `src/firmware`) is mislabeled for this
-revision. Bring-up is unaffected, but the map must be corrected before exposing
-LEDs to Lua (M5). Now trivially probeable: flash `blink` variants driving each
-`LED_RGB_*` + colour and record which physical LED responds.
+## LED map (verified on hardware, feeds M5 #93)
+The raw `LED_RGB_n` -> physical map (`led.h`, inherited from `src/firmware`) was
+unlabeled and the old `blink` comment wrongly called channel 1 the "nose".
+Verified on board `LLC2_4c` with the `ledmap` probe (`task flash:firmwareV2
+APP=ledmap` lights all five a distinct colour at once):
+
+| Channel | Physical |
+|---|---|
+| `LED_RGB_1` | belly (upper) |
+| `LED_RGB_2` | belly bottom |
+| `LED_RGB_3` | belly left |
+| `LED_RGB_4` | belly right |
+| `LED_RGB_5` | **nose** |
+
+`blink` now drives `LED_RGB_5` (the actual nose). Still open for M5: `led.c`'s
+`convled[]` applies a *separate* logical->physical remap for `set_led()`; that
+logical numbering is unverified and should be pinned down before the Lua LED
+binding.
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
