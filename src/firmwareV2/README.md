@@ -136,7 +136,7 @@ build time.
 | M1 | Bare-metal LED blink | #89 | done (sim + hardware) - see LED-map note below |
 | M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
 | M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
-| M4 | Lua 5.4 core + REPL | #92 | done (sim); console path proven on hardware (M3); REPL hardware bring-up pending |
+| M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | needs the LED-map fix first (see M1 note) |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
 | - | tooling: Unicorn simulator | #96 | first cut done |
