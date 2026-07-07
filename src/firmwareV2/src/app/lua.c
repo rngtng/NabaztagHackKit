@@ -214,6 +214,54 @@ LUA_NUMBER luai_str2number(const char *s, char **endptr)
   return val;
 }
 
+/* ---- float ^ and % without libm (M7.3, #109) ----------------------------- */
+/* luaconf.h routes luai_numpow/luai_nummod here so Lua's `^` and float `%` do
+ * not pull libm's powf/fmodf (~4 KB: __ieee754_powf/fmodf, scalbnf, wf_pow).
+ * `^` yields a float in Lua: integer exponents are exact (binary
+ * exponentiation), fractional exponents return NaN (no libm here; math.sqrt et
+ * al. are unavailable anyway). `%` is Lua floor-mod, computed by truncation. */
+#define LUAI_NAN (__builtin_nanf(""))
+
+LUA_NUMBER luai_pow(LUA_NUMBER a, LUA_NUMBER b)
+{
+  long n = (long)b;
+  if ((LUA_NUMBER)n != b)          /* non-integer exponent: unsupported */
+    return LUAI_NAN;
+  int neg = n < 0;
+  unsigned long e = neg ? (unsigned long)(-n) : (unsigned long)n;
+  LUA_NUMBER r = 1, base = a;
+  while (e) {
+    if (e & 1)
+      r *= base;
+    base *= base;
+    e >>= 1;
+  }
+  return neg ? (LUA_NUMBER)1 / r : r;
+}
+
+LUA_NUMBER luai_fmod(LUA_NUMBER a, LUA_NUMBER b)
+{
+  if (b == 0)
+    return LUAI_NAN;
+  LUA_NUMBER q = a / b;
+  LUA_NUMBER n = (LUA_NUMBER)(long long)q;   /* truncate toward zero (C fmod) */
+  LUA_NUMBER m = a - n * b;                  /* remainder, sign of a */
+  if (m != 0 && ((m < 0) != (b < 0)))        /* sign differs from b -> floor */
+    m += b;
+  return m;
+}
+
+/* ---- abort: halt, don't raise(SIGABRT) (M7.4, #110) ---------------------- */
+/* newlib's abort() calls raise() + _exit(), pulling the signal machinery
+ * (raise/signal/_kill_r/_getpid). Bare metal has no OS to signal, so halt in
+ * place. The other M7.4 targets (strerror/strstr via luaL_fileresult/gsub) were
+ * already removed by --gc-sections once the io/os libs were excluded. */
+void abort(void)
+{
+  for (;;) {
+  }
+}
+
 /* Heap = the 1 MB external RAM window; IntRAM is too small for a Lua state. */
 extern char __extram_start__, __extram_end__;
 
