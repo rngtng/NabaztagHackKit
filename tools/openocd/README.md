@@ -205,8 +205,12 @@ task repl:firmwareV2:hw SCRIPT=path/to/commands.lua       # feed REPL input, cap
 It builds the app, ships it, and drives the exact OpenOCD chain below
 (`flash.py --semihosting`: flash + `arm semihosting enable` + the HW-bp-at-`0x8`
 dance + `resume`), piping `SCRIPT` to the device's stdin and printing what comes
-back. `--run-timeout` bounds the run (console is per-char, slow). The manual
-chain below is the fallback / what the task does under the hood.
+back. The console is **streamed live**, and `flash.py` **early-exits** the moment
+the app prints the `<<FV_DONE>>` sentinel (the REPL after input EOF; probes before
+they idle) - so a scripted run finishes in seconds instead of waiting out
+`--run-timeout` (120 s, the hard-cap backstop for apps that never print it).
+New probe apps should `sh_puts("<<FV_DONE>>\n")` before their idle loop.
+The manual chain below is the fallback / what the task does under the hood.
 
 Run it manually (console.elf already built with `task build:firmwareV2 APP=console`):
 

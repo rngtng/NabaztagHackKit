@@ -142,6 +142,7 @@ int main(void)
   sh_puts(vol == 0x2A2A ? "  -> VS1003 ALIVE\n"
                         : "  -> NO RESPONSE (lines floating?)\n");
 
+  sh_puts("<<FV_DONE>>\n");   /* early-exit signal for flash.py */
   for (;;) {
     /* idle; the report above is the whole probe */
   }

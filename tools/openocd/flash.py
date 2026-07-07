@@ -18,6 +18,7 @@ scp/ssh/sudo) is a future `--local` path - the copy/start/stop steps are kept in
 their own functions so that seam is a branch, not a rewrite. See the README.
 """
 import argparse
+import select
 import subprocess
 import sys
 import time
@@ -29,6 +30,11 @@ from pathlib import Path
 IDCODE = "0x3f0f0f0f"
 REMOTE_LOG = "/tmp/nab-openocd.log"
 GDB_PORT = 3333
+
+# Early-exit sentinel: a firmware app prints this once it is done (the REPL after
+# input EOF, a probe before it idles), so --semihosting need not wait out the
+# full --run-timeout. Any app that does not print it just falls back to the cap.
+DONE_MARK = "<<FV_DONE>>"
 
 
 def sh(cmd, **kw):
@@ -126,7 +132,8 @@ def semihosting_run(a):
     replace it with a HARDWARE breakpoint at 0x8, set AFTER the final `reset halt`
     (reset wipes the ICE watchpoint regs). See tools/openocd/README.md.
     """
-    print(f"[flash+run] {a.elf.name} over semihosting (timeout {a.run_timeout}s)")
+    print(f"[flash+run] {a.elf.name} over semihosting "
+          f"(early-exit on '{DONE_MARK}', cap {a.run_timeout}s)")
     remote = (
         f"cd {a.remote_dir} && sudo timeout {a.run_timeout} {a.openocd} -f {a.cfg} "
         f'-c init -c "reset halt" '
@@ -134,22 +141,52 @@ def semihosting_run(a):
         f'-c "arm semihosting enable" '
         f'-c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"'
     )
-    stdin = open(a.input, "r") if a.input else subprocess.DEVNULL
+    # Stream OpenOCD's stdout live (so the console appears as it happens) and stop
+    # the moment the app prints DONE_MARK, instead of blocking on the full
+    # --run-timeout. The remote `timeout` is still the hard cap / backstop.
+    stdin_f = open(a.input, "r") if a.input else None
+    print(f"  $ ssh {a.host} '<openocd semihosting run>'", flush=True)
+    proc = subprocess.Popen(
+        ["ssh", a.host, remote],
+        stdin=(stdin_f or subprocess.DEVNULL),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1)
+    if stdin_f:
+        stdin_f.close()  # the child holds its own copy
+    captured = []
+    early = False
+    deadline = time.monotonic() + a.run_timeout + 5  # +5: let the remote cap fire first
     try:
-        r = sh(["ssh", a.host, remote], stdin=stdin,
-               capture_output=True, check=False)
+        while time.monotonic() < deadline:
+            if select.select([proc.stdout], [], [], 1.0)[0]:
+                line = proc.stdout.readline()
+                if line == "":
+                    break  # EOF: OpenOCD exited (remote timeout, or done)
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                captured.append(line)
+                if DONE_MARK in line:
+                    early = True
+                    break
+            elif proc.poll() is not None:
+                break
     finally:
-        if a.input:
-            stdin.close()
-    out = (r.stdout or "") + (r.stderr or "")
-    print(out, flush=True)
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+    out = "".join(captured)
     # Same make-or-break gate as the gdb path: no IDCODE => chain/wiring bad,
     # and nothing after it (flash/console) can be trusted.
     if f"tap/device found: {IDCODE}" not in out:
         raise SystemExit(
             "\nFAIL: JTAG chain not confirmed (IDCODE missing). Check wiring / "
             "power. See tools/openocd/README.md.")
-    stop_openocd(a)  # timeout should have ended it; make sure.
+    stop_openocd(a)  # kill the (possibly still-running) remote OpenOCD.
+    if early:
+        print(f"      (early exit: saw {DONE_MARK})")
 
 
 def parse_args():

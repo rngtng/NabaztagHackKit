@@ -53,6 +53,23 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - **Read the openocd/VM source before iterating on hardware** - a semihosting/flash
   hunch is cheap to confirm in `~/nabgcc/openocd-0.8.0/src` on the Pi; each hardware
   round-trip (flash 124 KB ≈ 13 s, per-char semihosting) is not. Predict, then test.
+  This extends to **bus/peripheral semantics** (SPI FIFO, DREQ, chip-select), not
+  just semihosting/flash - M8 (#116) burned ~7 round-trips on a silent beep whose
+  cause (SPI0 RX-FIFO never drained by `WriteSPI`; DREQ dips after SCI writes) was
+  readable in `src/hal/audio.c` + `spi.c` up front. See [[nabaztag-spi0-audio-gotchas]].
+- **When a binding fails on hardware but a standalone probe works, instrument the
+  *real* failing path in situ - do NOT build ever-closer probe replicas.** The
+  replica diverges (M8's sine probe was missing `init_spi`) and sends you chasing
+  red herrings; a few `sh_puts`/readbacks inside the actual binding localised the
+  M8 bug in one run after several wasted on LED/button theories.
+- **Serialise hardware runs.** Only one OpenOCD may own the Pi/JTAG at a time -
+  launching a second `flash`/`repl:hw` while one is live gives `Error: couldn't
+  bind to socket: Address already in use` and a wasted run. Wait for the prior
+  background run to finish before starting the next.
+- **Semihosting apps print `<<FV_DONE>>` when finished** (the REPL after input EOF,
+  a probe before it idles); `flash.py` streams the console live and early-exits on
+  that marker instead of waiting out `--run-timeout` (~120 s → seconds). New probe
+  apps should emit it before their idle loop.
 - **lua.elf flash budget: ~32 KB free of 124 KB after M7 (#106, hardware-verified); was ~48 B.**
   M7 moved Lua's number I/O + console fully off newlib: custom decimal parser vs
   `strtof`, libm-free `^`/`%`, semihosting console, custom `abort`, and an in-tree
