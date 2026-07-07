@@ -139,7 +139,7 @@ build time.
 | M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
-| M6 | Lua binding: AT45DB161B flash | #94 | |
+| M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
