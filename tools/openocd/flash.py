@@ -34,6 +34,10 @@ GDB_PORT = 3333
 def sh(cmd, **kw):
     """Run a local command, echoing it; raise CalledProcessError on nonzero."""
     print(f"  $ {' '.join(cmd)}", flush=True)
+    # errors="replace": OpenOCD/gdb output (and the device's own console echoed
+    # through the openocd log) can contain non-UTF-8 bytes; a strict decode
+    # would crash the whole flash on a stray byte (seen on Python 3.14).
+    kw.setdefault("errors", "replace")
     return subprocess.run(cmd, text=True, **kw)
 
 
