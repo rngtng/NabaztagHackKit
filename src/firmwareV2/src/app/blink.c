@@ -2,7 +2,7 @@
  * @file blink.c
  * @brief M1 bring-up app (issue #89): the first flash-and-run binary.
  *
- * Blinks nose RGB LED 1 red on/off forever. It is the first binary that touches
+ * Blinks the nose LED (LED_RGB_5) red on/off forever. It is the first binary that touches
  * a peripheral, so it validates the startup + linker + toolchain path proven by
  * M0 (hello.c) plus the SPI + LED driver copied from src/firmware - before any
  * Lua lands. On real hardware (confirmed over JTAG after M2), a steadily
@@ -56,9 +56,9 @@ int main(void)
   init_led_rgb_driver();    /* enable driver, blank all LEDs */
 
   for (;;) {
-    set_led_rgb(LED_RGB_1 | RGB_RED);   /* nose LED 1 -> red */
+    set_led_rgb(LED_RGB_5 | RGB_RED);   /* nose -> red */
     delay_ms(BLINK_MS);
-    set_led_rgb(LED_RGB_1 | RGB_BLACK); /* nose LED 1 -> off */
+    set_led_rgb(LED_RGB_5 | RGB_BLACK); /* nose -> off */
     delay_ms(BLINK_MS);
   }
   return 0;
