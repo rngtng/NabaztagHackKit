@@ -1,3 +1,32 @@
+// Boot WiFi state machine + config-portal (master/AP) mode.
+//
+// Device build (#103): converged onto lib/net/wifi.mtl - the same task-driven
+// station+master state machine the apps run. lib's master-mode entry now reads
+// the button (WIFI_MASTER_MODE, defined by boot) so the hold-button config
+// portal recovery path is preserved, and drives the config server via the
+// wifi_master_cb seam. Boot's loop drives it through task_scheduler (see
+// main.mtl / ipv4.mtl); only the boot-local env snapshot lives here.
+//
+// Simulator build: keeps boot's original single-file state machine over the
+// tcpudp_emu shim, exposing the same public surface (_wifi_master / _wifi_scans
+// / _wifi_try / wifi / wifi_init) so config_server.mtl, boot_loop.mtl and
+// main.mtl are build-agnostic. simulate:boot is unaffected by the device
+// convergence.
+
+#ifndef SIMU
+
+// ===== Device: compose lib/net/wifi.mtl =====
+#include "lib/net/wifi.mtl"
+
+// Snapshot the network env (IP/mask/gw/DNS + scan cache) before jumping to the
+// freshly loaded bytecode, so it comes up as a station without re-scanning.
+// lib/net/wifi.mtl's wifi_init restores it via envget (same wire format).
+fun envmake=
+	strcatlist netip::netmask::netgateway::boot_dns_primary::wifi_scan_serialize _wifi_scans;;
+
+#else
+
+// ===== Simulator: boot's own state machine =====
 const RT2501_S_BROKEN=0;;
 const RT2501_S_IDLE=1;;
 const RT2501_S_SCAN=2;;
@@ -8,8 +37,23 @@ const RT2501_S_MASTER=5;;
 const IEEE80211_M_MANAGED=0;;
 const IEEE80211_M_MASTER=1;;
 
-var wifitry;;
+const IEEE80211_CRYPT_NONE=0;;
+const IEEE80211_CRYPT_WEP=16;;
+const IEEE80211_CRYPT_WPA=32;;
+const IEEE80211_CRYPT_WPA2=64;;
+const IEEE80211_CRYPT_WPA_UNSUPPORTED=255;;
 
+const IEEE80211_AUTH_OPEN=0;;
+const IEEE80211_AUTH_SHARED=1;;
+
+type Wifi=initW | gomasterW | masterW | gostationW _ | dhcpW _| stationW;;
+var wifi;;
+var _wifi_master=0;;   // >0 = master (AP) mode, <0 = teardown countdown, 0 = station
+var _wifi_scans;;
+var _wifi_try;;
+
+// config_server.mtl (included after this) provides the body.
+proto startconfigserver 1;;
 
 
 fun _scanserialize l=
@@ -43,7 +87,7 @@ fun scanunserialize s n i0=
 
 
 fun envmake =
-	strcatlist netip::netmask::netgateway::boot_dns_primary::scanserialize wifiscans;;
+	strcatlist netip::netmask::netgateway::boot_dns_primary::scanserialize _wifi_scans;;
 
 fun envrestore s =
 	if s!=nil then
@@ -53,7 +97,7 @@ fun envrestore s =
 		set netgateway=strsub s 8 4;
 		boot_dns_set strsub s 12 4;
 		let htoi strsub s 16 8 -> nscan in
-		set wifiscans=scanunserialize s nscan 24;
+		set _wifi_scans=scanunserialize s nscan 24;
 		0
 	);;
 
@@ -79,15 +123,19 @@ fun filterscan l=
 	if sa==nil || !strlen sa then filterscan tl l
 	else (bestscan l sa nil nil)::filterscan otherscan sa tl l;;
 
-fun wifiInit rescan=
-	set wifitry=nil;
+fun wifi_init rescan=
+	set _wifi_try=nil;
+	// Enter config-portal (AP) mode when the button is held at bring-up.
+	// getButton() returns 1 on the sim's first read, 0 after - so read it
+	// exactly once here (main.mtl must NOT also read it).
+	set _wifi_master=button2;
 	let envget -> env in
 	if env==nil then
 	(
 		setleds 0xff00ff;
 		set wifi=initW;
-		if rescan then set wifiscans=nil;
-		if master then
+		if rescan then set _wifi_scans=nil;
+		if _wifi_master then
 		(
 			set netip=netip_master;
 			set netmask=netmask_master;
@@ -139,7 +187,7 @@ fun wifiwepkey val=
 
 fun wifiAuth=
 	setleds 0xff8000;
-	if wifiscans==nil then 0
+	if _wifi_scans==nil then 0
 	else
 		let confGetWificrypt -> crypt in
 		let if crypt==IEEE80211_CRYPT_WEP then confGetWifiauth else 0-> auth in
@@ -147,8 +195,8 @@ fun wifiAuth=
 			else if crypt==IEEE80211_CRYPT_WPA || crypt==IEEE80211_CRYPT_WPA2 then confGetWifipmk -> key in
 		(
 			dump key;
-			set wifitry=time;
-			netAuth hd wifiscans Iecholn auth crypt key;
+			set _wifi_try=time;
+			netAuth hd _wifi_scans Iecholn auth crypt key;
 			1
 		);;
 
@@ -164,7 +212,7 @@ fun uppermac v=
 		s
 	);;
 
-fun wifiRun=
+fun wifi_run=
 	let netState -> state in
 	(
 		if state!=laststate then (Secho "wifi state=";Iecholn state);
@@ -173,9 +221,9 @@ fun wifiRun=
 		|(initW -> if state==RT2501_S_IDLE then
 				(
 					set mymac=MACecho netMac 0 1;
-					if master then
+					if _wifi_master then
 					(
-						dumpscan set wifiscans=sort filterscan netScan nil #scancmpssid;
+						dumpscan set _wifi_scans=sort filterscan netScan nil #scancmpssid;
 						netSetmode IEEE80211_M_MASTER (Secholn strcat "Nabaztag" uppermac strget mymac 5) 1;
 						Secholn "-------------gomaster";
 						gomasterW
@@ -183,14 +231,14 @@ fun wifiRun=
 					else
 					(
 						setleds 0xff8000;
-						if wifiscans==nil then
+						if _wifi_scans==nil then
 						(
 							let confGetWifissid -> ssid in
 							let if strlen ssid then ssid else nil -> ssid in
 							let netScan ssid -> lscan in
 							let sort filterscan lscan #scancmpssid -> l in
 							let if ssid==nil then l else select l ssid #wifibyssid-> l in
-							dumpscan set wifiscans=l
+							dumpscan set _wifi_scans=l
 						);
 						if wifiAuth then
 						(
@@ -208,12 +256,12 @@ fun wifiRun=
 					startconfigserver 80;
 					masterW)
 			)
-		|(masterW -> if master<0 then
+		|(masterW -> if _wifi_master<0 then
 					(
-						set master=master+1;
-						if !master then
+						set _wifi_master=_wifi_master+1;
+						if !_wifi_master then
 						(
-							wifiInit 1;
+							wifi_init 1;
 							resetudp;
 							netSetmode IEEE80211_M_MANAGED nil 11;
 							nil)
@@ -251,4 +299,4 @@ fun wifiRun=
 	)
 	;;
 
-fun wifiReady= match wifi with (stationW -> 1)|(_ -> 0);;
+#endif

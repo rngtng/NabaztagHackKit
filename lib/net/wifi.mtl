@@ -34,7 +34,10 @@ const IEEE80211_AUTH_SHARED=1;; // Authentication type: shared key
 var wifi;;
 var wifi_mac_addr;; // MAC address as human-readable string
 var _wifi_scans;;
-var _wifi_master=0;; // 1 = master mode (access point), 0 = client mode (station)
+var _wifi_master=0;; // >0 = master mode (access point), <0 = master-mode teardown countdown, 0 = client mode (station)
+#ifdef WIFI_MASTER_MODE
+var wifi_master_cb;; // called once when master (AP) mode is up (e.g. to start a config portal); nil = nothing
+#endif
 var _wifi_last_state;; // wifi last status (Wifi type)
 var _wifi_try;;
 
@@ -133,7 +136,15 @@ proto wifi_task 1;;
 fun wifi_init rescan=
     set wifi_mac_addr = mac_to_str netMac;
 	set _wifi_try = nil;
-    set _wifi_master = 0; // TODO
+#ifdef WIFI_MASTER_MODE
+    // Enter config-portal (AP) mode when the button is held at bring-up. Read
+    // the button exactly once here (the app must NOT also read it, or it steals
+    // the signal). Re-read on every wifi_init so a released button on a retry
+    // or post-config re-init drops cleanly back to station mode.
+    set _wifi_master = button2;
+#else
+    set _wifi_master = 0;
+#endif
     let envget -> env in
     if env != nil then
     (
@@ -278,14 +289,22 @@ fun wifi_task task=
             leds_set_all RGB_BLUE;
             _wifi_debug "-------------master";
             dhcp_start_srv;
+            if wifi_master_cb!=nil then call wifi_master_cb [];
             masterW)
         )
-        |(masterW -> if !_wifi_master then (
-            wifi_init 1;
-            udp_reset;
-            netSetmode IEEE80211_M_MANAGED nil 11;
-            nil)
-        )
+        // Leave master mode on a countdown, not immediately: the app sets
+        // _wifi_master to a small negative tick count (e.g. after the config
+        // portal saves) so the "done" page still flushes before the AP tears
+        // down. When it reaches 0 we re-init - button released -> station.
+        |(masterW -> if _wifi_master<0 then (
+            set _wifi_master = _wifi_master+1;
+            if !_wifi_master then (
+                wifi_init 1;
+                udp_reset;
+                netSetmode IEEE80211_M_MANAGED nil 11;
+                nil
+            )
+        ))
 #endif
         |(gostationW x-> if wifi_connected then
                 (
