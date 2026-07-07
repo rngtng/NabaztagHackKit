@@ -115,6 +115,7 @@ inc/common.h        GPIO/register macros (debug/UART include stripped - no UART 
 inc/hal/{led,spi}.h HAL headers (copied from src/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
+src/hal/button.c    M5 head-button read (#93) - polled active-low GPIO on P3.1
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
@@ -137,7 +138,7 @@ build time.
 | M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
 | M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
-| M5 | Lua bindings: LEDs, buttons, ears | #93 | needs the LED-map fix first (see M1 note) |
+| M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
@@ -164,10 +165,27 @@ APP=ledmap` lights all five a distinct colour at once):
 | `LED_RGB_4` | belly right |
 | `LED_RGB_5` | **nose** |
 
-`blink` now drives `LED_RGB_5` (the actual nose). Still open for M5: `led.c`'s
-`convled[]` applies a *separate* logical->physical remap for `set_led()`; that
-logical numbering is unverified and should be pinned down before the Lua LED
-binding.
+`blink` now drives `LED_RGB_5` (the actual nose). The M5 `nab.led` binding uses
+this raw `set_led_rgb` map (by name) directly, so it does not depend on `led.c`'s
+`convled[]` - that separate logical remap (used only by the unused `set_led`)
+stays unverified, harmless for now.
+
+## Lua hardware bindings: the `nab` module (M5, #93)
+`APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in
+`src/app/lua.c`; LED init mirrors `blink`, button read is `src/hal/button.c`):
+
+```lua
+nab.led(name, r, g, b)  -- name: nose|belly|left|right|bottom; r/g/b 0..127
+nab.button()            -- -> true while the head button is held (polled)
+```
+
+Verified on hardware over the M3 semihosting console: `nab.led("nose",0,127,0)`
+lights the nose green, each name maps to the right LED, and `nab.button()`
+returns `false`/`true` tracking the physical button. **Ears are deferred** - the
+motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
+have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
+The Lua app's flash budget is very tight (~48 B free of the 124 KB) - adding more
+bindings will need a stdlib trim (see the Lua runtime note).
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
