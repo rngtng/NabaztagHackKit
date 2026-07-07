@@ -26,10 +26,18 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>   /* strcmp - LED-name lookup in the nab binding */
 
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+
+/* M5 (#93) hardware bindings: LED driver + head button. */
+#include "ml674061.h"
+#include "common.h"
+#include "hal/spi.h"
+#include "hal/led.h"
+#include "hal/button.h"
 
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
@@ -96,6 +104,54 @@ void *_sbrk(ptrdiff_t incr)
   return prev;
 }
 
+/* ---- M5 hardware bindings (#93): the `nab` module ------------------------ */
+/* Exposes the LEDs and head button to Lua. Ears (motors) need a timer/PWM/
+ * encoder subsystem not yet in firmwareV2 - deferred. */
+
+/* nab.led(name, r, g, b): light an RGB LED. name is one of
+ * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c #93 -
+ * see inc/hal/led.h). r/g/b are 7-bit intensities (0..127), the TLC5922 range. */
+static int nab_led(lua_State *L)
+{
+  const char *name = luaL_checkstring(L, 1);
+  lua_Integer r = luaL_checkinteger(L, 2);
+  lua_Integer g = luaL_checkinteger(L, 3);
+  lua_Integer b = luaL_checkinteger(L, 4);
+  luaL_argcheck(L, r >= 0 && r <= 127, 2, "0..127");
+  luaL_argcheck(L, g >= 0 && g <= 127, 3, "0..127");
+  luaL_argcheck(L, b >= 0 && b <= 127, 4, "0..127");
+
+  uint32_t ch;
+  if      (strcmp(name, "belly")  == 0) ch = LED_RGB_1;
+  else if (strcmp(name, "bottom") == 0) ch = LED_RGB_2;
+  else if (strcmp(name, "left")   == 0) ch = LED_RGB_3;
+  else if (strcmp(name, "right")  == 0) ch = LED_RGB_4;
+  else if (strcmp(name, "nose")   == 0) ch = LED_RGB_5;
+  else return luaL_error(L, "bad LED '%s'", name);  /* nose|belly|left|right|bottom */
+
+  set_led_rgb(ch | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+  return 0;
+}
+
+/* nab.button() -> boolean: true while the head button is held (polled). */
+static int nab_button(lua_State *L)
+{
+  lua_pushboolean(L, button_pressed());
+  return 1;
+}
+
+static const luaL_Reg nab_funcs[] = {
+    {"led", nab_led},
+    {"button", nab_button},
+    {NULL, NULL},
+};
+
+static int luaopen_nab(lua_State *L)
+{
+  luaL_newlib(L, nab_funcs);
+  return 1;
+}
+
 /* ---- Lua runtime --------------------------------------------------------- */
 /* Trimmed stdlib for the 124 KB flash budget (see the Makefile's LUA_LIB note):
  * base + string + table only. Dropped: math (pulls ~16 KB of libm trig),
@@ -107,6 +163,7 @@ static const luaL_Reg loadedlibs[] = {
     {LUA_GNAME, luaopen_base},
     {LUA_TABLIBNAME, luaopen_table},
     {LUA_STRLIBNAME, luaopen_string},
+    {"nab", luaopen_nab},   /* M5 (#93): LEDs + button */
     {NULL, NULL},
 };
 
@@ -127,10 +184,14 @@ static void report(lua_State *L)
   lua_pop(L, 1);
 }
 
-/* Embedded proof that the interpreter runs even with no console input (sim). */
+/* Embedded proof that the interpreter runs even with no console input (sim).
+ * Also exercises the M5 nab bindings: lights the nose green and reads the
+ * button - visible/reportable on hardware, harmless in the simulator. */
 static const char DEMO[] =
     "print('firmwareV2 Lua ' .. _VERSION)\n"
-    "print('1+1 =', 1 + 1)\n";
+    "print('1+1 =', 1 + 1)\n"
+    "nab.led('nose', 0, 127, 0)\n"
+    "print('button:', nab.button())\n";
 
 #define REPL_LINE 256
 
@@ -173,9 +234,23 @@ static void repl(lua_State *L)
   }
 }
 
+/* Bring up the LED bus + button for the nab bindings. LED init mirrors blink.c
+ * (the LLC2_4c LED-only subset of the firmware's init_io). */
+static void init_hw(void)
+{
+  CS_LED_AS_OUTPUT;
+  MODE_LED_AS_OUTPUT;
+  CS_LED_SET;
+  MODE_LED_CLEAR;
+  init_spi();
+  init_led_rgb_driver();
+  init_button();
+}
+
 int main(void)
 {
   setvbuf(stdout, NULL, _IONBF, 0); /* semihosting console: no buffering */
+  init_hw();                        /* LEDs + button, for the nab bindings */
 
   lua_State *L = luaL_newstate();
   if (L == NULL) {
