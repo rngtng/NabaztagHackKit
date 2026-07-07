@@ -1,7 +1,7 @@
 /**
  * Contract for an HTTP client, used by lib/audio streaming playback.
- * Implemented today by src/app-piper/net/http.mtl; a lib/net http client
- * is a planned extraction (tracked in GitHub Issues).
+ * Implemented by lib/net/http.mtl (device build); the simulator's
+ * lib/net/tcp.mtl transport does not provide it.
  */
 proto http_abort 1;;
 proto http_enable 2;;
