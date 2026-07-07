@@ -1,0 +1,59 @@
+#include "lib/std/list"
+#include "lib/std/integer"
+#include "lib/std/string"
+#include "lib/std/net"
+
+fun itoanil l= if l==nil then '0'::nil else l;;
+
+// Boot aliases for backward compatibility with call sites in boot/
+fun webip ip= ip_to_str ip;;
+fun webmac key= mac_to_str key;;
+fun useparamip val= str_to_ip val;;
+
+fun setleds col= for i=0;i<5 do led i col;;
+
+fun MACecho src i0 ln=
+	for i=0;i<6 do (Secho ctoh strget src i0+i; Secho "."); if ln then Secholn "";
+	src;;
+
+fun SEQecho src i0 ln=
+	for i=0;i<4 do (Secho ctoh strget src i0+i; Secho "."); if ln then Secholn "";
+	src;;
+
+fun IPecho src i0 ln=
+	for i=0;i<4 do (Iecho strget src i0+i; Secho ".");if ln then Secholn "";
+	src;;
+
+fun dump s=
+	for i0=0;i0<strlen s;i0+16 do
+	(
+		Secho itoh4 i0;
+		Secho " ";
+		for i=0;i<16 do let strget s i0+i -> c in
+		(
+			Secho if c==nil then "  " else ctoh c;
+			Secho " "
+		);
+		Secho " ";
+		for i=0;i<16 do let strget s i0+i -> c in
+		(
+			Secho if c==nil then "  " else if c<32 then "." else ctoa c
+		);
+		Secholn ""
+	);
+	s;;
+
+fun dumpscan l0=
+	Secholn "## DUMPSCAN >>>>";
+	for l=l0;l!=nil;tl l do
+	let hd l->[ssid mac bssid rssi channel rateset encryption] in
+	(
+		Secho "## SCAN "; Secholn ssid;
+		Secho "mac:"; MACecho mac 0 1;
+		Secho "bssid:"; MACecho bssid 0 1;
+		Secho "rssi:"; Iecholn rssi;
+		Secho "channel:"; Iecholn channel;
+		Secho "rateset:"; Iecholn rateset;
+		Secho "encryption:"; Iecholn encryption
+	);
+	l0;;

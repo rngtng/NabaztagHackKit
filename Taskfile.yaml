@@ -60,6 +60,84 @@ includes:
       DIR: ./tools/mockserver/
 
 tasks:
+  # ------------------------ Internal ----------------------------------
+  build:target:
+    desc: 'Build a target (app or boot).'
+    summary: 'Usage: task build:target TARGET=app1|app2|boot [SOURCE=src/<target>/main.mtl] [INCLUDES="src/<target> lib/"] [SIGN=false] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    internal: true
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      SOURCE: '{{.SOURCE | default (printf "src/%s/main.mtl" .TARGET)}}'
+      INCLUDES: '{{.INCLUDES | default (printf "src/%s lib/" .TARGET)}}'
+    requires:
+      vars: [TARGET]
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '{{.INCLUDES}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+          SIGN: '{{.SIGN}}'
+
+  simulate:app:mock:
+    desc: 'Simulate an app end-to-end with the mock file server (issue #39). Serves src/<TARGET>/assets over HTTP and points the sim at it.'
+    summary: 'Usage: task simulate:app:mock TARGET=app-piper'
+    dir: '{{.USER_WORKING_DIR}}'
+    internal: true
+    requires:
+      vars: [TARGET]
+    vars:
+      NET: nabaztag-mocknet
+      MOCK_IP: 172.30.0.10
+      ASSETS: 'src/{{.TARGET}}/assets'
+    cmds:
+      - task: mockserver:image
+      # shared network + mock container the sim can reach at a fixed IP (literal IP => sim skips DNS)
+      - docker network create --subnet 172.30.0.0/24 {{.NET}} >/dev/null 2>&1 || true
+      - defer: docker network rm {{.NET}} >/dev/null 2>&1 || true
+      - docker rm -f nabaztag-mock >/dev/null 2>&1 || true
+      - 'docker run -d --rm --name nabaztag-mock --network {{.NET}} --ip {{.MOCK_IP}} -v "$(realpath {{.ASSETS}}):/assets:ro" nabaztag-sdk-mockserver >/dev/null'
+      - defer: docker stop nabaztag-mock >/dev/null 2>&1 || true
+      # stream the mock's request log alongside the sim output (-u: unbuffered, so lines appear live)
+      - docker logs -f nabaztag-mock 2>&1 | sed -u 's/^/[mock] /' &
+      - task: simulate:target
+        vars:
+          TARGET: '{{.TARGET}}'
+          NETWORK: '{{.NET}}'
+          CLI_ARGS: '--serverurl {{.MOCK_IP}} {{.CLI_ARGS}}'
+
+  simulate:target:
+    desc: 'Simulate a target (app or boot) in MTL simulator. HTTP UI at http://localhost:8080.'
+    summary: 'Usage: task simulate:target TARGET=app1|app2|boot [SOURCE=src/<target>/main.mtl] [INCLUDES="src/<target> lib/"] [DEFINES=SIMU]'
+    dir: '{{.USER_WORKING_DIR}}'
+    internal: true
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      SOURCE: '{{.SOURCE | default (printf "src/%s/main.mtl" .TARGET)}}'
+      INCLUDES: '{{.INCLUDES | default (printf "src/%s lib/" .TARGET)}}'
+      DEFINES: '{{.DEFINES | default "SIMU"}}'
+    requires:
+      vars: [TARGET]
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '{{.INCLUDES}}'
+          DEFINES: '{{.DEFINES}}'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          NETWORK: '{{.NETWORK}}'       # empty unless simulate:app:mock joins a shared network
+          CLI_ARGS: '{{.CLI_ARGS}}'     # forward -- extra args (e.g. --serverurl) to mtl_simu
+
+   # ----------------------------------------------------------
+
   clean:
     desc: 'Clean all build artifacts (firmware, boot, etc.)'
     cmds:
@@ -70,43 +148,9 @@ tasks:
       - task: testvm:clean
       - rm -rf '{{.OUT}}'
 
-  build:boot:
-    desc: 'Build boot firmware. Preprocess files, then compile. Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build/boot]'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
-      BOOT_OUT: '{{.OUT}}/boot'
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.BOOT_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-      - task: mtl:compile
-        vars:
-          SOURCE: '{{.BOOT_OUT}}/merged.mtl'
-          OUT: '{{.BOOT_OUT}}'
-          SIGN: 'false'
-
-  simulate:boot:
-    desc: 'Preprocess and simulate boot.mtl in config mode. Config UI served at http://localhost:8080. Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
-      SIMU_BOOT_OUT: '{{.OUT}}/boot_simu'
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.SIMU_BOOT_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
-          DEFINES: 'SIMU BOOT'
-      - task: mtl:simulate
-        vars:
-          SOURCE: '{{.SIMU_BOOT_OUT}}/merged.mtl'
-
   test:
-    desc: 'Preprocess and run MTL unit tests. Usage: task test'
+    desc: 'Preprocess and run MTL unit tests.'
+    summary: 'Usage: task test'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       SOURCE: "test/test.mtl"
@@ -131,74 +175,69 @@ tasks:
       - task: build:app:sse
       - task: build:firmwareV2
 
-  build:firmwareV2:
-    desc: 'Build a V2 firmware bring-up app (ARM7TDMI/ML67Q4051, issue #87). Usage: task build:firmwareV2 [APP=hello]'
-    dir: '{{.USER_WORKING_DIR}}'
-    cmds:
-      - task: firmwareV2:compile
-        vars:
-          APP: '{{.APP | default "hello"}}'
+  # ----------------------------------------------------------
 
-  simulate:firmwareV2:
-    desc: 'Run a V2 firmware app in the Unicorn simulator, no hardware (#96). Usage: task simulate:firmwareV2 [APP=hello] [ARGS=-v]'
-    dir: '{{.USER_WORKING_DIR}}'
-    cmds:
-      - task: firmwareV2:simulate
-        vars:
-          APP: '{{.APP | default "hello"}}'
-          ARGS: '{{.ARGS}}'
-
-  flash:firmwareV2:
-    desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge (M2, #90). Host-side (not Docker). Usage: task flash:firmwareV2 [APP=hello] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+  build:boot:
+    desc: 'Build boot firmware. Preprocess files, then compile.'
+    summary: 'Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build/boot]'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
-      APP: '{{.APP | default "hello"}}'
-      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
     cmds:
-      - task: build:firmwareV2
+      - task: build:target
         vars:
-          APP: '{{.APP}}'
-      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
+          TARGET: boot
+          SOURCE: '{{.SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
+          SIGN: 'false'
 
-  flash:firmware:
-    desc: 'Flash the V1 boot firmware (C VM + boot bytecode → build/firmware/Nab.elf) to real hardware over JTAG, via the Raspberry Pi bridge - the recovery-path/boot flash, counterpart to flash:firmwareV2 (same ML67Q4051 chip + OpenOCD config). Host-side (not Docker). Chains build:boot → build:firmware, then flash.py. Usage: task flash:firmware [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+  simulate:boot:
+    desc: 'Preprocess and simulate boot.mtl in config mode. Config UI served at http://localhost:8080.'
+    summary: 'Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
-      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
-      FIRMWARE_OUT: '{{.OUT}}/firmware'
+      SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
     cmds:
-      - task: build:boot
-      - task: build:firmware
-      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf {{.FIRMWARE_OUT}}/Nab.elf
+      - task: simulate:target
+        vars:
+          TARGET: boot_simu
+          SOURCE: '{{.SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
 
-  repl:firmwareV2:hw:
-    desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge (M3/M4, #91/#92) - the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+  build:bootV2:
+    desc: 'Build boot firmware V2. Preprocess files, then compile.'
+    summary: 'Usage: task boot:buildV2 [SOURCE=src/bootV2/boot.mtl] [OUT=build/boot]'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
-      APP: '{{.APP | default "lua"}}'
-      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      SOURCE: '{{.SOURCE | default "src/bootV2/boot.mtl"}}'
     cmds:
-      - task: build:firmwareV2
+      - task: build:target
         vars:
-          APP: '{{.APP}}'
-      - python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf {{if .SCRIPT}}--input {{.SCRIPT}}{{end}}
+          TARGET: boot
+          SOURCE: '{{.SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
+          SIGN: 'false'
 
-  repl:firmwareV2:
-    desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt. Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [N=budget]'
+  simulate:bootV2:
+    desc: 'Preprocess and simulate bootV2.mtl in config mode. Config UI served at http://localhost:8080.'
+    summary: 'Usage: task bootV2:simulate [SOURCE=src/bootV2/boot.mtl] [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
-    interactive: true
+    vars:
+      SOURCE: '{{.SOURCE | default "src/bootV2/boot.mtl"}}'
     cmds:
-      # Resolve SCRIPT to an absolute path here (cwd = where the user ran task) so
-      # the leaf task's bind mount works regardless of its own dir; empty when
-      # omitted, which the leaf treats as "run the interactive prompt".
-      - task: firmwareV2:repl
+      - task: simulate:target
         vars:
-          SCRIPT:
-            sh: '[ -n "{{.SCRIPT}}" ] && realpath "{{.SCRIPT}}" || true'
-          N: '{{.N}}'
+          TARGET: boot_simu
+          SOURCE: '{{.SOURCE}}'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
+
+  # ----------------------------------------------------------
 
   build:firmware:
-    desc: 'Build firmware. Copy boot dumpbc.c, then compile. Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
+    desc: 'Build firmware. Copy boot dumpbc.c, then compile.'
+    summary: 'Usage: task firmware:build [SOURCE=build/boot/dumpbc.c] [OUT=build/firmware]'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.OUT}}/boot/dumpbc.c'
@@ -211,8 +250,29 @@ tasks:
       - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
       - rm -rf src/firmware/obj src/firmware/src/bc.c
 
+  test:firmware:
+    desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires build:boot first.'
+    summary: 'Usage: task test:firmware [SOURCE=build/boot/dumpbc.c] [DURATION=5]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SOURCE: '{{.SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
+      DURATION: '{{.DURATION | default 5}}'
+    cmds:
+      - task: testvm:test
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          SOCK_DIR: '{{.OUT}}'
+          DURATION: '{{.DURATION}}'
+
+  test:firmware-bugs:
+    desc: 'Reproduce the flagged firmware VM memory-safety bugs under AddressSanitizer.'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: testvm:bugs
+
   build:sim:
-    desc: 'Build the full firmware and sign it for web upload → build/firmware/Nab.sim. Chains build:boot → build:firmware → sign → verify. Usage: task build:sim [OUT=build]'
+    desc: 'Build the full firmware and sign it for web upload → build/firmware/Nab.sim. Chains build:boot → build:firmware → sign → verify.'
+    summary: 'Usage: task build:sim [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       FIRMWARE_OUT: '{{.OUT}}/firmware'
@@ -228,123 +288,123 @@ tasks:
           FILE: '{{.FIRMWARE_OUT}}/Nab.sim'
       - 'echo "[firmware] {{.FIRMWARE_OUT}}/Nab.sim ready — upload via the config page (blue LEDs)"'
 
-  test:firmware:
-    desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires build:boot first. Usage: task test:firmware [SOURCE=build/boot/dumpbc.c] [DURATION=5]'
+  flash:firmware:
+  #   - the recovery-path/boot flash, counterpart to flash: firmwareV2 (same ML67Q4051 chip + OpenOCD config). Host-side (not Docker). Chains build:boot → build:firmware, then flash.py.'
+    summary: 'Usage: task flash:firmware [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    desc: 'Flash the V1 boot firmware to real hardware over JTAG, via the Raspberry Pi bridge.'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
-      SOURCE: '{{.SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
-      DURATION: '{{.DURATION | default 5}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      FIRMWARE_OUT: '{{.OUT}}/firmware'
     cmds:
-      - task: testvm:test
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          SOCK_DIR: '{{.OUT}}'
-          DURATION: '{{.DURATION}}'
-
-  test:firmware-bugs:
-    desc: 'Reproduce the flagged firmware VM memory-safety bugs under AddressSanitizer (issue #66). Fails while any bug is still present; passes once fixed.'
-    dir: '{{.USER_WORKING_DIR}}'
-    cmds:
-      - task: testvm:bugs
+      - task: build:boot
+      - task: build:firmware
+      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf {{.FIRMWARE_OUT}}/Nab.elf
 
   # ----------------------------------------------------------
-  build:app:
-    desc: 'Build app Usage: task build:app TARGET=app1|app2 [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
-    requires:
-      vars: [TARGET]
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: src/{{.TARGET}}/main.mtl
-          OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
-      - task: mtl:compile
-        vars:
-          SOURCE: '{{.APP_OUT}}/merged.mtl'
-          OUT: '{{.APP_OUT}}'
 
-  simulate:app:
-    desc: 'Simulate app MVP in MTL simulator. HTTP UI at http://localhost:8080. Usage: task simulate:app TARGET=app1|app2'
+  build:firmwareV2:
+    desc: 'Build a V2 firmware bring-up app (ARM7TDMI/ML67Q4051, issue #87).'
+    summary: 'Usage: task build:firmwareV2 [APP=hello]'
     dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
-    requires:
-      vars: [TARGET]
     cmds:
-      - task: preprocessor:preprocess
+      - task: firmwareV2:compile
         vars:
-          SOURCE: src/{{.TARGET}}/main.mtl
-          OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
-          DEFINES: 'SIMU'
-      - task: mtl:simulate
-        vars:
-          SOURCE: '{{.APP_OUT}}/merged.mtl'
-          NETWORK: '{{.NETWORK}}'       # empty unless simulate:app:mock joins a shared network
-          CLI_ARGS: '{{.CLI_ARGS}}'     # forward -- extra args (e.g. --serverurl) to mtl_simu
+          APP: '{{.APP | default "hello"}}'
 
-  simulate:app:mock:
-    desc: 'Simulate an app end-to-end with the mock file server (issue #39). Serves src/<TARGET>/assets over HTTP and points the sim at it. Usage: task simulate:app:mock TARGET=app-piper'
+  simulate:firmwareV2:
+    desc: 'Run a V2 firmware app in the Unicorn simulator.'
+    summary: 'Usage: task simulate:firmwareV2 [APP=hello] [ARGS=-v]'
     dir: '{{.USER_WORKING_DIR}}'
-    requires:
-      vars: [TARGET]
-    vars:
-      NET: nabaztag-mocknet
-      MOCK_IP: 172.30.0.10
-      ASSETS: 'src/{{.TARGET}}/assets'
     cmds:
-      - task: mockserver:image
-      # shared network + mock container the sim can reach at a fixed IP (literal IP => sim skips DNS)
-      - docker network create --subnet 172.30.0.0/24 {{.NET}} >/dev/null 2>&1 || true
-      - defer: docker network rm {{.NET}} >/dev/null 2>&1 || true
-      - docker rm -f nabaztag-mock >/dev/null 2>&1 || true
-      - 'docker run -d --rm --name nabaztag-mock --network {{.NET}} --ip {{.MOCK_IP}} -v "$(realpath {{.ASSETS}}):/assets:ro" nabaztag-sdk-mockserver >/dev/null'
-      - defer: docker stop nabaztag-mock >/dev/null 2>&1 || true
-      # stream the mock's request log alongside the sim output (-u: unbuffered, so lines appear live)
-      - docker logs -f nabaztag-mock 2>&1 | sed -u 's/^/[mock] /' &
-      - task: simulate:app
+      - task: firmwareV2:simulate
         vars:
-          TARGET: '{{.TARGET}}'
-          NETWORK: '{{.NET}}'
-          CLI_ARGS: '--serverurl {{.MOCK_IP}} {{.CLI_ARGS}}'
+          APP: '{{.APP | default "hello"}}'
+          ARGS: '{{.ARGS}}'
+
+  flash:firmwareV2:
+    desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
+    summary: 'Usage: task flash:firmwareV2 [APP=hello] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP: '{{.APP | default "hello"}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    cmds:
+      - task: build:firmwareV2
+        vars:
+          APP: '{{.APP}}'
+      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
+
+  repl:firmwareV2:
+    desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt.'
+    summary: 'Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [N=budget]'
+    dir: '{{.USER_WORKING_DIR}}'
+    interactive: true
+    cmds:
+      # Resolve SCRIPT to an absolute path here (cwd = where the user ran task) so
+      # the leaf task's bind mount works regardless of its own dir; empty when
+      # omitted, which the leaf treats as "run the interactive prompt".
+      - task: firmwareV2:repl
+        vars:
+          SCRIPT:
+            sh: '[ -n "{{.SCRIPT}}" ] && realpath "{{.SCRIPT}}" || true'
+          N: '{{.N}}'
+
+  repl:firmwareV2:hw:
+    desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge'
+    # the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output.'
+    summary: 'Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP: '{{.APP | default "lua"}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    cmds:
+      - task: build:firmwareV2
+        vars:
+          APP: '{{.APP}}'
+      - python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf {{if .SCRIPT}}--input {{.SCRIPT}}{{end}}
+
+  # ----------------------------------------------------------
 
   build:app:template:
-    desc: 'Build app-template via build:app. Usage: task build:app:template [OUT=build]'
+    desc: 'Build app-template via build:target.'
+    summary: 'Usage: task build:app:template [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: build:app
+      - task: build:target
         vars:
           TARGET: app-template
 
   simulate:app:template:
-    desc: 'Simulate app-template via simulate:app. HTTP UI at http://localhost:8080. Usage: task simulate:app:template [OUT=build] [PORT=8080]'
+    desc: 'Simulate app-template via simulate:target. HTTP UI at http://localhost:8080.'
+    summary: 'Usage: task simulate:app:template [OUT=build] [PORT=8080]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: simulate:app
+      - task: simulate:target
         vars:
           TARGET: app-template
 
   build:app:piper:
-    desc: 'Build app-piper via build:app. Usage: task build:app:piper [OUT=build]'
+    desc: 'Build app-piper via build:target.'
+    summary: 'Usage: task build:app:piper [OUT=build]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: build:app
+      - task: build:target
         vars:
           TARGET: app-piper
 
   simulate:app:piper:
-    desc: 'Simulate app-piper via simulate:app. HTTP UI at http://localhost:8080. Usage: task simulate:app:piper [OUT=build] [PORT=8080]'
+    desc: 'Simulate app-piper via simulate:target. HTTP UI at http://localhost:8080.'
+    summary: 'Usage: task simulate:app:piper [OUT=build] [PORT=8080]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: simulate:app
+      - task: simulate:target
         vars:
           TARGET: app-piper
 
   simulate:app:piper:mock:
-    desc: 'Simulate app-piper end-to-end with the mock file server (serves src/app-piper/assets, e.g. init.forth). Usage: task simulate:app:piper:mock'
+    desc: 'Simulate app-piper end-to-end with the mock file server (serves src/app-piper/assets, e.g. init.forth).'
+    summary: 'Usage: task simulate:app:piper:mock'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: simulate:app:mock
@@ -352,18 +412,20 @@ tasks:
           TARGET: app-piper
 
   build:app:sse:
-    desc: 'Build SSE server. Usage: task build:sse [OUT=build/sse]'
+    desc: 'Build SSE server.'
+    summary: 'Usage: task build:sse [OUT=build/sse]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: build:app
+      - task: build:target
         vars:
           TARGET: app-sse
 
   simulate:app:sse:
-    desc: 'Simulate SSE server. Usage: task simulate:sse [OUT=build/sse]'
+    desc: 'Simulate SSE server.'
+    summary: 'Usage: task simulate:sse [OUT=build/sse]'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
-      - task: simulate:app
+      - task: simulate:target
         vars:
           TARGET: app-sse
 

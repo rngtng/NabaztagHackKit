@@ -1,5 +1,5 @@
-#include "http_server"
-#include "firmware"
+#include "http_server.mtl"
+#include "firmware.mtl"
 
 //----------------------
 
@@ -319,15 +319,7 @@ a:hover {
   </tr>
   <tr>
     <td>Violet Platform: </td>
-    <td><input name=\"a\" type=\"text\" "::nil/*"disabled=\"disabled\""*/::" value=\""::"<SERVER>"::"\" size=\"30\" /></td>
-  </tr>
-  <tr>
-    <td>Login: </td>
-    <td>"::"<LOGIN>"::"</td>
-  </tr>
-  <tr>
-    <td>Password: </td>
-    <td>"::"<PWD>"::"</td>
+    <td><input name=\"a\" type=\"text\" "::nil::" value=\""::"<SERVER>"::"\" size=\"30\" /></td>
   </tr>
   <tr>
     <td>Firmware: </td>
@@ -399,8 +391,6 @@ fun httpupgrade=
 
 fun httpindex=
 	let webmac netMac -> mac in
-	let webmac confGetLogin -> login in
-	let webmac confGetPwd -> pwd in
 	let confGetServerUrl -> server in
 	let confGetWifissid -> ssid in
 	let confGetWificrypt-> crypt in
@@ -417,8 +407,6 @@ fun httpindex=
 
 	strcatlist pagefill
 			["<MAC>" mac]::
-			["<LOGIN>" filterweb login]::
-			["<PWD>" filterweb pwd]::
 			["<SERVER>" filterweb server]::
 			["<DHCP>" webSelect dhcp]::
 			["<NETIP>" netip]::
@@ -428,8 +416,8 @@ fun httpindex=
 			["<PROXYIP>" proxyip]::
 			["<PROXYPORT>" itoa proxyport]::
 			["<PROXY>" webSelect proxy]::
-			["<SSID>" if (!isinscan ssid wifiscans) then filterweb ssid]::
-			["<SCAN>" strcatlist selectscan ssid wifiscans]::
+			["<SSID>" if (!isinscan ssid _wifi_scans) then filterweb ssid]::
+			["<SCAN>" strcatlist selectscan ssid _wifi_scans]::
 			["<ENC-NONE>" if crypt==IEEE80211_CRYPT_NONE then "checked"]::
 			["<ENC-WEP>" if crypt==IEEE80211_CRYPT_WEP then "checked"]::
 			["<ENC-WPA>" if crypt==IEEE80211_CRYPT_WPA then "checked"]::
@@ -451,14 +439,6 @@ fun useparamcheck val=
 	let if i==nil then '0' else i -> i in
 	ctoa i-'0';;
 
-fun _useparammac val i len=
-	if i<len then
-	(htoi strsub val i 2)::_useparammac val i+2 len;;
-
-fun useparammac val=
-	let strreplace val ":" "" -> val in
-	listtostr _useparammac val 0 12;;
-
 fun useparam v val=
 	if v=='a' then confSetstr CONF_SERVERURL val 40
 	else if v=='c' then confSet CONF_PROXYENABLE useparamcheck val 1
@@ -474,9 +454,10 @@ fun useparam v val=
 	else if v=='l' then confSet CONF_WIFIAUTH useparamcheck val 1
 	else if v=='m' then confSetbin CONF_WIFICRYPT ctoa atoi val 1
 	else if v=='n' then confSetstr CONF_WIFIKEY0 val 64
-	else if v=='o' then confSet CONF_LOGIN useparammac val 4
-	else if v=='p' then confSet CONF_PWD useparammac val 4
-	else if v=='z' then (set master=-40; nil)
+	// Start the master-mode teardown countdown: the wifi state machine drops the
+	// AP and re-inits as a station once _wifi_master counts back up to 0, giving
+	// the "done" page time to flush first.
+	else if v=='z' then (set _wifi_master=(0-40); nil)
 	;;
 
 fun filterplus s=
@@ -536,7 +517,7 @@ fun updateconf args=
 // HTTP handler for firmware upload — wraps firmware_flash with error page response
 fun httpflash req=
 	Secholn "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFf";
-	firmware_flash req;
+	boot_firmware_flash req;
 	// only reached when firmware_flash returned nil (invalid firmware)
 	setleds 0xff;
 	page_error;;
@@ -559,3 +540,7 @@ fun cbhttp req=
 	);;
 
 fun startconfigserver port=	starthttpsrv port #cbhttp;;
+
+// Zero-arg entry for lib/net/wifi.mtl's wifi_master_cb seam (device build):
+// bring the config portal up on port 80 once master (AP) mode is established.
+fun boot_start_config_portal= startconfigserver 80;;
