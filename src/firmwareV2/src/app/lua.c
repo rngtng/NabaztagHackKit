@@ -132,6 +132,88 @@ void luai_writestringerror(const char *fmt, const char *arg)
   _write(2, b, n);
 }
 
+/* ---- decimal string -> Lua number (M7.2, #108) --------------------------- */
+/* Replaces strtof as Lua's lua_str2number (see luaconf.h). strtof drags in
+ * newlib's double strtod + gdtoa multi-precision machinery (~14 KB). Lua only
+ * reaches here for *decimal float* numerals - luaO_str2num tries the integer
+ * path (l_str2int) first, and hex-floats use Lua's own lua_strx2number - so
+ * this handles [ws][sign]digits[.digits][(e|E)[sign]digits] and nothing else.
+ *
+ * Contract matches strtof as used by l_str2dloc(): set *endptr to the first
+ * unconsumed char, leave it at 's' (return 0) when no digit is seen. Mantissa
+ * is accumulated in a float and scaled by 10^exp via binary exponentiation, so
+ * only single-float mul/div are used (no libm, no strtod). Last-ulp rounding is
+ * looser than strtof - acceptable here (integer-first target; float printing is
+ * already stubbed, #92). */
+#define LUAI_ISDIGIT(c) ((c) >= '0' && (c) <= '9')
+
+LUA_NUMBER luai_str2number(const char *s, char **endptr)
+{
+  const char *p = s;
+  while (*p == ' ' || (*p >= '\t' && *p <= '\r'))  /* skip leading whitespace */
+    p++;
+
+  int neg = 0;
+  if (*p == '+' || *p == '-') {
+    neg = (*p == '-');
+    p++;
+  }
+
+  lua_Number val = 0;
+  int anydig = 0;
+  int fracdigits = 0;
+  while (LUAI_ISDIGIT(*p)) {
+    val = val * 10 + (*p - '0');
+    p++;
+    anydig = 1;
+  }
+  if (*p == '.') {
+    p++;
+    while (LUAI_ISDIGIT(*p)) {
+      val = val * 10 + (*p - '0');
+      fracdigits++;
+      p++;
+      anydig = 1;
+    }
+  }
+  if (!anydig) {              /* no mantissa digits: nothing valid */
+    *endptr = (char *)s;
+    return 0;
+  }
+
+  int exp = -fracdigits;
+  if (*p == 'e' || *p == 'E') {   /* optional exponent */
+    const char *ep = p + 1;
+    int eneg = 0, edig = 0, eval = 0;
+    if (*ep == '+' || *ep == '-') {
+      eneg = (*ep == '-');
+      ep++;
+    }
+    while (LUAI_ISDIGIT(*ep)) {
+      eval = eval * 10 + (*ep - '0');
+      ep++;
+      edig = 1;
+    }
+    if (edig) {                   /* only consume 'e...' if it has digits */
+      exp += eneg ? -eval : eval;
+      p = ep;
+    }
+  }
+
+  lua_Number scale = 1, base = 10;   /* scale = 10^|exp| by binary exponentiation */
+  for (int e = (exp < 0 ? -exp : exp); e; e >>= 1) {
+    if (e & 1)
+      scale *= base;
+    base *= base;
+  }
+  val = (exp < 0) ? val / scale : val * scale;
+  if (neg)
+    val = -val;
+
+  *endptr = (char *)p;
+  return val;
+}
+
 /* Heap = the 1 MB external RAM window; IntRAM is too small for a Lua state. */
 extern char __extram_start__, __extram_end__;
 
