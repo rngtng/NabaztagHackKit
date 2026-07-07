@@ -223,9 +223,12 @@ ops for clean output. `timeout` ends the otherwise-forever OpenOCD server loop. 
 loop ran away on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use)
 is stable.
 
-> Cleaner follow-up: patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD`
-> on cores without vector catch - then plain `arm semihosting enable` works with
-> no `rbp`/`bp` dance. Deferred (needs an OpenOCD rebuild).
+> Follow-ups (deferred), so hardware runs stop being hand-driven:
+> 1. Patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD` on cores without
+>    vector catch - then plain `arm semihosting enable` works, no `rbp`/`bp` dance
+>    (needs an OpenOCD rebuild).
+> 2. Fold this recipe into a task (e.g. `flash.py --semihosting` / `task repl:firmwareV2:hw`)
+>    so the console/REPL is one command instead of a hand-typed `-c` chain + pipe.
 
 ## Troubleshooting
 

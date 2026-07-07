@@ -31,8 +31,22 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - The MTL image is **amd64** (32-bit tools) → emulated on Apple Silicon. `cc1`
   **occasionally segfaults** ("internal compiler error") — it's non-deterministic, **re-run**.
 
-## Openocd
+## Openocd / hardware flashing (firmwareV2)
 - JTAG flashing is the one host-side exception (USB). hence openocd on a raspberry Pi
+  (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
+- **Flash a firmwareV2 app with `task flash:firmwareV2 [APP=…]`** - never hand-roll
+  scp+openocd+gdb. IDCODE `0x3f0f0f0f` on connect = CPU alive / wiring good.
+- **Semihosting console (M3+)**: the ARM7TDMI EmbeddedICE is **v1, no vector catch**,
+  so openocd's auto soft-bp at the SWI vector `0x8` fails (flash is read-only there).
+  Must use a **HW breakpoint at 0x8** + `rbp 0x8`; set it AFTER the final `reset halt`
+  (reset wipes the ICE watchpoint regs). Full recipe: `tools/openocd/README.md`.
+  Cleaner fix still TODO: patch openocd `arm7_9_setup_semihosting` to `BKPT_HARD`.
+- **Read the openocd/VM source before iterating on hardware** - a semihosting/flash
+  hunch is cheap to confirm in `~/nabgcc/openocd-0.8.0/src` on the Pi; each hardware
+  round-trip (flash 124 KB ≈ 13 s, per-char semihosting) is not. Predict, then test.
+- **lua.elf sits on the 124 KB flash cliff (~48 B free).** Before adding bindings,
+  pick a real lever (drop a stdlib, or move code to external flash) - do NOT keep
+  shaving error strings. `task build:firmwareV2 APP=lua` fails loudly on overflow.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
@@ -125,3 +139,5 @@ lib module" live in `test/README.md` — read it before touching `test/lib/_test
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
 `PROVENANCE.md` in sync as decisions land (roadmap → GitHub Issues). Surface genuine forks as decisions;
 otherwise pick the convention above and proceed.
+- **Multi-milestone arc = one feature branch**, not a fresh branch per milestone. If
+  you must stack, branch off the current tip (never off `main`) and say so up front.
