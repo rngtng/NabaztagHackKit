@@ -126,10 +126,12 @@ inc/hal/{led,spi}.h HAL headers (copied from src/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/hal/button.c    M5 head-button read (#93) - polled active-low GPIO on P3.1
+src/hal/audio.c     M8 VS1003 codec over SPI0 (#116) - SCI r/w, volume, amp, sine test
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
 src/app/console.c   M3 semihosting-console probe (#91) - svc 0xAB SYS_WRITEC, proves the no-UART console on hardware
+src/app/audioprobe.c M8 VS1003 aliveness probe (#116) - reset + SCI_STATUS + VOLUME write/read-back
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -151,6 +153,7 @@ build time.
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
+| M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
@@ -181,23 +184,54 @@ this raw `set_led_rgb` map (by name) directly, so it does not depend on `led.c`'
 `convled[]` - that separate logical remap (used only by the unused `set_led`)
 stays unverified, harmless for now.
 
-## Lua hardware bindings: the `nab` module (M5, #93)
+## Lua hardware bindings: the `nab` module (M5 #93, M8 #116)
 `APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in
-`src/app/lua.c`; LED init mirrors `blink`, button read is `src/hal/button.c`):
+`src/app/lua.c`; LED init mirrors `blink`, button read is `src/hal/button.c`,
+audio is `src/hal/audio.c`):
 
 ```lua
 nab.led(name, r, g, b)  -- name: nose|belly|left|right|bottom; r/g/b 0..127
 nab.button()            -- -> true while the head button is held (polled)
+nab.beep(freq, ms)      -- VS1003 sine test: freq = pitch byte (0..255), ms ~duration
+nab.volume(v)           -- 0 = loudest .. 254 = quietest (VS1003 SCI_VOLUME)
 ```
 
 Verified on hardware over the M3 semihosting console: `nab.led("nose",0,127,0)`
 lights the nose green, each name maps to the right LED, and `nab.button()`
-returns `false`/`true` tracking the physical button. **Ears are deferred** - the
+returns `false`/`true` tracking the physical button. `nab.beep()` produces an
+audible tone on the rabbit's speaker (M8, #116). **Caveats:** `nab.beep` uses the
+VS1003 built-in *sine test*, which is a **fixed-level** diagnostic tone that
+bypasses `SCI_VOLUME` - so `nab.volume` has no effect on it (verified `0x00`
+vs `0xFE` identical). `nab.volume` sets the register (which will attenuate
+*decoded* audio once SDI/PCM playback lands) and `ms` is a rough CPU busy-loop
+(no timer subsystem yet). Real, volume-controlled playback is a follow-up. See
+also the SPI0 RX-FIFO/DREQ note below - the fix that made the beep reliable.
+**Ears are deferred** - the
 motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
 have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
-The Lua app now has **~30 KB free** of the 124 KB (was ~48 B before M7 #106; see
-the Lua runtime note) - room for the audio / i2c+rfid bindings that close the
+The Lua app now has **~29 KB free** of the 124 KB (was ~48 B before M7 #106; see
+the Lua runtime note) - room for the i2c+rfid / motor bindings that close the
 gap to `src/firmware`.
+
+### SPI0 RX-FIFO + DREQ (M8 gotcha)
+`WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of
+SCI writes fills the RX FIFO and shifts later `vlsi_read_sci` results. `audio.c`
+therefore **drains the RX FIFO at the end of every `vlsi_write_sci`**. Separately,
+DREQ dips right after those writes, so the SDI control feed **waits for DREQ**
+(bounded) per byte rather than aborting on DREQ-low - otherwise the 8-byte
+sine-start sequence is dropped and the beep is silent. Both were the root cause
+of an initially-silent `nab.beep` that worked only when register reads happened
+to drain the FIFO first.
+
+### Hardware notes (unverified, from bring-up)
+- The back **wheel** is almost certainly an analog pot on **ADC ch.2**
+  (`get_adc_value` in `src/firmware`), not a GPIO and not in the speaker path -
+  software would read it and apply `nab.volume`; it does not affect the
+  fixed-level sine beep. The end-of-travel **click** may be a separate switch.
+- The **audio-out jack** likely has a mechanical normalled switch that cuts the
+  internal speaker when a plug is inserted (physical, not GPIO).
+- Both are worth a dedicated probe (read ADC ch.2 while turning; GPIO scan for
+  the click) - tracked separately, not part of M8.
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
