@@ -830,6 +830,20 @@ extern void luai_writestringerror (const char *fmt, const char *arg);
 extern LUA_NUMBER luai_str2number (const char *s, char **endptr);
 #define lua_str2number(s,p)        luai_str2number((s), (p))
 
+/*
+** firmwareV2 (M7.3, #109): drop the libm float ops pulled by Lua's arithmetic.
+** luai_numpow uses pow() and luai_nummod uses fmod() (llimits.h), each dragging
+** in libm (powf/__ieee754_powf, fmodf/__ieee754_fmodf, scalbnf). ^ always
+** yields a float in Lua; luai_pow computes integer exponents exactly by
+** squaring and returns NaN for fractional exponents (no libm here - math.sqrt
+** and friends are unavailable anyway). luai_fmod reimplements float % as Lua's
+** floor-mod without fmod. Defined before llimits.h's `#if !defined` guards.
+*/
+extern LUA_NUMBER luai_pow (LUA_NUMBER a, LUA_NUMBER b);
+extern LUA_NUMBER luai_fmod (LUA_NUMBER a, LUA_NUMBER b);
+#define luai_numpow(L,a,b)         ((void)(L), luai_pow((a), (b)))
+#define luai_nummod(L,a,b,m)       ((void)(L), (m) = luai_fmod((a), (b)))
+
 
 
 #endif
