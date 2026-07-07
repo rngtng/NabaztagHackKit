@@ -50,15 +50,21 @@ Config, tuned to the **124 KB internal-flash budget** (`luaconf.h` sets
 - **Stdlib = base + string + table** only. Dropped: `math` (~16 KB of libm trig),
   `io`/`os`/`package`/`debug`/`loadlib`/`coroutine`/`utf8`. `base`'s
   `dofile`/`loadfile` are removed in `lua/lbaselib.c` (no filesystem).
-- **Integer math is exact; float *printing* does not work yet.** newlib-nano
-  omits float support from `printf` unless forced with `-u _printf_float`, which
-  costs ~7.6 KB and does **not** fit (even base+string+float overflows 124 KB). So
+- **Integer math is exact; float *printing* still does not work.** newlib-nano
+  omits float support from `printf` unless forced with `-u _printf_float`, so
   `print(1+1)` → `2` (the #92 DoD, exact), `10//3` → `3`, but a float value like
-  `1/2` currently prints as `.0`. Float *arithmetic* is still correct internally;
-  only the string rendering is stubbed. Proper float output waits until code moves
-  off the internal flash (M6 external flash) or a smaller custom formatter lands.
+  `1/2` prints as `.0`. Float *arithmetic* is correct internally; only the string
+  rendering is stubbed. Full float output waits on the M7.5 (#114) custom
+  formatter (deferred).
+- **Number I/O is libm/gdtoa-free (M7, #106).** To reclaim internal flash, the
+  number paths were moved off newlib: decimal `string→number` uses a compact
+  parser instead of `strtof` (M7.2 #108); `^` and float `%` are computed without
+  libm (M7.3 #109) - integer exponents exact, fractional `^` returns NaN
+  (`math.sqrt` etc. are unavailable anyway). Decimal float *parsing* is now
+  slightly looser than IEEE last-ulp; integer literals are unaffected.
 
-Result: `bin/lua.elf` ~125 KB `.text` (fits 124 KB). See [Simulate](#simulate-no-hardware).
+Result: `bin/lua.elf` `.text` **96484 B** of the 124 KB budget (**~30 KB free**
+after M7 #106; was ~48 B). See [Simulate](#simulate-no-hardware).
 
 ## Simulate (no hardware)
 Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
@@ -140,6 +146,7 @@ build time.
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
+| M7 | Reclaim internal flash budget | #106 | M7.1-M7.4 done (sim-verified): **48 B → ~30 KB free** by moving Lua's console + number I/O off newlib (`strtof`/gdtoa, libm `powf`/`fmodf`, stdio FILE layer, signal machinery). M7.5 (#114, custom `snprintf` to drop the last ~12 KB) deferred - target already 2× met. |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
@@ -184,8 +191,9 @@ lights the nose green, each name maps to the right LED, and `nab.button()`
 returns `false`/`true` tracking the physical button. **Ears are deferred** - the
 motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
 have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
-The Lua app's flash budget is very tight (~48 B free of the 124 KB) - adding more
-bindings will need a stdlib trim (see the Lua runtime note).
+The Lua app now has **~30 KB free** of the 124 KB (was ~48 B before M7 #106; see
+the Lua runtime note) - room for the audio / i2c+rfid bindings that close the
+gap to `src/firmware`.
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
