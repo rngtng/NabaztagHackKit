@@ -17,21 +17,15 @@ since **migrated** — they're now thin wrappers over `lib/`:
 | `ipv4.mtl` | `opentcp`, `udpsend`, `startdhcp`, `netstart`, … | Done (device) — composes `lib/net/ipv4/*` + `lib/net/dhcp.mtl`, boot names aliased. SIMU keeps `tcpudp_emu.mtl` |
 | `dns.mtl` | `dnsreq`, `startdnsclient` | Done (device) — `#include "lib/net/dns.mtl"`. SIMU keeps boot's resolver |
 | `http.mtl` | `httprequest`, `httpabort`, … | Done (device) — `#include "lib/net/http.mtl"` (adds 302 redirects). SIMU keeps boot's client |
+| `wifi.mtl` | `wifi_init`, `wifi_run`(SIMU), `envmake`, `_wifi_*` | Done (device, #103) — `#include "lib/net/wifi.mtl"`; lib's master (AP) mode reads the button + drives the portal via `wifi_master_cb`. SIMU keeps boot's state machine |
+| `config.mtl` | `confInit`, `confGet*`, `confSave` | Done (#103) — flash layout unified with `src/app-piper/utils/config.mtl` (same `conf.bin`), obsolete `CONF_LOGIN`/`CONF_PWD` dropped |
 
-The device network stack now shares `lib/net` (driven from boot's loop via
+The device network + WiFi stack now shares `lib/net` (driven from boot's loop via
 `lib/sys/task`'s `task_scheduler`; `config_seam.mtl` fills the `config_get_*`
-seam). Two modules remain boot-local:
-
-- **`config.mtl`** — still its own flash layout (`CONF_LOGIN`/`CONF_PWD` at
-  163/169 where app-piper has `CONF_LANGUAGE`/`CONF_CITY`/…). Unifying the
-  layout + migration is deferred (needs a magic-versioning decision to tell the
-  old 208-byte blob from the new one — both use magic `0x47`).
-- **`wifi.mtl`** — boot keeps its own WiFi state machine + config-portal master
-  mode. `lib/net/wifi.mtl` runs as a scheduler task and its master-mode entry is
-  still `// TODO` (doesn't read the button), so a straight swap would regress the
-  hold-button-to-enter-config-portal recovery path.
-
-See the tracking issue below.
+seam). `config.mtl` uses app-piper's layout (no legacy-blob migration - an old
+208-byte blob still brings up WiFi; boot reads none of the diverged 163-174 /
+208-225 fields). Remaining gate: **on-device (JTAG) validation** of the WiFi
+bring-up + hold-button config-portal path - see #103.
 
 ## Open roadmap → GitHub Issues
 
@@ -40,10 +34,11 @@ See the tracking issue below.
   `lib/net` (PR #101). The stack was proven on-device in
   [#46](https://github.com/rngtng/NabaztagHackKit/issues/46) first.
 - **[#103](https://github.com/rngtng/NabaztagHackKit/issues/103)** — boot/app
-  convergence part 2: unify `config.mtl`'s flash layout (needs a magic-versioning
-  decision for legacy-blob migration) and converge `wifi.mtl` onto
-  `lib/net/wifi.mtl` (needs its `// TODO` master-mode entry to read the button).
-  Both gated on a real JTAG flash test.
+  convergence part 2 (code landed, builds + `simulate:boot` green): `config.mtl`
+  layout unified (align-only, no legacy migration) and `wifi.mtl` converged onto
+  `lib/net/wifi.mtl` with button-driven master mode. **Still open until the real
+  JTAG flash test** confirms WiFi bring-up *and* the hold-button config-portal
+  recovery path on hardware.
 - **[#51](https://github.com/rngtng/NabaztagHackKit/issues/51)** — migrate
   `boot.mtl`'s MTL-level `ifdef BOOT { }` blocks to preprocessor `#ifdef BOOT`
   for consistency with the rest of the conditional-include scheme.

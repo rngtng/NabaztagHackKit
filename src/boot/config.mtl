@@ -1,4 +1,11 @@
 // ------------- Config debut
+//
+// Flash layout is SHARED with src/app-piper/utils/config.mtl and MUST stay
+// byte-identical (both read/write the same conf.bin). Boot only reads the
+// WiFi/NET/PROXY fields (0-162) + WIFIPMK/MAGIC (175-207); the 163-174 and
+// 208-225 regions belong to app-piper (LANGUAGE/DST/CITY/TAICHI_FREQ +
+// LATITUDE/LONGITUDE/WAKE_UP/GO_TO_BED) and boot only sets them to their
+// factory defaults in conf0 - it never reads them. See issue #103.
 const CONF_SERVERURL=0;;		//41
 const CONF_NETDHCP=41;;		//1
 const CONF_NETIP=42;;			//4
@@ -12,14 +19,17 @@ const CONF_WIFIKEY0=92;;		//64
 const CONF_PROXYENABLE=156;;	//1
 const CONF_PROXYIP=157;;		//4
 const CONF_PROXYPORT=161;;	//2
-const CONF_LOGIN=163;;		//6
-const CONF_PWD=169;;			//6
+// 163-174 --- app-piper: LANGUAGE(163)/DST(166)/CITY(167)/TAICHI_FREQ(171) ---
 const CONF_WIFIPMK=175;;		//32
 const CONF_MAGIC=207;;		//1
-const CONF_LENGTH=208;;
+// 208-225 --- app-piper: LATITUDE(208)/LONGITUDE(216)/WAKE_UP(224)/GO_TO_BED(225) ---
+const CONF_LENGTH=226;;
 
 var conf;;
 
+// Factory-default blob (226 bytes). Trailing 18 bytes cover app-piper's
+// 208-225 region: LATITUDE/LONGITUDE left empty (\0) and WAKE_UP/GO_TO_BED
+// left 0xFF so app-piper's "flash uninitialised" guard defaults them (7/22).
 const conf0=
 "r.nabaztag.com/vl\0-----------------------\
 \1\0\0\0\0\255\255\255\0\0\0\0\0\0\0\0\0\
@@ -29,7 +39,8 @@ const conf0=
 \0\0\0\0\0\0\
 \0\0\0\0\0\0\
 --------------------------------\
-\$47";;
+\$47\
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\255\255";;
 
 fun confSave=
 	Secholn "## save configuration";
@@ -92,8 +103,6 @@ fun confGetNetgateway=confGet CONF_NETGATEWAY 4;;
 fun confGetNetdns=confGet CONF_NETDNS 4;;
 
 fun confGetServerUrl=confGetstr CONF_SERVERURL 40;;
-fun confGetLogin=confGet CONF_LOGIN 6;;
-fun confGetPwd=confGet CONF_PWD 6;;
 
 fun confGetProxy=strget confGet CONF_PROXYENABLE 1 0;;
 fun confGetProxyip=confGet CONF_PROXYIP 4;;

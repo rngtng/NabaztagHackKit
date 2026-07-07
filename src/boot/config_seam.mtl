@@ -2,11 +2,22 @@
 // confGet* accessors (src/boot/config.mtl). lib/net keeps device config
 // app-side (see lib/net/config_defaults.mtl); boot is that "app".
 //
-// Only the accessors the boot device stack actually reads are wired here:
-// dhcp (lib/net/dhcp.mtl), net_dns (lib/net/dns.mtl), proxy* (lib/net/http.mtl).
+// Accessors the boot device stack reads, wired onto boot's confGet* getters:
+//   wifi_* + net_ip/netmask/net_gw   -> lib/net/wifi.mtl (#103)
+//   dhcp                             -> lib/net/dhcp.mtl + lib/net/wifi.mtl
+//   net_dns                          -> lib/net/dns.mtl + lib/net/wifi.mtl
+//   proxy*                           -> lib/net/http.mtl
 // config_dst / config_city_code are read by lib/sys/time.mtl (pulled in by
 // lib/net/http.mtl); boot has no clock/timezone need, so they return fixed
 // UTC/no-DST values.
+fun config_get_wifi_ssid= confGetWifissid;;
+fun config_get_wifi_crypt= confGetWificrypt;;
+fun config_get_wifi_auth= confGetWifiauth;;
+fun config_get_wifi_key0= confGetWifikey0;;
+fun config_get_wifi_pmk= confGetWifipmk;;
+fun config_get_net_ip= confGetNetip;;
+fun config_get_netmask= confGetNetmask;;
+fun config_get_net_gw= confGetNetgateway;;
 fun config_get_dhcp= confGetDhcp;;
 fun config_get_net_dns= confGetNetdns;;
 fun config_get_proxy= confGetProxy;;
