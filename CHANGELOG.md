@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+  * docs: consolidated the firmware/JTAG docs onto the current SDK layout. The
+    nabgcc-era debrick guide (`docs/firmware/DEBRICK.md`) was a duplicate of
+    `tools/openocd/README.md` and is removed; `docs/debug-strategy.md` (a
+    WiFi/WPA2 on-device bring-up session log) is distilled into a reusable
+    reference `docs/firmware/jtag-debugging.md` with the session narrative
+    dropped. `docs/firmware/architecture.md` retargeted from the standalone
+    `nabgcc` repo to `src/firmware/` (paths, vendored-not-submodule toolchain,
+    Python `mkfirmware`, current `task` names); `docs/boot/boot-led-states.md`
+    stripped of session status. The on-device work those docs recorded — the
+    `*(.bss.*)` linker fix, the unsigned-boot-bytecode requirement, PMK/WPA2
+    fixes, config-sector restore — is preserved in git history.
   * fix [#81](https://github.com/rngtng/NabaztagHackKit/issues/81): add
     `task build:sim`. It wires the whole web-upload pipeline into one target —
     `build:boot` → `build:firmware` → sign (`mkfirmware:sign`) → verify

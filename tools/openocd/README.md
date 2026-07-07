@@ -56,6 +56,10 @@ Connector is at the **top-left when facing the rabbit**. Match signal names exac
 > don't assume orientation. A miswired 3.3 V pin can damage the device. Wire with
 > **everything powered off**. The Pi shares only **GND** with the rabbit.
 
+Pi 26-pin (P1) header reference for locating the BCM GPIOs above:
+
+![Raspberry Pi GPIO pinout](gpio_reference.png)
+
 ## Steps
 
 ### 1. Build patched OpenOCD 0.8.0 (one-time)

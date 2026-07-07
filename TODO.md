@@ -23,7 +23,7 @@ This doc compares `firmware_nabaztag`, `mtl_library`, `mtl_linux`, `nabgcc`, and
 ### The crucial relationship (these are **not** competitors)
 
 `nabgcc` and `nabaztag-piper` solve **different layers** of the *same* stack.
-The Nabaztag is a three-language cake (per `nabgcc/architecture.md`):
+The Nabaztag is a three-language cake (per `docs/firmware/architecture.md`):
 
 
 ## 2. Capability comparison — who wins each
