@@ -25,7 +25,7 @@ AS_FILES = $(wildcard sys/asm/*.s)
 # Compiler options
 CFLAGS =
 CFLAGS += --specs=nosys.specs
-CFLAGS += -O1
+CFLAGS += -Os   # size-optimised: the boot bytecode is embedded in the 124k flash image (#103)
 #CFLAGS += -g
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith

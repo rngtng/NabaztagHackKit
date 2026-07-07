@@ -160,6 +160,17 @@ tasks:
           APP: '{{.APP}}'
       - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
 
+  flash:firmware:
+    desc: 'Flash the V1 boot firmware (C VM + boot bytecode → build/firmware/Nab.elf) to real hardware over JTAG, via the Raspberry Pi bridge - the recovery-path/boot flash, counterpart to flash:firmwareV2 (same ML67Q4051 chip + OpenOCD config). Host-side (not Docker). Chains build:boot → build:firmware, then flash.py. Usage: task flash:firmware [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      FIRMWARE_OUT: '{{.OUT}}/firmware'
+    cmds:
+      - task: build:boot
+      - task: build:firmware
+      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf {{.FIRMWARE_OUT}}/Nab.elf
+
   repl:firmwareV2:hw:
     desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge (M3/M4, #91/#92) - the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
     dir: '{{.USER_WORKING_DIR}}'
