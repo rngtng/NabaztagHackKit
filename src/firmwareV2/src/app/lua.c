@@ -40,6 +40,7 @@
 #include "hal/spi.h"
 #include "hal/led.h"
 #include "hal/button.h"
+#include "hal/audio.h"
 
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
@@ -525,9 +526,40 @@ static int nab_button(lua_State *L)
   return 1;
 }
 
+/* nab.volume(v): output volume, 0 = loudest .. 254 = quietest (VS1003). */
+static int nab_volume(lua_State *L)
+{
+  lua_Integer v = luaL_checkinteger(L, 1);
+  luaL_argcheck(L, v >= 0 && v <= 254, 1, "0..254");
+  set_vlsi_volume((uint8_t)v);
+  return 0;
+}
+
+/* nab.beep([freq [, ms]]): play the VS1003 built-in sine test. freq is the
+ * VS10xx sine-skip byte (pitch, 0..255, default 0x44); ms is an approximate
+ * duration - a CPU busy-loop, since firmwareV2 has no timer yet, so it is
+ * rough (default 300). The tone plays on the codec while the CPU spins. */
+static int nab_beep(lua_State *L)
+{
+  lua_Integer freq = luaL_optinteger(L, 1, 0x44);
+  lua_Integer ms = luaL_optinteger(L, 2, 300);
+  luaL_argcheck(L, freq >= 0 && freq <= 255, 1, "0..255");
+  luaL_argcheck(L, ms >= 0 && ms <= 10000, 2, "0..10000");
+
+  vlsi_ampli(1);
+  vlsi_sine((uint8_t)freq, 1);
+  for (volatile unsigned long i = 0; i < (unsigned long)ms * 3000UL; i++)
+    CLR_WDT;                       /* ~ms; no timer, so approximate */
+  vlsi_sine((uint8_t)freq, 0);
+  vlsi_ampli(0);
+  return 0;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"button", nab_button},
+    {"volume", nab_volume},
+    {"beep", nab_beep},
     {NULL, NULL},
 };
 
@@ -630,6 +662,7 @@ static void init_hw(void)
   init_spi();
   init_led_rgb_driver();
   init_button();
+  init_vlsi();   /* M8 (#116): VS1003 audio codec on SPI0, for nab.beep/volume */
 }
 
 int main(void)
