@@ -70,15 +70,17 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
   a probe before it idles); `flash.py` streams the console live and early-exits on
   that marker instead of waiting out `--run-timeout` (~120 s → seconds). New probe
   apps should emit it before their idle loop.
-- **lua.elf flash budget: ~32 KB free of 124 KB after M7 (#106, hardware-verified); was ~48 B.**
-  M7 moved Lua's number I/O + console fully off newlib: custom decimal parser vs
-  `strtof`, libm-free `^`/`%`, semihosting console, custom `abort`, and an in-tree
-  `snprintf`/`vsnprintf` (M7.5 #114) that dropped the stdio FILE layer - the
+- **lua.elf flash budget: ~30 KB free of 124 KB after M8 (#116); was ~48 B before M7 (#106).**
+  M7 (incl. M7.5 #114) moved Lua's number I/O + console fully off newlib - the
   `luai_*`/printf helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
-  Local-config block. Float *printing* stays approximate (integer part + `.0`;
-  whole floats correct) pending a real dtoa. When adding bindings, pick a real
-  lever (see M7), not error-string shaving. `task build:firmwareV2 APP=lua` fails
-  loudly on overflow.
+  Local-config block; the ~10 KB of newlib still linked is soft-float/memcpy/malloc,
+  essentially irreducible. Float *printing* stays approximate (integer part + `.0`;
+  whole floats correct) pending a real dtoa. **The end-game is measured in #128**:
+  wifi C (M11) costs ~26 KB and a resident Lua boot ~12 KB compressed, so the full
+  image fits ONLY with a parser-less prod build (−19 KB, `luac` cross-compile) plus
+  a compressed bootstrap - `-Os` (−1.3 KB) and Lua 5.5 (#104) are NOT levers. When
+  adding bindings, pick a real lever (see #128), not error-string shaving.
+  `task build:firmwareV2 APP=lua` fails loudly on overflow.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
