@@ -42,6 +42,8 @@
 #include "hal/button.h"
 #include "hal/audio.h"
 #include "hal/adc.h"
+#include "hal/i2c.h"
+#include "hal/rfid.h"
 
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
@@ -491,9 +493,9 @@ void *_sbrk(ptrdiff_t incr)
   return prev;
 }
 
-/* ---- M5 hardware bindings (#93): the `nab` module ------------------------ */
-/* Exposes the LEDs and head button to Lua. Ears (motors) need a timer/PWM/
- * encoder subsystem not yet in firmwareV2 - deferred. */
+/* ---- M5/M8/M9 hardware bindings (#93, #116, #117): the `nab` module ------ */
+/* Exposes the LEDs, head button, audio, and RFID coupler to Lua. Ears (motors)
+ * need a timer/PWM/encoder subsystem not yet in firmwareV2 - deferred. */
 
 /* nab.led(name, r, g, b): light an RGB LED. name is one of
  * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c #93 -
@@ -620,6 +622,24 @@ static int nab_wheel(lua_State *L)
   return 1;
 }
 
+/* nab.rfid() -> UID as a lowercase hex string (e.g. "a1b2c3d4e5f60708"), or
+ * nil if no tag is on the coupler. Scans the CRX14 (I2C 0xA0) each call - no
+ * caching, so placing/removing a tag is reflected on the next poll. */
+static int nab_rfid(lua_State *L)
+{
+  uint8_t uid[8];
+  int8_t found = rfid_read_uid(uid);
+  if (found <= 0) {
+    lua_pushnil(L);
+    return 1;
+  }
+  char hex[17];
+  for (int i = 0; i < 8; i++)
+    snprintf(hex + i * 2, 3, "%02x", uid[i]);
+  lua_pushstring(L, hex);
+  return 1;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"button", nab_button},
@@ -628,6 +648,7 @@ static const luaL_Reg nab_funcs[] = {
     {"play", nab_play},
     {"tone", nab_tone},
     {"wheel", nab_wheel},
+    {"rfid", nab_rfid},
     {NULL, NULL},
 };
 
@@ -648,7 +669,7 @@ static const luaL_Reg loadedlibs[] = {
     {LUA_GNAME, luaopen_base},
     {LUA_TABLIBNAME, luaopen_table},
     {LUA_STRLIBNAME, luaopen_string},
-    {"nab", luaopen_nab},   /* M5 (#93): LEDs + button */
+    {"nab", luaopen_nab},   /* M5/M8/M9 (#93, #116, #117): LEDs + button + audio + RFID */
     {NULL, NULL},
 };
 
@@ -732,6 +753,7 @@ static void init_hw(void)
   init_button();
   init_vlsi();   /* M8 (#116): VS1003 audio codec on SPI0, for nab.beep/volume */
   init_adc();    /* #123: ADC ch.2 (PD2), for nab.wheel() */
+  init_i2c();    /* M9 (#117): I2C bus, for the CRX14 RFID coupler / nab.rfid() */
 }
 
 int main(void)
