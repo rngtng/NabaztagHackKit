@@ -44,6 +44,7 @@
 #include "hal/adc.h"
 #include "hal/i2c.h"
 #include "hal/rfid.h"
+#include "hal/motor.h"   /* M10 (#118): ear motors + encoders */
 
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
@@ -493,9 +494,9 @@ void *_sbrk(ptrdiff_t incr)
   return prev;
 }
 
-/* ---- M5/M8/M9 hardware bindings (#93, #116, #117): the `nab` module ------ */
-/* Exposes the LEDs, head button, audio, and RFID coupler to Lua. Ears (motors)
- * need a timer/PWM/encoder subsystem not yet in firmwareV2 - deferred. */
+/* ---- M5/M8/M9/M10 hardware bindings (#93,#116,#117,#118): the `nab` module */
+/* Exposes the LEDs, head button, audio, RFID coupler, and (M10) ear motors to
+ * Lua. */
 
 /* nab.led(name, r, g, b): light an RGB LED. name is one of
  * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c #93 -
@@ -640,6 +641,47 @@ static int nab_rfid(lua_State *L)
   return 1;
 }
 
+/* nab.ear_move(n, speed, dir): drive ear motor n (1 or 2) at speed (0..255)
+ * in dir ("forward"|"reverse"). Runs until nab.ear_stop() or another
+ * nab.ear_move() call - there is no closed-loop position control here (see
+ * hal/motor.h: the encoder is a raw hole counter, not a homed position). */
+static int nab_ear_move(lua_State *L)
+{
+  lua_Integer n = luaL_checkinteger(L, 1);
+  lua_Integer speed = luaL_checkinteger(L, 2);
+  const char *dir = luaL_checkstring(L, 3);
+  luaL_argcheck(L, n == 1 || n == 2, 1, "1 or 2");
+  luaL_argcheck(L, speed >= 0 && speed <= 255, 2, "0..255");
+
+  uint8_t rotation;
+  if      (strcmp(dir, "forward") == 0) rotation = FORWARD;
+  else if (strcmp(dir, "reverse") == 0) rotation = REVERSE;
+  else return luaL_error(L, "bad direction '%s' (forward|reverse)", dir);
+
+  run_motor((uint8_t)n, (uint8_t)speed, rotation);
+  return 0;
+}
+
+/* nab.ear_stop(n): stop ear motor n (1 or 2). */
+static int nab_ear_stop(lua_State *L)
+{
+  lua_Integer n = luaL_checkinteger(L, 1);
+  luaL_argcheck(L, n == 1 || n == 2, 1, "1 or 2");
+  stop_motor((uint8_t)n);
+  return 0;
+}
+
+/* nab.ear_pos(n) -> integer: raw 16-bit encoder pulse count for motor n (1 or
+ * 2). Free-running hardware counter - watch it change while ear_move runs,
+ * it is not a homed/absolute angle (see hal/motor.h). */
+static int nab_ear_pos(lua_State *L)
+{
+  lua_Integer n = luaL_checkinteger(L, 1);
+  luaL_argcheck(L, n == 1 || n == 2, 1, "1 or 2");
+  lua_pushinteger(L, get_motor_position((uint8_t)n));
+  return 1;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"button", nab_button},
@@ -649,6 +691,9 @@ static const luaL_Reg nab_funcs[] = {
     {"tone", nab_tone},
     {"wheel", nab_wheel},
     {"rfid", nab_rfid},
+    {"ear_move", nab_ear_move},
+    {"ear_stop", nab_ear_stop},
+    {"ear_pos", nab_ear_pos},
     {NULL, NULL},
 };
 
@@ -754,6 +799,7 @@ static void init_hw(void)
   init_vlsi();   /* M8 (#116): VS1003 audio codec on SPI0, for nab.beep/volume */
   init_adc();    /* #123: ADC ch.2 (PD2), for nab.wheel() */
   init_i2c();    /* M9 (#117): I2C bus, for the CRX14 RFID coupler / nab.rfid() */
+  init_ears();   /* M10 (#118): FTM PWM + encoder timers, for nab.ear_* */
 }
 
 int main(void)
