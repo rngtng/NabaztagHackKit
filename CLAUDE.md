@@ -75,10 +75,12 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
   `luai_*`/printf helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
   Local-config block; the ~10 KB of newlib still linked is soft-float/memcpy/malloc,
   essentially irreducible. Float *printing* stays approximate (integer part + `.0`;
-  whole floats correct) pending a real dtoa. **The end-game is measured in #128**:
-  wifi C (M11) costs ~26 KB and a resident Lua boot ~12 KB compressed, so the full
-  image fits ONLY with a parser-less prod build (−19 KB, `luac` cross-compile) plus
-  a compressed bootstrap - `-Os` (−1.3 KB) and Lua 5.5 (#104) are NOT levers. When
+  whole floats correct) pending a real dtoa. **The end-game is measured + decided in #128**:
+  wifi C (M11) costs ~26 KB and a resident Lua boot ~12 KB compressed, so the final
+  wifi image is **parser-less by design** (−19 KB) plus a compressed bootstrap - the
+  rabbit only handles `luac` bytecode; the REPL compiles each line off-device with a
+  `LUA_32BITS`-matched host `luac` (flash.py / dev server), and today's `APP=lua`
+  stays the dev image - `-Os` (−1.3 KB) and Lua 5.5 (#104) are NOT levers. When
   adding bindings, pick a real lever (see #128), not error-string shaving.
   `task build:firmwareV2 APP=lua` fails loudly on overflow.
 

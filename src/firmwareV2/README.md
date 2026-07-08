@@ -70,7 +70,12 @@ Config, tuned to the **124 KB internal-flash budget** (`luaconf.h` sets
 Result (post-M8 #116): `bin/lua.elf` `.text` **95972 B** of the 124 KB budget
 (**~30 KB free**; was ~48 B before M7 #106). What still has to fit — wifi C
 (~26 KB) + a resident boot — and the levers that close the budget are measured
-in #128. See [Simulate](#simulate-no-hardware).
+in #128. **Decided there: the final (wifi) image is parser-less** — the rabbit
+only handles `luac` bytecode (`lundump` stays resident; `lparser`/`llex`/`lcode`,
+~19 KB, are dev-image only), and the REPL keeps working by compiling each line
+*off-device* with a `LUA_32BITS`-matched host `luac` (via `flash.py` tethered,
+via the dev server once wifi lands). Today's `APP=lua` stays the dev image with
+the on-device parser. See [Simulate](#simulate-no-hardware).
 
 ## Simulate (no hardware)
 Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
@@ -158,7 +163,7 @@ build time.
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
 | M9 | Lua RFID binding - CRX14 over I2C | #117 | open - cheap (~1.8 KB flash, measured in #128); I2C bring-up is the first half |
 | M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
-| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build + compressed resident bootstrap; fixing #125 (V1 station association broken) is a prerequisite |
+| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
