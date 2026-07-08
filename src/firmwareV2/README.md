@@ -15,6 +15,10 @@ rationale in [#87](https://github.com/rngtng/NabaztagHackKit/issues/87).
 - Internal RAM `0x10000000`, **16 KB** (too small for Lua)
 - External RAM `0xD0000000`, **1 MB** (Lua heap/data live here - M4)
 - Debug: 8-pin JTAG only, **no UART broken out** on this board revision
+- Board revision: `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three V2 sub-revisions
+  (`LLC2_2`/`LLC2_3`/`LLC2_4c`, all Nabaztag/tag, not a v1/v2 split); `LLC2_4c` is the
+  one hardware-verified below. See [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release)
+  for the full pin-mapping diff between revisions.
 
 ## Build
 Host needs only Docker + Task; the ARM toolchain lives in the Docker image.
