@@ -151,6 +151,7 @@ src/hal/audio.c     M8 VS1003 codec over SPI0 (#116, #123) - SCI r/w, volume, am
 src/hal/adc.c       #123 ADC ch.2 read (the back wheel) - ported from src/firmware's get_adc_value
 src/hal/i2c.c       M9 I2C bus (#117) - OKI peripheral bring-up + polled master read/write
 src/hal/rfid.c      M9 CRX14 RFID coupler over I2C (#117) - anti-collision scan + UID read
+src/hal/motor.c     M10 ear motor + encoder driver (#118) - FTM PWM drive + pulse-capture position, no IRQ
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
@@ -158,6 +159,7 @@ src/app/console.c   M3 semihosting-console probe (#91) - svc 0xAB SYS_WRITEC, pr
 src/app/audioprobe.c M8 VS1003 aliveness probe (#116) - reset + SCI_STATUS + VOLUME write/read-back
 src/app/gpioprobe.c #123 GPIO-scan probe - find the wheel's click switch + audio-jack detect (no known pin yet)
 src/app/rfidprobe.c M9 CRX14 aliveness probe (#117) - I2C bring-up + parameter-register write/read-back
+src/app/earprobe.c  M10 ear-motor aliveness probe (#118) - runs each motor briefly, checks the encoder counter moved
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -176,12 +178,12 @@ build time.
 | M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
 | M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
-| M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
+| M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred to M10 (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
 | M9 | Lua RFID - CRX14 over I2C (+ I2C bring-up) | #117 | **built, sim-verified; hardware confirmation pending** (no JTAG rig access from this sandbox): I2C bus (`src/hal/i2c.c`, verbatim port) + CRX14 driver (`src/hal/rfid.c`, trimmed to UID read) + `nab.rfid()`. The CR14 coupler is teardown-documented (`docs/hardware-dissection.md`) but not yet bus-probed - run `task repl:firmwareV2:hw APP=rfidprobe` on real hardware to confirm before trusting `nab.rfid()` (see the M6 AT45 lesson: photo/schematic presence isn't proof a chip answers). |
-| M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
+| M10 | Lua ear-motor bindings - PWM + encoder | #118 | **implemented, hardware verification pending** - no JTAG/Pi access from the environment this was built in. Turns out no IRQ/timer-subsystem bring-up was actually needed (see the Ears section below): `hal/motor.c` ported, `nab.ear_move`/`nab.ear_stop`/`nab.ear_pos` bindings + an `earprobe` app added. Whoever has the rig should run `task flash:firmwareV2 APP=earprobe` before trusting the bindings. |
 | M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 | - | M8 follow-up: `nab.play`/`nab.tone`/`nab.wheel`, wheel-click + jack probe | #123 | **code done, hardware verification pending** (no JTAG/Pi access this session - no `ssh` binary in this environment). `nab.play` streams real decoded audio over SDI so `nab.volume` actually works (VS1003B decodes WAV, per the teardown); `nab.tone` builds a demo WAV; `nab.wheel` reads ADC ch.2 (ported register sequence). Neither can be exercised in the simulator (DREQ/ADC-completion unmodeled - confirmed by running both to the instruction-budget cap). `gpioprobe` (a new probe app) is ready to find the click switch + jack pin but has not been run. |
@@ -214,20 +216,24 @@ this raw `set_led_rgb` map (by name) directly, so it does not depend on `led.c`'
 `convled[]` - that separate logical remap (used only by the unused `set_led`)
 stays unverified, harmless for now.
 
-## Lua hardware bindings: the `nab` module (M5 #93, M8 #116, #123)
+## Lua hardware bindings: the `nab` module (M5 #93, M8 #116, #123, M9 #117, M10 #118)
 `APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in
 `src/app/lua.c`; LED init mirrors `blink`, button read is `src/hal/button.c`,
-audio is `src/hal/audio.c`, ADC is `src/hal/adc.c`):
+audio is `src/hal/audio.c`, ADC is `src/hal/adc.c`, RFID is `src/hal/rfid.c`,
+ear motors are `src/hal/motor.c`):
 
 ```lua
-nab.led(name, r, g, b)  -- name: nose|belly|left|right|bottom; r/g/b 0..127
-nab.button()            -- -> true while the head button is held (polled)
-nab.beep(freq, ms)      -- VS1003 sine test: freq = pitch byte (0..255), ms ~duration
-nab.volume(v)           -- 0 = loudest .. 254 = quietest (VS1003 SCI_VOLUME)
-nab.play(data)          -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
-nab.tone()              -- -> a tiny built-in 8-bit PCM WAV (~200ms square wave), for nab.play
-nab.wheel()             -- -> 0..255, ADC ch.2 (the back wheel, believed to be a pot)
-nab.rfid()              -- -> lowercase hex UID string ("a1b2c3d4e5f60708"), or nil if no tag
+nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127
+nab.button()                  -- -> true while the head button is held (polled)
+nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte (0..255), ms ~duration
+nab.volume(v)                 -- 0 = loudest .. 254 = quietest (VS1003 SCI_VOLUME)
+nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
+nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square wave), for nab.play
+nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed to be a pot)
+nab.rfid()                    -- -> lowercase hex UID string ("a1b2c3d4e5f60708"), or nil if no tag
+nab.ear_move(n, speed, dir)   -- n: 1|2; speed: 0..255; dir: "forward"|"reverse"
+nab.ear_stop(n)               -- n: 1|2
+nab.ear_pos(n)                -- n: 1|2 -> raw 16-bit encoder pulse count
 ```
 
 Verified on hardware over the M3 semihosting console: `nab.led("nose",0,127,0)`
@@ -239,9 +245,26 @@ bypasses `SCI_VOLUME` - so `nab.volume` has no effect on it (verified `0x00`
 vs `0xFE` identical). See also the SPI0 RX-FIFO/DREQ note below - the fix that
 made the beep reliable. `ms` (on `nab.beep`) is a rough CPU busy-loop (no timer
 subsystem yet).
-**Ears are deferred** - the
-motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
-have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
+
+**`nab.ear_*` (M10, #118) is implemented but NOT hardware-verified** - built and
+simulator-tested in an environment with no JTAG/Raspberry-Pi access. Run
+`task flash:firmwareV2 APP=earprobe` (see `src/app/earprobe.c`) before trusting
+it: it drives each motor briefly and checks whether `get_motor_position`'s
+encoder counter actually moves. Two things worth knowing before that check:
+
+- **No IRQ/timer subsystem was actually needed**, despite the milestone's
+  framing. `init_pwm()` only pokes the FTM0-5 timer control registers once;
+  `run_motor`/`stop_motor` write the PWM duty registers directly; and
+  `get_motor_position` reads a free-running hardware pulse-capture counter
+  (`FTM0GR`/`FTM1GR`) with no ISR involved - see `inc/hal/motor.h`.
+- **`nab.ear_pos` is a raw, wrapping edge counter, not an absolute angle.**
+  There is no `nab.ear(n, pos)` "go to this position" binding: that needs the
+  hole-counting state machine `lib/hw/ears.mtl` implements at the Forth layer
+  (17 holes/rev, direction + timeout-based arrival detection over many polls) -
+  out of scope for this driver-port + primitive-binding cut. `1|2` for the
+  motor id is this driver's own numbering (`hal/motor.h`); which physical ear
+  each maps to is unverified, unlike the LED map below.
+
 Flash headroom for the remaining bindings: see the Lua-runtime note above and
 the measured end-game budget in #128 (i2c+rfid is a rounding error; wifi is the
 one that needs #128's levers).
@@ -303,8 +326,9 @@ first ST SRIX tag's UID as a hex string, or `nil` if none is present - **built
 and sim-verified, not yet hardware-confirmed** (see the M9 row above and the
 probe note below). The EEPROM read/write path (reading/writing a tag's memory
 blocks, not just its UID) was left out of this cut - a follow-up once the UID
-path is hardware-verified. `bin/lua.elf` `.text` is now **97684 B** of the
-124 KB budget (**~28.6 KB free**, down from ~29 KB after M8 #116).
+path is hardware-verified. `bin/lua.elf` `.text` is now **99292 B** of the
+124 KB budget (**~27.0 KB free**, down from ~28.6 KB after M9 #117 once the
+M10 ear-motor driver landed).
 
 ### M9 hardware confirmation (pending)
 This port was written from a sandbox with no JTAG rig access, so unlike M8 (whose
