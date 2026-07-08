@@ -4,9 +4,12 @@
  *
  * Trimmed port of src/firmware/src/hal/audio.c (Violet / RedoX). Keeps the SCI
  * read/write protocol, chip bring-up, volume, amplifier, and the built-in sine
- * test verbatim in behaviour; drops the SDI-stream playback / ADPCM record
- * paths (future work). SCI framing was hardware-verified by the M8 probe
+ * test verbatim in behaviour. SCI framing was hardware-verified by the M8 probe
  * (SS_VER=3, VOLUME write/read-back). See inc/hal/audio.h.
+ *
+ * Issue #123 (M8 follow-up) adds vlsi_play(): real SDI-stream playback, so
+ * SCI_VOLUME actually attenuates decoded audio (unlike the sine test above).
+ * ADPCM record is still dropped (future work, no mic use case yet).
  */
 #include "ml674061.h"
 #include "common.h"
@@ -132,4 +135,37 @@ void vlsi_sine(uint8_t freq_n, uint8_t on)
     vlsi_feed_sdi(stop, 8);
     vlsi_write_sci(VS1003_MODE, VS1003_MODE_NATIVE);
   }
+}
+
+/* VS10xx datasheet-recommended end-of-stream flush length (endFillByte count)
+ * so the decoder's internal buffers finish draining rather than being cut off
+ * mid-sample. Bounded like the rest of the SDI feed path. */
+#define VLSI_FLUSH_BYTES 2052
+
+/* endFillByte lives in WRAM at a fixed address; read it indirectly via
+ * WRAM_ADDR + the WRAM data window (0 is a safe fallback if the read fails). */
+static uint8_t vlsi_end_fill_byte(void)
+{
+  vlsi_write_sci(VS1003_WRAM_ADDR, 0x1E06);
+  return (uint8_t)vlsi_read_sci(VS1003_WRAM);
+}
+
+void vlsi_play(const uint8_t *data, uint32_t len)
+{
+  uint8_t fill = vlsi_end_fill_byte();
+  uint32_t i;
+
+  vlsi_ampli(1);
+  vlsi_feed_sdi(data, len);
+
+  /* Flush: the feed above already throttled to DREQ (i.e. to actual decode
+   * rate), so only the last buffered samples remain once it returns. */
+  CS_AUDIO_SDI_CLEAR;
+  for (i = 0; i < VLSI_FLUSH_BYTES; i++) {
+    wait_dreq();
+    WriteSPI(fill);
+  }
+  CS_AUDIO_SDI_SET;
+
+  vlsi_ampli(0);
 }

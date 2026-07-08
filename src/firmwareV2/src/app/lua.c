@@ -41,6 +41,7 @@
 #include "hal/led.h"
 #include "hal/button.h"
 #include "hal/audio.h"
+#include "hal/adc.h"
 
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
@@ -555,11 +556,78 @@ static int nab_beep(lua_State *L)
   return 0;
 }
 
+/* nab.play(data): stream a byte buffer (e.g. a WAV/MP3 file's bytes) to the
+ * VS1003 decoder over SDI - the VS1003B decodes MP3/WMA/WAV/MIDI
+ * (docs/hardware-dissection.md), so unlike nab.beep this is real decoded
+ * audio and nab.volume actually attenuates it (issue #123 follow-up to M8
+ * #116). Blocking: returns once the buffer is fed and flushed. */
+static int nab_play(lua_State *L)
+{
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  vlsi_play((const uint8_t *)data, (uint32_t)len);
+  return 0;
+}
+
+static void put_le16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
+static void put_le32(uint8_t *p, uint32_t v)
+{
+  p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24;
+}
+
+/* nab.tone(): a tiny built-in mono 8-bit PCM WAV (a few hundred ms square
+ * wave), built at call time (not stored, to stay flash-cheap) so nab.play +
+ * nab.volume are demoable without shipping an MP3. Feed straight to nab.play. */
+#define TONE_HZ      8000  /* sample rate */
+#define TONE_SAMPLES 1600  /* 200 ms at TONE_HZ */
+#define TONE_PERIOD  40    /* samples per half-cycle -> ~100 Hz square wave */
+
+static int nab_tone(lua_State *L)
+{
+  static uint8_t buf[44 + TONE_SAMPLES]; /* static: too big for the 4 KB user stack */
+  uint32_t i;
+
+  memcpy(buf + 0, "RIFF", 4);
+  put_le32(buf + 4, 36 + TONE_SAMPLES);
+  memcpy(buf + 8, "WAVE", 4);
+  memcpy(buf + 12, "fmt ", 4);
+  put_le32(buf + 16, 16);          /* fmt chunk size */
+  put_le16(buf + 20, 1);           /* PCM */
+  put_le16(buf + 22, 1);           /* mono */
+  put_le32(buf + 24, TONE_HZ);
+  put_le32(buf + 28, TONE_HZ);     /* byte rate = sample rate * 1 channel * 1 byte */
+  put_le16(buf + 32, 1);           /* block align */
+  put_le16(buf + 34, 8);           /* bits/sample */
+  memcpy(buf + 36, "data", 4);
+  put_le32(buf + 40, TONE_SAMPLES);
+
+  for (i = 0; i < TONE_SAMPLES; i++)
+    buf[44 + i] = ((i / TONE_PERIOD) & 1) ? 0xC0 : 0x40; /* unsigned 8-bit square wave */
+
+  lua_pushlstring(L, (const char *)buf, sizeof buf);
+  return 1;
+}
+
+/* nab.wheel(): 8-bit ADC ch.2 reading (0..255). Hardware notes recorded during
+ * M8 (#116) bring-up: the back wheel is almost certainly an analog pot on this
+ * channel (ADCON1_CH2, same register sequence as src/firmware's
+ * get_adc_value) - unconfirmed on hardware for this issue's follow-up (no
+ * JTAG/Pi access this session). To map it to volume: `nab.volume(nab.wheel())`
+ * in a polling loop. */
+static int nab_wheel(lua_State *L)
+{
+  lua_pushinteger(L, adc_read_ch2());
+  return 1;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
+    {"play", nab_play},
+    {"tone", nab_tone},
+    {"wheel", nab_wheel},
     {NULL, NULL},
 };
 
@@ -663,6 +731,7 @@ static void init_hw(void)
   init_led_rgb_driver();
   init_button();
   init_vlsi();   /* M8 (#116): VS1003 audio codec on SPI0, for nab.beep/volume */
+  init_adc();    /* #123: ADC ch.2 (PD2), for nab.wheel() */
 }
 
 int main(void)
