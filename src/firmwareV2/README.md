@@ -67,8 +67,10 @@ Config, tuned to the **124 KB internal-flash budget** (`luaconf.h` sets
   looser than IEEE last-ulp; integer literals and `string.format` integer/string
   conversions are exact.
 
-Result: `bin/lua.elf` `.text` **94976 B** of the 124 KB budget (**~32 KB free**
-after M7 #106; was ~48 B). See [Simulate](#simulate-no-hardware).
+Result (post-M8 #116): `bin/lua.elf` `.text` **95972 B** of the 124 KB budget
+(**~30 KB free**; was ~48 B before M7 #106). What still has to fit — wifi C
+(~26 KB) + a resident boot — and the levers that close the budget are measured
+in #128. See [Simulate](#simulate-no-hardware).
 
 ## Simulate (no hardware)
 Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
@@ -154,6 +156,9 @@ build time.
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
+| M9 | Lua RFID binding - CRX14 over I2C | #117 | open - cheap (~1.8 KB flash, measured in #128); I2C bring-up is the first half |
+| M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
+| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build + compressed resident bootstrap; fixing #125 (V1 station association broken) is a prerequisite |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
@@ -209,9 +214,9 @@ also the SPI0 RX-FIFO/DREQ note below - the fix that made the beep reliable.
 **Ears are deferred** - the
 motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
 have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
-The Lua app now has **~29 KB free** of the 124 KB (was ~48 B before M7 #106; see
-the Lua runtime note) - room for the i2c+rfid / motor bindings that close the
-gap to `src/firmware`.
+Flash headroom for the remaining bindings: see the Lua-runtime note above and
+the measured end-game budget in #128 (i2c+rfid is a rounding error; wifi is the
+one that needs #128's levers).
 
 ### SPI0 RX-FIFO + DREQ (M8 gotcha)
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of
