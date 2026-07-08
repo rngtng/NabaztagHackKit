@@ -12,10 +12,12 @@
 #define _AUDIO_H_
 
 /* VS1003 SCI registers (subset). */
-#define VS1003_MODE    0x00
-#define VS1003_STATUS  0x01
-#define VS1003_CLOCKF  0x03
-#define VS1003_VOLUME  0x0B
+#define VS1003_MODE      0x00
+#define VS1003_STATUS    0x01
+#define VS1003_CLOCKF    0x03
+#define VS1003_WRAM      0x06  /* WRAM data window (indirect, via WRAM_ADDR) */
+#define VS1003_WRAM_ADDR 0x07
+#define VS1003_VOLUME    0x0B
 
 /* SCI_MODE, as the full 16-bit value written over SCI (high byte = SM_SDINEW/
  * SM_SDISHARE native-SPI bits, low byte = SM_RESET/SM_TESTS). */
@@ -39,5 +41,14 @@ void vlsi_ampli(uint8_t on);
 /* Built-in sine test: on!=0 enters test mode and starts a tone whose pitch is
  * set by freq_n (VS10xx sine-skip byte); on==0 stops it and leaves test mode. */
 void vlsi_sine(uint8_t freq_n, uint8_t on);
+
+/* Stream a buffer (e.g. a WAV/MP3/ADPCM-WAV file) over SDI for the decoder to
+ * play - the VS1003B decodes MP3/WMA/WAV/MIDI (docs/hardware-dissection.md), so
+ * unlike vlsi_sine this is real decoded audio and SCI_VOLUME actually
+ * attenuates it. Blocking: waits on DREQ per byte (bounded) like vlsi_sine's
+ * control feed, then flushes the decoder's tail with VS10xx endFillByte before
+ * returning. Turns the amplifier on/off around playback. Issue #123 follow-up
+ * to M8 (#116); unverified on hardware pending JTAG/Pi access. */
+void vlsi_play(const uint8_t *data, uint32_t len);
 
 #endif

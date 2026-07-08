@@ -124,6 +124,16 @@ costs several million instructions; run with a larger `-n` budget (above) to see
 it toggle. The default budget still proves it reaches `main()`, brings up the I/O
 lines, and drives the LED SPI bus.
 
+**"No audio" in practice (#123):** DREQ (the VS1003 ready line) and the ADC
+completion bit are not modeled, so they read as permanently not-ready. Any
+bounded busy-wait on them (`nab.play`'s SDI feed, `nab.wheel`'s ADC poll) spins
+to its full iteration cap every time instead of returning quickly the way it
+does on real hardware - confirmed by running both in-sim, where they burn the
+entire instruction budget stuck in the wait loop and never reach the rest of
+the script. `nab.tone` (pure buffer-building, no peripheral wait) and
+`nab.volume`/`nab.beep`'s short 8-byte control feed are cheap enough to run to
+completion in-sim; longer SDI transfers and any ADC read are hardware-only.
+
 ## Layout
 ```
 sys/                ARM7TDMI startup, linker, OKI register defs (copied from src/firmware)
@@ -137,12 +147,14 @@ inc/hal/{led,spi}.h HAL headers (copied from src/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access (copied from src/firmware)
 src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/hal/button.c    M5 head-button read (#93) - polled active-low GPIO on P3.1
-src/hal/audio.c     M8 VS1003 codec over SPI0 (#116) - SCI r/w, volume, amp, sine test
+src/hal/audio.c     M8 VS1003 codec over SPI0 (#116, #123) - SCI r/w, volume, amp, sine test, SDI stream playback
+src/hal/adc.c       #123 ADC ch.2 read (the back wheel) - ported from src/firmware's get_adc_value
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
 src/app/console.c   M3 semihosting-console probe (#91) - svc 0xAB SYS_WRITEC, proves the no-UART console on hardware
 src/app/audioprobe.c M8 VS1003 aliveness probe (#116) - reset + SCI_STATUS + VOLUME write/read-back
+src/app/gpioprobe.c #123 GPIO-scan probe - find the wheel's click switch + audio-jack detect (no known pin yet)
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -169,6 +181,7 @@ build time.
 | M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
 | M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
 | - | tooling: Unicorn simulator | #96 | first cut done |
+| - | M8 follow-up: `nab.play`/`nab.tone`/`nab.wheel`, wheel-click + jack probe | #123 | **code done, hardware verification pending** (no JTAG/Pi access this session - no `ssh` binary in this environment). `nab.play` streams real decoded audio over SDI so `nab.volume` actually works (VS1003B decodes WAV, per the teardown); `nab.tone` builds a demo WAV; `nab.wheel` reads ADC ch.2 (ported register sequence). Neither can be exercised in the simulator (DREQ/ADC-completion unmodeled - confirmed by running both to the instruction-budget cap). `gpioprobe` (a new probe app) is ready to find the click switch + jack pin but has not been run. |
 
 ## Flashing
 ```sh
@@ -198,34 +211,88 @@ this raw `set_led_rgb` map (by name) directly, so it does not depend on `led.c`'
 `convled[]` - that separate logical remap (used only by the unused `set_led`)
 stays unverified, harmless for now.
 
-## Lua hardware bindings: the `nab` module (M5 #93, M8 #116)
+## Lua hardware bindings: the `nab` module (M5 #93, M8 #116, #123)
 `APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in
 `src/app/lua.c`; LED init mirrors `blink`, button read is `src/hal/button.c`,
-audio is `src/hal/audio.c`):
+audio is `src/hal/audio.c`, ADC is `src/hal/adc.c`):
 
 ```lua
 nab.led(name, r, g, b)  -- name: nose|belly|left|right|bottom; r/g/b 0..127
 nab.button()            -- -> true while the head button is held (polled)
 nab.beep(freq, ms)      -- VS1003 sine test: freq = pitch byte (0..255), ms ~duration
 nab.volume(v)           -- 0 = loudest .. 254 = quietest (VS1003 SCI_VOLUME)
+nab.play(data)          -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
+nab.tone()              -- -> a tiny built-in 8-bit PCM WAV (~200ms square wave), for nab.play
+nab.wheel()             -- -> 0..255, ADC ch.2 (the back wheel, believed to be a pot)
 ```
 
 Verified on hardware over the M3 semihosting console: `nab.led("nose",0,127,0)`
 lights the nose green, each name maps to the right LED, and `nab.button()`
 returns `false`/`true` tracking the physical button. `nab.beep()` produces an
-audible tone on the rabbit's speaker (M8, #116). **Caveats:** `nab.beep` uses the
+audible tone on the rabbit's speaker (M8, #116). **Caveat:** `nab.beep` uses the
 VS1003 built-in *sine test*, which is a **fixed-level** diagnostic tone that
 bypasses `SCI_VOLUME` - so `nab.volume` has no effect on it (verified `0x00`
-vs `0xFE` identical). `nab.volume` sets the register (which will attenuate
-*decoded* audio once SDI/PCM playback lands) and `ms` is a rough CPU busy-loop
-(no timer subsystem yet). Real, volume-controlled playback is a follow-up. See
-also the SPI0 RX-FIFO/DREQ note below - the fix that made the beep reliable.
+vs `0xFE` identical). See also the SPI0 RX-FIFO/DREQ note below - the fix that
+made the beep reliable. `ms` (on `nab.beep`) is a rough CPU busy-loop (no timer
+subsystem yet).
 **Ears are deferred** - the
 motors need an FTM timer/PWM + encoder-capture subsystem that firmwareV2 does not
 have yet (it lives in `src/firmware`); that is a follow-up, not part of this cut.
 Flash headroom for the remaining bindings: see the Lua-runtime note above and
 the measured end-game budget in #128 (i2c+rfid is a rounding error; wifi is the
 one that needs #128's levers).
+
+### `nab.play` / `nab.tone` - real, volume-controlled playback (#123, M8 follow-up)
+`nab.beep`'s sine test bypasses `SCI_VOLUME` entirely. `nab.play(data)` instead
+streams arbitrary bytes to the VS1003 decoder over SDI (`vlsi_play`,
+`src/hal/audio.c`) the same way the codebase already builds MP3/WAV files for
+`src/firmware`'s player - the VS1003B decodes **MP3/WMA/WAV/MIDI**
+(`docs/hardware-dissection.md`), so this is real decoded audio and `nab.volume`
+actually attenuates it. `nab.tone()` builds a tiny mono 8-bit PCM **WAV** (RIFF
+header + a ~200ms square wave, generated at call time to stay flash-cheap) so
+`nab.play(nab.tone())` is demoable without shipping an MP3:
+
+```lua
+nab.volume(0)         -- loudest
+nab.play(nab.tone())
+nab.volume(200)       -- quieter
+nab.play(nab.tone())  -- should be noticeably quieter than the first play
+```
+
+`vlsi_play` feeds the buffer waiting on DREQ (bounded) per byte like the
+existing sine-test control feed, then flushes with the VS10xx-recommended
+`endFillByte` sequence (2052 bytes, read from WRAM) so the last buffered
+samples finish decoding before the amplifier is cut.
+
+**Unverified on hardware** - this session had no JTAG/Pi access (no `ssh`
+binary, no path to `jtag.local`) to flash and listen. The SDI feed mechanism
+itself is proven (M8's sine test uses the identical DREQ-wait byte loop,
+hardware-verified); what's unconfirmed is only whether the VS1003B's WAV
+decoder accepts this exact header (mono/8-bit/PCM) as constructed. It also
+cannot be exercised in the simulator: DREQ is not modeled there (see
+Simulate, below), so the feed's bounded per-byte wait always spins to its cap
+- confirmed by running it in-sim, which burns the whole instruction budget
+stuck in that loop rather than completing. Whoever next has hardware access:
+`task flash:firmwareV2 APP=lua` then `task repl:firmwareV2:hw APP=lua` and try
+the snippet above, by ear.
+
+### `nab.wheel` - the back wheel (#123, M8 follow-up)
+`adc_read_ch2` (`src/hal/adc.c`) ports the exact ADC bring-up from
+`src/firmware/src/main.c` (`ADCON0`/`ADCON1`/`ADCON2` init, the `PORTSEL2` pin
+mux routing PD2 to ADC channel 2) and the read sequence from
+`src/firmware/src/hal/audio.c`'s `get_adc_value`. **Unverified on hardware**
+for the same reason as `nab.play` above (no Pi/JTAG access this session) - the
+working hypothesis (recorded during M8 bring-up, see Hardware notes below)
+is that the wheel is an analog pot on this channel, not yet confirmed. It also
+cannot be exercised in the simulator: the ADC completion bit is not modeled,
+so `nab.wheel()`'s bounded-by-hardware-timing poll loop (identical idiom to
+the proven `src/firmware` original) spins forever there - confirmed by running
+it in-sim to the instruction-budget cap. To map the wheel to volume once
+confirmed, in a script: `while true do nab.volume(nab.wheel()) end` (clamp to
+0..254 if needed - both ranges are close to 0..255 already).
+
+The end-of-travel **click** and the **audio-out jack** are still open - see
+Hardware notes and `gpioprobe` below.
 
 ### SPI0 RX-FIFO + DREQ (M8 gotcha)
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of
@@ -238,14 +305,21 @@ of an initially-silent `nab.beep` that worked only when register reads happened
 to drain the FIFO first.
 
 ### Hardware notes (unverified, from bring-up)
-- The back **wheel** is almost certainly an analog pot on **ADC ch.2**
-  (`get_adc_value` in `src/firmware`), not a GPIO and not in the speaker path -
-  software would read it and apply `nab.volume`; it does not affect the
-  fixed-level sine beep. The end-of-travel **click** may be a separate switch.
-- The **audio-out jack** likely has a mechanical normalled switch that cuts the
-  internal speaker when a plug is inserted (physical, not GPIO).
-- Both are worth a dedicated probe (read ADC ch.2 while turning; GPIO scan for
-  the click) - tracked separately, not part of M8.
+- The back **wheel**'s analog reading is wired up (`nab.wheel()`, ADC ch.2,
+  #123) but not yet hardware-confirmed to actually be a volume pot - see
+  `nab.wheel` above.
+- The end-of-travel **click** and the **audio-out jack**'s normalled-switch
+  behaviour are still unconfirmed - neither has a known GPIO/pin, so per the
+  CLAUDE.md peripheral-exists rule (the M6 AT45 phantom, #94) no driver was
+  built for either. `src/app/gpioprobe.c` (#123) is the confirming step: it
+  dumps every readable GPIO port and flags changed bytes, so wiggling the
+  wheel to its click, or inserting/removing a jack, while it runs shows up as
+  a diff in the console log:
+  ```sh
+  task repl:firmwareV2:hw APP=gpioprobe   # then operate the wheel/jack by hand
+  ```
+  Not run this session (no JTAG/Pi access) - whoever has hardware access next
+  should run it and note which port(s), if any, change.
 
 > ⚠️ **Brick risk:** never erase or program internal flash without a verified
 > full backup first. IDCODE `0x3f0f0f0f` appearing over JTAG = the CPU is alive.
