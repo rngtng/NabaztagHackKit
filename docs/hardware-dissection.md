@@ -96,6 +96,37 @@ Images live on archive.org. Prefix each path with the Wayback host
 
 ---
 
+## PCB revisions (`PCB_RELEASE`)
+
+`src/firmware/inc/common.h` and `src/firmwareV2/inc/common.h` gate pin mappings on a
+`PCB_RELEASE` macro with three values:
+
+```c
+#define LLC2_2   0
+#define LLC2_3   1
+#define LLC2_4c  2
+```
+
+All three are PCB sub-revisions of the **same V2 board** described above (Nabaztag/tag,
+OKI ML67Q4051) — "LLC2" already encodes "2nd generation". They are **not** a v1/v2 split;
+the original 1st-generation Nabaztag isn't represented by any `PCB_RELEASE` value and isn't
+targeted by `src/firmware`/`src/firmwareV2` at all.
+
+| Value | Distinguishing pin mapping | Notes |
+| --- | --- | --- |
+| `LLC2_2` | 4-wire motor control (`CMD_MCC0..3`); different audio-amp/reset/SDI/SCI pin bits; no `CS_FLASH` | Earliest revision |
+| `LLC2_3` | 2-wire PWM+phase motor control; **has** a `CS_FLASH` pin (external serial flash chip-select) | Intermediate revision |
+| `LLC2_4c` | Same PWM+phase motor scheme as `LLC2_3`; **no** `CS_FLASH`/flash chip present | Current default (`#define PCB_RELEASE LLC2_4c`), the revision hardware-verified by `firmwareV2` (LED map, button, beep) |
+
+`LLC2_4c` having no populated flash chip despite the `CS_FLASH` pin being defined is
+confirmed, not assumed: M6 (#94, see `src/firmwareV2/README.md`) built an AT45DB161B flash
+driver against `CS_FLASH`, then a hardware `id`/`status` readback returned `0` — no device
+on the bus. This teardown lists no flash chip either. The driver was reverted. Lesson
+generalized in `CLAUDE.md`: a wired chip-select pin is not proof of a populated chip —
+confirm the peripheral exists (probe or teardown) before writing a driver for it.
+
+---
+
 ## Analysis — firmware extraction difficulty
 
 Violet made it relatively hard to extract the firmware. The 128 KB internal flash
