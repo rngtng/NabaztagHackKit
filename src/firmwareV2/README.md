@@ -163,7 +163,7 @@ build time.
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
 | M9 | Lua RFID binding - CRX14 over I2C | #117 | open - cheap (~1.8 KB flash, measured in #128); I2C bring-up is the first half |
 | M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
-| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task |
+| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 
 ## Flashing
