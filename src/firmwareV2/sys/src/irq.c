@@ -26,6 +26,26 @@ void null_handler(void)
 }
 
 /**
+ * @brief Enable/disable IRQ (M9, #117: needed by hal/i2c.c's bus-transaction
+ * critical sections). ARMv4T Thumb code cannot touch CPSR's I-bit directly
+ * (no CPSIE/CPSID until ARMv6), so - like src/firmware's utils/sys.c - this
+ * traps into the ARM-mode swi_handler (sys/asm/swi_handler.s), which already
+ * carries the SWI_irq_en/SWI_irq_dis cases (copied over with the rest of
+ * sys/asm at M0). Nothing in firmwareV2 unmasks a real IRQ source yet
+ * (init_irq below only sets levels/clears status), so today these are inert;
+ * they matter once a timer/UART IRQ lands and could preempt an I2C transfer.
+ */
+void __disable_interrupt(void)
+{
+  asm volatile ("swi 1");   /* SWI_irq_dis */
+}
+
+void __enable_interrupt(void)
+{
+  asm volatile ("swi 0");   /* SWI_irq_en */
+}
+
+/**
  * @brief Initialize interrupt control registers (IRQ interrupt)
  */
 void init_irq(void)

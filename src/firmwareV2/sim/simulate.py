@@ -15,9 +15,9 @@ What it does:
     future console/REPL (M3/M4) can run with no hardware;
   * reports whether execution reached main() and exits non-zero if not.
 
-What it does NOT do: model timing, or any peripheral it does not stub (audio,
-WiFi, RFID, real timers). It validates code paths + GPIO + console, not analog
-behaviour. See src/firmwareV2/README.md.
+What it does NOT do: model timing, or any peripheral it does not stub beyond
+instant completion (audio, WiFi, real timers). It validates code paths + GPIO +
+SPI/I2C framing + console, not analog behaviour. See src/firmwareV2/README.md.
 """
 import argparse
 import sys
@@ -26,7 +26,7 @@ from unicorn import (
     Uc, UcError,
     UC_ARCH_ARM, UC_MODE_ARM,
     UC_HOOK_CODE, UC_HOOK_INTR,
-    UC_HOOK_MEM_WRITE,
+    UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE,
     UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
     UC_HOOK_MEM_FETCH_UNMAPPED,
 )
@@ -71,6 +71,27 @@ PERIPH_WINDOWS = [
 SPI_SPIF = 0x20
 SPI_DATA_TO_STATUS = {0xB7B0200C: 0xB7B02008, 0xB7B0300C: 0xB7B03008}
 
+# I2C (M9 #117): hal/i2c.c busy-waits on the MCF (transfer-complete) bit of
+# I2CSR - set after writing I2CCTL/I2CDR, and (in read_i2c's receive loop) after
+# software clears I2CSR to wait for the next byte, which real hardware then
+# re-asserts on its own with no further software write. A write-triggered stub
+# (like the SPI SPIF one below) cannot model that last case: the loop's own
+# `put_hvalue(I2CSR, 0)` writes the SAME register our stub would need to set
+# MCF back on, and Unicorn's MEM_WRITE hook fires *before* the store commits -
+# any fix-up written from inside the hook is clobbered when the pending store
+# lands right after (confirmed with a standalone Unicorn repro; the SPI stub
+# never hit this because it always writes a *different* register than the one
+# it fixes up). So instead we hook *reads* of I2CSR directly and force the
+# value the CPU sees to always read as "instantly complete, no error": MCF set,
+# RXAK/MBB/MAL clear (MEM_READ hooks fire *before* the load, so an in-hook
+# write is visible to that same read - also repro-confirmed). This lets I2C
+# bring-up and the CRX14 command sequence run to completion without a real bus
+# or coupler model; RFID reads get back the last address byte written to
+# I2CDR, not real tag data (no CRX14 emulation), same caveat as audio/SPI.
+#   I2C_BASE = 0xB7800C00; I2CCTL = +0x04, I2CSR = +0x08 (halfword), I2CDR = +0x0C.
+I2C_MCF = 0x0080
+I2CSR_ADDR = 0xB7800C08
+
 # Named registers worth decoding in the write log (esp. the LED lines).
 #   PCR_BASE0 = 0xB7A00000, stride 0x1000; PO<n> = base+0. PCB_RELEASE == LLC2_4c.
 PO2, PO4 = 0xB7A02000, 0xB7A04000
@@ -80,6 +101,7 @@ NAMED_REGS = {
     PO2: "PO2 (MODE_LED=bit7)",
     PO4: "PO4 (CS_LED=bit5, CS_AUDIO_AMP=bit6)",
     0xB7B0200C: "SPDWR0 (SPI0 data)", 0xB7B0300C: "SPDWR1 (SPI1 = LED bus)",
+    0xB7800C04: "I2CCTL", 0xB7800C0C: "I2CDR",
 }
 
 
@@ -138,6 +160,7 @@ class Sim:
         u.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED
                    | UC_HOOK_MEM_FETCH_UNMAPPED, self._on_unmapped)
         u.hook_add(UC_HOOK_MEM_WRITE, self._on_write)
+        u.hook_add(UC_HOOK_MEM_READ, self._on_read)
         u.hook_add(UC_HOOK_INTR, self._on_intr)
         if self.main_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_main,
@@ -170,6 +193,13 @@ class Sim:
         if status is not None:
             cur = int.from_bytes(uc.mem_read(status, 4), "little")
             uc.mem_write(status, (cur | SPI_SPIF).to_bytes(4, "little"))
+
+    def _on_read(self, uc, _access, address, size, _value, _ud):
+        # Instant I2C completion: force I2CSR to always read as "transfer done,
+        # no error" (see the I2C_MCF comment above for why this is a read hook,
+        # not a write-triggered one like the SPI stub).
+        if address == I2CSR_ADDR:
+            uc.mem_write(I2CSR_ADDR, I2C_MCF.to_bytes(2, "little"))
 
     def _on_intr(self, uc, intno, _ud):
         """ARM semihosting on SWI. Exercised from M3; harmless before then."""

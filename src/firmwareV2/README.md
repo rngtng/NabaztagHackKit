@@ -149,12 +149,15 @@ src/hal/led.c       TLC594x RGB LED driver over SPI (copied from src/firmware)
 src/hal/button.c    M5 head-button read (#93) - polled active-low GPIO on P3.1
 src/hal/audio.c     M8 VS1003 codec over SPI0 (#116, #123) - SCI r/w, volume, amp, sine test, SDI stream playback
 src/hal/adc.c       #123 ADC ch.2 read (the back wheel) - ported from src/firmware's get_adc_value
+src/hal/i2c.c       M9 I2C bus (#117) - OKI peripheral bring-up + polled master read/write
+src/hal/rfid.c      M9 CRX14 RFID coupler over I2C (#117) - anti-collision scan + UID read
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
 src/app/console.c   M3 semihosting-console probe (#91) - svc 0xAB SYS_WRITEC, proves the no-UART console on hardware
 src/app/audioprobe.c M8 VS1003 aliveness probe (#116) - reset + SCI_STATUS + VOLUME write/read-back
 src/app/gpioprobe.c #123 GPIO-scan probe - find the wheel's click switch + audio-jack detect (no known pin yet)
+src/app/rfidprobe.c M9 CRX14 aliveness probe (#117) - I2C bring-up + parameter-register write/read-back
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -177,7 +180,7 @@ build time.
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
-| M9 | Lua RFID binding - CRX14 over I2C | #117 | open - cheap (~1.8 KB flash, measured in #128); I2C bring-up is the first half |
+| M9 | Lua RFID - CRX14 over I2C (+ I2C bring-up) | #117 | **built, sim-verified; hardware confirmation pending** (no JTAG rig access from this sandbox): I2C bus (`src/hal/i2c.c`, verbatim port) + CRX14 driver (`src/hal/rfid.c`, trimmed to UID read) + `nab.rfid()`. The CR14 coupler is teardown-documented (`docs/hardware-dissection.md`) but not yet bus-probed - run `task repl:firmwareV2:hw APP=rfidprobe` on real hardware to confirm before trusting `nab.rfid()` (see the M6 AT45 lesson: photo/schematic presence isn't proof a chip answers). |
 | M10 | Lua ear-motor bindings | #118 | open - deferred from M5, needs a PWM/encoder subsystem |
 | M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
 | - | tooling: Unicorn simulator | #96 | first cut done |
@@ -224,6 +227,7 @@ nab.volume(v)           -- 0 = loudest .. 254 = quietest (VS1003 SCI_VOLUME)
 nab.play(data)          -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
 nab.tone()              -- -> a tiny built-in 8-bit PCM WAV (~200ms square wave), for nab.play
 nab.wheel()             -- -> 0..255, ADC ch.2 (the back wheel, believed to be a pot)
+nab.rfid()              -- -> lowercase hex UID string ("a1b2c3d4e5f60708"), or nil if no tag
 ```
 
 Verified on hardware over the M3 semihosting console: `nab.led("nose",0,127,0)`
@@ -293,6 +297,29 @@ confirmed, in a script: `while true do nab.volume(nab.wheel()) end` (clamp to
 
 The end-of-travel **click** and the **audio-out jack** are still open - see
 Hardware notes and `gpioprobe` below.
+
+`nab.rfid()` (M9, #117) scans the CRX14 coupler on I2C (`0xA0`) and returns the
+first ST SRIX tag's UID as a hex string, or `nil` if none is present - **built
+and sim-verified, not yet hardware-confirmed** (see the M9 row above and the
+probe note below). The EEPROM read/write path (reading/writing a tag's memory
+blocks, not just its UID) was left out of this cut - a follow-up once the UID
+path is hardware-verified. `bin/lua.elf` `.text` is now **97684 B** of the
+124 KB budget (**~28.6 KB free**, down from ~29 KB after M8 #116).
+
+### M9 hardware confirmation (pending)
+This port was written from a sandbox with no JTAG rig access, so unlike M8 (whose
+`nab.beep` was hardware-verified before merge), `nab.rfid()` has only been
+exercised in the simulator so far. Before relying on it: flash `rfidprobe`
+(`task repl:firmwareV2:hw APP=rfidprobe`) and confirm the console reports
+`CRX14 ALIVE` - it does the same parameter-register write(0x10)/read-back round
+trip `init_rfid()` does, directly over `hal/i2c.c`, independent of the higher
+`hal/rfid.c` layer. The CR14 coupler's presence is teardown-documented
+(`docs/hardware-dissection.md`: "STMicro CR14 contactless coupler... I2C
+interface"), which is why the full driver was written directly rather than
+gated behind a separate probe-first milestone (contrast M6's AT45 flash, which
+had no such documentation and was reverted) - but per the CLAUDE.md
+peripheral-exists rule, a documented chip still isn't a *responding* chip until
+someone runs the probe.
 
 ### SPI0 RX-FIFO + DREQ (M8 gotcha)
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of
