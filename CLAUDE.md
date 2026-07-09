@@ -58,10 +58,28 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
   cause (SPI0 RX-FIFO never drained by `WriteSPI`; DREQ dips after SCI writes) was
   readable in `src/hal/audio.c` + `spi.c` up front. See [[nabaztag-spi0-audio-gotchas]].
 - **When a binding fails on hardware but a standalone probe works, instrument the
-  *real* failing path in situ - do NOT build ever-closer probe replicas.** The
+  *real* failing path in situ - do NOT build ever-closer probe *replicas*.** The
   replica diverges (M8's sine probe was missing `init_spi`) and sends you chasing
   red herrings; a few `sh_puts`/readbacks inside the actual binding localised the
   M8 bug in one run after several wasted on LED/button theories.
+- **When a probe works and the full app does not, the *difference* is the bug -
+  isolate it, don't tweak the app by-ear.** Take the working minimal probe and add
+  the app's factors back one at a time (init order, ExtRAM heap, semihosting I/O),
+  reading objective status at each step. #123 wasted ~15 by-ear round-trips guessing
+  one VS1003 register at a time; the fix came only once `volprobe` re-added init_hw,
+  then a `SYS_READC` burst, then an ExtRAM write burst with `CLOCKF`/`HDAT1`
+  readbacks - isolating that **ExtRAM/EMC access corrupts SPI0 SCI**, which the Lua
+  heap (in ExtRAM) triggers constantly (see [[nabaztag-emc-spi0-audio-conflict]]).
+- **Prefer objective on-device signals over by-ear/by-eye; checkpoint after ~3
+  failed same-symptom round-trips.** Every #123 breakthrough was a register/HDAT1/DREQ
+  readback; the ear was slow, needed the user, and even gave self-contradictory
+  results. After a few failed iterations on one symptom, stop and write
+  knowns/unknowns/next-experiment rather than continuing to guess.
+- **Get the peripheral datasheet, and diff FW1 (`src/firmware`, the working oracle),
+  before guessing a chip's registers.** Most #123 dead-ends - `SM_SDISHARE`
+  (shared-chip-select decode mode), VS1003 decodes MP3 not raw PCM WAV, endFillByte,
+  `CLOCKF` encoding + post-reset timing - were plain datasheet facts; with no VS10xx
+  datasheet in-repo I guessed them one costly round-trip at a time.
 - **Serialise hardware runs.** Only one OpenOCD may own the Pi/JTAG at a time -
   launching a second `flash`/`repl:hw` while one is live gives `Error: couldn't
   bind to socket: Address already in use` and a wasted run. Wait for the prior
