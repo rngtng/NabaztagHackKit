@@ -274,6 +274,8 @@ src/hal/adc.c       #123 ADC ch.2 read (the back wheel) - ported from src/firmwa
 src/hal/i2c.c       M9 I2C bus (#117) - OKI peripheral bring-up + polled master read/write
 src/hal/rfid.c      M9 CRX14 RFID coupler over I2C (#117) - anti-collision scan + UID read
 src/hal/motor.c     M10 ear motor + encoder driver (#118) - FTM PWM drive + pulse-capture position, no IRQ
+src/usb/            M11a USB host stack (#143) - verbatim V1 port: ML60842 OHCI hcd + hcdmem (ComRAM/ExtRAM banks) + usbctrl + usbhcore enumeration; usbdbg.c = semihosting debug console (DEBUG_USB=1)
+sys/src/tick.c      M11a 1 ms system tick (#143) - firmwareV2's first live IRQ (INT_SYSTEM_TIMER); counter_timer + DelayMs for the USB stack
 src/app/hello.c     M0 toolchain-check app (spins; proves startup reaches main)
 src/app/blink.c     M1 LED-blink app (#89) - first peripheral binary; blinks the nose (LED_RGB_5) red
 src/app/ledmap.c    LED-map probe (#93) - lights all five LEDs distinct colours at once to read the physical map
@@ -282,6 +284,7 @@ src/app/audioprobe.c M8 VS1003 aliveness probe (#116) - reset + SCI_STATUS + VOL
 src/app/gpioprobe.c #123 GPIO-scan probe - find the wheel's click switch + audio-jack detect (no known pin yet)
 src/app/rfidprobe.c M9 CRX14 aliveness probe (#117) - I2C bring-up + parameter-register write/read-back
 src/app/earprobe.c  M10 ear-motor aliveness probe (#118) - runs each motor briefly, checks the encoder counter moved
+src/app/usbprobe.c  M11a USB bring-up probe (#143) - staged: tick IRQ, HcRevision, usbhost_init, enumeration; prints the dongle descriptor
 src/app/lua.c       M4 Lua 5.4 REPL app (#92) - openlibs + REPL + semihosting syscalls + ExtRAM sbrk
 lua/                vendored PUC-Rio Lua 5.4 core (#92); build compiles a subset (see Makefile LUA_CORE/LUA_LIB)
 sim/                Unicorn instruction-level simulator (#96) - run the ELF, no hardware
@@ -306,7 +309,7 @@ build time.
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
 | M9 | Lua RFID - CRX14 over I2C (+ I2C bring-up) | #117 | **built, sim-verified; hardware confirmation pending** (no JTAG rig access from this sandbox): I2C bus (`src/hal/i2c.c`, verbatim port) + CRX14 driver (`src/hal/rfid.c`, trimmed to UID read) + `nab.rfid()`. The CR14 coupler is teardown-documented (`docs/hardware-dissection.md`) but not yet bus-probed - run `task firmwareV2:repl:hw APP=rfidprobe` on real hardware to confirm before trusting `nab.rfid()` (see the M6 AT45 lesson: photo/schematic presence isn't proof a chip answers). |
 | M10 | Lua ear-motor bindings - PWM + encoder | #118 | **implemented, hardware verification pending** - no JTAG/Pi access from the environment this was built in. Turns out no IRQ/timer-subsystem bring-up was actually needed (see the Ears section below): `hal/motor.c` ported, `nab.ear_move`/`nab.ear_stop`/`nab.ear_pos` bindings + an `earprobe` app added. Whoever has the rig should run `task firmwareV2:flash APP=earprobe` before trusting the bindings. |
-| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
+| M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap. **M11a (#143) done, hardware-verified:** V1 USB host stack ported (`src/usb/`, --gc-sections keeps `APP=lua` at exactly 101,800 B), 1 ms tick = the first live IRQ on firmwareV2 (needed an init.s fix: main now runs in SYS mode, not USR - an unprivileged `msr cpsr_c` is silently ignored, so IRQs could never be unmasked before), and `usbprobe` enumerates the internal dongle: VID:PID `0db0:6877` (MSI-branded RT2501, V1 accept-list entry 3), OHCI `HcRevision=0x10`. Next: rt2501usb driver + `net/` 802.11 port; prerequisite for station association remains #125. |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 | - | M8 follow-up: `nab.play`/`nab.tone`/`nab.wheel`, wheel-click + jack probe | #123 | **code done, hardware verification pending** (no JTAG/Pi access this session - no `ssh` binary in this environment). `nab.play` streams real decoded audio over SDI so `nab.volume` actually works (VS1003B decodes WAV, per the teardown); `nab.tone` builds a demo WAV; `nab.wheel` reads ADC ch.2 (ported register sequence). Neither can be exercised in the simulator (DREQ/ADC-completion unmodeled - confirmed by running both to the instruction-budget cap). `gpioprobe` (a new probe app) is ready to find the click switch + jack pin but has not been run. |
 

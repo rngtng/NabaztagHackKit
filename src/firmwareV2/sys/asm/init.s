@@ -123,8 +123,13 @@ bypass_tmr_init:
   MOV     SP, R0
   SUB     R0, R0, #SVC_Stack_Size
 
-  ;@ Enter User Mode and set its Stack Pointer
-  MSR     CPSR_c, #Mode_USR|I_Bit|F_Bit
+  ;@ Enter System Mode (M11a, #143; was User Mode) and set its Stack Pointer.
+  ;@ SYS shares USR's registers/stack but stays privileged: irq.c's
+  ;@ __enable_interrupt writes CPSR directly (no SWI - vector 0x8 belongs to
+  ;@ the semihosting HW breakpoint, see irq.c), and an unprivileged MSR is
+  ;@ silently ignored - in USR mode the I-bit could never be cleared and no
+  ;@ IRQ ever fired (usbprobe stage [1] caught this on hardware).
+  MSR     CPSR_c, #Mode_SYS|I_Bit|F_Bit
   MOV     SP, R0
 
   ;@ Setup a default Stack Limit (when compiled with "-mapcs-stack-check")

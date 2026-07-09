@@ -79,10 +79,16 @@ SECTIONS
   PROVIDE(__heap_start__ = .);
   PROVIDE(__heap_end__ = ALIGN(__stack_end__ - 0x100  ,8));
 
+  /* USB host allocator window (M11a, #143): the hcdmem EXTRAM bank (URBs,
+   * descriptors, rx/tx buffers) gets the top 32 KB of ExtRAM, carved out of
+   * the _sbrk range below so the Lua heap can never grow into it. */
+  PROVIDE(__usbram_end__   = ORIGIN(ExtRAM) + LENGTH(ExtRAM));
+  PROVIDE(__usbram_start__ = __usbram_end__ - 32k);
+
   /* External RAM heap window (M4, #92): 16 KB IntRAM is too small for a Lua
    * state, so firmwareV2's _sbrk hands out this 1 MB ExtRAM region instead. */
   PROVIDE(__extram_start__ = ORIGIN(ExtRAM));
-  PROVIDE(__extram_end__   = ORIGIN(ExtRAM) + LENGTH(ExtRAM));
+  PROVIDE(__extram_end__   = __usbram_start__);
 
   _end = .;
   PROVIDE (end = .);
