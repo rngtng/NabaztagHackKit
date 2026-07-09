@@ -58,6 +58,81 @@ var coltests={0 0 0xffff00 0xff 0xff8000 0xffff 0xff00ff};;
 
 ---
 
+## Flow diagram
+
+The state machine below is entirely **mtl-side** (`src/boot/main.mtl`, `main`+`loop`).
+The **FW/C side has no state of its own** — `setleds`/`led` are thin HAL syscalls
+(`src/firmware/src/hal/led.c`) that just push a colour to the physical LEDs; every
+branch, timer, and transition lives in the mtl loop below.
+
+```mermaid
+flowchart TD
+    Boot(["Power on / reset"]) --> ReadBtn["main: set master = button2\n(main.mtl:254)"]
+    ReadBtn --> Entry{"button2 held\nat boot?"}
+
+    Entry -- "no (master=0)" --> LedPurple["LED purple 0xff00ff\nnormal-boot entry\n(main.mtl:266)"]
+    Entry -- "yes (master=1)" --> LedBlue["LED blue 0xff\ntest/master mode entry\n(main.mtl:266)"]
+
+    subgraph STD["Standard boot -> connect to wifi (loop: !master)"]
+        LedPurple --> WifiInit{"saved wifi env?"}
+        WifiInit -- yes --> LedGreen["LED green 0x00ff00\nstation: env restored"]
+        WifiInit -- no --> LedPurple2["LED purple 0xff00ff\nno saved env -> initW"]
+        LedGreen --> Anim["amber/green blink\n4 steps: connect -> ip -> dns -> http\n(boot_leds)"]
+        LedPurple2 --> Anim
+        Anim --> Bytecode["download + run app bytecode\n(boot_loop)"]
+    end
+
+    subgraph HOLD["loop: master && start!=nil (button2 still tracked)"]
+        LedBlue --> Timer{"time_ms - start\n> TESTDELAY 7000ms?"}
+        Timer -- "not yet, still held" --> Timer
+        Timer -- "crossed 7s, still held" --> LedWhite["LED white 0xffffff\n(main.mtl:100)"]
+        LedWhite --> Timer
+        Timer -- "released < 7s" --> LedBlue2["LED blue 0xff\n(main.mtl:113)"]
+        LedWhite -- "released > 7s" --> EnterTest["tests = 1, start = nil\n(main.mtl:104-110)"]
+    end
+
+    subgraph AP["master && !tests: config AP"]
+        LedBlue2 --> ConfigAP["wifiRun -> startconfigserver\nwifi AP config mode"]
+    end
+
+    subgraph TESTMENU["master && tests: factory self-test menu (click = advance)"]
+        EnterTest --> T1["tests=1 idle\nLEDs off"]
+        T1 -- click --> T2["tests=2 yellow\nmotor spin (endless)"]
+        T2 -- click --> T3["tests=3 blue flash -> off\nmotor ref seek +\nper-LED encoder debug"]
+        T3 -- click --> T4["tests=4 amber\nRFID read"]
+        T4 -- click --> T5["tests=5 cyan\naudio playback"]
+        T5 -- click --> T6["tests=6 yellow -> purple\nmic record + playback"]
+        T6 -. "click (capped at 6)" .-> T6
+    end
+
+    classDef purple fill:#b467d6,color:#fff,stroke:#7c3aed;
+    classDef blue fill:#3b82f6,color:#fff,stroke:#1d4ed8;
+    classDef white fill:#f5f5f5,color:#111,stroke:#999;
+    classDef green fill:#22c55e,color:#111,stroke:#15803d;
+    classDef amber fill:#f59e0b,color:#111,stroke:#b45309;
+    classDef yellow fill:#eab308,color:#111,stroke:#a16207;
+    classDef cyan fill:#06b6d4,color:#111,stroke:#0e7490;
+
+    class LedPurple,LedPurple2 purple
+    class LedBlue,LedBlue2 blue
+    class LedWhite white
+    class LedGreen green
+    class Anim amber
+    class T2 yellow
+    class T4 amber
+    class T5 cyan
+```
+
+The three branches the diagram makes explicit, matching how you reach each one:
+- **Standard boot** (no button held at power-on) — straight into the wifi-connect
+  flow (`STD`), no button interaction at all.
+- **Button held, released before 7s** — blue the whole time, drops into the wifi
+  **config AP** (`AP`) on release.
+- **Button held past 7s** — LEDs go white while still holding; releasing *after*
+  that point enters the **factory self-test menu** (`TESTMENU`) instead of the AP.
+
+---
+
 ## Boot state machine
 
 `main` (`:2942`) runs once:
@@ -86,6 +161,31 @@ var coltests={0 0 0xffff00 0xff 0xff8000 0xffff 0xff00ff};;
 Endless ears appear in `tests==2` (no stop) and `tests==3` if the position
 encoder never reports motion (`get_motor_position` reads PWM capture counter
 `FTM0GR`/`FTM1GR`, `src/firmware/src/hal/motor.c`).
+
+---
+
+## What each self-test does, and where the result shows up
+
+Once in `tests==1`, a **short click of button2 advances to the next test**
+(`main.mtl:118-247`, capped at `tests==6` — clicking again at 6 stays at 6). There's
+no explicit exit; power-cycle the rabbit to leave the menu. None of this is logged
+or persisted — every result is **live LED colour and/or audio**, plus an optional
+text stream that only exists if `mod_serial` is fitted.
+
+| `tests` | What it does | Where the result shows up |
+|---|---|---|
+| 1 | Idle placeholder — LEDs off, waiting for the first click. | Nothing to observe. |
+| 2 | Both ears spin continuously, flipping direction every ~8.2 s (`d&8192` toggle, `:144-152`). No stop condition, no pass/fail check. | LED stays solid yellow (`0xffff00`). Raw encoder position (`motorget 0`/`motorget 1`) streams over serial every tick via `Secho`/`Iecho` (`:148-150`) — only visible with `mod_serial`. |
+| 3 | Runs both ears forward until each encoder's reference notch is found. See the dedicated section below. | Per-ear LED (LED 1 = motor 0, LED 3 = motor 1) + serial `refpos0/1` stream. |
+| 4 | Repeatedly polls `rfidGet` for a tag (`:203-211`). | LED: off = no tag, red = `rfidGet` returned `"Error"`, green = good read. On a good read, also echoes `"RFID : <id>"` over serial (`Secholn`, `:208`). |
+| 5 | Generates three tone samples and cycles through them (~8.2 s each) via `playStart`/`_wavtestcb` (`:212-225`); live volume knob is `button3` (`sndVol button3`). | No LED encoding — stays cyan (`0xffff`, the entry colour) for the whole test. Result is **audible only**: listen for the tone changing and for volume response. |
+| 6 | Press-and-hold `button3` records via `recstart`; release stops and immediately plays back what was recorded (`recstop` → `wavstartlocal`) (`:226-246`). | LED turns yellow (`0xffff00`) while recording, purple (`0xff00ff`) once playback starts. Result is **audible**: hearing your own recorded voice replayed is the pass signal. |
+
+In short: results are **LED colour + audio, not a report** — nothing is written to
+flash. The only place raw numbers/text appear (encoder deltas, RFID tag id) is the
+`Secho`/`Iecho`/`Secholn` stream (`src/firmware/src/vm/vlog.c`), which requires the
+`mod_serial` hardware mod; on a stock board you're reading colours and listening,
+nothing more.
 
 ---
 
