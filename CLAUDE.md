@@ -88,7 +88,7 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
   a probe before it idles); `flash.py` streams the console live and early-exits on
   that marker instead of waiting out `--run-timeout` (~120 s → seconds). New probe
   apps should emit it before their idle loop.
-- **lua.elf flash budget: ~30 KB free of 124 KB after M8 (#116); was ~48 B before M7 (#106).**
+- **lua.elf flash budget: ~24.6 KB free of 124 KB after M9+M10 (101,800 B used); was ~30 KB after M8 (#116); ~48 B before M7 (#106).**
   M7 (incl. M7.5 #114) moved Lua's number I/O + console fully off newlib - the
   `luai_*`/printf helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
   Local-config block; the ~10 KB of newlib still linked is soft-float/memcpy/malloc,
