@@ -28,21 +28,34 @@ void null_handler(void)
 /**
  * @brief Enable/disable IRQ (M9, #117: needed by hal/i2c.c's bus-transaction
  * critical sections). ARMv4T Thumb code cannot touch CPSR's I-bit directly
- * (no CPSIE/CPSID until ARMv6), so - like src/firmware's utils/sys.c - this
- * traps into the ARM-mode swi_handler (sys/asm/swi_handler.s), which already
- * carries the SWI_irq_en/SWI_irq_dis cases (copied over with the rest of
- * sys/asm at M0). Nothing in firmwareV2 unmasks a real IRQ source yet
- * (init_irq below only sets levels/clears status), so today these are inert;
- * they matter once a timer/UART IRQ lands and could preempt an I2C transfer.
+ * (no CPSIE/CPSID until ARMv6). Implemented as ARM-mode functions that
+ * manipulate CPSR directly — avoids the SWI vector (0x8), which conflicts
+ * with the semihosting HW breakpoint used by the JTAG console (any SWI
+ * through 0x8 fires the BP; OpenOCD halts on non-semihosting SWI ops).
+ * Nothing in firmwareV2 unmasks a real IRQ source yet, so today these are
+ * inert; they matter once a timer/UART IRQ lands and could preempt an I2C
+ * transfer.
  */
+__attribute__((target("arm")))
 void __disable_interrupt(void)
 {
-  asm volatile ("swi 1");   /* SWI_irq_dis */
+  uint32_t tmp;
+  asm volatile(
+    "mrs %0, cpsr\n\t"
+    "orr %0, %0, #0x80\n\t"
+    "msr cpsr_c, %0"
+    : "=r"(tmp) : : "memory");
 }
 
+__attribute__((target("arm")))
 void __enable_interrupt(void)
 {
-  asm volatile ("swi 0");   /* SWI_irq_en */
+  uint32_t tmp;
+  asm volatile(
+    "mrs %0, cpsr\n\t"
+    "bic %0, %0, #0x80\n\t"
+    "msr cpsr_c, %0"
+    : "=r"(tmp) : : "memory");
 }
 
 /**
