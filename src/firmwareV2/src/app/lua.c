@@ -46,6 +46,8 @@
 #include "hal/rfid.h"
 #include "hal/motor.h"   /* M10 (#118): ear motors + encoders */
 
+#include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
+
 /* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
  * simulator (and OpenOCD/GDB on hardware) traps `svc 0xAB` and services it. */
@@ -572,42 +574,13 @@ static int nab_play(lua_State *L)
   return 0;
 }
 
-static void put_le16(uint8_t *p, uint16_t v) { p[0] = v; p[1] = v >> 8; }
-static void put_le32(uint8_t *p, uint32_t v)
-{
-  p[0] = v; p[1] = v >> 8; p[2] = v >> 16; p[3] = v >> 24;
-}
-
-/* nab.tone(): a tiny built-in mono 8-bit PCM WAV (a few hundred ms square
- * wave), built at call time (not stored, to stay flash-cheap) so nab.play +
- * nab.volume are demoable without shipping an MP3. Feed straight to nab.play. */
-#define TONE_HZ      8000  /* sample rate */
-#define TONE_SAMPLES 1600  /* 200 ms at TONE_HZ */
-#define TONE_PERIOD  40    /* samples per half-cycle -> ~100 Hz square wave */
-
+/* nab.tone(): a small built-in MP3 tone (nab_tone_mp3, generated - see
+ * tone_mp3.h) so nab.play + nab.volume are demoable without shipping a file.
+ * It is MP3, not raw PCM WAV, because the VS1003B on this board decodes MP3 but
+ * does NOT decode PCM WAV (hardware-verified, #123). Feed to nab.play. */
 static int nab_tone(lua_State *L)
 {
-  static uint8_t buf[44 + TONE_SAMPLES]; /* static: too big for the 4 KB user stack */
-  uint32_t i;
-
-  memcpy(buf + 0, "RIFF", 4);
-  put_le32(buf + 4, 36 + TONE_SAMPLES);
-  memcpy(buf + 8, "WAVE", 4);
-  memcpy(buf + 12, "fmt ", 4);
-  put_le32(buf + 16, 16);          /* fmt chunk size */
-  put_le16(buf + 20, 1);           /* PCM */
-  put_le16(buf + 22, 1);           /* mono */
-  put_le32(buf + 24, TONE_HZ);
-  put_le32(buf + 28, TONE_HZ);     /* byte rate = sample rate * 1 channel * 1 byte */
-  put_le16(buf + 32, 1);           /* block align */
-  put_le16(buf + 34, 8);           /* bits/sample */
-  memcpy(buf + 36, "data", 4);
-  put_le32(buf + 40, TONE_SAMPLES);
-
-  for (i = 0; i < TONE_SAMPLES; i++)
-    buf[44 + i] = ((i / TONE_PERIOD) & 1) ? 0xC0 : 0x40; /* unsigned 8-bit square wave */
-
-  lua_pushlstring(L, (const char *)buf, sizeof buf);
+  lua_pushlstring(L, (const char *)nab_tone_mp3, sizeof nab_tone_mp3);
   return 1;
 }
 
@@ -682,6 +655,26 @@ static int nab_ear_pos(lua_State *L)
   return 1;
 }
 
+/* nab.sci(reg): read a VS1003 SCI register (diagnostic). e.g. HDAT1=0x09 shows
+ * the decoder's detected stream format (0 = nothing decoding), SS_VER lives in
+ * STATUS=0x01. Used to confirm nab.play's stream reaches the decoder. */
+static int nab_sci(lua_State *L)
+{
+  uint8_t reg = (uint8_t)luaL_checkinteger(L, 1);
+  lua_pushinteger(L, vlsi_read_sci(reg));
+  return 1;
+}
+
+/* nab.sciw(reg, val): write a VS1003 SCI register (diagnostic). Pairs with
+ * nab.sci to bring up / probe the codec from the REPL. */
+static int nab_sciw(lua_State *L)
+{
+  uint8_t reg = (uint8_t)luaL_checkinteger(L, 1);
+  uint16_t val = (uint16_t)luaL_checkinteger(L, 2);
+  vlsi_write_sci(reg, val);
+  return 0;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"button", nab_button},
@@ -694,6 +687,8 @@ static const luaL_Reg nab_funcs[] = {
     {"ear_move", nab_ear_move},
     {"ear_stop", nab_ear_stop},
     {"ear_pos", nab_ear_pos},
+    {"sci", nab_sci},
+    {"sciw", nab_sciw},
     {NULL, NULL},
 };
 
