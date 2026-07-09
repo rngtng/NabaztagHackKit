@@ -32,62 +32,15 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
   **occasionally segfaults** ("internal compiler error") — it's non-deterministic, **re-run**.
 
 ## Openocd / hardware flashing (firmwareV2)
-- JTAG flashing is the one host-side exception (USB). hence openocd on a raspberry Pi
-  (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
-- **Flash a firmwareV2 app with `task flash:firmwareV2 [APP=…]`**; **read its
-  console (print/REPL) with `task repl:firmwareV2:hw [APP=… SCRIPT=…]`** - never
-  hand-roll scp+openocd+gdb (the raw ssh+openocd path gets denied, and both are
-  now taskified). IDCODE `0x3f0f0f0f` on connect = CPU alive / wiring good.
-- **Confirm a peripheral EXISTS before writing a driver/binding for it.** Read
-  `docs/hardware-dissection.md` (the board teardown / chip list) first, and if the
-  rig is up, probe it (e.g. read a device id over the bus) BEFORE building. A wired
-  chip-select pin is NOT proof of a populated chip - M6 (#94) built a whole AT45
-  flash driver against a `CS_FLASH` pin for a chip the LLC2_4c board doesn't have,
-  then had to revert. The cheapest disqualifying test comes first, not last.
-- **Semihosting console (M3+)**: the ARM7TDMI EmbeddedICE is **v1, no vector catch**,
-  so openocd's auto soft-bp at the SWI vector `0x8` fails (flash is read-only there).
-  Must use a **HW breakpoint at 0x8** + `rbp 0x8`; set it AFTER the final `reset halt`
-  (reset wipes the ICE watchpoint regs). `task repl:firmwareV2:hw` does this for you;
-  full recipe in `tools/openocd/README.md`. Cleaner fix still TODO: patch openocd
-  `arm7_9_setup_semihosting` to `BKPT_HARD`.
-- **Read the openocd/VM source before iterating on hardware** - a semihosting/flash
-  hunch is cheap to confirm in `~/nabgcc/openocd-0.8.0/src` on the Pi; each hardware
-  round-trip (flash 124 KB ≈ 13 s, per-char semihosting) is not. Predict, then test.
-  This extends to **bus/peripheral semantics** (SPI FIFO, DREQ, chip-select), not
-  just semihosting/flash - M8 (#116) burned ~7 round-trips on a silent beep whose
-  cause (SPI0 RX-FIFO never drained by `WriteSPI`; DREQ dips after SCI writes) was
-  readable in `src/hal/audio.c` + `spi.c` up front. See [[nabaztag-spi0-audio-gotchas]].
-- **When a binding fails on hardware but a standalone probe works, instrument the
-  *real* failing path in situ - do NOT build ever-closer probe *replicas*.** The
-  replica diverges (M8's sine probe was missing `init_spi`) and sends you chasing
-  red herrings; a few `sh_puts`/readbacks inside the actual binding localised the
-  M8 bug in one run after several wasted on LED/button theories.
-- **When a probe works and the full app does not, the *difference* is the bug -
-  isolate it, don't tweak the app by-ear.** Take the working minimal probe and add
-  the app's factors back one at a time (init order, ExtRAM heap, semihosting I/O),
-  reading objective status at each step. #123 wasted ~15 by-ear round-trips guessing
-  one VS1003 register at a time; the fix came only once `volprobe` re-added init_hw,
-  then a `SYS_READC` burst, then an ExtRAM write burst with `CLOCKF`/`HDAT1`
-  readbacks - isolating that **ExtRAM/EMC access corrupts SPI0 SCI**, which the Lua
-  heap (in ExtRAM) triggers constantly (see [[nabaztag-emc-spi0-audio-conflict]]).
-- **Prefer objective on-device signals over by-ear/by-eye; checkpoint after ~3
-  failed same-symptom round-trips.** Every #123 breakthrough was a register/HDAT1/DREQ
-  readback; the ear was slow, needed the user, and even gave self-contradictory
-  results. After a few failed iterations on one symptom, stop and write
-  knowns/unknowns/next-experiment rather than continuing to guess.
-- **Get the peripheral datasheet, and diff FW1 (`src/firmware`, the working oracle),
-  before guessing a chip's registers.** Most #123 dead-ends - `SM_SDISHARE`
-  (shared-chip-select decode mode), VS1003 decodes MP3 not raw PCM WAV, endFillByte,
-  `CLOCKF` encoding + post-reset timing - were plain datasheet facts; with no VS10xx
-  datasheet in-repo I guessed them one costly round-trip at a time.
-- **Serialise hardware runs.** Only one OpenOCD may own the Pi/JTAG at a time -
-  launching a second `flash`/`repl:hw` while one is live gives `Error: couldn't
-  bind to socket: Address already in use` and a wasted run. Wait for the prior
-  background run to finish before starting the next.
-- **Semihosting apps print `<<FV_DONE>>` when finished** (the REPL after input EOF,
-  a probe before it idles); `flash.py` streams the console live and early-exits on
-  that marker instead of waiting out `--run-timeout` (~120 s → seconds). New probe
-  apps should emit it before their idle loop.
+JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
+(`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
+**The full workflow — flash/REPL tasks, peripheral-existence check, semihosting
+breakpoint gotcha, run serialisation, `<<FV_DONE>>` marker, hardware-debugging
+discipline — now lives in the `hw-flash-repl` skill.** Invoke it for any
+JTAG/flash/console task instead of re-deriving from here; full recipe still in
+`tools/openocd/README.md`, board teardown in `docs/hardware-dissection.md`.
+
+## Firmware flash budget (firmwareV2)
 - **lua.elf flash budget: ~24.6 KB free of 124 KB after M9+M10 (101,800 B used); was ~30 KB after M8 (#116); ~48 B before M7 (#106).**
   M7 (incl. M7.5 #114) moved Lua's number I/O + console fully off newlib - the
   `luai_*`/printf helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
@@ -143,36 +96,11 @@ lib module" live in `test/README.md` — read it before touching `test/lib/_test
 
 ## MTL language gotchas
 
-- **Compiler error line = closing bracket of enclosing function**, not offending line.
-  Binary-search by commenting out test files to isolate fast.
-- **`::` (cons) has higher precedence than function application.**
-  `f x :: y :: nil` = `f (x :: y :: nil)`, not `(f x) :: y :: nil`.
-- **Negative literals in non-first arg position parse as binary minus.**
-  `fun "v" -1` = `(fun "v") - 1`. Use `(0-1)` to force negative integer.
-- **`strcmp` returns sign only** (-1/0/1), not character difference like C stdlib.
-- **`assert_equalS` breaks on strings containing null bytes** (`\0`).
-  Use `strget` to check individual bytes instead.
-- **No local function definitions** (`let fun` is invalid). Hoist to top level.
-- **`if-then` without `else`** leaves the false branch typed as `I` (0).
-  Always add `else nil` when returning a list.
-- **Duplicate `fun` definitions are legal; call sites bind the most recent
-  definition at their point of compilation.** Later redefinitions do NOT rebind
-  earlier call sites (piper's `tcpudp_emu.mtl` override relies on this). Put
-  overrides/stubs BEFORE their consumers' includes.
-- **Duplicate definitions still share one type.** The checker unifies the
-  signatures of all definitions of a name — a stub must be type-compatible
-  with the real implementation (e.g. can't pass `I` where the real one takes `Tcp`).
-- **`(expr).field` doesn't parse as a function argument** — bind it first:
-  `let sock.sockCnx -> cnx in f cnx.field`.
-- **Every `proto` needs a real definition somewhere in the compiled program**,
-  or the compiler fails late and unhelpfully: `<name> is EMPTY !!!` with no file/line.
-  When isolating a module for a test (see `test/README.md`), stub every proto it
-  declares, not just the ones you expect to be called.
-- **The simulator heap is small (~200K words)** — `#GC` lines after a healthy run
-  show low `used=NN%`; a jump to `used=99%` followed by `?OM Error` means a runaway
-  allocation, almost always either an infinite loop (e.g. a value-consuming parser
-  branch that doesn't advance its cursor) or rebuilding a big structure (a
-  dictionary, a table) on every call instead of once at init.
+Compiler parsing/typechecking quirks (`::` precedence, negative-literal
+parsing, duplicate-definition binding order, `proto is EMPTY` failures,
+simulator heap OOM signatures, etc.) now live in the **`mtl-lang` skill**.
+Invoke it when editing an `.mtl` file or chasing a compiler error instead of
+re-deriving from here.
 
 ## Firmware C VM gotchas
 - **The firmware VM and the `mtl_linux` simulator VM are twin copies of the same
