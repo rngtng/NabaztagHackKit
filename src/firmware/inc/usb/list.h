@@ -19,8 +19,12 @@ typedef struct _LIST_ENTRY {
 	(ptr)->Flink = (ptr); (ptr)->Blink = (ptr); \
 } while (0)
 
+/* container_of: recover the enclosing struct from a pointer to its list member.
+ * The enclosing object is always a properly-aligned struct, so the result is
+ * aligned by construction; the intermediate (void *) tells -Wcast-align the
+ * char*->type* alignment increase is intentional and safe. */
 #define list_struct_entry(entry, type, member) \
-	((type *)((char *)(entry)-(unsigned long)(&((type *)0)->member)))
+	((type *)(void *)((char *)(entry)-(unsigned long)(&((type *)0)->member)))
 
 void __list_add(pLIST_ENTRY entry, pLIST_ENTRY Blink, pLIST_ENTRY Flink);
 void __list_del(pLIST_ENTRY Blink, pLIST_ENTRY Flink);

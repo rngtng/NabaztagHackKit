@@ -64,6 +64,27 @@ simulated, and tested. (Boot-embedded vs remote-load embedding strategies:
   the MTL image is **amd64-only** (emulated, slow, on Apple Silicon — fine for one-shot
   compiles), and **JTAG needs real USB**, so flashing runs host-side, outside Docker.
 
+## Compiler warning policy (firmware)
+
+Both firmware Makefiles build with `-Wall -Wextra -Wpedantic -Wpointer-arith
+-Wcast-align`. The target is a **clean build — zero warnings** — because the `-Os`
+WPA-join regression (fixed with `-fno-strict-aliasing`) showed that real bugs hide in
+the warnings we stop reading (#150). `-Wcast-align` matters specially on ARM7TDMI: an
+unaligned 32-bit load *rotates silently* instead of faulting, so a punned
+`uint8_t* → uint32_t*` frame view can corrupt data with no crash.
+
+Each warning is triaged, not blanket-suppressed:
+- **net/crypto** casts are fixed to be genuinely aligned or endian-explicit
+  (`hash.c` MD5 block is now `uint32_t[16]`; `vnet.c` `netChk` reads its checksum
+  byte-wise so it is correct at any offset).
+- **verified-aligned** buffers (VM audio blocks, the `aligned(4)` rt2501 frame/firmware,
+  the `container_of` list macro) keep the cast but route it through `(void *)` with a
+  one-line rationale, which tells `-Wcast-align` the alignment is intentional.
+- genuine logic issues are fixed outright (an unguarded `switch` fall-through in
+  `ieee80211.c` mis-parsed unknown WEP crypts as WPA ciphers).
+
+Keep new firmware code warning-clean; `-Werror` on a curated subset is a future CI gate.
+
 ## Vendoring, not submodules
 
 Sources are **copied in**, not submoduled, with origin repo + commit + local changes
