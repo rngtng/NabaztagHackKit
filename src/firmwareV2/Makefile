@@ -15,11 +15,20 @@ APP ?= hello
 TARGET = $(APP)
 
 # Sources: the selected app + any shared C (src/*.c, src/hal/*.c) + startup.
+# src/usb (M11a, #143) is compiled for every app; --gc-sections drops it from
+# images that never call into it, so the APP=lua flash budget is untouched.
 C_FILES  = src/app/$(APP).c
 C_FILES += $(wildcard src/*.c)
 C_FILES += $(wildcard src/hal/*.c)
+C_FILES += $(wildcard src/usb/*.c)
 C_FILES += $(wildcard sys/src/*.c)
 AS_FILES = $(wildcard sys/asm/*.s)
+
+# M11a (#143): DEBUG_USB=1 routes the vendored stack's DBG_USB traces to the
+# semihosting console (debug/probe builds only - pulls in newlib sprintf).
+ifneq ($(DEBUG_USB),)
+  CFLAGS += -DDEBUG_USB
+endif
 
 # M4 (#92): the Lua app additionally links the vendored Lua 5.4 core (lua/).
 # We compile the core + a trimmed set of stdlibs (base/string/table) to fit the
@@ -117,6 +126,11 @@ dis: bin/$(TARGET).elf
 # This is the vendored-Lua equivalent of the alignment audit in #150; our own
 # src/ code stays -Wcast-align-clean.
 obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
+
+# Vendored V1 USB host stack (M11a, #143): same treatment - size-optimized
+# (#128 budgets usb/+net/ at -Os) and warning-relaxed (not our code to fix).
+# usbdbg.c is ours but shares the dir for gc-sections simplicity.
+obj/src/usb/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
