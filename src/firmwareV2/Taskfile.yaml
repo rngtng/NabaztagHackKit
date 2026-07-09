@@ -44,12 +44,14 @@ tasks:
       - docker build -t {{.FV_IMAGE}} .
 
   build:
-    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:build [APP=hello]'
+    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:build [APP=hello] [DEBUG=1]'
+    # DEBUG=1 (M11, #119) turns on the vendored usb/net stacks' semihosting
+    # trace macros; artifact becomes bin/<APP>-dbg.elf (separate obj tree).
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - task: image
       # bind-mount the tree at /work; obj/ and bin/ land back on the host.
-      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}'
+      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}'
 
   sim-image:
     internal: true   # Unicorn simulator image (#96); rebuilt when sim/ changes

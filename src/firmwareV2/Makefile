@@ -12,7 +12,17 @@
 
 # Which app in src/app/ to build. Every app provides its own main().
 APP ?= hello
-TARGET = $(APP)
+
+# M11 (#119): debug builds (DEBUG_USB=1 / DEBUG_WIFI=1) get their own target
+# name and object tree - .o files don't record CFLAGS, so sharing obj/ would
+# silently mix debug and release objects across builds.
+ifneq ($(DEBUG_USB)$(DEBUG_WIFI),)
+  TARGET = $(APP)-dbg
+  OBJDIR = obj/dbg
+else
+  TARGET = $(APP)
+  OBJDIR = obj
+endif
 
 # Sources: the selected app + any shared C (src/*.c, src/hal/*.c) + startup.
 # src/usb (M11a, #143) is compiled for every app; --gc-sections drops it from
@@ -21,14 +31,9 @@ C_FILES  = src/app/$(APP).c
 C_FILES += $(wildcard src/*.c)
 C_FILES += $(wildcard src/hal/*.c)
 C_FILES += $(wildcard src/usb/*.c)
+C_FILES += $(wildcard src/net/*.c)
 C_FILES += $(wildcard sys/src/*.c)
 AS_FILES = $(wildcard sys/asm/*.s)
-
-# M11a (#143): DEBUG_USB=1 routes the vendored stack's DBG_USB traces to the
-# semihosting console (debug/probe builds only - pulls in newlib sprintf).
-ifneq ($(DEBUG_USB),)
-  CFLAGS += -DDEBUG_USB
-endif
 
 # M4 (#92): the Lua app additionally links the vendored Lua 5.4 core (lua/).
 # We compile the core + a trimmed set of stdlibs (base/string/table) to fit the
@@ -68,12 +73,22 @@ CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 CFLAGS += -mcpu=arm7tdmi -MMD
 CFLAGS += -Iinc/ -Isys/inc
 
+# M11a (#143): DEBUG_USB=1 / DEBUG_WIFI=1 route the vendored stack's DBG_*
+# traces to the semihosting console (debug/probe builds only - pulls in
+# newlib sprintf). Debug objects/artifacts live in obj/dbg + *-dbg.elf (above).
+ifneq ($(DEBUG_USB),)
+  CFLAGS += -DDEBUG_USB
+endif
+ifneq ($(DEBUG_WIFI),)
+  CFLAGS += -DDEBUG_WIFI
+endif
+
 LDSCRIPT = sys/ml67q4051.ld
 
 # Linker options
 LDFLAGS  =
 LDFLAGS += --specs=nosys.specs
-LDFLAGS += -Wl,-Map,obj/$(TARGET).map
+LDFLAGS += -Wl,-Map,$(OBJDIR)/$(TARGET).map
 LDFLAGS += -nostartfiles
 LDFLAGS += -Wl,--gc-sections           # drop unreferenced code/data (paired with -f*-sections)
 LDFLAGS += -mcpu=arm7tdmi -T$(LDSCRIPT)
@@ -99,8 +114,8 @@ SIZE    = arm-none-eabi-size
 NM      = arm-none-eabi-nm
 DUMP    = arm-none-eabi-objdump
 
-OBJS  = $(C_FILES:%.c=obj/%.o)
-OBJS += $(AS_FILES:%.s=obj/%.o)
+OBJS  = $(C_FILES:%.c=$(OBJDIR)/%.o)
+OBJS += $(AS_FILES:%.s=$(OBJDIR)/%.o)
 
 all: elf hex bin dis
 
@@ -114,8 +129,8 @@ bin: bin/$(TARGET).elf
 	$(OBJCOPY) -O binary $< bin/$(TARGET).bin
 
 dis: bin/$(TARGET).elf
-	$(NM) -lS $< > obj/$(TARGET).sym
-	$(DUMP) -d $< > obj/$(TARGET).dis
+	$(NM) -lS $< > $(OBJDIR)/$(TARGET).sym
+	$(DUMP) -d $< > $(OBJDIR)/$(TARGET).dis
 
 # Vendored Lua is compiled for size (-Os, to fit the 124 KB flash budget) and
 # with relaxed warnings (it is not our code to fix); our own sources keep the
@@ -125,18 +140,20 @@ dis: bin/$(TARGET).elf
 # through lua_Alloc at L_Umaxalign, so the pointers are always suitably aligned.
 # This is the vendored-Lua equivalent of the alignment audit in #150; our own
 # src/ code stays -Wcast-align-clean.
-obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
+$(OBJDIR)/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
 
-# Vendored V1 USB host stack (M11a, #143): same treatment - size-optimized
-# (#128 budgets usb/+net/ at -Os) and warning-relaxed (not our code to fix).
-# usbdbg.c is ours but shares the dir for gc-sections simplicity.
-obj/src/usb/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+# Vendored V1 USB host stack + 802.11/WPA stack (M11a #143, M11b): same
+# treatment - size-optimized (#128 budgets usb/+net/ at -Os) and
+# warning-relaxed (not our code to fix). usbdbg.c is ours but shares the dir
+# for gc-sections simplicity.
+$(OBJDIR)/src/usb/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+$(OBJDIR)/src/net/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
-obj/%.o : %.c
+$(OBJDIR)/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
 	$(CC) -c $(CFLAGS) $< -o $@
 
-obj/%.o : %.s
+$(OBJDIR)/%.o : %.s
 	@test -d $(@D) || mkdir -pm 775 $(@D)
 	$(CC) -o $@ $(CFLAGS) -x assembler-with-cpp -c $<
 

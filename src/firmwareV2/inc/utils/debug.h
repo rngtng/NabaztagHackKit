@@ -16,8 +16,14 @@
 #ifndef _DEBUG_H
 #define _DEBUG_H
 
+#include <stdint.h>
+
 #define DBG_BUFFER_LENGTH 256
 extern char dbg_buffer[DBG_BUFFER_LENGTH];
+
+/* V1's hal/uart.c hexdump (eapol.c calls it unconditionally on rx frames);
+ * semihosting in DEBUG_* builds, empty stub otherwise (usb/usbdbg.c). */
+void dump(uint8_t *src, int32_t len);
 
 #if defined(DEBUG_USB) || defined(DEBUG_WIFI)
 #include <stdio.h>
