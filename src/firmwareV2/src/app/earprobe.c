@@ -54,32 +54,80 @@ static void sh_puthex16(uint16_t v)
   sh_puts(b);
 }
 
+static void sh_puthex8(uint8_t v)
+{
+  const char *hex = "0123456789abcdef";
+  char b[5];
+  b[0] = '0'; b[1] = 'x';
+  b[2] = hex[(v >> 4) & 0xF];
+  b[3] = hex[v & 0xF];
+  b[4] = '\0';
+  sh_puts(b);
+}
+
 static void busy_delay(volatile unsigned long n)
 {
   while (n--)
     CLR_WDT;
 }
 
-/* Run motor `number` for a short burst and report whether its encoder moved.
- * ~0.3 s at full speed - enough to see several encoder edges without spinning
- * the ear a full turn. */
+/* Read raw FTMn counter (FTMnC) and wide-use register (FTMnGR) for motor n. */
+static void dump_ftm(uint8_t number)
+{
+  uint16_t cnt, gr;
+  if (number == 1) {
+    cnt = get_hvalue(FTM0C);
+    gr  = get_hvalue(FTM0GR);
+  } else {
+    cnt = get_hvalue(FTM1C);
+    gr  = get_hvalue(FTM1GR);
+  }
+  sh_puts("FTMnC=");
+  sh_puthex16(cnt);
+  sh_puts(" FTMnGR=");
+  sh_puthex16(gr);
+  sh_puts("\n");
+}
+
+/* Run motor `number` for ~2 s; dump GPIO state and FTM counters at each stage.
+ * Long enough to observe physical ear movement. */
 static void probe_motor(uint8_t number)
 {
-  sh_puts("motor ");
+  sh_puts("--- motor ");
   sh_puthex16(number);
-  sh_puts(": pos before=");
-  uint16_t before = get_motor_position(number);
-  sh_puthex16(before);
+  sh_puts(" ---\n");
+
+  sh_puts("FTMEN=");
+  sh_puthex8(get_value(FTMEN));
+  sh_puts(" PM5=");
+  sh_puthex8(get_value(PM5));
+  sh_puts(" PO5=");
+  sh_puthex8(get_value(PO5));
+  sh_puts("\n");
+
+  sh_puts("before: ");
+  dump_ftm(number);
 
   run_motor(number, 255, FORWARD);
-  busy_delay(1000000UL);
+
+  sh_puts("after run_motor: PO5=");
+  sh_puthex8(get_value(PO5));
+  sh_puts("\n");
+
+  /* ~2 s delay — watch the ear */
+  busy_delay(2000000UL);
+
+  sh_puts("mid-run: ");
+  dump_ftm(number);
+
+  busy_delay(2000000UL);
   stop_motor(number);
 
-  uint16_t after = get_motor_position(number);
-  sh_puts(" after=");
-  sh_puthex16(after);
-  sh_puts(after != before ? "  -> MOVED (encoder counting)\n"
-                          : "  -> NO CHANGE (motor/encoder not responding?)\n");
+  sh_puts("after stop: ");
+  dump_ftm(number);
+
+  uint16_t c_after = (number == 1) ? get_hvalue(FTM0C) : get_hvalue(FTM1C);
+  sh_puts(c_after != 0 ? "PASS: encoder counted\n" : "FAIL: encoder STUCK\n");
 }
 
 int main(void)
@@ -87,12 +135,34 @@ int main(void)
   init_ears();
 
   sh_puts("M10 ear probe (FTM PWM + encoder)\n");
+
+  /* --- sequential pass (original verification) --- */
   probe_motor(1);
   probe_motor(2);
 
+  /* --- both-at-once pass: watch both ears spin together --- */
+  sh_puts("--- both motors FORWARD (~4 s) ---\n");
+  run_motor(1, 255, FORWARD);
+  run_motor(2, 255, FORWARD);
+  busy_delay(4000000UL);
+  stop_motor(1);
+  stop_motor(2);
+  sh_puts("motor1 pos="); sh_puthex16(get_motor_position(1)); sh_puts("\n");
+  sh_puts("motor2 pos="); sh_puthex16(get_motor_position(2)); sh_puts("\n");
+
+  /* --- both REVERSE --- */
+  sh_puts("--- both motors REVERSE (~4 s) ---\n");
+  run_motor(1, 255, REVERSE);
+  run_motor(2, 255, REVERSE);
+  busy_delay(4000000UL);
+  stop_motor(1);
+  stop_motor(2);
+  sh_puts("motor1 pos="); sh_puthex16(get_motor_position(1)); sh_puts("\n");
+  sh_puts("motor2 pos="); sh_puthex16(get_motor_position(2)); sh_puts("\n");
+
   sh_puts("<<FV_DONE>>\n");   /* early-exit signal for flash.py */
   for (;;) {
-    /* idle; the report above is the whole probe */
+    CLR_WDT;
   }
   return 0;
 }

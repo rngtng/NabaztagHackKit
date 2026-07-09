@@ -246,24 +246,28 @@ vs `0xFE` identical). See also the SPI0 RX-FIFO/DREQ note below - the fix that
 made the beep reliable. `ms` (on `nab.beep`) is a rough CPU busy-loop (no timer
 subsystem yet).
 
-**`nab.ear_*` (M10, #118) is implemented but NOT hardware-verified** - built and
-simulator-tested in an environment with no JTAG/Raspberry-Pi access. Run
-`task flash:firmwareV2 APP=earprobe` (see `src/app/earprobe.c`) before trusting
-it: it drives each motor briefly and checks whether `get_motor_position`'s
-encoder counter actually moves. Two things worth knowing before that check:
+**`nab.ear_*` (M10, #118) is hardware-verified.** Both motors drive and
+both encoders count (`earprobe` probe, `FTM0C`/`FTM1C` nonzero; ~0x31 and
+~0x2F pulses after a ~2 s run). A bug found during the hardware pass was
+fixed before this landed: `init_ears` was missing the `PORTSEL3` pin-mux
+setup that maps PF0-PF5 to the FTM peripheral. `src/firmware`'s `init_io`
+sets `PORTSEL3 = 0x05550000` (with `MOTOR_SPEED_CONTROL`); `init_ears`
+now mirrors this. Without it the FTM PWM output pins stayed as GPIO and
+the encoders never reached the FTM counters.
 
 - **No IRQ/timer subsystem was actually needed**, despite the milestone's
   framing. `init_pwm()` only pokes the FTM0-5 timer control registers once;
   `run_motor`/`stop_motor` write the PWM duty registers directly; and
-  `get_motor_position` reads a free-running hardware pulse-capture counter
-  (`FTM0GR`/`FTM1GR`) with no ISR involved - see `inc/hal/motor.h`.
+  `get_motor_position` reads the FTM0C/FTM1C free-running pulse counters
+  (not FTM0GR/FTM1GR — those are the wide-use capture registers; the
+  live count is in FTMnC) - see `inc/hal/motor.h`.
 - **`nab.ear_pos` is a raw, wrapping edge counter, not an absolute angle.**
   There is no `nab.ear(n, pos)` "go to this position" binding: that needs the
   hole-counting state machine `lib/hw/ears.mtl` implements at the Forth layer
   (17 holes/rev, direction + timeout-based arrival detection over many polls) -
   out of scope for this driver-port + primitive-binding cut. `1|2` for the
-  motor id is this driver's own numbering (`hal/motor.h`); which physical ear
-  each maps to is unverified, unlike the LED map below.
+  motor id is this driver's own numbering (`hal/motor.h`); motor 1 = left ear
+  (hardware-confirmed).
 
 Flash headroom for the remaining bindings: see the Lua-runtime note above and
 the measured end-game budget in #128 (i2c+rfid is a rounding error; wifi is the
