@@ -26,9 +26,21 @@ AS_FILES = $(wildcard sys/asm/*.s)
 CFLAGS =
 CFLAGS += --specs=nosys.specs
 CFLAGS += -Os   # size-optimised: the boot bytecode is embedded in the 124k flash image (#103)
+# -Os (unlike -O1) enables -fstrict-aliasing. The vendored soft-MAC/EAPOL/crypto
+# type-puns uint8_t* frame buffers through struct/uint32_t* (net/eapol.c:337,524,
+# 676,850; net/hash.c), which is UB only enforced under strict aliasing - it
+# mis-compiled the WPA 4-way handshake MIC (eapol.c:551-574), so config-AP +
+# association worked but real-network join failed. Turning -fstrict-aliasing back
+# off is the actual fix and keeps the -Os size win. Same rationale as the Linux
+# kernel. (The opt level was a red herring; -O1 buys nothing once this is off.)
+CFLAGS += -fno-strict-aliasing
 #CFLAGS += -g
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
+# -Wcast-align surfaces uint8_t*->uint32_t*/struct* casts (the frame type-punning
+# that -Os miscompiled) at build time - the early signal for this bug class.
+# Not -Werror: the vendored net/crypto has many such casts; treat as a review flag.
+CFLAGS += -Wcast-align
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 CFLAGS += -mcpu=arm7tdmi -MMD
