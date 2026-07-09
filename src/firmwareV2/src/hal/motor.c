@@ -281,21 +281,33 @@ uint16_t get_motor_position(uint8_t number)
 void init_ears(void)
 {
 #if PCB_RELEASE == LLC2_4c
+  /* Mirror the PORTSEL3 setup from src/firmware's init_io.
+   * MOTOR_SPEED_CONTROL: FTM0-5 all need peripheral mux (encoders on PF0/1,
+   * PWM outputs on PF2-5); without it only encoders need the mux. */
+#ifdef MOTOR_SPEED_CONTROL
+  set_wbit(PORTSEL3, 0x05550000);
+#else
+  set_wbit(PORTSEL3, 0x00050000);
   PWM_MCC1_AS_OUTPUT;
   PWM_MCC2_AS_OUTPUT;
   PWM_MCC3_AS_OUTPUT;
   PWM_MCC4_AS_OUTPUT;
-
   PWM_MCC1_CLEAR;
   PWM_MCC2_CLEAR;
   PWM_MCC3_CLEAR;
   PWM_MCC4_CLEAR;
+#endif
+
 #elif PCB_RELEASE == LLC2_3
+#ifdef MOTOR_SPEED_CONTROL
+  set_wbit(PORTSEL3, 0x05550000);
+#else
+  set_wbit(PORTSEL3, 0x00050000);
+#endif
   PWM_MCC1_AS_OUTPUT;
   PWM_MCC2_AS_OUTPUT;
   PHASE_MCC1_AS_OUTPUT;
   PHASE_MCC2_AS_OUTPUT;
-
   PWM_MCC1_CLEAR;
   PWM_MCC2_CLEAR;
   PWM_MCC3_CLEAR;
