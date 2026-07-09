@@ -106,7 +106,12 @@ dis: bin/$(TARGET).elf
 # Vendored Lua is compiled for size (-Os, to fit the 124 KB flash budget) and
 # with relaxed warnings (it is not our code to fix); our own sources keep the
 # strict -Wall -Wextra -Wpedantic and default -O1 set above.
-obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function
+# -Wno-cast-align: Lua's GCObject tagged-union casts (cast(T*, o) in lstate.h/
+# lobject.h/llimits.h) trip -Wcast-align, but luaM_* allocates every object
+# through lua_Alloc at L_Umaxalign, so the pointers are always suitably aligned.
+# This is the vendored-Lua equivalent of the alignment audit in #150; our own
+# src/ code stays -Wcast-align-clean.
+obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
