@@ -259,9 +259,13 @@ int32_t audioRecVol(uint8_t *src,int32_t len,int32_t start)
   return myvolume();
 }
 
+/* The int16_t sample buffers below alias uint8_t VM blocks. The VM heap is an
+ * int32_t[] array, so its blocks start word-aligned, and the codec framing
+ * keeps the sample offsets even — the views are halfword-aligned in practice.
+ * The (void *) intermediates make that intent explicit for -Wcast-align. */
 void adpcmdecode(uint8_t *src,uint8_t *dstc)
 {
-  int16_t * dst=(int16_t *)dstc;
+  int16_t * dst=(int16_t *)(void *)dstc;
   int32_t s0,st,i;
   s0=(src[0]&255)+((src[1]&255)<<8); src+=2;
   st=(src[0]&255)+((src[1]&255)<<8); src+=2;
@@ -354,7 +358,7 @@ void adpcmencode(int16_t * src,uint8_t *dst)
     stepIndex++;
   StepIndex = stepIndex;
 
-  p=(int16_t *)dst;
+  p=(int16_t *)(void *)dst;
   p[0]=sample1;
   p[1]=StepIndex;
 
@@ -516,7 +520,7 @@ void AudioWav2adp(uint8_t *dst,int32_t idst,int32_t ldst,uint8_t *src,int32_t is
   dst+=idst;
   while(len>0)
   {
-    adpcmencode((int16_t *)src,dst);
+    adpcmencode((int16_t *)(void *)src,dst);
     src+=505*2;
     dst+=256;
     len-=505*2;
@@ -534,7 +538,7 @@ void AudioWav2alaw(uint8_t *dst,int32_t idst,int32_t ldst,uint8_t *src,int32_t i
 //	printf("w2l%d"EOL,len);
   src+=isrc;
   dst+=idst;
-  p=(int16_t *)src;
+  p=(int16_t *)(void *)src;
   len>>=1;
   if (mu)
   {
@@ -557,7 +561,7 @@ void AudioAlaw2wav(uint8_t *dst,int32_t idst,int32_t ldst,uint8_t *src,int32_t i
 //	printf("l2w%d"EOL,len);
   src+=isrc;
   dst+=idst;
-  p=(int16_t *)dst;
+  p=(int16_t *)(void *)dst;
   q=(uint8_t *)src;
   if (mu)
   {

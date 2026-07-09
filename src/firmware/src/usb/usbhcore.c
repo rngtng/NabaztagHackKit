@@ -217,7 +217,13 @@ int8_t usbh_get_descriptor_configuration(PDEVINFO dev, uint8_t **pbuf)
     return ret;
   }
 
-  size = ((struct usb_configuration_descriptor *)&temp)->wTotalLength;
+  /* Read wTotalLength (bytes 2-3, little-endian) directly from the 8-byte
+   * header. Overlaying the full struct usb_configuration_descriptor (>8 bytes)
+   * on temp[2] tripped -Warray-bounds even though this field is in range. */
+  {
+    const uint8_t *hdr = (const uint8_t *)temp;
+    size = (uint16_t)(hdr[2] | (hdr[3] << 8));
+  }
   *pbuf= (uint8_t *)hcd_malloc(size, EXTRAM,22);
   if(!*pbuf)
   {

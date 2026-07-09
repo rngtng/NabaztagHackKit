@@ -220,6 +220,10 @@ static uint8_t ieee80211_crypt_to_rt2501cipher(uint8_t crypt)
 					DBG_WIFI("Unknown WEP Crypt");
           break;
       };
+      /* No break here would fall through into the WPA case below and
+       * mis-parse crypt&0x0F (a WEP key-length subtype) as a WPA cipher.
+       * Unknown WEP → the safe RT2501_CIPHER_NONE default at the bottom. */
+      break;
     case IEEE80211_CRYPT_WPA:
     case IEEE80211_CRYPT_WPA2:
       switch(crypt&0x0F)
@@ -232,6 +236,7 @@ static uint8_t ieee80211_crypt_to_rt2501cipher(uint8_t crypt)
 					DBG_WIFI("Unknown WPA Crypt");
           break;
       };
+      break;
     case IEEE80211_CRYPT_NONE:
 			return RT2501_CIPHER_NONE;
 		default:

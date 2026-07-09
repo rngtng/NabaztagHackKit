@@ -63,22 +63,24 @@ uint8_t *netMac()
 
 int32_t netChk(uint8_t *src,int32_t indexsrc,int32_t lentosend,int32_t lensrc,uint32_t val)
 {
-  uint16_t* p;
-
   if (indexsrc<0) return val;
   if (indexsrc+lentosend>lensrc) lentosend=lensrc-indexsrc;
   if (lentosend<=0) return val;
 
   src+=indexsrc;
-  p=(uint16_t*)src;
 
   val=((val<<8)&0xff00)+((val>>8)&0xff);
   while(lentosend>1)
   {
-	  val+=*(p++);
+	  /* Read the 16-bit word byte-wise (little-endian, matching the old
+	   * (uint16_t*)src load). indexsrc can be odd, so a uint8_t*->uint16_t*
+	   * cast would be unaligned and rotate silently on ARM7TDMI
+	   * (-Wcast-align); byte reads are correct at any offset. */
+	  val+=src[0]|(src[1]<<8);
+	  src+=2;
 	  lentosend-=2;
   }
-  if (lentosend) val+=*(uint8_t*)p;
+  if (lentosend) val+=*src;
 
   val=(val>>16)+(val&0xffff);
   val=(val>>16)+(val&0xffff);
