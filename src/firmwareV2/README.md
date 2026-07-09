@@ -35,6 +35,16 @@ linked against [`sys/ml67q4051.ld`](sys/ml67q4051.ld) with our own startup
 and startup are `KEEP`-guarded in the linker script). One selectable app from
 `src/app/` at a time (`APP=`).
 
+### Warnings (#150)
+Our sources build warning-clean under `-Wall -Wextra -Wpedantic -Wpointer-arith
+-Wcast-align` — every `src/`, `src/hal/`, `sys/`, and `src/app/` file across all
+apps compiles with **zero warnings**. Keep it that way; `-Wcast-align` matters on
+ARM7TDMI, where an unaligned 32-bit load rotates silently instead of faulting.
+The only suppression is on the **vendored Lua core** (`obj/lua/%.o`), which adds
+`-Wno-cast-align` (alongside the other Lua-only relaxations) because Lua's
+`GCObject` tagged-union casts are always suitably aligned by `luaM_*`/`lua_Alloc`
+and it is not our code to fix. See the rationale block in the [`Makefile`](Makefile).
+
 ## Lua runtime (M4, #92)
 `APP=lua` boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
 [`PROVENANCE.md`](../../PROVENANCE.md)) and drops into a REPL. The glue lives in
