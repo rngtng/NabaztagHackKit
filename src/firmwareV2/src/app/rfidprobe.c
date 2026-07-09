@@ -63,30 +63,31 @@ int main(void)
 
   /* Turn the RF field ON: write PARAMETER_REGISTER=0x10, read it back. A live
    * CRX14 ACKs both phases and echoes 0x10; a missing/dead chip NAKs the
-   * write_i2c/read_i2c retry loop (writecheck-style bounded retry here, 100
-   * attempts - enough to rule out a transient bus glitch without hanging). */
+   * write_i2c/read_i2c retry loop (3 attempts - enough to rule out a transient
+   * bus glitch; each failed attempt spins waiti2cmbb/waiti2cmcf for up to 1M
+   * iterations so more retries quickly overflow the 120s semihosting cap). */
   uint8_t cmd[2] = {CRX14_PARAMETER_REGISTER, 0x10};
-  uint16_t tries = 100;
+  uint8_t tries = 3;
   uint8_t wrote = 0;
+  sh_puts("write(PARAM=0x10):");
   while (tries-- && !(wrote = write_i2c(CRX14_ADDR, cmd, 2)))
-    __no_operation();
-  sh_puts("write(PARAM=0x10): ");
-  sh_puts(wrote ? "ACK\n" : "NO ACK (I2C bus or CRX14 not responding)\n");
+    sh_puts(".");
+  sh_puts(wrote ? " ACK\n" : " NO ACK (I2C bus or CRX14 not responding)\n");
 
   uint8_t readback = 0xFF;
   uint8_t read_ok = 0;
   if (wrote) {
-    tries = 100;
+    tries = 3;
+    sh_puts("read(PARAM):");
     while (tries-- && !(read_ok = read_i2c(CRX14_ADDR, &readback, 1)))
-      __no_operation();
+      sh_puts(".");
   }
-  sh_puts("read(PARAM): ");
   if (read_ok) {
-    sh_puts("value=");
+    sh_puts(" value=");
     sh_puthex8(readback);
     sh_puts(readback == 0x10 ? "  -> CRX14 ALIVE\n" : "  -> unexpected value\n");
-  } else {
-    sh_puts("NO ACK\n");
+  } else if (wrote) {
+    sh_puts(" NO ACK\n");
   }
 
   /* Leave the field off (completion_rfid + PARAM=0) so a subsequent nab.rfid()

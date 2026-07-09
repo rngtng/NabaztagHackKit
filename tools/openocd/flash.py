@@ -108,7 +108,7 @@ def gdb_flash(a):
             check=False, capture_output=True)
     out = (r.stdout or "") + (r.stderr or "")
     print(out, flush=True)
-    if "matched" not in out or "Load failed" in out or r.returncode != 0:
+    if "MIS-MATCHED" in out or "matched" not in out or "Load failed" in out or r.returncode != 0:
         raise SystemExit("\nFAIL: flash load/verify did not succeed (see gdb output above).")
     print("      OK - flash written and verified (compare-sections matched).")
 
