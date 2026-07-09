@@ -10,7 +10,15 @@
 
 char dbg_buffer[DBG_BUFFER_LENGTH];
 
-#if defined(DEBUG_USB) || defined(DEBUG_WIFI)
+#if !defined(DEBUG_USB) && !defined(DEBUG_WIFI)
+
+void dump(uint8_t *src, int32_t len)
+{
+  (void)src;
+  (void)len;
+}
+
+#else
 
 #define SYS_WRITEC 0x03
 
@@ -28,6 +36,20 @@ void dbg_puts(const char *s)
     char c = *s++;
     semihost(SYS_WRITEC, &c);
   }
+}
+
+/* V1 hal/uart.c's dump(), semihosting output: 16 hex bytes per line */
+void dump(uint8_t *src, int32_t len)
+{
+  static const char hex[] = "0123456789abcdef";
+  int32_t i;
+  for (i = 0; i < len; i++) {
+    char b[4] = {hex[(src[i] >> 4) & 0xF], hex[src[i] & 0xF],
+                 (i % 16 == 15) ? '\n' : ' ', '\0'};
+    dbg_puts(b);
+  }
+  if (len % 16)
+    dbg_puts("\n");
 }
 
 #endif
