@@ -73,6 +73,9 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
   for (i = 0; i < len; i++) {
     wait_dreq();
     WriteSPI(data[i]);
+    get_value(SPDRR0);   /* drain the RX byte each write: a long stream would
+                          * otherwise overflow SPI0's RX FIFO (init_spi never
+                          * clears SPI0 ORF), which stalls the feed */
   }
   CS_AUDIO_SDI_SET;
 }
@@ -107,20 +110,32 @@ void init_vlsi(void)
   put_wvalue(SPBRR0, 0x00000008);
   set_wbit(SPCR0, SPCR0_SPE);
 
-  /* Hardware reset pulse (active low). */
+  /* Hardware reset pulse (active low), then wait for the chip to signal ready
+   * (DREQ high) before any SCI write. A fixed delay here raced the VS1003's
+   * boot and the first CLOCKF write was being dropped, leaving the core at base
+   * XTAL - fast enough for the fixed sine test but far too slow to decode a
+   * real stream (playback came out slow + static). */
   RST_AUDIO_CLEAR;
   audio_delay(200000);
   RST_AUDIO_SET;
-  audio_delay(200000);
+  wait_dreq();
 
-  /* Bring the internal clock up via the PLL, then run SPI0 faster (~8 MHz). */
-  vlsi_write_sci(VS1003_CLOCKF, 0xc000);
-  clr_wbit(SPCR0, SPCR0_SPE);
-  put_wvalue(SPBRR0, 0x00000002);
-  set_wbit(SPCR0, SPCR0_SPE);
-
-  /* Native SPI mode + soft reset, then a moderate default volume. */
+  /* Native SPI mode + soft reset for a clean decoder state; wait ready. */
   vlsi_write_sci(VS1003_MODE, VS1003_MODE_NATIVE | VS1003_MODE_RESET);
+  wait_dreq();
+
+  /* Bring the internal clock up via the PLL. Done AFTER the soft reset (so a
+   * reset can't clear it) and while SPI is still slow (the chip only tolerates
+   * fast SCI once CLKI is multiplied). Let the PLL lock, then run SPI0 faster
+   * (~8 MHz). */
+  vlsi_write_sci(VS1003_CLOCKF, 0xc000);
+  audio_delay(200000);
+  wait_dreq();
+  /* DIAGNOSTIC (#123): keep SPI0 slow (~2 MHz) - do NOT speed up to ~8 MHz yet.
+   * At 8 MHz, SCI reads returned garbage and playback was slow+static, which
+   * only happens if CLKI never left base XTAL (max SCI = CLKI/7). Staying slow
+   * lets us read registers back reliably to confirm whether CLOCKF took. */
+
   set_vlsi_volume(0x20);
 }
 
@@ -137,33 +152,33 @@ void vlsi_sine(uint8_t freq_n, uint8_t on)
   }
 }
 
-/* VS10xx datasheet-recommended end-of-stream flush length (endFillByte count)
- * so the decoder's internal buffers finish draining rather than being cut off
+/* VS10xx end-of-stream flush length: clock out >=2048 endFillBytes so the
+ * decoder's internal buffers finish draining rather than being cut off
  * mid-sample. Bounded like the rest of the SDI feed path. */
 #define VLSI_FLUSH_BYTES 2052
 
-/* endFillByte lives in WRAM at a fixed address; read it indirectly via
- * WRAM_ADDR + the WRAM data window (0 is a safe fallback if the read fails). */
-static uint8_t vlsi_end_fill_byte(void)
-{
-  vlsi_write_sci(VS1003_WRAM_ADDR, 0x1E06);
-  return (uint8_t)vlsi_read_sci(VS1003_WRAM);
-}
-
 void vlsi_play(const uint8_t *data, uint32_t len)
 {
-  uint8_t fill = vlsi_end_fill_byte();
   uint32_t i;
+
+  /* Ensure decode (native SPI) mode without a soft reset - the PLL clock is
+   * set once in init_vlsi and a reset here (at the fast post-init SPI rate)
+   * would risk dropping it back to base XTAL. The current nab.volume() setting
+   * carries over. */
+  vlsi_write_sci(VS1003_MODE, VS1003_MODE_NATIVE);
+  wait_dreq();
 
   vlsi_ampli(1);
   vlsi_feed_sdi(data, len);
 
-  /* Flush: the feed above already throttled to DREQ (i.e. to actual decode
-   * rate), so only the last buffered samples remain once it returns. */
+  /* End-of-stream flush. Zero is the correct endFillByte for PCM/WAV, so feed
+   * zeros - avoids the VS1053-only WRAM endFillByte read (0x1E06) this used to
+   * do, which returns garbage on the VS1003B and injected ~2 KB of noise. */
   CS_AUDIO_SDI_CLEAR;
   for (i = 0; i < VLSI_FLUSH_BYTES; i++) {
     wait_dreq();
-    WriteSPI(fill);
+    WriteSPI(0x00);
+    get_value(SPDRR0);   /* drain, same as vlsi_feed_sdi */
   }
   CS_AUDIO_SDI_SET;
 

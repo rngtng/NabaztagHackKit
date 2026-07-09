@@ -17,6 +17,8 @@
 #define VS1003_CLOCKF    0x03
 #define VS1003_WRAM      0x06  /* WRAM data window (indirect, via WRAM_ADDR) */
 #define VS1003_WRAM_ADDR 0x07
+#define VS1003_HDAT0     0x08  /* decode data / bitrate (format-dependent) */
+#define VS1003_HDAT1     0x09  /* detected stream format (0 = nothing decoding) */
 #define VS1003_VOLUME    0x0B
 
 /* SCI_MODE, as the full 16-bit value written over SCI (high byte = SM_SDINEW/
@@ -45,10 +47,10 @@ void vlsi_sine(uint8_t freq_n, uint8_t on);
 /* Stream a buffer (e.g. a WAV/MP3/ADPCM-WAV file) over SDI for the decoder to
  * play - the VS1003B decodes MP3/WMA/WAV/MIDI (docs/hardware-dissection.md), so
  * unlike vlsi_sine this is real decoded audio and SCI_VOLUME actually
- * attenuates it. Blocking: waits on DREQ per byte (bounded) like vlsi_sine's
- * control feed, then flushes the decoder's tail with VS10xx endFillByte before
- * returning. Turns the amplifier on/off around playback. Issue #123 follow-up
- * to M8 (#116); unverified on hardware pending JTAG/Pi access. */
+ * attenuates it. Blocking: soft-resets the decoder, then waits on DREQ per byte
+ * (bounded) like vlsi_sine's control feed, then flushes the decoder's tail with
+ * zero endFillBytes before returning. Turns the amplifier on/off around
+ * playback. Issue #123 follow-up to M8 (#116). */
 void vlsi_play(const uint8_t *data, uint32_t len);
 
 #endif
