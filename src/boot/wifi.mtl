@@ -10,6 +10,23 @@ const IEEE80211_M_MASTER=1;;
 
 var wifitry;;
 
+// #125/#144: the RT2573 wifi dongle can wedge (no SSID in AP mode / station never
+// associates, netState stuck at RT2501_S_BROKEN). Root cause is the power-hungry
+// RT2573 browning out / latching a bad state; it only clears on a FULL HARDWARE
+// POWER-CYCLE - and the JTAG adapter back-powers the board, so disconnect JTAG too
+// and let the rail fully drain. A firmware reboot does NOT recover it (and an
+// in-place USB re-enumeration crashes the host stack), so we do not try to
+// self-heal: if netState stays BROKEN for WIFI_STUCK_SECONDS we signal the user by
+// lighting the nose RED = "power-cycle me". Normal bring-up reaches RT2501_S_IDLE
+// in ~1-3s, so this only fires on a genuine failure.
+const WIFI_STUCK_SECONDS=15;;
+var wifibrokensince;;
+var wifistuck;;
+
+// "wifi wedged - full hardware power-cycle needed" indicator: all LEDs off, nose
+// red. Nose is logical LED 0; setleds is defined in util (included before wifi).
+fun wifistuck_leds= setleds 0; led 0 0xff0000;;
+
 
 
 fun _scanserialize l=
@@ -168,6 +185,16 @@ fun wifiRun=
 	let netState -> state in
 	(
 		if state!=laststate then (Secho "wifi state=";Iecholn state);
+		// #125/#144: once BROKEN too long, flag wedged + show the red-nose
+		// "power-cycle me" indicator (see top of file). No reboot - only a full
+		// hardware power-cycle recovers the RT2573.
+		if state==RT2501_S_BROKEN then
+		(
+			if wifibrokensince==nil then set wifibrokensince=time
+			else if (time-wifibrokensince)>WIFI_STUCK_SECONDS then set wifistuck=1
+		)
+		else (set wifibrokensince=nil; set wifistuck=nil);
+		if wifistuck!=nil then wifistuck_leds;
 		let match wifi with
 		(stationW -> nil)
 		|(initW -> if state==RT2501_S_IDLE then
