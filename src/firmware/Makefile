@@ -96,14 +96,15 @@ dis: bin/$(TARGET).elf
 #   round 4: O1_FN on the RX/ISR dispatch path (ieee80211_input +
 #            input_mgt/input_data/input_ctl) -> FAILS => culprit is in the
 #            -Os remainder (TX/setup half), not the RX dispatch
-#   round 5: O1_FN moved to the TX/setup path: rt2501_send (the EAPOL TX
-#            transport!), rt2501_auth, rt2501_setmode, ieee80211_associate,
-#            ieee80211_send_auth. Flash + join-test pending:
-#            JOINS -> culprit among those five: un-annotate one at a time
-#                     (start by keeping only rt2501_send at -O1)
-#            FAILS -> leftovers (timer/new_rssi_sample/find_closest_rate/
-#                     mask helpers/scan) or a multi-site bug: annotate
-#                     everything EXCEPT the round-4 four next
+#   round 5: O1_FN on the TX/setup path (rt2501_send, rt2501_auth,
+#            rt2501_setmode, ieee80211_associate, ieee80211_send_auth)
+#            -> JOINS => culprit is among those five
+#   round 6: O1_FN on rt2501_send ONLY (the EAPOL msg2/msg4 TX transport;
+#            the other four back at -Os). Flash + join-test pending:
+#            JOINS -> culprit is rt2501_send: read its -Os disasm for the
+#                     real bug (code fix -> full -Os everywhere)
+#            FAILS -> culprit among rt2501_auth/rt2501_setmode/associate/
+#                     send_auth: annotate them one at a time
 O1_DIRS =
 O1_SRCS =
 
