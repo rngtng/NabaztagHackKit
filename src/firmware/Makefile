@@ -82,10 +82,15 @@ dis: bin/$(TARGET).elf
 	$(NM) -lS $< > obj/$(TARGET).sym
 	$(DUMP) -d $< > obj/$(TARGET).dis
 
+# -Os miscompiles the WPA-join path (join works at -O1, fails at -Os; cause not
+# yet pinned). Bisection knob: source dirs listed here build at -O1 (appended
+# after the global -Os, so -O1 wins for just those files). Empty = all -Os.
+O1_DIRS = src/usb src/net
+
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
 	@test -d obj/lst/$(<D) || mkdir -pm 775 obj/lst/$(<D)
-	$(CC) -c $(CFLAGS) -Wa,-adhln=obj/lst/$<.lst $< -o $@  $(LIBS)
+	$(CC) -c $(CFLAGS) $(if $(filter $(O1_DIRS),$(<D)),-O1) -Wa,-adhln=obj/lst/$<.lst $< -o $@  $(LIBS)
 
 obj/%.o : %.s
 	@test -d $(@D) || mkdir -pm 775 $(@D)
