@@ -27,11 +27,15 @@
 #include "net/ieee80211.h"
 #include "net/eapol.h"
 
-/* TEMPORARY -Os WPA-join bisect (see Makefile O1_DIRS/O1_SRCS log): this file
- * at -Os breaks join, at -O1 it works. Narrow inside the file by pinning
- * individual functions to -O1. Cross-level inlining is blocked, so an O1_FN
- * function's static -Os callees stay out-of-line at -Os - the annotation tests
- * exactly the annotated function's own code. Remove once the culprit is found. */
+/* TEMPORARY -Os WPA-join bisect (see Makefile O1_DIRS/O1_SRCS log): join
+ * tracks ieee80211_associate's opt level across 8 hardware runs, yet its -Os
+ * and -O1 codegen are proven behaviorally equivalent (byte-identical assoc
+ * frame and call args - see the Makefile log). So this annotation MASKS the
+ * real bug via timing/bus-pattern side effects rather than fixing a
+ * miscompile. Keep it (it makes join work) but don't trust it as a fix;
+ * remove once the true cause is instrumented down. Cross-level inlining is
+ * blocked, so an O1_FN function's static -Os callees stay out-of-line at
+ * -Os - the annotation tests exactly the annotated function's own code. */
 #define O1_FN __attribute__((optimize("O1")))
 
 

@@ -99,12 +99,22 @@ dis: bin/$(TARGET).elf
 #   round 5: O1_FN on the TX/setup path (rt2501_send, rt2501_auth,
 #            rt2501_setmode, ieee80211_associate, ieee80211_send_auth)
 #            -> JOINS => culprit is among those five
-#   round 6: O1_FN on rt2501_send ONLY (the EAPOL msg2/msg4 TX transport;
-#            the other four back at -Os). Flash + join-test pending:
-#            JOINS -> culprit is rt2501_send: read its -Os disasm for the
-#                     real bug (code fix -> full -Os everywhere)
-#            FAILS -> culprit among rt2501_auth/rt2501_setmode/associate/
-#                     send_auth: annotate them one at a time
+#   round 6: O1_FN on rt2501_send ONLY -> FAILS
+#   round 7: O1_FN on ieee80211_associate ONLY -> JOINS (current state).
+#            Join tracks associate's opt level across all 8 runs.
+# BUT: instruction-level trace of associate -Os vs -O1 (task disasm:firmware,
+# both variants) shows they are behaviorally EQUIVALENT - byte-identical assoc
+# frame (incl. the -Os rodata WPA-IE blob, verified against the -O1 byte
+# stores), identical rt2501_make_tx_descriptor/rt2501_tx args, identical
+# state/timeout updates; the rest of the image differs only by a +0x6c layout
+# shift in literal pools. Store widths differ (-Os merges to strh/str into
+# COMRAM) but make_tx_descriptor word-stores the same COMRAM buffer in every
+# working build, so width alone can't be it. => O1_FN is NOT fixing a
+# miscompile; it perturbs timing/bus-access pattern inside the USB-ISR
+# auth->assoc turnaround (or the join tests hid a confound, e.g. an RT2573
+# wedge #125). Root cause still unpinned - next step is on-device
+# instrumentation (readback of the assoc frame from COMRAM pre-tx + join-stage
+# markers), not more opt-level shuffling.
 O1_DIRS =
 O1_SRCS =
 
