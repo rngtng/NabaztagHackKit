@@ -49,6 +49,11 @@ CFLAGS += -O1
 # disable/enable_ohci_irq() from V1's inc/usb/hcd.h regardless.
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
+CFLAGS += -Wcast-align   # early signal for the uint8_t*->wider-pointer casts above
+# -Werror: our sources are warning-clean as of #150, so a new warning must fail
+# the build. Vendored Lua opts out with -Wno-error in its per-file block below
+# (it is not our code to fix); our own src/ files get no such exemption.
+CFLAGS += -Werror
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 CFLAGS += -mcpu=arm7tdmi -MMD
@@ -111,7 +116,7 @@ dis: bin/$(TARGET).elf
 # through lua_Alloc at L_Umaxalign, so the pointers are always suitably aligned.
 # This is the vendored-Lua equivalent of the alignment audit in #150; our own
 # src/ code stays -Wcast-align-clean.
-obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align
+obj/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)

@@ -37,13 +37,17 @@ and startup are `KEEP`-guarded in the linker script). One selectable app from
 
 ### Warnings (#150)
 Our sources build warning-clean under `-Wall -Wextra -Wpedantic -Wpointer-arith
--Wcast-align` — every `src/`, `src/hal/`, `sys/`, and `src/app/` file across all
-apps compiles with **zero warnings**. Keep it that way; `-Wcast-align` matters on
-ARM7TDMI, where an unaligned 32-bit load rotates silently instead of faulting.
-The only suppression is on the **vendored Lua core** (`obj/lua/%.o`), which adds
-`-Wno-cast-align` (alongside the other Lua-only relaxations) because Lua's
-`GCObject` tagged-union casts are always suitably aligned by `luaM_*`/`lua_Alloc`
-and it is not our code to fix. See the rationale block in the [`Makefile`](Makefile).
+-Wcast-align`, and that is now **enforced with `-Werror`** — every `src/`,
+`src/hal/`, `sys/`, and `src/app/` file across all apps must compile with zero
+warnings or the build fails. `-Wcast-align` matters on ARM7TDMI, where an
+unaligned 32-bit load rotates silently instead of faulting.
+
+The **vendored Lua core** (`obj/lua/%.o`) is exempt: it adds `-Wno-cast-align`
+(Lua's `GCObject` tagged-union casts are always suitably aligned by
+`luaM_*`/`lua_Alloc`) plus the other Lua-only relaxations, and `-Wno-error` so a
+future toolchain's Lua warning does not break our build — it is not our code to
+fix. Our own `src/` files get no such exemption. See the rationale blocks in the
+[`Makefile`](Makefile).
 
 ## Lua runtime (M4, #92)
 `APP=lua` boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
