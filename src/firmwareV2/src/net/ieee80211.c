@@ -27,6 +27,17 @@
 #include "net/ieee80211.h"
 #include "net/eapol.h"
 
+/* TEMPORARY -Os WPA-join bisect (see Makefile O1_DIRS/O1_SRCS log): join
+ * tracks ieee80211_associate's opt level across 8 hardware runs, yet its -Os
+ * and -O1 codegen are proven behaviorally equivalent (byte-identical assoc
+ * frame and call args - see the Makefile log). So this annotation MASKS the
+ * real bug via timing/bus-pattern side effects rather than fixing a
+ * miscompile. Keep it (it makes join work) but don't trust it as a fix;
+ * remove once the true cause is instrumented down. Cross-level inlining is
+ * blocked, so an O1_FN function's static -Os callees stay out-of-line at
+ * -Os - the annotation tests exactly the annotated function's own code. */
+#define O1_FN __attribute__((optimize("O1")))
+
 
 const uint8_t ieee80211_broadcast_address[IEEE80211_ADDR_LEN] =
 { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
@@ -209,6 +220,10 @@ static uint8_t ieee80211_crypt_to_rt2501cipher(uint8_t crypt)
 					DBG_WIFI("Unknown WEP Crypt");
           break;
       };
+      /* No break here would fall through into the WPA case below and
+       * mis-parse crypt&0x0F (a WEP key-length subtype) as a WPA cipher.
+       * Unknown WEP → the safe RT2501_CIPHER_NONE default at the bottom. */
+      break;
     case IEEE80211_CRYPT_WPA:
     case IEEE80211_CRYPT_WPA2:
       switch(crypt&0x0F)
@@ -221,6 +236,7 @@ static uint8_t ieee80211_crypt_to_rt2501cipher(uint8_t crypt)
 					DBG_WIFI("Unknown WPA Crypt");
           break;
       };
+      break;
     case IEEE80211_CRYPT_NONE:
 			return RT2501_CIPHER_NONE;
 		default:
@@ -593,7 +609,7 @@ static void ieee80211_deauth_sta(int32_t index, uint16_t reason)
   }
 }
 
-static void ieee80211_associate(void)
+static void O1_FN ieee80211_associate(void)
 {
 //#pragma pack(1)
 	struct {

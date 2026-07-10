@@ -196,8 +196,10 @@ static int32_t rt2501_setup(void)
 
   DBG_WIFI("Loading 8051 firmware...");
   for(i=0;i<sizeof(rt2501_firmware);i+=4) {
+    /* rt2501_firmware is aligned(4) and i steps by 4, so the word read is
+     * aligned; the (void *) makes that intent explicit for -Wcast-align. */
     if(!rt2501_write(rt2501_dev, RT2501_FIRMWARE_IMAGE_BASE+i,
-           *((int32_t *)(rt2501_firmware+i)))) return 0;
+           *((const int32_t *)(const void *)(rt2501_firmware+i)))) return 0;
 #ifdef DEBUG_WIFI
     if((i % 64) == 0) DBG_WIFI(".");
 #endif
@@ -783,7 +785,10 @@ static void rt2501_calibrate(void)
 
 static uint8_t *rt2501_rxbuf; /* to store the URB temporarily */
 static uint32_t rt2501_frame_position;
-static uint8_t rt2501_frame[RT2501_MAX_FRAME_SIZE];
+/* aligned(4): the RX path views this buffer as a word-aligned RXD_STRUC
+ * (see rt2501_rx_callback), and an unaligned 32-bit load on ARM7TDMI rotates
+ * silently rather than faulting. */
+static uint8_t rt2501_frame[RT2501_MAX_FRAME_SIZE] __attribute__ ((aligned(4)));
 
 static void rt2501_submit_rx(void);
 
@@ -801,7 +806,7 @@ static void rt2501_rx_callback(PURB urb)
   }
   memcpy(rt2501_frame+rt2501_frame_position, urb->buffer, RT2501_USB_PACKET_SIZE);
   if(urb->status < RT2501_USB_PACKET_SIZE) {
-    rxd = (PRXD_STRUC)rt2501_frame;
+    rxd = (PRXD_STRUC)(void *)rt2501_frame;  /* rt2501_frame is aligned(4) */
 #if 0
 //#ifdef DEBUG_WIFI
       sprintf(dbg_buffer, "RX Crc=%d, CipherErr=%d, KeyIndex=%d, CipherAlg=%d, MyBss=%d, Iv=%08lx, Eiv=%08lx"EOL,
@@ -1025,8 +1030,11 @@ uint8_t rt2501_beacon(void *buffer, uint32_t length)
     */
     if((length % 4) != 0) length += 4 - (length % 4);
     for(i=0;i<length;i+=4) {
+      /* buffer is the address of a word-aligned struct (see the sole caller,
+       * ieee80211_send_beacon) and i steps by 4; (void *) documents the
+       * verified alignment for -Wcast-align. */
       rt2501_write(rt2501_dev, RT2501_HW_BEACON_BASE0+i,
-             *((uint32_t *)((uint8_t *)buffer+i)));
+             *((uint32_t *)(void *)((uint8_t *)buffer+i)));
     }
 
     csr9.field.bTsfTicking = 1;

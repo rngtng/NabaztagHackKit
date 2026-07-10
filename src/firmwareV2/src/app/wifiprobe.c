@@ -158,6 +158,13 @@ int main(void)
 
   sh_puts("#119 RT2501 802.11 bring-up probe\n");
 
+  /* Park the audio amplifier: probes never init audio, so the amp pin sits
+   * in its power-on state and USB traffic on the ExtRAM/EMC bus couples into
+   * the speaker as clicks/static. Amp off is enough - full init_vlsi would
+   * hang here (its wait_dreq needs init_spi first). */
+  CS_AUDIO_AMP_AS_OUTPUT;
+  TURN_OFF_AUDIO_AMPLIFIER;
+
   /* [1] tick IRQ (see usbprobe.c) */
   init_irq();
   init_tick();
