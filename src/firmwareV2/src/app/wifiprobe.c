@@ -18,6 +18,8 @@
  * Run: task repl:firmwareV2:hw APP=wifiprobe
  * Hardware-only (the sim has no OHCI model).
  */
+#include <string.h>
+
 #include "ml674061.h"
 #include "ml60842.h"
 #include "common.h"
@@ -30,6 +32,9 @@
 #include "usb/usbctrl.h"
 #include "usb/rt2501usb.h"
 #include "net/eapol.h"
+
+#include "hal/spi.h"
+#include "hal/led.h"
 
 /* ---- semihosting console (M3 #91 path) ---------------------------------- */
 #define SYS_WRITEC 0x03
@@ -167,6 +172,22 @@ static const char *state_name(int32_t s)
   default:                  return "?";
   }
 }
+
+/* The 802.11 state machine itself (ieee80211.h extern) - rt2501_state()
+ * flattens AUTH/ASSOC/EAPOL into CONNECTING, but *which* of those the
+ * machine dies in is exactly the #125 question. */
+static const char *dot11_name(int32_t s)
+{
+  switch (s) {
+  case IEEE80211_S_IDLE:  return "IDLE";
+  case IEEE80211_S_SCAN:  return "SCAN";
+  case IEEE80211_S_AUTH:  return "AUTH";
+  case IEEE80211_S_ASSOC: return "ASSOC";
+  case IEEE80211_S_EAPOL: return "EAPOL";
+  case IEEE80211_S_RUN:   return "RUN";
+  default:                return "?";
+  }
+}
 #endif
 
 int main(void)
@@ -185,6 +206,12 @@ int main(void)
    * hang here (its wait_dreq needs init_spi first). */
   CS_AUDIO_AMP_AS_OUTPUT;
   TURN_OFF_AUDIO_AMPLIFIER;
+
+  /* SPI + LED driver: eapol.c's PBKDF2/handshake blinks the nose LEDs as
+   * progress (set_led every 64 iterations) - with SPI uninitialized that
+   * set_led polls SPIF forever and wedges the PMK derivation. */
+  init_spi();
+  init_led_rgb_driver();
 
   /* [1] tick IRQ (see usbprobe.c) */
   init_irq();
@@ -250,19 +277,54 @@ int main(void)
   if (state == RT2501_S_BROKEN)
     goto done;
 
-  /* [5] broadcast scan; callbacks print as beacons/probe-responses arrive */
-  sh_puts("[5] scanning...\n");
-  scan_hits = 0;
-  rt2501_scan(NULL, scan_cb, NULL);
-  t0 = counter_timer;
-  while (rt2501_state() == RT2501_S_SCAN && counter_timer - t0 < 30000)
-    pump_ms(100);
-  sh_puts("[5] scan finished: ");
-  sh_putdec(scan_hits);
-  sh_puts(" networks, rt2501_state=");
-  sh_putdec(rt2501_state());
-  sh_puts("\n");
-  print_scan_results();
+  /* [5] scan. With a target SSID, scan DIRECTED (pass the SSID): the probe
+   * request carries it, so the AP answers with a probe-response even when we
+   * would miss its passive beacon in the per-channel window - the broadcast
+   * scan kept missing a weak ch13 guest AP. Retry until the target shows up
+   * (or a cap), since even directed catch is probabilistic per pass. */
+  {
+    int pass;
+#ifdef WIFI_SSID
+    const char *scan_ssid = WIFI_SSID;
+    int want_target = 1;
+#else
+    const char *scan_ssid = NULL;
+    int want_target = 0;
+#endif
+    scan_hits = 0;
+    for (pass = 1; pass <= 2; pass++) {
+      sh_puts("[5] scan pass ");
+      sh_putdec(pass);
+      sh_puts(scan_ssid ? " (directed)...\n" : " (broadcast)...\n");
+      rt2501_scan((const uint8_t *)scan_ssid, scan_cb, NULL);
+      t0 = counter_timer;
+      while (rt2501_state() == RT2501_S_SCAN && counter_timer - t0 < 30000)
+        pump_ms(100);
+      if (!want_target)
+        break;
+#ifdef WIFI_SSID
+      {
+        int i, j, found = 0;
+        for (i = 0; i < scan_hits && i < MAX_SEEN; i++) {
+          const char *w = WIFI_SSID;
+          for (j = 0; w[j] && (char)seen[i].ssid[j] == w[j]; j++)
+            ;
+          if (!w[j] && !seen[i].ssid[j]) { found = 1; break; }
+        }
+        if (found)
+          break;
+      }
+#endif
+    }
+    sh_puts("[5] scan finished: ");
+    sh_putdec(scan_hits);
+    sh_puts(" networks, rt2501_state=");
+    sh_putdec(rt2501_state());
+    sh_puts("\n");
+  }
+  /* Full listing printed LAST (after [6]): ~30 lines of per-char semihosting
+   * take longer than the whole association - don't let the console cap eat
+   * the verdict. */
 
 #ifdef WIFI_SSID
   /* [6] STA association + WPA handshake against the test AP (SSID/PSK from
@@ -270,6 +332,7 @@ int main(void)
    * drives V1 to BROKEN (#125). */
   {
     static uint8_t pmk[32];
+    static struct rt2501_scan_result synth;
     struct rt2501_scan_result *target = NULL;
     int32_t last_state, s;
     int i, j;
@@ -283,6 +346,31 @@ int main(void)
         break;
       }
     }
+#ifdef WIFI_BSSID
+    if (target == NULL) {
+      /* Scan missed it (weak band-edge AP) - synthesize the target from the
+       * known BSSID/channel so the association path is tested regardless.
+       * Parse "aa:bb:cc:dd:ee:ff" -> 6 bytes. */
+      const char *b = WIFI_BSSID;
+      for (i = 0; i < 6; i++) {
+        uint8_t hi = (b[0] <= '9') ? b[0] - '0' : (b[0] | 0x20) - 'a' + 10;
+        uint8_t lo = (b[1] <= '9') ? b[1] - '0' : (b[1] | 0x20) - 'a' + 10;
+        synth.bssid[i] = (uint8_t)((hi << 4) | lo);
+        b += 3; /* two hex digits + separator */
+      }
+      memcpy(synth.mac, synth.bssid, 6);
+      for (j = 0; WIFI_SSID[j]; j++)
+        synth.ssid[j] = (uint8_t)WIFI_SSID[j];
+      synth.ssid[j] = 0;
+      synth.channel = WIFI_CHANNEL;
+      synth.rssi = 0;
+      /* All 802.11b/g rates; the AP takes the subset it supports. */
+      synth.rateset = 0xFFF;
+      synth.encryption = IEEE80211_CRYPT_WPA2 | (IEEE80211_CIPHER_CCMP << 1);
+      target = &synth;
+      sh_puts("[6] SSID not scanned - using known BSSID " WIFI_BSSID "\n");
+    }
+#endif
     if (target == NULL) {
       sh_puts("[6] SSID \"" WIFI_SSID "\" not in scan results - skipping\n");
       goto done;
@@ -304,23 +392,35 @@ int main(void)
                 target->rateset, IEEE80211_AUTH_OPEN, target->encryption, pmk);
 
     /* Pump and report every state-machine transition; the auth/assoc/EAPOL
-     * exchange runs inside the stack (rx IRQ + rt2501_timer retries). */
+     * exchange runs inside the stack (rx IRQ + rt2501_timer retries).
+     * ieee80211_state is tracked separately - which sub-state dies is the
+     * #125 question (AUTH: no/bad auth response; ASSOC: assoc rejected,
+     * e.g. RSN IE; EAPOL: 4-way handshake). */
     t0 = counter_timer;
     last_state = -1;
-    do {
-      pump_ms(100);
-      s = rt2501_state();
-      if (s != last_state) {
-        last_state = s;
-        sh_puts("    t=");
-        sh_putdec((int32_t)((counter_timer - t0) / 1000));
-        sh_puts("s state=");
-        sh_puts(state_name(s));
-        sh_puts(" eapol=");
-        sh_putdec(eapol_state);
-        sh_puts("\n");
-      }
-    } while (s != RT2501_S_CONNECTED && counter_timer - t0 < 30000);
+    {
+      int32_t last_dot11 = -1, d;
+      do {
+        pump_ms(100);
+        s = rt2501_state();
+        d = ieee80211_state;
+        if (s != last_state || d != last_dot11) {
+          last_state = s;
+          last_dot11 = d;
+          sh_puts("    t=");
+          sh_putdec((int32_t)((counter_timer - t0) / 1000));
+          sh_puts("s state=");
+          sh_puts(state_name(s));
+          sh_puts(" 802.11=");
+          sh_puts(dot11_name(d));
+          sh_puts(" timeout=");
+          sh_putdec((int32_t)ieee80211_timeout);
+          sh_puts(" eapol=");
+          sh_putdec(eapol_state);
+          sh_puts("\n");
+        }
+      } while (s != RT2501_S_CONNECTED && counter_timer - t0 < 30000);
+    }
 
     sh_puts(s == RT2501_S_CONNECTED
               ? "[6] ASSOCIATED - WPA handshake complete\n"
@@ -329,6 +429,7 @@ int main(void)
 #endif
 
 done:
+  print_scan_results();
   sh_puts("<<FV_DONE>>\n");
   for (;;)
     CLR_WDT;
