@@ -36,6 +36,14 @@ CFLAGS += -Os   # size-optimised: the boot bytecode is embedded in the 124k flas
 #CFLAGS += -g
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
+# -Wcast-align surfaces uint8_t*->uint32_t*/struct* casts (the frame type-punning
+# that -Os miscompiled) at build time - the early signal for this bug class.
+CFLAGS += -Wcast-align
+# -Werror: the tree is warning-clean as of #150 (net/crypto casts fixed to be
+# genuinely aligned, verified-aligned casts routed through (void *)), so any new
+# warning must fail the build rather than scroll past. Add a scoped -Wno-error=<w>
+# with a rationale if a future toolchain flags something benign.
+CFLAGS += -Werror
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 CFLAGS += -mcpu=arm7tdmi -MMD
