@@ -20,3 +20,4 @@
 
 # task build output (OUT=build in Taskfile.yaml)
 /build/
+.env

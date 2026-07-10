@@ -83,6 +83,14 @@ ifneq ($(DEBUG_WIFI),)
   CFLAGS += -DDEBUG_WIFI
 endif
 
+# M11 (#119): test-AP credentials for wifiprobe's association stage, taken
+# from the environment (host: `source .env`, forwarded into Docker by the
+# Taskfile). Never hardcode credentials in source or commit them - .env is
+# gitignored; the defines only ever land in local build artifacts.
+ifneq ($(SSID),)
+  CFLAGS += -DWIFI_SSID='"$(SSID)"' -DWIFI_PSK='"$(PSK)"'
+endif
+
 LDSCRIPT = sys/ml67q4051.ld
 
 # Linker options
@@ -142,12 +150,14 @@ dis: bin/$(TARGET).elf
 # src/ code stays -Wcast-align-clean.
 $(OBJDIR)/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
 
-# Vendored V1 USB host stack + 802.11/WPA stack (M11a #143, M11b): same
-# treatment - size-optimized (#128 budgets usb/+net/ at -Os) and
-# warning-relaxed (not our code to fix). usbdbg.c is ours but shares the dir
-# for gc-sections simplicity.
-$(OBJDIR)/src/usb/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
-$(OBJDIR)/src/net/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+# Vendored V1 USB host stack + 802.11/WPA stack (M11a #143, M11b):
+# warning-relaxed (not our code to fix). NO -Os here despite the #128 budget:
+# per the V1 -Os WPA-join hunt (see the -O1 rule note above), the vendored
+# net/usb sources stay at the global -O1 until the root cause is pinned -
+# revisit the flash budget then. usbdbg.c is ours but shares the dir for
+# gc-sections simplicity.
+$(OBJDIR)/src/usb/%.o : CFLAGS += -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+$(OBJDIR)/src/net/%.o : CFLAGS += -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(OBJDIR)/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)

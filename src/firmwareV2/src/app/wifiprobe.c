@@ -29,6 +29,7 @@
 #include "usb/usbh.h"
 #include "usb/usbctrl.h"
 #include "usb/rt2501usb.h"
+#include "net/eapol.h"
 
 /* ---- semihosting console (M3 #91 path) ---------------------------------- */
 #define SYS_WRITEC 0x03
@@ -148,6 +149,26 @@ static void pump_ms(uint32_t ms)
 /* usbhcore.c's init-once guard; cleared for the [4] retry re-init cycle */
 extern uint8_t usbhost_init_status;
 
+#ifdef WIFI_SSID
+/* eapol.c's PBKDF2 (4096-iter HMAC-SHA1 x2); no header declares it - V1's
+ * vm/vnet.c declared it the same way at its netPmk call site. */
+void mypassword_to_pmk(const uint8_t *password, uint8_t *ssid,
+                       int32_t ssidlength, uint8_t *pmk);
+
+static const char *state_name(int32_t s)
+{
+  switch (s) {
+  case RT2501_S_BROKEN:     return "BROKEN";
+  case RT2501_S_IDLE:       return "IDLE";
+  case RT2501_S_SCAN:       return "SCAN";
+  case RT2501_S_CONNECTING: return "CONNECTING";
+  case RT2501_S_CONNECTED:  return "CONNECTED";
+  case RT2501_S_MASTER:     return "MASTER";
+  default:                  return "?";
+  }
+}
+#endif
+
 int main(void)
 {
   volatile uint32_t spin;
@@ -242,6 +263,70 @@ int main(void)
   sh_putdec(rt2501_state());
   sh_puts("\n");
   print_scan_results();
+
+#ifdef WIFI_SSID
+  /* [6] STA association + WPA handshake against the test AP (SSID/PSK from
+   * the environment at build time - see Makefile). This is the path that
+   * drives V1 to BROKEN (#125). */
+  {
+    static uint8_t pmk[32];
+    struct rt2501_scan_result *target = NULL;
+    int32_t last_state, s;
+    int i, j;
+
+    for (i = 0; i < scan_hits && i < MAX_SEEN; i++) {
+      const char *w = WIFI_SSID;
+      for (j = 0; w[j] && (char)seen[i].ssid[j] == w[j]; j++)
+        ;
+      if (!w[j] && !seen[i].ssid[j]) {
+        target = &seen[i];
+        break;
+      }
+    }
+    if (target == NULL) {
+      sh_puts("[6] SSID \"" WIFI_SSID "\" not in scan results - skipping\n");
+      goto done;
+    }
+
+    sh_puts("[6] target found: bssid=");
+    sh_putmac(target->bssid);
+    sh_puts(" ch=");
+    sh_putdec(target->channel);
+    sh_puts(" enc=");
+    sh_putdec(target->encryption);
+    sh_puts("\n[6] deriving PMK (PBKDF2 on-device, a few seconds)...\n");
+    if ((target->encryption & 0xF0) != IEEE80211_CRYPT_NONE)
+      mypassword_to_pmk((const uint8_t *)WIFI_PSK, target->ssid,
+                        (int32_t)sizeof(WIFI_SSID) - 1, pmk);
+
+    sh_puts("[6] rt2501_auth...\n");
+    rt2501_auth(target->ssid, rt2501_mac, target->bssid, target->channel,
+                target->rateset, IEEE80211_AUTH_OPEN, target->encryption, pmk);
+
+    /* Pump and report every state-machine transition; the auth/assoc/EAPOL
+     * exchange runs inside the stack (rx IRQ + rt2501_timer retries). */
+    t0 = counter_timer;
+    last_state = -1;
+    do {
+      pump_ms(100);
+      s = rt2501_state();
+      if (s != last_state) {
+        last_state = s;
+        sh_puts("    t=");
+        sh_putdec((int32_t)((counter_timer - t0) / 1000));
+        sh_puts("s state=");
+        sh_puts(state_name(s));
+        sh_puts(" eapol=");
+        sh_putdec(eapol_state);
+        sh_puts("\n");
+      }
+    } while (s != RT2501_S_CONNECTED && counter_timer - t0 < 30000);
+
+    sh_puts(s == RT2501_S_CONNECTED
+              ? "[6] ASSOCIATED - WPA handshake complete\n"
+              : "[6] FAIL - not connected after 30s\n");
+  }
+#endif
 
 done:
   sh_puts("<<FV_DONE>>\n");
