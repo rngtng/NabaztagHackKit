@@ -22,7 +22,14 @@
 struct MD5_CTX {
 	uint32_t buf[4];
 	uint32_t bits[2];
-	uint8_t in[64];
+	/* 64-byte input block. Declared as uint32_t[16] (not uint8_t[64]) so it is
+	 * word-aligned and MD5Transform can consume it directly — the old
+	 * (uint32_t*)ctx->in casts tripped -Wcast-align, and an unaligned 32-bit
+	 * load on ARM7TDMI rotates silently rather than faulting. Byte-level access
+	 * goes through an explicit (uint8_t*) cast, which only loosens alignment.
+	 * MD5 treats the block as little-endian words, matching this little-endian
+	 * core, so the in-memory layout is identical to the byte array it replaces. */
+	uint32_t in[16];
 };
 
 /**
@@ -76,7 +83,7 @@ static void MD5Update(struct MD5_CTX *ctx, const uint8_t *buf, uint32_t len)
 			return;
 		}
 		memcpy(p, buf, t);
-		MD5Transform(ctx->buf, (uint32_t *) ctx->in);
+		MD5Transform(ctx->buf, ctx->in);
 		buf += t;
 		len -= t;
 	}
@@ -84,7 +91,7 @@ static void MD5Update(struct MD5_CTX *ctx, const uint8_t *buf, uint32_t len)
 
 	while (len >= 64) {
 		memcpy(ctx->in, buf, 64);
-		MD5Transform(ctx->buf, (uint32_t *) ctx->in);
+		MD5Transform(ctx->buf, ctx->in);
 		buf += 64;
 		len -= 64;
 	}
@@ -111,7 +118,7 @@ static void MD5Final(uint8_t digest[16], struct MD5_CTX *ctx)
 
 	/* Set the first char of padding to 0x80.  This is safe since there is
 	always at least one byte free */
-	p = ctx->in + count;
+	p = (uint8_t *) ctx->in + count;
 	*p++ = 0x80;
 
 	/* Bytes of padding needed to make 64 bytes */
@@ -121,7 +128,7 @@ static void MD5Final(uint8_t digest[16], struct MD5_CTX *ctx)
 	if (count < 8) {
 		/* Two lots of padding:  Pad the first block to 64 bytes */
 		memset(p, 0, count);
-		MD5Transform(ctx->buf, (uint32_t *) ctx->in);
+		MD5Transform(ctx->buf, ctx->in);
 
 		/* Now fill the next block with 56 bytes */
 		memset(ctx->in, 0, 56);
@@ -131,10 +138,10 @@ static void MD5Final(uint8_t digest[16], struct MD5_CTX *ctx)
 	}
 
 	/* Append length in bits and transform */
-	((uint32_t *) ctx->in)[14] = ctx->bits[0];
-	((uint32_t *) ctx->in)[15] = ctx->bits[1];
+	ctx->in[14] = ctx->bits[0];
+	ctx->in[15] = ctx->bits[1];
 
-	MD5Transform(ctx->buf, (uint32_t *) ctx->in);
+	MD5Transform(ctx->buf, ctx->in);
 	memcpy(digest, ctx->buf, 16);
 }
 
