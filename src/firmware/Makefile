@@ -93,13 +93,17 @@ dis: bin/$(TARGET).elf
 #   round 3: O1_SRCS = ieee80211.c     -> JOINS  => culprit is ieee80211.c
 #            (rest of src/net was already cleared offline: EAPOL PTK/msg2 build
 #            byte-identical -O1 vs -Os, crypto passes RFC 2202 KATs at -Os)
-#   round 4: function-level bisect via O1_FN attribute IN ieee80211.c (knobs
-#            below empty). Currently -O1: the RX/ISR dispatch path
-#            (ieee80211_input + input_mgt/input_data/input_ctl); all other
-#            functions -Os. Flash + join-test pending:
-#            JOINS -> culprit inside those four: un-annotate one at a time
-#            FAILS -> culprit in the tx/setup half: move O1_FN to rt2501_auth,
-#                     ieee80211_associate, ieee80211_send_auth, rt2501_setmode
+#   round 4: O1_FN on the RX/ISR dispatch path (ieee80211_input +
+#            input_mgt/input_data/input_ctl) -> FAILS => culprit is in the
+#            -Os remainder (TX/setup half), not the RX dispatch
+#   round 5: O1_FN moved to the TX/setup path: rt2501_send (the EAPOL TX
+#            transport!), rt2501_auth, rt2501_setmode, ieee80211_associate,
+#            ieee80211_send_auth. Flash + join-test pending:
+#            JOINS -> culprit among those five: un-annotate one at a time
+#                     (start by keeping only rt2501_send at -O1)
+#            FAILS -> leftovers (timer/new_rssi_sample/find_closest_rate/
+#                     mask helpers/scan) or a multi-site bug: annotate
+#                     everything EXCEPT the round-4 four next
 O1_DIRS =
 O1_SRCS =
 
