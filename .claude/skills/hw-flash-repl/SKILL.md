@@ -115,3 +115,14 @@ ExtRAM) triggers constantly.
   GPIO when `MOTOR_SPEED_CONTROL` had already switched motor drive to the FTM
   PWM peripheral. `FTMEN=0x3F` (vs `0x0F`) is the quick on-device tell that
   `MOTOR_SPEED_CONTROL` is active.
+
+## Never print from IRQ context
+
+Each semihosting char is a debugger trap: the HW breakpoint at `0x8` halts
+the **whole CPU** while OpenOCD services it. A `sh_puts`/`DBG_*` inside an
+ISR (USB rx callbacks, timer handlers) starves every other interrupt for
+milliseconds per character - stretching `DelayMs`, timing out in-flight USB
+transfers, and wedging runs in ways that vanish when you remove the print
+(#119 scan-callback lesson). Record data in a buffer inside the ISR; print
+from the main loop. Debug builds (`DEBUG=1`) trace from ISRs by design -
+expect them to perturb timing badly and use a longer `--run-timeout`.
