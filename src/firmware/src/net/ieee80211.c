@@ -600,7 +600,7 @@ static void ieee80211_deauth_sta(int32_t index, uint16_t reason)
   }
 }
 
-static void ieee80211_associate(void)
+static void O1_FN ieee80211_associate(void)
 {
 //#pragma pack(1)
 	struct {
@@ -2016,7 +2016,7 @@ void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 	enable_ohci_irq();
 }
 
-int32_t O1_FN rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_mac,
+int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_mac,
 		int32_t lowrate, int32_t mayblock)
 {
 //#pragma pack(1)
