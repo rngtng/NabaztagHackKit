@@ -27,6 +27,13 @@
 #include "net/ieee80211.h"
 #include "net/eapol.h"
 
+/* TEMPORARY -Os WPA-join bisect (see Makefile O1_DIRS/O1_SRCS log): this file
+ * at -Os breaks join, at -O1 it works. Narrow inside the file by pinning
+ * individual functions to -O1. Cross-level inlining is blocked, so an O1_FN
+ * function's static -Os callees stay out-of-line at -Os - the annotation tests
+ * exactly the annotated function's own code. Remove once the culprit is found. */
+#define O1_FN __attribute__((optimize("O1")))
+
 
 const uint8_t ieee80211_broadcast_address[IEEE80211_ADDR_LEN] =
 { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
@@ -1029,7 +1036,7 @@ static void ieee80211_send_probe_response(uint8_t *dest_mac)
 	}
 }
 
-static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
+static void O1_FN ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 	struct ieee80211_frame *fr = (struct ieee80211_frame *)frame;
 	uint8_t *frame_current, *frame_end;
@@ -1469,7 +1476,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 	}
 }
 
-static void ieee80211_input_ctl(uint8_t *frame, uint32_t length)
+static void O1_FN ieee80211_input_ctl(uint8_t *frame, uint32_t length)
 {
 	DBG_WIFI("Received control frame"EOL);
   (void)frame;
@@ -1477,7 +1484,7 @@ static void ieee80211_input_ctl(uint8_t *frame, uint32_t length)
 	/* handled by the RT2501 ASIC */
 }
 
-static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
+static void O1_FN ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 //#pragma pack(1)
 	struct {
@@ -1565,7 +1572,7 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 	}
 }
 
-void ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
+void O1_FN ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 //#ifdef DEBUG_WIFI
 //  DBG_WIFI("Rxed:"EOL);
