@@ -53,14 +53,16 @@ endif
 CFLAGS  =
 CFLAGS += --specs=nosys.specs
 CFLAGS += -O1
-# Global default is -O1; flash-tight files get a per-file -Os override (Lua below;
-# the wifi/net port will likely need it too). The -Os WPA-join break in V1 firmware
-# was NOT strict aliasing (disproven - byte-identical codegen), and the missing
-# compiler barrier found in the OHCI-ISR critical-section guards did not cure it
-# alone either - the root cause is still unpinned (V1 pins src/usb+src/net at -O1,
-# bisect in progress). Rule until it is pinned: NEVER put the vendored net/usb
-# sources in the per-file -Os list, and carry over the barrier'd
-# disable/enable_ohci_irq() from V1's inc/usb/hcd.h regardless.
+# Global default is -O1; flash-tight files get a per-file -Os override (Lua and
+# the vendored wifi net/usb dirs, below). The V1 -Os WPA-join break was NOT
+# strict aliasing (disproven - byte-identical codegen) and the OHCI-ISR barrier
+# fix did not cure it alone; the root cause is still unpinned. What is EMPIRICAL:
+# V1 connects with global -Os + ieee80211_associate alone at -O1 (in-source
+# O1_FN). V2 first tried net/usb at -O1 (making O1_FN a no-op) and died in
+# 802.11 AUTH - so the fix is the opt-level DELTA on associate, not -O1 itself.
+# Rule: build the vendored net/usb dirs at -Os (per-file block below) so O1_FN
+# keeps its delta, and carry over the barrier'd disable/enable_ohci_irq() from
+# V1's inc/usb/hcd.h regardless.
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
 CFLAGS += -Wcast-align   # early signal for the uint8_t*->wider-pointer casts above
@@ -89,6 +91,12 @@ endif
 # gitignored; the defines only ever land in local build artifacts.
 ifneq ($(SSID),)
   CFLAGS += -DWIFI_SSID='"$(SSID)"' -DWIFI_PSK='"$(PSK)"'
+endif
+# Optional: associate directly to a known BSSID/channel, bypassing the scan
+# (a weak band-edge AP can be a coin-flip to catch - this tests the assoc path
+# deterministically). BSSID as "aa:bb:..:ff", parsed at runtime.
+ifneq ($(BSSID),)
+  CFLAGS += -DWIFI_BSSID='"$(BSSID)"' -DWIFI_CHANNEL=$(CHANNEL)
 endif
 
 LDSCRIPT = sys/ml67q4051.ld
@@ -150,14 +158,17 @@ dis: bin/$(TARGET).elf
 # src/ code stays -Wcast-align-clean.
 $(OBJDIR)/lua/%.o : CFLAGS += -Os -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-cast-align -Wno-error
 
-# Vendored V1 USB host stack + 802.11/WPA stack (M11a #143, M11b):
-# warning-relaxed (not our code to fix). NO -Os here despite the #128 budget:
-# per the V1 -Os WPA-join hunt (see the -O1 rule note above), the vendored
-# net/usb sources stay at the global -O1 until the root cause is pinned -
-# revisit the flash budget then. usbdbg.c is ours but shares the dir for
-# gc-sections simplicity.
-$(OBJDIR)/src/usb/%.o : CFLAGS += -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
-$(OBJDIR)/src/net/%.o : CFLAGS += -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+# Vendored V1 USB host stack + 802.11/WPA stack (M11a #143, M11b): built at
+# -Os to MATCH V1's proven-connecting config exactly (V1 global is -Os with
+# ieee80211_associate alone bumped to -O1 via the in-source O1_FN). The WPA
+# join is NOT fixed by -O1 per se - it needs associate to differ from the -Os
+# code around it; that opt-level DELTA is the (timing/layout) fix. Building
+# these dirs at -O1 makes O1_FN a no-op, kills the delta, and reverts the
+# failure (V2 died in 802.11 AUTH until this line went back to -Os). Also
+# recovers the #128 flash budget. -Wno-error like vendored Lua: DEBUG builds
+# un-erase the DBG sprintf calls and expose V1-era format-string warnings.
+$(OBJDIR)/src/usb/%.o : CFLAGS += -Os -Wno-error -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
+$(OBJDIR)/src/net/%.o : CFLAGS += -Os -Wno-error -Wno-pedantic -Wno-unused-parameter -Wno-sign-compare -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(OBJDIR)/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)

@@ -50,10 +50,7 @@ tasks:
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - task: image
-      # bind-mount the tree at /work; obj/ and bin/ land back on the host.
-      # -e SSID -e PSK: forward the test-AP credentials (source .env) for
-      # wifiprobe's association stage; empty when unset - see Makefile.
-      - 'docker run --rm -e SSID -e PSK -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}'
+      - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
 
   sim-image:
     internal: true   # Unicorn simulator image (#96); rebuilt when sim/ changes
