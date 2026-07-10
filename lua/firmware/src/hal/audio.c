@@ -8,7 +8,9 @@
  * VOLUME write/read-back). See inc/hal/audio.h.
  *
  * vlsi_play() does real SDI-stream playback, so SCI_VOLUME actually attenuates
- * decoded audio (unlike the sine test). ADPCM record is dropped (future work).
+ * decoded audio (unlike the sine test). vlsi_rec_start/read/stop add IMA-ADPCM
+ * microphone record, ported from src/firmware's init_adpcm_encode/rec_check/
+ * stop_adpcm_encode.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -198,4 +200,57 @@ void vlsi_play(const uint8_t *data, uint32_t len)
   CS_AUDIO_SDI_SET;
 
   vlsi_ampli(0);
+}
+
+void vlsi_rec_start(uint16_t sample_rate, uint16_t gain)
+{
+  vlsi_ampli(0);   /* mic in, speaker off: avoid feedback while recording */
+
+  /* Sample-rate divider base: CLKI/256 = 12.288 MHz x 4 / 256 = 192 kHz (same
+   * CLOCKF 0xc000 as init_vlsi / src/firmware). Must be set before entering
+   * ADPCM mode. */
+  vlsi_write_sci(VS1003_AICTRL0, (uint16_t)(192000UL / sample_rate));
+  vlsi_write_sci(VS1003_AICTRL1, gain);
+
+  /* ADPCM record starts on a soft reset with SM_ADPCM set (datasheet; same
+   * order as src/firmware's init_adpcm_encode). CLOCKF survives soft resets. */
+  vlsi_write_sci(VS1003_MODE,
+                 VS1003_MODE_NATIVE | VS1003_MODE_ADPCM | VS1003_MODE_RESET);
+  wait_dreq();
+}
+
+uint32_t vlsi_rec_read(uint8_t *dst, uint32_t max, unsigned long wait)
+{
+  unsigned long guard = 0;
+  uint16_t words;
+  uint32_t n = 0;
+
+  /* HDAT1 = record-FIFO fill in 16-bit words; the 0xFF80 mask (from V1's
+   * rec_check) keeps whole 128-word (256-byte) ADPCM blocks only. One block
+   * is ~63 ms of 8 kHz audio, a few thousand polls - callers wanting a
+   * blocking read pass a `wait` comfortably above that; 0 = single check
+   * (the cooperative mode). The bounded exit is also what ends the wait
+   * off-hardware (simulator: HDAT1 reads 0 forever). */
+  while ((words = (uint16_t)(vlsi_read_sci(VS1003_HDAT1) & 0xFF80)) == 0) {
+    if (guard++ >= wait)
+      return 0;
+    CLR_WDT;
+  }
+
+  if ((uint32_t)words > (max >> 1))
+    words = (uint16_t)((max >> 1) & 0xFF80U);
+
+  while (words--) {
+    uint16_t val = vlsi_read_sci(VS1003_HDAT0);
+    dst[n++] = (uint8_t)(val >> 8);   /* MSB first (VS10xx ADPCM app-note) */
+    dst[n++] = (uint8_t)val;
+    CLR_WDT;
+  }
+  return n;
+}
+
+void vlsi_rec_stop(void)
+{
+  vlsi_write_sci(VS1003_MODE, VS1003_MODE_NATIVE | VS1003_MODE_RESET);
+  wait_dreq();
 }

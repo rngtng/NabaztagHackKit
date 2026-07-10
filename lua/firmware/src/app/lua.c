@@ -547,7 +547,8 @@ void *_sbrk(ptrdiff_t incr)
 }
 
 /* ---- hardware bindings: the `nab` module --------------------------------- */
-/* Exposes the LEDs, head button, audio, RFID coupler, and ear motors to Lua. */
+/* Exposes the LEDs, head button, audio (speaker + microphone), RFID coupler,
+ * and ear motors to Lua. */
 
 /* nab.led(name, r, g, b): light an RGB LED. name is one of
  * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c -
@@ -702,6 +703,148 @@ static int nab_play(lua_State *L)
 static int nab_tone(lua_State *L)
 {
   lua_pushlstring(L, (const char *)nab_tone_mp3, sizeof nab_tone_mp3);
+  return 1;
+}
+
+/* IMA-ADPCM WAV header for nab.record: 8 kHz mono, 256-byte blocks of 505
+ * samples (~4055 B/s). Byte-for-byte the RIFF wrapper lib/hw/reclib.mtl's
+ * _reclib_mkriff builds around the same VS1003 record stream for the V1
+ * stack, so anything that accepts a V1 recording accepts this. */
+#define WAV_HEADER_LEN 60
+
+static void wav_le32(uint8_t *p, uint32_t v)
+{
+  p[0] = (uint8_t)v;
+  p[1] = (uint8_t)(v >> 8);
+  p[2] = (uint8_t)(v >> 16);
+  p[3] = (uint8_t)(v >> 24);
+}
+
+static void wav_adpcm_header(uint8_t *h, uint32_t datalen)
+{
+  static const uint8_t fmt[32] = {
+      'W', 'A', 'V', 'E', 'f', 'm', 't', ' ',
+      20, 0, 0, 0,        /* fmt chunk length */
+      0x11, 0,            /* format 0x0011 = IMA ADPCM */
+      1, 0,               /* mono */
+      0x40, 0x1F, 0, 0,   /* 8000 Hz */
+      0xD7, 0x0F, 0, 0,   /* 4055 bytes/s */
+      0, 1,               /* block align 256 */
+      4, 0,               /* 4 bits per sample */
+      2, 0,               /* extra fmt bytes */
+      0xF9, 1,            /* 505 samples per block */
+  };
+  memcpy(h, "RIFF", 4);
+  wav_le32(h + 4, datalen + 52);         /* file size - 8 */
+  memcpy(h + 8, fmt, sizeof fmt);
+  memcpy(h + 40, "fact", 4);
+  wav_le32(h + 44, 4);
+  wav_le32(h + 48, (datalen >> 8) * 505);   /* total samples: blocks * 505 */
+  memcpy(h + 52, "data", 4);
+  wav_le32(h + 56, datalen);
+}
+
+/* Cooperative record session state (nab.rec_start/rec_read/rec_stop). Outside
+ * record mode HDAT0/HDAT1 mean decode state (stream format / bitrate), so
+ * rec_read must not drain them unless a session is actually open. */
+#define REC_WAIT  50000UL  /* blocking-read poll bound, ~20x one block time  */
+#define REC_CHUNK 2048     /* VS1003 record FIFO: 1024 words - max one drain */
+
+static int rec_active = 0;
+
+/* nab.record(ms [, gain]) -> string: record ~ms milliseconds from the
+ * microphone (8 kHz IMA ADPCM, like the V1 stack) and return a complete WAV
+ * file. gain: 1024 = 1x, 512 = 0.5x, ...; default 0 = automatic gain control
+ * (V1's setting). Blocking; no timer needed - duration is counted in encoded
+ * 256-byte blocks (~63 ms each), so it is sample-clock accurate. The result
+ * can be shorter than asked (header says how much) if the codec stops
+ * delivering - off hardware it is header-only, see vlsi_rec_read. For
+ * recording while doing other work, use nab.rec_start/rec_read/rec_stop. */
+static int nab_record(lua_State *L)
+{
+  lua_Integer ms = luaL_checkinteger(L, 1);
+  lua_Integer gain = luaL_optinteger(L, 2, 0);
+  luaL_argcheck(L, ms >= 1 && ms <= 30000, 1, "1..30000");
+  luaL_argcheck(L, gain >= 0 && gain <= 65535, 2, "0..65535");
+
+  uint32_t want = ((uint32_t)ms * 4055UL / 1000 + 255) & ~255UL;
+  if (want == 0)
+    want = 256;
+
+  luaL_Buffer b;
+  uint8_t *out = (uint8_t *)luaL_buffinitsize(L, &b, WAV_HEADER_LEN + want);
+
+  vlsi_rec_start(8000, (uint16_t)gain);
+  rec_active = 1;   /* takes over the codec: ends any open rec_start session */
+  uint32_t got = 0;
+  while (got < want) {
+    uint32_t n = vlsi_rec_read(out + WAV_HEADER_LEN + got, want - got, REC_WAIT);
+    if (n == 0)
+      break;   /* codec never delivered (simulator / wedged chip) */
+    got += n;
+  }
+  vlsi_rec_stop();
+  rec_active = 0;
+
+  wav_adpcm_header(out, got);
+  luaL_pushresultsize(&b, WAV_HEADER_LEN + got);
+  return 1;
+}
+
+/* nab.rec_start([gain]): open a cooperative record session - the codec starts
+ * encoding the mic into its FIFO and the CPU is free. Poll nab.rec_read()
+ * often enough (the ~2 KB FIFO holds ~half a second at 8 kHz; overflow just
+ * drops audio, no crash) and interleave whatever else - LEDs, ears, net. */
+static int nab_rec_start(lua_State *L)
+{
+  lua_Integer gain = luaL_optinteger(L, 1, 0);
+  luaL_argcheck(L, gain >= 0 && gain <= 65535, 1, "0..65535");
+  vlsi_rec_start(8000, (uint16_t)gain);
+  rec_active = 1;
+  return 0;
+}
+
+/* nab.rec_read() -> string|nil: drain the record FIFO, returning immediately.
+ * A string of one or more whole 256-byte ADPCM blocks, or nil when no full
+ * block is buffered yet (or no session is open). Concatenate the chunks: they
+ * are exactly the data section of nab.record's WAV - nab.rec_wav wraps them. */
+static int nab_rec_read(lua_State *L)
+{
+  if (rec_active) {
+    luaL_Buffer b;
+    uint8_t *dst = (uint8_t *)luaL_buffinitsize(L, &b, REC_CHUNK);
+    uint32_t n = vlsi_rec_read(dst, REC_CHUNK, 0);
+    if (n > 0) {
+      luaL_pushresultsize(&b, n);
+      return 1;
+    }
+  }
+  lua_pushnil(L);
+  return 1;
+}
+
+/* nab.rec_stop(): close the record session (codec back to decode mode). */
+static int nab_rec_stop(lua_State *L)
+{
+  (void)L;
+  vlsi_rec_stop();
+  rec_active = 0;
+  return 0;
+}
+
+/* nab.rec_wav(data) -> string: wrap concatenated nab.rec_read chunks (whole
+ * 256-byte blocks) in the same WAV header nab.record produces. */
+static int nab_rec_wav(lua_State *L)
+{
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  luaL_argcheck(L, (len & 255) == 0, 1, "length must be a multiple of 256");
+
+  luaL_Buffer b;
+  uint8_t *out = (uint8_t *)luaL_buffinitsize(L, &b, WAV_HEADER_LEN + len);
+  wav_adpcm_header(out, (uint32_t)len);
+  memcpy(out + WAV_HEADER_LEN, data, len);
+  luaL_pushresultsize(&b, WAV_HEADER_LEN + len);
   return 1;
 }
 
@@ -1067,6 +1210,11 @@ static const luaL_Reg nab_funcs[] = {
     {"beep", nab_beep},
     {"play", nab_play},
     {"tone", nab_tone},
+    {"record", nab_record},
+    {"rec_start", nab_rec_start},
+    {"rec_read", nab_rec_read},
+    {"rec_stop", nab_rec_stop},
+    {"rec_wav", nab_rec_wav},
     {"wheel", nab_wheel},
     {"rfid", nab_rfid},
     {"on", nab_on},
