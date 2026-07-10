@@ -260,10 +260,10 @@ if(number==1){
 uint16_t get_motor_position(uint8_t number)
 {
   if(number==1){
-    return (get_hvalue(FTM0GR));
+    return (get_hvalue(FTM0C));
   }
   else if(number==2){
-    return (get_hvalue(FTM1GR));
+    return (get_hvalue(FTM1C));
   }
   return 0;
 }
