@@ -84,20 +84,26 @@ dis: bin/$(TARGET).elf
 	$(DUMP) -d $< > obj/$(TARGET).dis
 
 # -Os miscompiles the WPA-join path (join works at -O1, fails at -Os; cause not
-# yet pinned). Bisection knob: source dirs listed here build at -O1 (appended
-# after the global -Os, so -O1 wins for just those files). Empty = all -Os.
-# Hardware results so far:
-#   round 1: src/usb src/net -> JOINS (culprit is inside these two dirs)
-#   round 2: src/usb alone   -> flash + join-test pending
-#            JOINS -> culprit in src/usb: round 3 bisects its files
-#            FAILS -> culprit in src/net: set O1_DIRS = src/net (expect JOINS),
-#                     then round 3 bisects the net files
-O1_DIRS = src/usb
+# yet pinned). Bisection knobs, appended after the global -Os so -O1 wins for
+# just the listed files: O1_DIRS = whole source dirs, O1_SRCS = single files.
+# Both empty = all -Os. Hardware results so far:
+#   round 1: O1_DIRS = src/usb src/net -> JOINS (culprit inside these two dirs)
+#   round 2: O1_DIRS = src/usb         -> FAILS
+#            O1_DIRS = src/net         -> JOINS  => culprit is in src/net
+#   round 3: O1_SRCS = ieee80211.c     -> flash + join-test pending
+#            (the rest of src/net is cleared offline: EAPOL PTK/msg2 build was
+#            byte-identical -O1 vs -Os, crypto passes RFC 2202 KATs at -Os)
+#            JOINS -> culprit is ieee80211.c: round 4 pins the -Os-only flag
+#                     (36-flag delta vs -O1 on this GCC 12.2) or the code bug
+#            FAILS -> culprit among eapol/hash/aes128/rc4: O1_SRCS them one at
+#                     a time (start with eapol.c)
+O1_DIRS =
+O1_SRCS = src/net/ieee80211.c
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
 	@test -d obj/lst/$(<D) || mkdir -pm 775 obj/lst/$(<D)
-	$(CC) -c $(CFLAGS) $(if $(filter $(O1_DIRS),$(<D)),-O1) -Wa,-adhln=obj/lst/$<.lst $< -o $@  $(LIBS)
+	$(CC) -c $(CFLAGS) $(if $(filter $(O1_DIRS),$(<D))$(filter $(O1_SRCS),$<),-O1) -Wa,-adhln=obj/lst/$<.lst $< -o $@  $(LIBS)
 
 obj/%.o : %.s
 	@test -d $(@D) || mkdir -pm 775 $(@D)
