@@ -88,7 +88,11 @@ dis: bin/$(TARGET).elf
 # after the global -Os, so -O1 wins for just those files). Empty = all -Os.
 # Hardware results so far:
 #   round 1: src/usb src/net -> JOINS (culprit is inside these two dirs)
-O1_DIRS = src/usb src/net
+#   round 2: src/usb alone   -> flash + join-test pending
+#            JOINS -> culprit in src/usb: round 3 bisects its files
+#            FAILS -> culprit in src/net: set O1_DIRS = src/net (expect JOINS),
+#                     then round 3 bisects the net files
+O1_DIRS = src/usb
 
 obj/%.o : %.c
 	@test -d $(@D) || mkdir -pm 775 $(@D)
