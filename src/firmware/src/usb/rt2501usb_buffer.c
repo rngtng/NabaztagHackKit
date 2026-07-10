@@ -21,7 +21,12 @@
 #include "net/eapol.h"                // llc_* stuff
 #include "net/ieee80211.h"            // ieee80211* stuff
 
-static struct rt2501buffer *head, *queue;
+/* Producer = USB ISR (rt2501buffer_new, via ieee80211_input); consumer = main
+ * loop (rt2501_receive). The pointers themselves are mutated from interrupt
+ * context, so they are volatile - belt-and-suspenders with the compiler barrier
+ * now in disable/enable_ohci_irq(). See net -Os WPA-join race. */
+static struct rt2501buffer * volatile head;
+static struct rt2501buffer * volatile queue;
 
 /**
  * @brief Initialize the Buffer list for RT2501 tranfers

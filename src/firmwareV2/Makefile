@@ -39,15 +39,13 @@ endif
 CFLAGS  =
 CFLAGS += --specs=nosys.specs
 CFLAGS += -O1
-# Global default is -O1 (strict aliasing off), but flash-tight files get a per-file
-# -Os override (Lua below; the wifi/net port will likely need the same). -Os enables
-# -fstrict-aliasing, under which the vendored soft-MAC/EAPOL/crypto's uint8_t*->
-# struct/uint32_t* frame punning is UB and mis-compiles (it broke WPA join in V1
-# firmware). Disable it globally so the -Os per-file builds stay correct too.
-CFLAGS += -fno-strict-aliasing
+# Global default is -O1; flash-tight files get a per-file -Os override (Lua below;
+# the wifi/net port will likely need it too). The -Os WPA-join break in V1 firmware
+# was NOT strict aliasing (disproven - byte-identical codegen) but a missing compiler
+# barrier in the OHCI-ISR critical-section guards. When the net port lands here,
+# carry over the barrier'd disable/enable_ohci_irq() from V1's inc/usb/hcd.h.
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
-CFLAGS += -Wcast-align   # early signal for the uint8_t*->wider-pointer casts above
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 CFLAGS += -mcpu=arm7tdmi -MMD
