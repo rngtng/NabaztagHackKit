@@ -326,7 +326,7 @@ static int32_t ieee80211_find_sta_slot(uint8_t *sta_mac)
 	return -1;
 }
 
-static void ieee80211_send_auth(uint8_t *destination_mac,
+static void O1_FN ieee80211_send_auth(uint8_t *destination_mac,
 				uint16_t algorithm,
 				uint16_t auth_seq,
 				uint16_t status)
@@ -600,7 +600,7 @@ static void ieee80211_deauth_sta(int32_t index, uint16_t reason)
   }
 }
 
-static void ieee80211_associate(void)
+static void O1_FN ieee80211_associate(void)
 {
 //#pragma pack(1)
 	struct {
@@ -1036,7 +1036,7 @@ static void ieee80211_send_probe_response(uint8_t *dest_mac)
 	}
 }
 
-static void O1_FN ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
+static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 	struct ieee80211_frame *fr = (struct ieee80211_frame *)frame;
 	uint8_t *frame_current, *frame_end;
@@ -1476,7 +1476,7 @@ static void O1_FN ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t r
 	}
 }
 
-static void O1_FN ieee80211_input_ctl(uint8_t *frame, uint32_t length)
+static void ieee80211_input_ctl(uint8_t *frame, uint32_t length)
 {
 	DBG_WIFI("Received control frame"EOL);
   (void)frame;
@@ -1484,7 +1484,7 @@ static void O1_FN ieee80211_input_ctl(uint8_t *frame, uint32_t length)
 	/* handled by the RT2501 ASIC */
 }
 
-static void O1_FN ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
+static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 //#pragma pack(1)
 	struct {
@@ -1572,7 +1572,7 @@ static void O1_FN ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t 
 	}
 }
 
-void O1_FN ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
+void ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 //#ifdef DEBUG_WIFI
 //  DBG_WIFI("Rxed:"EOL);
@@ -1695,7 +1695,7 @@ static void ieee80211_stop_beacon(void)
 	rt2501_beacon(NULL, 0);
 }
 
-void rt2501_setmode(int32_t mode, const uint8_t *ssid, uint8_t channel)
+void O1_FN rt2501_setmode(int32_t mode, const uint8_t *ssid, uint8_t channel)
 {
 	int32_t i;
 	struct rt2501buffer *b;
@@ -1860,7 +1860,7 @@ void rt2501_scan(const uint8_t *ssid, rt2501_scan_callback callback, void *userp
 	ieee80211_state = IEEE80211_S_IDLE;
 }
 
-void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
+void O1_FN rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 		 const uint8_t *bssid, uint8_t channel,
 		 uint16_t rateset,
 		 uint8_t authmode,
@@ -2016,7 +2016,7 @@ void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 	enable_ohci_irq();
 }
 
-int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_mac,
+int32_t O1_FN rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_mac,
 		int32_t lowrate, int32_t mayblock)
 {
 //#pragma pack(1)
