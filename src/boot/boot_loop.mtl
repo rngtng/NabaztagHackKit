@@ -9,6 +9,8 @@ const AMBER=0xff8000;;
 const BLACK=0;;
 
 fun boot_leds=
+	if wifistuck!=nil then wifistuck_leds    // #125/#144: wedged -> "power-cycle me"
+	else
 	let
 		if netState!=RT2501_S_CONNECTED then 0
 		else if netip==netip_empty then 1
