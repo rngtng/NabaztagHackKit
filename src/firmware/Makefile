@@ -26,12 +26,13 @@ AS_FILES = $(wildcard sys/asm/*.s)
 CFLAGS =
 CFLAGS += --specs=nosys.specs
 CFLAGS += -Os   # size-optimised: the boot bytecode is embedded in the 124k flash image (#103)
-# NB: -Os broke WPA join (not config-AP/boot). Root cause was NOT strict aliasing
-# (that theory is disproven: -fno-strict-aliasing produced byte-identical codegen,
-# and the frame fields are uint8_t = char type, which already aliases legally).
-# The real bug was a missing compiler barrier in disable/enable_ohci_irq() - the
-# RX-queue critical section shared with the USB ISR - letting -Os's scheduler race
-# the ISR. Fixed in inc/usb/hcd.h + rt2501usb_buffer.c, so -Os is safe here.
+# NB: -Os broke WPA join (config-AP/boot unaffected). NOT strict aliasing (disproven:
+# -fno-strict-aliasing gave byte-identical codegen; the punned frame fields are all
+# uint8_t = char type, which aliases legally anyway). A genuine missing-compiler-barrier
+# bug in disable/enable_ohci_irq() was found and fixed (inc/usb/hcd.h +
+# rt2501usb_buffer.c), but flashing that fix ALONE did not restore join - the root
+# cause is still unpinned. Until it is, part of the wifi/USB stack builds at -O1 via
+# O1_DIRS (below); keep that knob in sync with the hardware bisect state.
 #CFLAGS += -g
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
@@ -85,6 +86,8 @@ dis: bin/$(TARGET).elf
 # -Os miscompiles the WPA-join path (join works at -O1, fails at -Os; cause not
 # yet pinned). Bisection knob: source dirs listed here build at -O1 (appended
 # after the global -Os, so -O1 wins for just those files). Empty = all -Os.
+# Hardware results so far:
+#   round 1: src/usb src/net -> JOINS (culprit is inside these two dirs)
 O1_DIRS = src/usb src/net
 
 obj/%.o : %.c

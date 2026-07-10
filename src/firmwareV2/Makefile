@@ -41,9 +41,12 @@ CFLAGS += --specs=nosys.specs
 CFLAGS += -O1
 # Global default is -O1; flash-tight files get a per-file -Os override (Lua below;
 # the wifi/net port will likely need it too). The -Os WPA-join break in V1 firmware
-# was NOT strict aliasing (disproven - byte-identical codegen) but a missing compiler
-# barrier in the OHCI-ISR critical-section guards. When the net port lands here,
-# carry over the barrier'd disable/enable_ohci_irq() from V1's inc/usb/hcd.h.
+# was NOT strict aliasing (disproven - byte-identical codegen), and the missing
+# compiler barrier found in the OHCI-ISR critical-section guards did not cure it
+# alone either - the root cause is still unpinned (V1 pins src/usb+src/net at -O1,
+# bisect in progress). Rule until it is pinned: NEVER put the vendored net/usb
+# sources in the per-file -Os list, and carry over the barrier'd
+# disable/enable_ohci_irq() from V1's inc/usb/hcd.h regardless.
 CFLAGS += -mthumb -mthumb-interwork
 CFLAGS += -Wall -Wextra -Wpedantic -Wpointer-arith
 CFLAGS += -fdata-sections -ffunction-sections

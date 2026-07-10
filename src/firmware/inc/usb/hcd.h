@@ -151,10 +151,12 @@ extern hcd_info_t hcd_info;
 /* These bracket critical sections shared with the OHCI/USB ISR (the RX queue
  * head/queue in rt2501usb_buffer.c, the hcd free-list, the eapol prf buffer).
  * put_wvalue is a volatile register write that masks the IRQ in hardware, but
- * on its own it is NOT a compiler barrier: at -Os GCC's scheduler would hoist
+ * on its own it is NOT a compiler barrier: at -Os GCC's scheduler may hoist
  * or sink the non-volatile shared-list accesses across the guard, racing the
- * ISR and corrupting the RX queue (this is why -Os broke WPA join while -O1
- * worked). The "memory" clobber pins those accesses inside the section. */
+ * ISR and corrupting the RX queue. The "memory" clobber pins those accesses
+ * inside the section. (Real hazard, but hardware-testing showed this fix alone
+ * did NOT cure the -Os WPA-join failure - that cause is still unpinned; see
+ * the Makefile O1_DIRS bisect knob.) */
 #define disable_ohci_irq() do { put_wvalue(HostCtl, B_OHCIIRQ_MASK); __asm__ volatile("" ::: "memory"); } while(0)
 #define enable_ohci_irq()  do { __asm__ volatile("" ::: "memory"); put_wvalue(HostCtl, 0); } while(0)
 
