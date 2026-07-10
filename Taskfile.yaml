@@ -250,6 +250,17 @@ tasks:
       - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
       - rm -rf src/firmware/obj src/firmware/src/bc.c
 
+  disasm:firmware:
+    desc: 'Disassemble a built firmware ELF with the toolchain objdump → stdout. Requires build:firmware first.'
+    summary: 'Usage: task disasm:firmware [ELF=build/firmware/Nab.elf] > Nab.dis'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      ELF: '{{.ELF | default (printf "%s/firmware/Nab.elf" .OUT)}}'
+    cmds:
+      - task: firmware:dis
+        vars:
+          ELF: '{{printf "%s/%s" .USER_WORKING_DIR .ELF}}'
+
   test:firmware:
     desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires build:boot first.'
     summary: 'Usage: task test:firmware [SOURCE=build/boot/dumpbc.c] [DURATION=5]'

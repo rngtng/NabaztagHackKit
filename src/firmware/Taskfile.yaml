@@ -26,6 +26,16 @@ tasks:
       # serial build: the Makefile's mkdir rules race under -j.
       - 'docker run --rm -v "$(realpath .):/work" {{.IMAGE}} make'
 
+  dis:
+    desc: 'Disassemble an ELF with the ARM toolchain objdump → stdout'
+    summary: 'Usage: task dis ELF=/abs/path/to/Nab.elf'
+    dir: '{{.DIR}}'
+    requires:
+      vars: [ELF]
+    cmds:
+      - task: image
+      - 'docker run --rm -v "$(dirname "{{.ELF}}"):/elf:ro" {{.IMAGE}} arm-none-eabi-objdump -d "/elf/$(basename "{{.ELF}}")"'
+
   clean:
     desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker image'
     dir: '{{.DIR}}'

@@ -69,6 +69,12 @@ Finally, compile the firmware sources to bytecode, including the boot code:
 task build:firmware
 ```
 
+Disassemble the built firmware ELF (e.g. to compare codegen between optimization levels):
+
+```
+task disasm:firmware > Nab.dis
+```
+
 Run the lib test suite:
 
 ```
