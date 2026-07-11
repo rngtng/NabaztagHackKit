@@ -28,6 +28,7 @@
 #include <stddef.h>
 #include <stdint.h>   /* uintptr_t in the %p path (M7.5, #114) */
 #include <stdio.h>
+#include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer (#133) */
 #include <string.h>   /* strcmp - LED-name lookup in the nab binding */
 
 #include "lua.h"
@@ -755,27 +756,133 @@ static int load_line(lua_State *L, const char *line)
   return luaL_loadstring(L, line);
 }
 
+/* ---- off-device luac bytecode frames (#133) ------------------------------ */
+/* The parser-less wifi image (M11, #119) drops lparser/llex/lcode to reclaim
+ * ~19 KB, so it can only load bytecode. Host-side luac (tools/luac) compiles
+ * each REPL line off-device and ships the chunk here as a framed hex payload:
+ *
+ *     #LC:<len>\n            header line (len = chunk size in bytes, decimal)
+ *     <2*len hex chars>      the chunk, whitespace/newlines ignored (wrapped 64c)
+ *
+ * Raw bytecode can't ride this line-oriented console directly (chunks contain
+ * '\n'/NUL and sh_gets is line-based), hence the hex framing. This dev image
+ * still has the parser, so it accepts frames *alongside* source lines - which is
+ * exactly what makes the pipe verifiable now: the same line fed as source and as
+ * a frame must produce identical output. */
+#define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
+
+/* Read the next hex digit off the console, skipping the whitespace the sender
+ * uses to wrap the payload. Returns 0..15, or -1 on EOF / a non-hex byte. */
+static int read_hex_nibble(void)
+{
+  char c;
+  for (;;) {
+    if (_read(0, &c, 1) != 1)
+      return -1; /* EOF */
+    if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
+      continue; /* framing whitespace */
+    if (c >= '0' && c <= '9')
+      return c - '0';
+    if (c >= 'a' && c <= 'f')
+      return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+      return c - 'A' + 10;
+    return -1; /* not hex -> malformed frame */
+  }
+}
+
+/* Consume the console up to and including the next newline. After a frame's
+ * 2*len hex chars there is still the payload's line terminator sitting in the
+ * stream; dropping it here keeps the following sh_gets from reading that '\n'
+ * as a spurious empty REPL line (which would double every prompt). */
+static void skip_to_eol(void)
+{
+  char c;
+  while (_read(0, &c, 1) == 1) {
+    if (c == '\n')
+      break;
+  }
+}
+
+/* Parse a "#LC:<len>" header (already read into `line`), stream the following
+ * 2*len hex chars into a fresh buffer, and load it as a Lua chunk. Leaves the
+ * compiled chunk on the stack on success (like load_line), else pushes an error
+ * message and returns non-LUA_OK. No strtol - a manual digit loop keeps newlib
+ * out (M7). The buffer comes from the external-RAM heap (_sbrk). */
+static int load_lc_frame(lua_State *L, const char *line)
+{
+  const char *p = line + 4; /* past "#LC:" */
+  if (*p < '0' || *p > '9') {
+    lua_pushliteral(L, "malformed #LC frame header");
+    return LUA_ERRSYNTAX;
+  }
+  long len = 0;
+  for (; *p >= '0' && *p <= '9'; p++) {
+    len = len * 10 + (*p - '0');
+    if (len > LC_MAX) {
+      lua_pushliteral(L, "#LC frame too large");
+      return LUA_ERRSYNTAX;
+    }
+  }
+
+  char *buf = (len > 0) ? malloc((size_t)len) : NULL;
+  if (len > 0 && buf == NULL) {
+    lua_pushliteral(L, "out of memory reading #LC frame");
+    return LUA_ERRMEM;
+  }
+  for (long i = 0; i < len; i++) {
+    int hi = read_hex_nibble();
+    int lo = read_hex_nibble();
+    if (hi < 0 || lo < 0) {
+      free(buf);
+      lua_pushliteral(L, "truncated or non-hex #LC frame payload");
+      return LUA_ERRSYNTAX;
+    }
+    buf[i] = (char)((hi << 4) | lo);
+  }
+  skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
+
+  /* "=stdin" chunkname matches the pipe's luaL_loadbuffer name; mode is the
+   * default "bt" so this same call still loads source in the parser-ful image. */
+  int status = luaL_loadbuffer(L, buf, (size_t)len, "=stdin");
+  free(buf);
+  return status;
+}
+
+/* Run a compiled chunk sitting on top of the stack - from either a source line
+ * or a #LC frame - by pcall + echoing any returned values through print(),
+ * exactly as the stock `lua` prompt does. Shared by both input paths so their
+ * transcripts stay byte-identical (the point of the round-trip test). */
+static void run_chunk(lua_State *L)
+{
+  int base = lua_gettop(L) - 1; /* stack height below the chunk */
+  if (lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
+    report(L);
+  } else {
+    int nres = lua_gettop(L) - base; /* values the chunk returned */
+    if (nres > 0) {                  /* echo them via print() */
+      lua_getglobal(L, "print");
+      lua_insert(L, base + 1);
+      if (lua_pcall(L, nres, 0, 0) != LUA_OK)
+        report(L);
+    }
+  }
+}
+
 static void repl(lua_State *L)
 {
   char line[REPL_LINE];
   sh_puts("> ");
   while (sh_gets(line, sizeof line) != NULL) {
-    if (load_line(L, line) != LUA_OK) {
-      report(L); /* syntax error */
-    } else {
-      int base = lua_gettop(L) - 1; /* stack height below the chunk */
-      if (lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
-        report(L);
-      } else {
-        int nres = lua_gettop(L) - base; /* values the chunk returned */
-        if (nres > 0) {                  /* echo them via print() */
-          lua_getglobal(L, "print");
-          lua_insert(L, base + 1);
-          if (lua_pcall(L, nres, 0, 0) != LUA_OK)
-            report(L);
-        }
-      }
-    }
+    int status;
+    if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':')
+      status = load_lc_frame(L, line); /* off-device luac bytecode (#133) */
+    else
+      status = load_line(L, line); /* Lua source (parser-ful dev image) */
+    if (status != LUA_OK)
+      report(L); /* compile / frame error */
+    else
+      run_chunk(L);
     sh_puts("> ");
   }
 }
