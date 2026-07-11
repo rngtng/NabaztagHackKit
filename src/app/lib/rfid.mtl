@@ -1,0 +1,35 @@
+//###############################################
+//--------------- RFID ------------------------
+
+const RFID_CHECK_FQ  = 200;; //ms MIN 50ms
+const RFID_STOP_BYTE = 0xFF;;
+const RFID_ID_START  = "\208\2\26";; // 0xd0 0x02 0x1a
+const RFID_ID_FALSE  = "\0\0\0\0\0\0\0\0\v";;
+const RFID_ID_ERROR  = "\69\114\114\111\114\0\0\0\v";; // 0x45 72 72 6f 72 00 00 00
+
+var rfid_last_check  = 0;;
+var rfid_data        = "";;
+
+fun rfidUrl tag=
+  strcatlist confGetServerUrl::apiPath::"/rfid.jsp?id="::(webmac tag)::nil;;
+
+fun rfidCheck=
+  if ((time_ms - rfid_last_check) > RFID_CHECK_FQ) then
+  (
+    let rfidGet -> rfid in
+    if (rfid != nil) then
+    (
+      if ((strstr rfid RFID_ID_FALSE 0) == 0) then
+      (
+        0
+      )
+      else
+      (
+        httprequest "PUT" rfidUrl rfid "" #_cbHttp HTTP_NORMAL;
+        0
+      )
+    );
+    //all done
+    set rfid_last_check = time_ms
+  );
+0;;

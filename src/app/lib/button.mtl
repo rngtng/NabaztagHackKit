@@ -1,0 +1,38 @@
+//###############################################
+//------------------- Button --------------------
+
+const BUTTON_REBOOT = 3000;; //ms MIN 50ms
+var button_pressed  = 0;;
+
+fun buttonPressedUrl data=
+  strcatlist confGetServerUrl::apiPath::"/button-pressed.jsp?duration="::(itoa data)::nil;;
+
+//-------------------------------------------------------------
+
+fun buttonCheck =
+  if (button2 > 0) then
+  (
+    if button_pressed == 0 then
+    (
+      set button_pressed = time_ms
+    )
+    else if (time_ms - button_pressed) > BUTTON_REBOOT then
+    (
+      buffersFill 0 4 "\255"
+    )
+  )
+  //reboot only when button not pressed, otherwise we get into setup mode
+  else if button_pressed > 0 then
+  (
+    if (time_ms - button_pressed) > BUTTON_REBOOT then
+    (
+      exit;
+      set button_pressed = 0
+    )
+    else
+    (
+      httprequest "GET" buttonPressedUrl (time_ms - button_pressed) "" #_cbHttp HTTP_NORMAL;
+      set button_pressed = 0
+    )
+  )
+;;

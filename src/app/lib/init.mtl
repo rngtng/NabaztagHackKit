@@ -1,0 +1,18 @@
+//###############################################
+//------------------ INIT ----------------------
+
+var inited = 0;;
+
+fun initUrl =
+  strcatlist confGetServerUrl::apiPath::"/init.jsp?"::nil;;
+
+//-------------------------------------------------------------
+
+fun initCheck=
+  if inited == 0 then
+  (
+    httprequest "GET" initUrl "" #_cbHttp HTTP_NORMAL;
+    set inited = 1
+  )
+;;
+

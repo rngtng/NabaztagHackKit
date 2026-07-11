@@ -1,0 +1,47 @@
+//-----------------------------------------------------
+var palette = {0 90 130 170 215 255 255 255};;  // 0x00 0x5a 0x82 0xaa 0xd7 0xFF
+
+fun COtoI r g b=
+  r * 36 + g * 6 + b
+;;
+
+fun ItoCO val=
+  if val == nil then set val = 0;
+  if val > 215 then set val = 215;
+  let val / 36 -> r in
+  let (val % 36) / 6 -> g in
+  let (val % 36) % 6 -> b in
+  palette.r << 16 + palette.g << 8 + palette.b
+;;
+
+// returns number of chars before char \255
+fun str_find_end val=
+  strstr val "\255" 0
+;;
+
+//-----------------------------------------------------
+const RESPONSE_HEADER = 0x7f;;
+
+fun parseResponse_ s i res=
+  if (i < strlen s) then
+  (
+    let (strget s i) -> code in
+    let (CtoI3 s i+1) -> len in
+    (
+      if len >= 0 then
+      (
+        let strsub s i+4 len -> data in
+        parseResponse_ s i+4+len [code data]::res
+      )
+    )
+  )
+  else (
+    res
+  )
+;;
+
+// messages will be reveresed!
+fun parseResponse s=
+  if (strget s 0) == RESPONSE_HEADER then
+    parseResponse_ s 1 nil
+;;

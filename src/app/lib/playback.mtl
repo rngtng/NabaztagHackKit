@@ -1,0 +1,96 @@
+//###############################################
+//------------------- Playback --------------------
+
+fun playbackFinishedUrl =
+  strcatlist confGetServerUrl::apiPath::"/playback-finished.jsp?"::nil;;
+
+fun playbackLoadFinishedUrl =
+  strcatlist confGetServerUrl::apiPath::"/playback-load-finished.jsp?"::nil;;
+
+fun streamUrl filename=
+  strcatlist confGetServerUrl::"/streams/"::filename::nil;;
+
+const PLAY_IDLE = 0;;
+const PLAY_RUN  = 1;;
+//const WAV_EOF=2;;
+
+//var wav_http;;
+var playback_fifo = nil;;
+var playback_load_fifo;;
+var playback_state = 0;;
+var play_index = 0;;
+
+//wat is this for!??
+var wav_zeros;;
+fun wavgetzeros=
+  if wav_zeros==nil then
+  (
+    set wav_zeros=strnew 2048;
+    for i=0;i<2048 do strset wav_zeros i 0
+  );
+  wav_zeros;;
+
+
+fun playbackStop =
+  if playback_state != PLAY_IDLE then
+  (
+    playStop;
+    // if wav_http != nil then httpabort wav_http;
+    // set wav_http       = nil;
+    // set wav_buffering  = 0;
+    set playback_state = PLAY_IDLE
+  );
+0;;
+
+// fun _playbackStart =
+//   set wav_index           = 0;
+//   set wav_buffering       = 1;
+//   set wav_buffering_since = time_ms;
+//   playStart 1024 #_wavplaycb;
+// 0;;
+
+fun _playbackCB i=
+  let hd playback_fifo -> sample in
+  let strlen sample -> len in
+  (
+    if play_index < len then (
+      // send some bytes to the VM buffer.
+      let (playFeed sample play_index nil) -> pushedbytes in
+      (
+        // this is how many bytes we sent.
+        set play_index = play_index + pushedbytes
+      )
+    )
+  );
+0;;
+
+fun _playbackStart play_data=
+  playbackStop;
+  //set wav_end_timeout = timeout;
+  set playback_fifo = conc play_data wavgetzeros::nil;
+  playStart 1024 #_playbackCB;
+  // set playback_state  = WAV_EOF;
+  // set wav_lasttime    = time_ms;
+  // set wav_http        = nil;
+  set play_index = 0;
+  // set wav_buffering=1;
+  // set wav_buffering_since = time_ms;
+0;;
+
+fun playbackStart =
+  _playbackStart playback_load_fifo;;
+
+//-------------- LOAD
+fun _playbackLoadCB httpreq req=
+  if req != nil then
+  (
+    set playback_load_fifo = conc playback_load_fifo req::nil
+  );
+0;;
+
+fun playbackLoad val=
+  set playback_load_fifo = nil;
+  httprequest "GET" (streamUrl val) nil #_playbackLoadCB HTTP_NORMAL;
+0;;
+
+// fun playbackStream val=
