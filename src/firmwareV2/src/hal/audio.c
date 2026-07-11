@@ -80,8 +80,18 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
   CS_AUDIO_SDI_SET;
 }
 
+/* Last volume requested via set_vlsi_volume(). The single SCI write below does
+ * not durably stick: the Lua heap lives in ExtRAM, and EMC bus activity between
+ * a bare VOLUME write and the next decode clears the VS1003's SCI config
+ * (CLOCKF/VOLUME reproducibly knocked to 0 by an ExtRAM burst - see #123). So we
+ * cache the value and re-assert it inside vlsi_play(), in the same post-EMC
+ * window where MODE is rewritten - that is the only reason MODE/CLOCKF survive,
+ * and VOLUME needs the identical treatment to actually attenuate playback. */
+static uint8_t vlsi_volume = 0x20;
+
 void set_vlsi_volume(uint8_t volume)
 {
+  vlsi_volume = volume;
   vlsi_write_sci(VS1003_VOLUME, (volume << 8) | volume);
 }
 
@@ -163,10 +173,16 @@ void vlsi_play(const uint8_t *data, uint32_t len)
 
   /* Ensure decode (native SPI) mode without a soft reset - the PLL clock is
    * set once in init_vlsi and a reset here (at the fast post-init SPI rate)
-   * would risk dropping it back to base XTAL. The current nab.volume() setting
-   * carries over. */
+   * would risk dropping it back to base XTAL. */
   vlsi_write_sci(VS1003_MODE, VS1003_MODE_NATIVE);
   wait_dreq();
+
+  /* Re-assert the volume here, right before the SDI feed. A bare write from
+   * nab.volume() does not survive the EMC traffic the Lua heap generates before
+   * playback (#123); rewriting it in this window - like MODE above - is what
+   * makes nab.volume actually attenuate the decoded stream. No EMC access falls
+   * between this write and the feed below, so it lands. */
+  vlsi_write_sci(VS1003_VOLUME, (vlsi_volume << 8) | vlsi_volume);
 
   vlsi_ampli(1);
   vlsi_feed_sdi(data, len);
