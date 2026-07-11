@@ -1,0 +1,22 @@
+//###############################################
+//------------------ PING ----------------------
+
+const PING_CHECK_FQ = 5000;; //ms -> 5s
+const PING_PARAMS   = "";;
+
+var ping_last_check = 0;;
+
+fun pingUrl params=
+  strcatlist confGetServerUrl::apiPath::"/ping.jsp?"::params::nil;;
+
+//-------------------------------------------------------------
+
+fun pingCheck=
+  let PING_CHECK_FQ -> ping_check_fq in
+  if ((time_ms - ping_last_check) > ping_check_fq) then
+  (
+    httprequest "GET" (pingUrl PING_PARAMS) "" #_cbHttp HTTP_NORMAL;
+    set ping_last_check = time_ms
+  )
+;;
+

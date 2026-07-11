@@ -1,0 +1,169 @@
+// VLISP - Jan 2012
+
+proto main 0;;
+proto earsInit 0;;
+proto evalTrame 1;;
+
+#include "original/var"
+#include "original/util"
+#include "original/cfg"
+#include "original/arp"
+#include "original/udp"
+#include "original/tcp"
+#include "original/dns"
+#include "original/http"
+#include "original/dhcp"
+#include "original/wav"
+#include "original/wifi"
+
+#include "lib/data_helper"
+
+//-------------------- HTTP Endpoints
+fun bunnyId =
+  netMac;;
+
+fun apiPath =
+ strcatlist "/api/"::(webmac bunnyId)::nil;;
+
+//-------------------- HTTP
+fun _cbDummyHttp http res=
+  0;;
+
+fun _cbHttp http res=
+  evalTrame res;
+  0;;
+
+#include "lib/buffer"
+#include "lib/ping"
+#include "lib/logger"
+
+//inputs
+// #include "lib/rfid"
+#include "lib/record"
+#include "lib/button"
+
+//outputs
+#include "lib/playback"
+#include "lib/led"
+#include "lib/ear"
+
+fun evalTrame res=
+  let parseResponse httpgetcontent res -> bufferlist in
+    if bufferlist != nil then
+    (
+      for l = bufferlist; l != nil; tl l do
+      (
+        let hd l -> [code val] in
+        if code == 12 then // OK
+        (
+          0
+        )
+        else if code == 16 then // (RE) INIT
+        (
+          earsInit;
+          0
+        )
+        else if code == 17 then // LOG
+        (
+          sendLogs;
+          0
+        )
+        else if code == 18 then // ERROR
+        (
+          0
+        )
+        else if code == 19 then // REBOOT
+        (
+          exit
+        )
+        // led buffers: short 20-24 loop 25-29; 3Byte: short 30-34 loop 35-39
+        else if code >= 20 && code <= 39 then
+        (
+          let code % 10 -> index in
+          let 2 * (code / 30) + 1 -> step in
+          let index / 5 -> loop in
+          _bufferFill index step loop val;
+          0
+        )
+        // ear buffers: short 40-41, loop 42-43
+        else if code >= 40 && code <= 43 then
+        (
+          let code % 10 -> index in
+          let 1 -> step in
+          let index / 2 -> loop in
+          _bufferFill index+10 step loop val;
+          0
+        )
+        // recording start
+        else if code == 50 then
+        (
+          recordingStart 1000 * (strget val 0) //TODO only 1 - 9 possible??
+        )
+        // recording stop
+        else if code == 51 then
+        (
+          recordingStop
+        )
+        // play start
+        else if code == 60 then
+        (
+          playbackStart
+        )
+        // play stop
+        else if code == 61 then
+        (
+          playbackStop
+        )
+        // play load
+        else if code == 62 then
+        (
+          playbackLoad val
+        )
+        // play stream
+        else if code == 63 then
+        (
+          // playbackStream val;
+          wavstarthttp (streamUrl val) nil;
+          0
+        )
+      )
+    )
+;;
+
+//###############################################
+//-------------------- LOOP ---------------------
+fun loop=
+  initCheck;
+
+  wifiRun;
+  wifiCheck;
+
+  // rfidCheck;
+  buttonCheck;
+
+  setLeds;
+  earRead 0;
+  earRead 1;
+
+  pingCheck;
+  //wavtime;
+
+  recordingCheck;
+0;;
+
+//###############################################
+//-------------------- MAIN ---------------------
+fun main=
+  confInit;
+  wifiInit 0;
+  buffersInit 14;
+  earsInit;
+
+  loopcb #loop; // 20 p. second
+
+  netstart;
+  startdnsclient;
+
+  sndVol 0;
+  srand time_ms;
+0;;
