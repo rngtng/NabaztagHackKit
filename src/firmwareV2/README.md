@@ -64,6 +64,36 @@ built toward (*target*).
    bounded `nab.*` call; do not re-add a general-purpose library that widens the
    sandbox without a security review.
 
+The driver-buildout sub-issue
+[#184](https://github.com/rngtng/NabaztagHackKit/issues/184) maps these onto
+concrete C subsystems. Two structural gaps it names are worth calling out:
+
+- **A Timer/Scheduler is the missing substrate for principle 2.** firmwareV2 has
+  no timer subsystem yet (every `ms` delay is a CPU busy-loop; `motor.c` runs the
+  FTM open-loop with no IRQ). System ticks + a cooperative scheduler are the
+  prerequisite for turning today's polling scripts into `lua_pcall` callbacks -
+  build that before the event loop, not after.
+- **Script slots need versioning + rollback (principles 3-4)** - and have no
+  dedicated storage on `LLC2_4c`. A broken remote script must fall back to the
+  last-good slot, not brick the rabbit. But there is **no external flash on this
+  board** (M6/#94: `CS_FLASH` defined yet unpopulated, driver reverted), so a slot
+  region must be carved from either the ~24 KB free of the 124 KB internal flash
+  (shared with the firmware image) or the volatile 1 MB ExtRAM (lost on power-cycle)
+  - decide the storage before the OTA format.
+- Bindings should be **event-shaped**, not raw: RFID surfaces "new tag" on its
+  ~750 ms poll cycle (not the CR14 protocol), the button should give *debounced*
+  press/release (today's `nab.button()` is an undebounced poll - a real gap), WiFi
+  exposes `http.get(url)`.
+
+> ⚠️ #184's hardware list is partly web-sourced and **contradicts what is
+> hardware-verified on the `LLC2_4c` board**: it claims LEDs run through an
+> `MCP23017` I2C GPIO expander (they are a **TLC594x driver over SPI**,
+> `src/hal/led.c`) and ear motors through an `L293D` (they are **OKI FTM PWM**,
+> `src/hal/motor.c`, M10). Neither part exists in this tree. Per the CLAUDE.md
+> peripheral-exists rule, don't build drivers for them - trust the teardown
+> ([`docs/hardware-dissection.md`](../../docs/hardware-dissection.md)) and a probe,
+> not a forum post.
+
 ## Hardware
 - MCU: OKI **ML67Q4051**, ARM7TDMI @ 33 MHz (no FPU, no Thumb-2, vectors at `0x0`)
 - Internal flash `0x08000000`, 124 KB usable (last sector = config)
