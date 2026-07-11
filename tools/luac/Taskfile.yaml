@@ -1,0 +1,41 @@
+# tools/luac - host-native Lua->bytecode compiler for firmwareV2 (#133).
+#
+# Built from the vendored src/firmwareV2/lua/ tree + our LUA_32BITS luaconf.h, so
+# the bytecode it emits loads on the rabbit's lundump.c unchanged (see Dockerfile
+# for the header-compatibility rationale). Every target runs in Docker; the only
+# host requirement is Docker + Task.
+#
+#   task luac:firmwareV2 SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
+#
+# The image is built with the *repo root* as its Docker context (not this folder)
+# so its Dockerfile can COPY the sibling lua/ tree - hence dir: USER_WORKING_DIR
+# and the -f path below, the same cross-folder trick tools/testvm uses.
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabaztag-sdk-luac"}}'
+  DIR: '{{.DIR | default "./tools/luac/"}}'
+
+tasks:
+  image:
+    internal: true   # rebuilt on demand; the COPYed lua/ tree cache-busts it when Lua changes
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
+
+  compile:
+    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task luac:firmwareV2 SOURCE=in.lua OUT=out.lc'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [SOURCE, OUT]
+    cmds:
+      # ENTRYPOINT is luac; -s strips debug info (the bulk of chunk size), - reads
+      # stdin, -o /dev/stdout writes the chunk to stdout -> redirected to OUT. No
+      # bind mount: source rides stdin, bytecode rides stdout, so paths stay host-side.
+      - 'docker run --rm -i {{.IMAGE}} -s -o /dev/stdout - < "{{.SOURCE}}" > "{{.OUT}}"'
+
+  clean:
+    desc: 'Remove the tools/luac Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true

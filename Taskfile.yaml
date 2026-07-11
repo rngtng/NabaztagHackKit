@@ -52,6 +52,13 @@ includes:
       IMAGE: nabaztag-sdk-testvm
       DIR: ./tools/testvm/
 
+  luac: # Host Lua->bytecode compiler, built from src/firmwareV2/lua + our luaconf.h (tools/luac, #133)
+    internal: true
+    taskfile: ./tools/luac/Taskfile.yaml
+    vars:
+      IMAGE: nabaztag-sdk-luac
+      DIR: ./tools/luac/
+
   mockserver: # Mock HTTP file server for end-to-end simulation (tools/mockserver)
     internal: true
     taskfile: ./tools/mockserver/Taskfile.yaml
@@ -347,33 +354,103 @@ tasks:
       - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
 
   repl:firmwareV2:
-    desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt.'
-    summary: 'Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [N=budget]'
+    desc: 'M4 Lua REPL in the simulator (#92): pass SCRIPT=file.lua to run a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133).'
+    summary: 'Usage: task repl:firmwareV2 [SCRIPT=path/to.lua] [LC=1] [N=budget]'
     dir: '{{.USER_WORKING_DIR}}'
     interactive: true
+    deps:
+      - task: luac:image   # only actually used when LC/.lc converts below; cheap when cached
     cmds:
       # Resolve SCRIPT to an absolute path here (cwd = where the user ran task) so
       # the leaf task's bind mount works regardless of its own dir; empty when
-      # omitted, which the leaf treats as "run the interactive prompt".
+      # omitted, which the leaf treats as "run the interactive prompt". With LC=1
+      # (or a .lc SCRIPT) first run it through replpipe.py -> a framed temp file,
+      # so the REPL is fed bytecode frames exactly as the parser-less image will be.
       - task: firmwareV2:repl
         vars:
           SCRIPT:
-            sh: '[ -n "{{.SCRIPT}}" ] && realpath "{{.SCRIPT}}" || true'
+            sh: |
+              [ -n "{{.SCRIPT}}" ] || exit 0
+              case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
+              if [ -n "$lc" ]; then
+                fr="$(mktemp)"
+                python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$fr" 1>&2
+                echo "$fr"
+              else
+                realpath "{{.SCRIPT}}"
+              fi
           N: '{{.N}}'
 
   repl:firmwareV2:hw:
     desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge'
-    # the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output.'
-    summary: 'Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    # the one command to read print()/REPL output on the rabbit. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
+    summary: 'Usage: task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
     dir: '{{.USER_WORKING_DIR}}'
     vars:
       APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    deps:
+      - task: luac:image   # host luac for the LC conversion below; cheap when cached
     cmds:
       - task: build:firmwareV2
         vars:
           APP: '{{.APP}}'
-      - python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf {{if .SCRIPT}}--input {{.SCRIPT}}{{end}}
+      # With LC=1 (or a .lc SCRIPT), convert to a framed bytecode file first; flash.py
+      # itself stays unchanged (and generic for V1) - it just feeds whatever file it gets.
+      - |
+        set -e
+        INPUT="{{.SCRIPT}}"
+        case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
+        if [ -n "{{.SCRIPT}}" ] && [ -n "$lc" ]; then
+          INPUT="$(mktemp)"
+          python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$INPUT"
+        fi
+        python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} \
+          --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf \
+          ${INPUT:+--input "$INPUT"}
+
+  luac:firmwareV2:
+    desc: 'Compile a Lua source file to 32-bit device bytecode with the host luac (#133).'
+    summary: 'Usage: task luac:firmwareV2 SOURCE=in.lua OUT=out.lc. Bytecode loads on the rabbit as-is (parser-less end-game); see tools/luac/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: luac:compile
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.OUT}}'
+
+  test:firmwareV2:luac:
+    desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'
+    summary: 'Usage: task test:firmwareV2:luac [SCRIPT=src/firmwareV2/examples/luac-roundtrip.lua]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SCRIPT: '{{.SCRIPT | default "src/firmwareV2/examples/luac-roundtrip.lua"}}'
+    deps:
+      - task: build:firmwareV2
+        vars: {APP: lua}
+      - task: firmwareV2:sim-image   # tags {{IMAGE}}-sim = nabaztag-sdk-firmwarev2-sim
+      - task: luac:image             # host luac, used by replpipe.py below
+    cmds:
+      # Feed SCRIPT to the sim two ways - verbatim source and replpipe-framed
+      # bytecode - and require byte-identical console output. Same elf + budget,
+      # so the only variable is the input encoding. Real nonzero exit on drift.
+      - |
+        set -e
+        SIM=nabaztag-sdk-firmwarev2-sim
+        BIN="$(realpath src/firmwareV2/bin)"
+        SRC="$(realpath {{.SCRIPT}})"
+        FR="$(mktemp)"; trap 'rm -f "$FR"' EXIT
+        python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$FR"
+        run() { docker run --rm -v "$BIN:/mnt:ro" -v "$1:/in:ro" "$SIM" \
+                  -n 120000000 --input-file /in /mnt/lua.elf; }
+        A="$(run "$SRC")"; B="$(run "$FR")"
+        if [ "$A" = "$B" ]; then
+          echo "luac round-trip: source == #LC bytecode, output identical ✓"
+        else
+          echo "luac round-trip MISMATCH (source vs bytecode):"
+          diff <(printf '%s\n' "$A") <(printf '%s\n' "$B") || true
+          exit 1
+        fi
 
   # ----------------------------------------------------------
 
