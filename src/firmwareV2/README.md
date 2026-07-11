@@ -9,6 +9,61 @@ board-abstraction layer duplicates the HAL we already have in `src/firmware`, an
 its RAM-saving trick (LTR) is moot given 1 MB of external RAM. See the runtime
 rationale in [#87](https://github.com/rngtng/NabaztagHackKit/issues/87).
 
+## Design principles
+Five principles ([#183](https://github.com/rngtng/NabaztagHackKit/issues/183),
+distilled from established embedded-Lua practice - ArduPilot, rusEFI, Lua-RTOS)
+govern how C and Lua split, how memory/errors are budgeted, and how remote
+scripts load on the weak ARM7TDMI. **They are binding on new firmwareV2 work: a
+change that violates one needs a stated reason.** Some are already embodied in
+the code (marked *established*); the rest are commitments the runtime is being
+built toward (*target*).
+
+1. **Layered API - HAL in C, behaviour in Lua, narrow seam between.** *(established)*
+   RFID, ear motors, LED PWM, and sound DMA stay entirely in C (`src/hal/`); Lua
+   only ever sees high-level primitives. This is exactly the `nab` module
+   ([bindings below](#lua-hardware-bindings-the-nab-module-m5-93-m8-116-123-m9-117-m10-118)):
+   `nab.led(name,r,g,b)`, `nab.ear_move(n,speed,dir)`, `nab.rfid()`. **Rule:** new
+   hardware gets a C driver in `src/hal/` plus a thin `nab.*` binding - never a
+   register poke or timing loop written in Lua.
+
+2. **Minimal, event-driven core - cooperative, never Lua in an ISR.** *(target)*
+   Real-time Lua works best as a cooperative event loop, not a preemptive thread.
+   The end state is a single C `while(1)` draining an event queue (RFID / timer /
+   button) and calling Lua callbacks via `lua_pcall`. Today's runtime is one step
+   short: a REPL, plus scripts that *poll* (`run()` in `src/app/lua.c`'s demo
+   loops on `nab.rfid()`/`nab.button()`). That already honours the hard rule -
+   **no interrupt handler ever calls into Lua** (`src/hal/motor.c` deliberately
+   uses no IRQs) - so callbacks are the natural next refinement, not a rewrite.
+
+3. **Explicit memory and error budget.** *(partly established)*
+   Flash is the scarce resource and is tracked to the byte: the 124 KB
+   internal-flash budget, `-Werror`, and the parser-less prod-image decision
+   ([#128](https://github.com/rngtng/NabaztagHackKit/issues/128)). Errors are
+   already defensive - every chunk runs under `lua_pcall`, so a script fault
+   prints and returns to the prompt instead of crashing the rabbit. *Target:* a
+   fixed Lua-heap cap (heap is the whole 1 MB ExtRAM window today), and error
+   paths hardened so a broken **remote** script can never wedge core functions
+   (ears, wifi). Precompiling with `luac` for fast boot is already the plan
+   ([#133](https://github.com/rngtng/NabaztagHackKit/issues/133)).
+
+4. **Partial-update-friendly script structure.** *(target, ties to M11 wifi)*
+   Remote script loading ([M11 #119](https://github.com/rngtng/NabaztagHackKit/issues/119))
+   should swap small Lua/`luac` payloads, never reflash the firmware. This aligns
+   with the #128 end-game: the prod image is parser-less and runs `luac` bytecode
+   compiled off-device. **Rule:** design a fixed script-slot layout so new
+   behaviour is a small bytecode update, and keep the C HAL + boot core
+   independent of any loaded script.
+
+5. **Sandbox from the start.** *(partly established)*
+   Remote-loadable scripts must never reach privileged system functions - only
+   the `nab` HAL API. The stdlib is already trimmed to `base + string + table`
+   (`loadedlibs` in `src/app/lua.c`): no `os`/`io`/`package`/`debug`/`loadlib`,
+   and `dofile`/`loadfile` removed - so there is no `os.execute` and no raw memory
+   or filesystem access by construction. Choosing PUC-Rio Lua 5.4 over the dormant
+   eLua 5.1 also sidesteps 5.1's unpatched CVEs. **Rule:** every new binding is a
+   bounded `nab.*` call; do not re-add a general-purpose library that widens the
+   sandbox without a security review.
+
 ## Hardware
 - MCU: OKI **ML67Q4051**, ARM7TDMI @ 33 MHz (no FPU, no Thumb-2, vectors at `0x0`)
 - Internal flash `0x08000000`, 124 KB usable (last sector = config)
