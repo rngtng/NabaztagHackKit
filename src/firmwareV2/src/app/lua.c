@@ -734,10 +734,20 @@ static void report(lua_State *L)
  * Also exercises the M5 nab bindings: lights the nose green and reads the
  * button - visible/reportable on hardware, harmless in the simulator. */
 static const char DEMO[] =
-    "print('firmwareV2 Lua ' .. _VERSION)\n"
-    "print('1+1 =', 1 + 1)\n"
-    "nab.led('nose', 0, 127, 0)\n"
-    "print('button:', nab.button())\n";
+    "GREEN_UID = \"d0021a3506198b86\"\n"
+    "YELLOW_UID = \"d0021a35038f3a2f\" \n"
+    "LEFT_MOTOR = 1\n"
+    "RIGHT_MOTOR = 2\n"
+    "function allled(r,g,b) nab.led('nose',r,g,b) nab.led('belly',r,g,b) nab.led('left',r,g,b) nab.led('right',r,g,b) nab.led('bottom',r,g,b) end\n"
+    "function greenmode() allled(0,127,0) nab.ear_move(LEFT_MOTOR,255,'forward') end\n"
+    "function yellowmode() allled(127,127,0) nab.ear_move(RIGHT_MOTOR,255,'forward') end\n"
+    "function colormode() nab.led('nose',127,0,0) nab.led('belly',127,127,0) nab.led('left',0,127,0) nab.led('right',0,0,127) nab.led('bottom',127,0,127) end\n"
+    "function blackmode() allled(0,0,0) nab.led('bottom',0,0,127) nab.ear_stop(LEFT_MOTOR) nab.ear_stop(RIGHT_MOTOR) end\n" //
+    "function react(t) if t == GREEN_UID then greenmode() elseif t == YELLOW_UID then yellowmode() else blackmode() end end\n"
+    "function run() while true do react(nab.rfid()) if nab.ear_pos(LEFT_MOTOR) == nab.ear_pos(RIGHT_MOTOR) then colormode() end if nab.button() then blackmode() return end end end\n"
+    "blackmode()\n"
+    "run()\n"
+    "nab.led('bottom',127,0,0)\n";
 
 #define REPL_LINE 256
 
