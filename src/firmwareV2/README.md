@@ -95,6 +95,28 @@ only handles `luac` bytecode (`lundump` stays resident; `lparser`/`llex`/`lcode`
 via the dev server once wifi lands). Today's `APP=lua` stays the dev image with
 the on-device parser. See [Simulate](#simulate-no-hardware).
 
+### Off-device `luac` pipe (#133)
+The host half of that end-game exists now, in [`tools/luac/`](../../tools/luac/):
+a `luac` built from *this* `lua/` tree + `luaconf.h`, so its bytecode matches
+what the rabbit's `lundump.c` accepts (`LUA_32BITS`: 4-byte int / `float` /
+instruction). Building from the vendored tree — not a distro `luac` — is what
+guarantees the header sizes line up and keeps the two from drifting; the full
+rule is in [`tools/luac/README.md`](../../tools/luac/README.md).
+
+```sh
+task luac:firmwareV2 SOURCE=foo.lua OUT=foo.lc   # compile to stripped device bytecode
+task test:firmwareV2:luac                        # sim round-trip: source vs bytecode must match
+```
+
+Because bytecode chunks contain `\n`/NUL and the console is line-oriented, the
+REPL accepts a **frame**: a `#LC:<len>` header line followed by `2*len` hex chars
+(whitespace ignored). The device (`load_lc_frame` in `src/app/lua.c`) decodes it
+and `luaL_loadbuffer`s the chunk through the same run+echo path as a source line.
+This dev image still has the parser, so it accepts frames *and* source — that
+overlap is what makes the round-trip test possible, and the frame path is exactly
+how the future parser-less image is fed. `replpipe.py` is the sender (one frame
+per source line, mirroring the device's `return <line>` fallback).
+
 ## Simulate (no hardware)
 Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
 Unicorn Engine, issue #96) - no JTAG, no device:
@@ -113,6 +135,7 @@ console output is printed in the run summary. To drive the **REPL** yourself, us
 ```sh
 task repl:firmwareV2                                               # live interactive prompt (type Lua, Ctrl-D to exit)
 task repl:firmwareV2 SCRIPT=src/firmwareV2/examples/repl-demo.lua  # feed a .lua file, print the transcript
+task repl:firmwareV2 SCRIPT=…/luac-roundtrip.lua LC=1             # feed it as #LC bytecode frames instead of source (#133)
 ```
 
 The live prompt reads your terminal via semihosting `SYS_READC` (needs a TTY);
