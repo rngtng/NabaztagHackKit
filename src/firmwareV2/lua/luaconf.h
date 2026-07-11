@@ -799,6 +799,20 @@
 */
 
 /*
+** firmwareV2 (#133): the block below is the on-device Local config - the M7.1/
+** M7.2/M7.3 luai_* overrides that swap newlib/libm out for the semihosting
+** console + compact number helpers in src/app/lua.c. They only make sense in
+** the ARM firmware. A host build of luac (tools/luac) compiles this same tree
+** with -DLUA_HOST_LUAC so these fall back to the stock C library (fwrite,
+** strtof, pow/fmod); LUA_32BITS stays defined for both, so the bytecode the
+** host luac dumps has the exact integer/float/instruction sizes lundump.c
+** checks on the rabbit. The guard keeps the two in lockstep - any future local
+** Lua patch is picked up by host luac automatically - with no extra -D on the
+** device build.
+*/
+#if !defined(LUA_HOST_LUAC)		/* { device-only overrides */
+
+/*
 ** firmwareV2 (M7.1, #107): route Lua's console output through ARM semihosting
 ** instead of the newlib stdio FILE layer. The stock lua_writestring/writeline/
 ** writestringerror (lauxlib.h) call fwrite/fprintf/fflush on stdout/stderr,
@@ -843,6 +857,8 @@ extern LUA_NUMBER luai_pow (LUA_NUMBER a, LUA_NUMBER b);
 extern LUA_NUMBER luai_fmod (LUA_NUMBER a, LUA_NUMBER b);
 #define luai_numpow(L,a,b)         ((void)(L), luai_pow((a), (b)))
 #define luai_nummod(L,a,b,m)       ((void)(L), (m) = luai_fmod((a), (b)))
+
+#endif					/* } !LUA_HOST_LUAC */
 
 
 

@@ -106,6 +106,13 @@ from where, and what changed here so fixes can flow back upstream.
     `src/app/lua.c`: `lua_writestring`/`writeline`/`writestringerror` → semihosting
     (M7.1 #107); `lua_str2number` → a compact decimal parser instead of `strtof`
     (M7.2 #108); `luai_numpow`/`luai_nummod` → libm-free `^`/`%` (M7.3 #109).
+    That whole M7 block is now wrapped in `#if !defined(LUA_HOST_LUAC)` (#133):
+    the host `luac` in [`tools/luac/`](tools/luac/) compiles this same tree with
+    `-DLUA_HOST_LUAC` so the overrides fall back to stock libc/libm (it has no
+    semihosting console), while `LUA_32BITS` stays on for both — so host-compiled
+    bytecode carries the exact 4-byte int/float/instruction sizes the device's
+    `lundump.c` checks. The device build is unchanged (no new `-D`). `luac.c` is
+    vendored and compiled only by the host build (the firmware never links it).
   - `lbaselib.c` — removed the `"dofile"` and `"loadfile"` entries from
     `base_funcs[]` (their `luaL_loadfilex`→`fopen` path pulls ~8.5 KB of newlib
     stdio; this target has no filesystem). `"load"` (in-memory, used by the REPL)
