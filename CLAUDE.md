@@ -40,6 +40,14 @@ discipline — now lives in the `hw-flash-repl` skill.** Invoke it for any
 JTAG/flash/console task instead of re-deriving from here; full recipe still in
 `tools/openocd/README.md`, board teardown in `docs/hardware-dissection.md`.
 
+## Firmware design principles (firmwareV2)
+- **Five binding design principles (#183) live in [`src/firmwareV2/README.md`](src/firmwareV2/README.md#design-principles):**
+  (1) layered API — HAL in C, behaviour in Lua, only thin `nab.*` bindings across the seam;
+  (2) cooperative event-driven core — never Lua in an ISR; (3) explicit flash/heap +
+  error budget — every chunk under `lua_pcall`; (4) partial-update-friendly script slots
+  (M11 remote loading, not reflash); (5) sandbox by construction — trimmed stdlib, only the
+  `nab` HAL API. **Honour them on new firmwareV2 work; a change that breaks one needs a stated reason.**
+
 ## Firmware flash budget (firmwareV2)
 - **lua.elf flash budget: ~24.6 KB free of 124 KB after M9+M10 (101,800 B used); was ~30 KB after M8 (#116); ~48 B before M7 (#106).**
   M7 (incl. M7.5 #114) moved Lua's number I/O + console fully off newlib - the
