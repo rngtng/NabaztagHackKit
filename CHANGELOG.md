@@ -140,6 +140,16 @@
     `write_fn` output path never compiled
   * new `task build:app` compiles app bytecode (preprocess + mtl compile)
 
+## v2.0.0-alpha3 - 04-07-2026
+
+  * LED driver: gamma-2.2 intensity table without the old dead zone (inputs 0..51
+    no longer collapse to black; full 0..127 dot-correction range)
+  * LED driver: fade engine — `led_fade(led, color, ms)` interpolates in the
+    background at 100 Hz with one batched SPI flush per tick; generic channel
+    packer replaces the per-LED bit-mask tables (verified bit-identical)
+  * new MTL builtin `ledfade led color ms` (opcode 153) wired through firmware VM,
+    compiler and simulator (simulator sets the target color immediately)
+
 ## v2.0.0-alpha - 2026-06-30
 
 Complete SDK reboot. Ruby gem gutted; repo is now a layered MTL SDK + toolchain.

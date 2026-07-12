@@ -33,11 +33,16 @@
 #define LED_RGB_4		0x04000000
 #define LED_RGB_5		0x05000000
 
+//Fade engine step interval (ms)
+#define LED_FADE_TICK_MS	10
+
 /*************/
 /* Functions */
 /*************/
 void init_led_rgb_driver(void);
 void set_led_rgb(uint32_t color);
 void set_led(uint8_t led,uint32_t color);
+void led_fade(uint8_t led,uint32_t color,uint32_t ms);
+void led_fade_tick(void);
 
 #endif

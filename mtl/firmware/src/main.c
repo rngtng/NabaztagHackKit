@@ -305,6 +305,7 @@ int main(void)
       struct rt2501buffer *r;
       play_check(0);
       rec_check();
+      led_fade_tick();
 
       CLR_WDT;
       usbhost_events();

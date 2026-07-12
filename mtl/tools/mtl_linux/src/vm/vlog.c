@@ -633,6 +633,13 @@ void sysLed(int led,int col)
 #endif
 }
 
+// simulator has no fade engine: jump straight to the target color
+void sysLedFade(int led,int col,int ms)
+{
+    (void)ms;
+    sysLed(led,col);
+}
+
 void sysMotorset(int motor,int sens)
 {
 #ifdef VSIMU
