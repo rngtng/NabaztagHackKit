@@ -1602,6 +1602,7 @@ void ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
 			ieee80211_input_ctl(frame, length);
 			break;
 		case IEEE80211_FC0_TYPE_DATA:
+			if(length < sizeof(struct ieee80211_frame)) return;
 			ieee80211_input_data(frame, length, rssi);
 			break;
     default:
