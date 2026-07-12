@@ -46,6 +46,7 @@ int32_t sysListswitchstr(int32_t p,uint8_t *key);
 
 
 void sysLed(int32_t led,int32_t col);
+void sysLedFade(int32_t led,int32_t col,int32_t ms);
 void sysMotorset(int32_t motor,int32_t sens);
 int32_t sysMotorget(int32_t motor);
 int32_t sysButton2();

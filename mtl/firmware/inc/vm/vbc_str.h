@@ -6,7 +6,7 @@
  * @brief VLISP Virtual Machine - Opcodes litteral matchs
  */
 // cette table ne sert qu'à l'affichage du bytecode dans la console
-#define MaxOpcode 152
+#define MaxOpcode 154
 char* strbytecod[MaxOpcode]=
 {
 "exec",
@@ -161,4 +161,6 @@ char* strbytecod[MaxOpcode]=
 "rfidWrite",
 "i2cRead",
 "i2cWrite",
+"strright",
+"ledfade",
 };
