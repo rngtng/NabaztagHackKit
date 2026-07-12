@@ -75,7 +75,7 @@ JTAG/flash/console task instead of re-deriving from here; full recipe still in
   and turn that into a real nonzero exit — trust the exit code, don't grep manually.
 - **`task verify` is the definition of done. Run it before every commit related to firmware or mtl V1** — it
   chains `lib:test` + `boot:build` + `app-piper:build` + `app-template:build` +
-  `app-sse:build` + `firmwareV2:build`. All must be green;
+  `app-sse:build` + `firmware:test:bugs` + `firmware:test:crypto` + `firmwareV2:build`. All must be green;
 - **`task verifyV2` is the definition of done. Run it before every commit related to firmwareV2 or lua** — it
   chains `firmwareV2:build`. All must be green;
   a change that only passes `task lib:test` can still break a build.

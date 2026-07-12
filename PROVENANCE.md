@@ -242,6 +242,24 @@ against the reference.
   capture-and-resend must be dropped); not exercisable in the `mtl_linux`
   simulator, which models the MTL/VM layer, not the C firmware's USB/crypto RX
   path. Concept/register semantics from the reference, not code.
+- **WPA2/CCMP GTK unwrap** (#152): `src/firmware/src/net/aes128.c` was a pure stub
+  (all three functions empty no-ops), so the WPA2 group-key install
+  (`eapol.c:eapol_input_group_msg1`, CCMP branch) unwrapped nothing and installed
+  uninitialised memory as the GTK — broadcast/multicast never decrypted. Replaced
+  the stub with a real compact AES-128 (byte-oriented Rijndael, no T-tables) plus
+  `aes128_unwrap()` implementing NIST AES Key Wrap unwrap (RFC 3394), which is how
+  802.11i actually delivers the GTK — **not** the raw AES-ECB the stub's signature
+  implied. Rewired the CCMP branch to unwrap with the KEK, reject on integrity-check
+  failure (default IV `A6A6…`), locate the GTK KDE (OUI 00-0F-AC, type 1) and install
+  the 16-byte GTK at the KeyID carried *in the KDE* (WPA2 leaves `key_info.key_index`
+  = 0, so the old `!= 0` guard would have skipped install even had the unwrap worked).
+  **The crypto is objectively verified** by a committed known-answer test
+  (`src/firmware/test/aes128_kat.c`, `task firmware:test:crypto`, now part of
+  `task verify`) against the FIPS-197 AES-128 vectors and the RFC 3394 §4.1 unwrap
+  vector (incl. tamper-rejection). The RFC 3394 core and AES are standards, so this
+  is a fresh implementation, not vendored code. Still needs the DoD's on-device
+  check (a WPA2-CCMP network decodes broadcast/ARP after connecting) - the KDE
+  framing/KeyID handling can't be exercised without a real AP.
 
 ## Vendoring hygiene
 

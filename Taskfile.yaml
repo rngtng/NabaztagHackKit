@@ -45,6 +45,7 @@ tasks:
       - task: app-template:build
       - task: app-sse:build
       - task: firmware:test:bugs
+      - task: firmware:test:crypto
       - task: firmwareV2:build
 
   verifyV2:

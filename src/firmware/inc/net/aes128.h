@@ -20,4 +20,9 @@ void aes128_crypt(struct aes128_context *aes, uint8_t *out,
 void aes128_decrypt(struct aes128_context *aes, uint8_t *out,
                     const uint8_t *in, uint16_t length);
 
+/* RFC 3394 AES Key Unwrap (128-bit KEK). Writes inlen-8 plaintext bytes to out;
+ * returns 1 on integrity-check success, 0 on failure. */
+int aes128_unwrap(const uint8_t *kek, const uint8_t *in, uint16_t inlen,
+                  uint8_t *out);
+
 #endif /* _aes128_H_ */
