@@ -181,6 +181,31 @@ None of these are behavioral choices — each is pinned by a test in `test/lib/`
 that documents the expected behavior; see the corresponding `CHANGELOG.md`
 entries for full descriptions.
 
+### `src/firmware/` RT2501 driver — reference-driver backports (#151)
+
+The vendored RT2501 USB WiFi driver (`src/firmware/src/usb/rt2501usb.c` + siblings,
+Bourdeauducq 2006 / RedoX 2015 GCC port) is a hand-port of Ralink's RT2571W/RT2671
+vendor driver. Divergences from Linux mainline's `drivers/net/wireless/ralink/rt2x00/`
+(`rt73usb.c`/`.h`) are being backported at algorithm/register granularity (not by
+swapping the driver — the Linux leaf depends on mac80211/cfg80211/rt2x00lib/URB, none
+of which exist on this bare-metal ARM7). Umbrella #151; each fix cites file+line
+against the reference.
+
+- **RSSI decode** (#155): the `PlcpRssi` byte is not linear — it packs `AGC:5`
+  (bits 0-4) + `LNA_state:2` (bits 5-6), matching `RXD_W1_RSSI_AGC` (0x1f00) /
+  `RXD_W1_RSSI_LNA` (0x6000) in `rt73usb.h`. Reimplemented `rt2501_agc_to_rssi()`
+  after `rt73usb_agc_to_rssi()`: `RSSI = AGC*2 - offset`, offset selected by LNA
+  state (64/74/90) and shifted by the EEPROM RSSI#1 offset (Linux `lna_gain`,
+  computed in `rt73usb_config_lna_gain()`). Only the 2.4 GHz b/g path is ported
+  (no external LNA on this module → no `+14` term; no 5 GHz branch). This also
+  wires up `rt2501_RssiOffset1` (previously a dead store) and retires the flat
+  `PlcpRssi - 0x79` decode + its now-unused `rt2501_BbpRssiToDbmDelta`. The new
+  scale is genuine negative dBm, which is what the downstream rate/link-quality
+  thresholds in `src/firmware/src/net/ieee80211.c` (`>= -65`, `-70`, …) already
+  assume. Not yet hardware-verified (needs the on-device RSSI-vs-distance log the
+  issue's DoD calls for); GPLv2 note: only the ~10-line formula/constants were
+  ported, not code copied verbatim.
+
 ## Vendoring hygiene
 
 - Never vendor secrets: `conf.bin`-style credential files ship only as
