@@ -1075,7 +1075,8 @@ void interpGo()
             int32_t pl=VSIZEBIN(p);
             int32_t ql=VSIZEBIN(q);
 
-            VSTACKSET(0,INTTOVAL(memcmp(VSTARTBIN(p),VSTARTBIN(q),(pl>ql)?pl:ql)));
+            int32_t c=memcmp(VSTARTBIN(p),VSTARTBIN(q),(pl<ql)?pl:ql);
+            VSTACKSET(0,INTTOVAL(c?c:(pl-ql)));
           }
           else VSTACKSET(0,INTTOVAL((p!=NIL)?1:(q!=NIL)?-1:0));
         }
