@@ -321,7 +321,7 @@ void interpGo()
           if ((p!=NIL)&&(i!=NIL))
           {
             p=VALTOPNT(p);
-            if ((i>=0)||(i<VSIZE(p))) VSTORE(p,i,v);
+            if ((i>=0)&&(i<VSIZE(p))) VSTORE(p,i,v);
           }
         }
         break;
@@ -334,7 +334,7 @@ void interpGo()
           {
             i=VALTOINT(i);
             p=VALTOPNT(p);
-            if ((i>=0)||(i<VSIZE(p))) VSTORE(p,i,v);
+            if ((i>=0)&&(i<VSIZE(p))) VSTORE(p,i,v);
           }
         }
         break;
@@ -364,7 +364,7 @@ void interpGo()
           {
             i=VALTOINT(i);
             p=VALTOPNT(p);
-            if ((i>=0)||(i<VSIZE(p))) VSTORE(p,i,v);
+            if ((i>=0)&&(i<VSIZE(p))) VSTORE(p,i,v);
           }
           VSTACKSET(0,v);
         }
