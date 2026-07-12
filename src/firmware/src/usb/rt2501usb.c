@@ -641,19 +641,26 @@ void rt2501_switch_channel(uint8_t channel)
         break;
       }
     }
-
-    BbpReg = rt2501_read_bbp(rt2501_dev, RT2501_BBP_R3);
-    if ((rt2501_Antenna.field.RfIcType == RT2501_RFIC_5225)
-        || (rt2501_Antenna.field.RfIcType == RT2501_RFIC_2527))
-      BbpReg &= 0xFE; /* b0=0 for no Smart mode */
-    else
-      BbpReg |= 0x01; /* b0=1 for Smart mode */
-    rt2501_write_bbp(rt2501_dev, RT2501_BBP_R3, BbpReg);
     break;
 
   default:
     break;
   }
+
+  /* BBP R3 "smart mode" bit (b0): enabled for every RF chip except RFIC
+   * 5225/2527, matching Linux rt73usb_config_channel's
+   * smart = !(rf1 == RF5225 || rf1 == RF2527). Runs for all chips (previously
+   * this was misplaced inside the 5225/2527 case, so it never ran for the
+   * 2528/5226 chip actually on this board and the "smart on" branch was dead
+   * code). rt2501_antenna_setting() cleared this bit earlier, so we
+   * read-modify-write to re-derive it here. */
+  BbpReg = rt2501_read_bbp(rt2501_dev, RT2501_BBP_R3);
+  if ((rt2501_Antenna.field.RfIcType == RT2501_RFIC_5225)
+      || (rt2501_Antenna.field.RfIcType == RT2501_RFIC_2527))
+    BbpReg &= 0xFE; /* b0=0 for no Smart mode */
+  else
+    BbpReg |= 0x01; /* b0=1 for Smart mode */
+  rt2501_write_bbp(rt2501_dev, RT2501_BBP_R3, BbpReg);
 
   if (Bbp94 != BBPR94_DEFAULT)
     rt2501_write_bbp(rt2501_dev, RT2501_BBP_R94, Bbp94);

@@ -217,6 +217,16 @@ against the reference.
   reads return 0 as an invalid-value sentinel — the BBP-R0 readiness probe already
   retries at a higher level, so no hang). No happy-path behavior change. Concept
   ported from the reference, not code.
+- **BBP R3 "smart mode" bit** (#153): the smart-mode read-modify-write in
+  `rt2501_switch_channel()` was misplaced *inside* the `case RT2501_RFIC_5225 /
+  _2527:` arm, so it never ran for the RFIC 2528/5226 chip actually on this board
+  ("our card" per the code's own comment) and its `|= 0x01` (smart-on) branch was
+  dead. `rt2501_antenna_setting()` clears that bit earlier with nothing to re-set
+  it, leaving smart mode permanently off on real hardware. Hoisted the block out
+  of the switch to run for every RF chip, matching Linux `rt73usb_config_channel`'s
+  unconditional `smart = !(rf1 == RF5225 || rf1 == RF2527)` (bit enabled for
+  2528/5226, disabled for 5225/2527). Logic unchanged — just relocated so it's
+  reachable. Concept from the reference, not code.
 
 ## Vendoring hygiene
 
