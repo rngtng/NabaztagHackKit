@@ -188,6 +188,15 @@ static const RT2501_RF_REGS RF5225RegTable[] = {
 };
 #define RT2501_NUM_OF_5225_CHNL (sizeof(RF5225RegTable) / sizeof(RT2501_RF_REGS))
 
+/* Bounds for the radio bring-up polls below (#144). On a marginal power-up the
+ * dongle can enumerate but leave BBP/RF half-initialised; without a cap these
+ * waits spin forever and bring-up hangs silently with no recovery. Exhausting
+ * the budget instead returns failure, so rt2501_connect() tears the device down
+ * and rt2501_state() reports RT2501_S_BROKEN - an observable state the #125
+ * reboot watchdog can act on. Budgets (~10s each) stay under that >15s window. */
+#define RT2501_SETUP_CSR12_TRIES 10  /* x DelayMs(1000): MAC_CSR12.BbpRfStatus  */
+#define RT2501_SETUP_BBP_TRIES   20  /* x DelayMs(500):  BBP R0 ready           */
+
 static int32_t rt2501_setup(void)
 {
   uint32_t i;
@@ -237,7 +246,7 @@ static int32_t rt2501_setup(void)
   DBG_WIFI("OK!"EOL);
 
   DBG_WIFI("Waiting for the hardware to be up and running...");
-  while(1) {
+  for(i = 0; i < RT2501_SETUP_CSR12_TRIES; i++) {
     DBG_WIFI(".");
     csr12.word = rt2501_read(rt2501_dev, RT2501_MAC_CSR12);
     if(csr12.field.BbpRfStatus) break;
@@ -245,14 +254,22 @@ static int32_t rt2501_setup(void)
     if(!rt2501_write(rt2501_dev, RT2501_MAC_CSR12, 0x4)) return 0;
     DelayMs(1000);
   }
+  if(i == RT2501_SETUP_CSR12_TRIES) {
+    DBG_WIFI("BBP/RF status never ready - abort"EOL);
+    return 0;
+  }
   DBG_WIFI("OK!"EOL);
 
   DBG_WIFI("Setting up BBP...");
   /* Make sure BBP is okay */
-  while(1) {
+  for(i = 0; i < RT2501_SETUP_BBP_TRIES; i++) {
     if(rt2501_read_bbp(rt2501_dev, RT2501_BBP_R0) != 0) break;
     DelayMs(500);
     DBG_WIFI(".");
+  }
+  if(i == RT2501_SETUP_BBP_TRIES) {
+    DBG_WIFI("BBP R0 never ready - abort"EOL);
+    return 0;
   }
 
   /* Initialize BBP register to default values */
