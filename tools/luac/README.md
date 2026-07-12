@@ -50,14 +50,14 @@ a source line. `replpipe.py` is the sender.
 
 ```sh
 # Compile a Lua source file to stripped 32-bit device bytecode.
-task luac:firmwareV2 SOURCE=foo.lua OUT=foo.lc
+task firmwareV2:luac SOURCE=foo.lua OUT=foo.lc
 
 # Round-trip test (sim): SCRIPT fed as source vs. as #LC frames must match.
-task test:firmwareV2:luac [SCRIPT=src/firmwareV2/examples/luac-roundtrip.lua]
+task firmwareV2:test:luac [SCRIPT=src/firmwareV2/examples/luac-roundtrip.lua]
 
 # Drive the sim / hardware REPL with bytecode instead of source:
-task repl:firmwareV2 SCRIPT=foo.lua LC=1        # (or a .lc SCRIPT)
-task repl:firmwareV2:hw SCRIPT=foo.lua LC=1
+task firmwareV2:repl SCRIPT=foo.lua LC=1        # (or a .lc SCRIPT)
+task firmwareV2:repl:hw SCRIPT=foo.lua LC=1
 ```
 
 `replpipe.py` (stdlib-only) converts REPL input to the frame stream: a `.lua`

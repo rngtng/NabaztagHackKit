@@ -1,0 +1,93 @@
+# app-piper — self-contained build/simulate for the piper MTL app (#63).
+#
+# Root only `includes:` this under the `app-piper` namespace → `app-piper:build`
+# / `app-piper:simulate` / `app-piper:simulate:mock`. Preprocess→compile
+# plumbing is duplicated across app leaves for now (#63); a shared src/apps
+# helper is the DRY follow-up.
+version: '3'
+
+vars:
+  TARGET: app-piper
+  OUT: '{{.OUT | default "build"}}'
+
+includes:
+  preprocessor:
+    taskfile: ../../tools/preprocessor/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../../tools/preprocessor}
+  mtl:
+    taskfile: ../../tools/mtl_linux/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../../tools/mtl_linux}
+  mockserver:
+    taskfile: ../../tools/mockserver/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mockserver, DIR: ../../tools/mockserver}
+
+tasks:
+  build:
+    desc: 'Build app-piper → build/app-piper.'
+    summary: 'Usage: task app-piper:build [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+
+  simulate:
+    desc: 'Simulate app-piper in the MTL simulator. HTTP UI at http://localhost:8080.'
+    summary: 'Usage: task app-piper:simulate [OUT=build] [PORT=8080]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+          DEFINES: SIMU
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          PORT: '{{.PORT}}'
+          CLI_ARGS: '{{.CLI_ARGS}}'
+
+  simulate:mock:
+    desc: 'Simulate app-piper end-to-end with the mock file server (serves src/app-piper/assets, e.g. init.forth).'
+    summary: 'Usage: task app-piper:simulate:mock'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      NET: nabaztag-mocknet
+      MOCK_IP: 172.30.0.10
+      ASSETS: 'src/{{.TARGET}}/assets'
+    cmds:
+      - task: mockserver:image
+      # shared network + mock container the sim can reach at a fixed IP (literal IP => sim skips DNS)
+      - docker network create --subnet 172.30.0.0/24 {{.NET}} >/dev/null 2>&1 || true
+      - defer: docker network rm {{.NET}} >/dev/null 2>&1 || true
+      - docker rm -f nabaztag-mock >/dev/null 2>&1 || true
+      - 'docker run -d --rm --name nabaztag-mock --network {{.NET}} --ip {{.MOCK_IP}} -v "$(realpath {{.ASSETS}}):/assets:ro" nabaztag-sdk-mockserver >/dev/null'
+      - defer: docker stop nabaztag-mock >/dev/null 2>&1 || true
+      # stream the mock's request log alongside the sim output (-u: unbuffered, so lines appear live)
+      - docker logs -f nabaztag-mock 2>&1 | sed -u 's/^/[mock] /' &
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+          DEFINES: SIMU
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          NETWORK: '{{.NET}}'
+          CLI_ARGS: '--serverurl {{.MOCK_IP}} {{.CLI_ARGS}}'

@@ -127,7 +127,7 @@ tag id and the app decides the reaction; `reclib` records and packages WAV,
 upload flow stays app-side.
 
 **Starting a new app:** copy `src/app-template/` — `main.mtl` assembles lib
-blocks, `app.mtl` is the business logic. `task simulate:app` runs it on
+blocks, `app.mtl` is the business logic. `task app-template:simulate` runs it on
 http://localhost:8080.
 
 Note: the preprocessor treats **every file as `#pragma once`**, so modules can

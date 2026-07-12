@@ -21,7 +21,7 @@ not by halting hardware. Reserve JTAG for C-runtime and hardware questions.
 |---|---|---|
 | "What does the boot/app bytecode do?" (config gate, master mode, LED meaning) | read the `.mtl` in `src/boot/` / `src/app-*/` | flash + breakpoint to infer it |
 | "What's a valid config / SSID format?" | `tools/mtl_linux/config.txt`, the `conf.bin` sample | guess |
-| "Does bytecode logic Z work?" | `task simulate:boot` / `simulate:app` (host, HW stubbed) | on-device |
+| "Does bytecode logic Z work?" | `task boot:simulate` / `<app>:simulate` (host, HW stubbed) | on-device |
 | "How far did boot get / what's it printing?" | console-over-JTAG (`putst_uart`, below) | LED-guessing |
 | "Is a C value X?" (`rt2501_connected`, button, config bytes) | `print` / `x` over JTAG | `finish` |
 | "Does C path Y run in real time?" (USB enum, WiFi connect) | **single** breakpoint, run free, timeout | multi-breakpoint or console capture (both distort timing) |

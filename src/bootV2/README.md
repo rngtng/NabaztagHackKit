@@ -23,7 +23,7 @@ state machine the apps run. lib's master (AP) mode reads the button at bring-up
 path is preserved, and starts the portal via the `wifi_master_cb` seam. The
 `SIMU` build keeps boot's own compact state machine over `tcpudp_emu.mtl`.
 
-Flash to real hardware with `task flash:firmware` (JTAG, via the Pi bridge - see
+Flash to real hardware with `task firmware:flash` (JTAG, via the Pi bridge - see
 `tools/openocd/README.md`). Hardware status: the config-portal (master/AP) path
 is verified on-device; the **station path can't associate yet** - `netState`
 reports `RT2501_S_BROKEN`, a C-firmware/RT2501 radio issue below the MTL layer
@@ -53,7 +53,7 @@ tracked in [#125](https://github.com/rngtng/NabaztagHackKit/issues/125).
 Preprocess (merge split sources) then compile:
 
 ```
-task build:boot
+task boot:build
 ```
 
 Output lands in `build/boot/merged.mtl` (merged source) and `build/boot/` (bytecode).
@@ -61,7 +61,7 @@ Output lands in `build/boot/merged.mtl` (merged source) and `build/boot/` (bytec
 ## Simulate
 
 ```
-task simulate:boot
+task boot:simulate
 ```
 
 Runs with `SIMU` and `BOOT` defined. Config UI is served at `http://localhost:8080`.

@@ -61,7 +61,7 @@ JTAG/flash/console task instead of re-deriving from here; full recipe still in
   `LUA_32BITS`-matched host `luac` (flash.py / dev server), and today's `APP=lua`
   stays the dev image - `-Os` (−1.3 KB) and Lua 5.5 (#104) are NOT levers. When
   adding bindings, pick a real lever (see #128), not error-string shaving.
-  `task build:firmwareV2 APP=lua` fails loudly on overflow.
+  `task firmwareV2:build APP=lua` fails loudly on overflow.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
@@ -69,15 +69,15 @@ JTAG/flash/console task instead of re-deriving from here; full recipe still in
   Claude Code remote sandbox only — bakes the egress proxy's CA into the
   `python:3.12-slim`/`debian:bookworm-slim` base images so `apt-get`/`pip` inside
   our Dockerfiles can reach the network. No-ops everywhere else.
-- **`task build:*` and `task test` always exit 0** — the MTL compiler and simulator
+- **The MTL build/simulate tasks (`<layer>:build` / `<layer>:simulate`) and `task test` always exit 0** — the MTL compiler and simulator
   report fatal errors on stderr but never fail the process. Both are wrapped to
   scan their own output for `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error`
   and turn that into a real nonzero exit — trust the exit code, don't grep manually.
 - **`task verify` is the definition of done. Run it before every commit** — it
-  chains `test` + `build:boot` + `build:app` (app-piper) + `build:app` for
-  `src/app-template/main.mtl` (the device-stack build). All four must be green;
+  chains `test` + `boot:build` + `app-piper:build` + `app-template:build` +
+  `app-sse:build` + `firmwareV2:build`. All must be green;
   a change that only passes `task test` can still break a build.
-- For simulator e2e checks: `task simulate:app`/`simulate:boot` in the background,
+- For simulator e2e checks: `task <app>:simulate`/`boot:simulate` in the background,
   then `curl --noproxy localhost -m 5 localhost:8080/...` (the session's HTTPS
   proxy otherwise intercepts plain `curl localhost`).
 
@@ -119,7 +119,7 @@ re-deriving from here.
   one `int32_t[VMEM_LENGTH]` array). Stack words are tagged: low bit = pointer,
   else int; a "pointer" is a *word index*, not an address. GC **reboots** on OOM.
 - **To exercise the real VM natively**, use `tools/testvm` — build under
-  AddressSanitizer via `task test:firmware-bugs`, an ASan **regression guard**
+  AddressSanitizer via `task firmware:test:bugs`, an ASan **regression guard**
   for the fixed memory-safety bugs (#69/#70) that runs as part of `task verify`;
   every scenario must stay clean. Its `README.md` has the VM internals
   cheat-sheet (value tagging, block layout, how to drive `interpGo()` from a few

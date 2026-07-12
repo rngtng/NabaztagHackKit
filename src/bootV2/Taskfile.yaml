@@ -1,0 +1,59 @@
+# bootV2 — self-contained build/simulate for the V2 boot MTL image (#63).
+#
+# Root only `includes:` this under the `bootV2` namespace → `bootV2:build` /
+# `bootV2:simulate`. Now self-contained, this writes to build/bootV2 (the old
+# root `build:bootV2` inherited TARGET=boot and wrote to build/boot — a
+# copy-paste artefact; the dedicated dir is the intended behaviour).
+version: '3'
+
+vars:
+  OUT: '{{.OUT | default "build"}}'
+  SOURCE: '{{.SOURCE | default "src/bootV2/boot.mtl"}}'
+
+includes:
+  preprocessor:
+    taskfile: ../../tools/preprocessor/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../../tools/preprocessor}
+  mtl:
+    taskfile: ../../tools/mtl_linux/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../../tools/mtl_linux}
+
+tasks:
+  build:
+    desc: 'Build V2 boot bytecode → build/bootV2 (raw, unsigned).'
+    summary: 'Usage: task bootV2:build [SOURCE=src/bootV2/boot.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/bootV2'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+          SIGN: 'false'
+
+  simulate:
+    desc: 'Simulate bootV2.mtl in config mode. Config UI served at http://localhost:8080.'
+    summary: 'Usage: task bootV2:simulate [SOURCE=src/bootV2/boot.mtl] [OUT=build] [PORT=8080]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/bootV2_simu'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          PORT: '{{.PORT}}'
+          CLI_ARGS: '{{.CLI_ARGS}}'

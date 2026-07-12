@@ -1,0 +1,60 @@
+# boot — self-contained build/simulate for the boot MTL image (#63).
+#
+# Root only `includes:` this under the `boot` namespace → `boot:build` /
+# `boot:simulate`. The build emits raw bytecode (SIGN=false) plus the dumpbc.c
+# debug dump that `firmware:build` compiles into the C VM (bootstrap order in
+# CLAUDE.md). Preprocess→compile plumbing is duplicated with the other MTL
+# leaves for now (#63).
+version: '3'
+
+vars:
+  OUT: '{{.OUT | default "build"}}'
+  SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+
+includes:
+  preprocessor:
+    taskfile: ../../tools/preprocessor/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../../tools/preprocessor}
+  mtl:
+    taskfile: ../../tools/mtl_linux/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../../tools/mtl_linux}
+
+tasks:
+  build:
+    desc: 'Build boot bytecode → build/boot (raw, unsigned). Emits dumpbc.c for firmware:build.'
+    summary: 'Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/boot'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+          SIGN: 'false'
+
+  simulate:
+    desc: 'Simulate boot.mtl in config mode. Config UI served at http://localhost:8080.'
+    summary: 'Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build] [PORT=8080]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/boot_simu'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: '. {{dir .SOURCE}}'
+          DEFINES: 'SIMU BOOT'
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          PORT: '{{.PORT}}'
+          CLI_ARGS: '{{.CLI_ARGS}}'

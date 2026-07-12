@@ -54,25 +54,25 @@ Run `task --list` to list all targets.
 Compile an MTL boot source to bytecode:
 
 ```
-task build:boot
+task boot:build
 ```
 
 Run the boot app in the simulator:
 
 ```
-task simulate:boot
+task boot:simulate
 ```
 
 Finally, compile the firmware sources to bytecode, including the boot code:
 
 ```
-task build:firmware
+task firmware:build
 ```
 
 Disassemble the built firmware ELF (e.g. to compare codegen between optimization levels):
 
 ```
-task disasm:firmware > Nab.dis
+task firmware:disasm > Nab.dis
 ```
 
 Run the lib test suite:

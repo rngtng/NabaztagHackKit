@@ -12,7 +12,7 @@ Verification requires Docker Hub access (image pulls for
 
 ```bash
 # 1. Build images and run the simulation
-task simulate:boot
+task boot:simulate
 ```
 
 The first run builds two Docker images (~2–3 min). Subsequent runs are fast.
@@ -52,5 +52,5 @@ Expected: the classic Nabaztag blue-LED WiFi configuration wizard.
 - `getButton()` is hardcoded to `1` for now. Every simulation will see
   button-pressed. Fine for boot testing; can be made dynamic later with a
   `--button` CLI flag to `mtl_simu`.
-- To run on a different host port: `task simulate:boot PORT=9090`
+- To run on a different host port: `task boot:simulate PORT=9090`
 - Stop the simulation with Ctrl-C.

@@ -28,9 +28,12 @@ Run the full end-to-end simulation (builds the image, starts the server, runs
 the sim pointed at it, streams the request log, tears everything down on exit):
 
 ```sh
-task simulate:app:piper:mock          # piper
-task simulate:app:mock TARGET=app-foo # any app with a src/<app>/assets folder
+task app-piper:simulate:mock          # piper (serves src/app-piper/assets)
 ```
+
+Each app owns its own `simulate:mock` target now (#63); app-piper is the one
+wired up today. To add it to another app with a `src/<app>/assets/` folder, copy
+app-piper's `simulate:mock` task into that app's `Taskfile.yaml`.
 
 The mock's request log is prefixed `[mock]` in the combined output, e.g.:
 

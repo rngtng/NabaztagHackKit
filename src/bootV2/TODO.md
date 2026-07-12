@@ -37,7 +37,7 @@ bring-up + hold-button config-portal path - see #103.
   convergence part 2 (done): `config.mtl` layout unified (align-only, no legacy
   migration) and `wifi.mtl` converged onto `lib/net/wifi.mtl` with button-driven
   master mode. Builds + `simulate:boot` green; **hardware-verified**: JTAG-flashed
-  via `task flash:firmware`, the hold-button **config-portal path works on the
+  via `task firmware:flash`, the hold-button **config-portal path works on the
   real device** (AP + DHCP + HTTP config + persisted creds). Fixed two boot-only
   bugs found on hardware: lib's auto-reconnect thrash (boot now sets
   `WIFI_NO_AUTO_RECONNECT`) and an `ears_stop` on uninitialised ears.

@@ -10,7 +10,7 @@ A new app is **assembly + business logic**; everything else comes from `lib/`:
 ## Run it (simulator)
 
 ```sh
-task simulate:app:template   # config UI on http://localhost:8080
+task app-template:simulate   # config UI on http://localhost:8080
 curl -s localhost:8080/
 curl -s -d '2 3 + .' localhost:8080/eval
 # -> {"output": "5", "stack": ""}
@@ -22,7 +22,7 @@ left commented — they need the device build). Run the whole file through
 `/eval` in one shot:
 
 ```sh
-task simulate:app:template
+task app-template:simulate
 curl -s --noproxy localhost \
      --data-binary @src/app-template/examples/demo.forth \
      localhost:8080/eval
@@ -187,7 +187,7 @@ curl -s -d '1 task-stop    .' localhost:8080/eval   # or remove it entirely
 **Hardware** (`lib/forth/hw.mtl`) — thin wrappers over the VM's `led` /
 `motorset` / `motorget` natives via `lib/hw/leds.mtl` + `lib/hw/ears.mtl`.
 These natives exist in the simulator too, so they run under
-`task simulate:app:template` — LED writes appear as `[simuleds] led N 0x……`
+`task app-template:simulate` — LED writes appear as `[simuleds] led N 0x……`
 in the sim's stdout, and the sim models the ear motors — but physical
 confirmation needs a flashed rabbit ([#46]). `main.mtl` calls `ears_init` to
 start the ears state-machine task.
@@ -212,8 +212,8 @@ curl -s -d 'ears .s' localhost:8080/eval            # show both ear positions
 `wifi.mtl`) — **device build only.** These are compiled in exclusively under
 `#ifndef SIMU`: `http_request`/`wifi_mac_addr` live in the full MTL net stack
 (`lib/net/net.mtl`), which the simulator's transport (`lib/net/tcp.mtl`) does
-not link. Under `task simulate:app:template` they are therefore **not defined**
-(`defined? http-get` → `0`); use `task build:app:template` and flash a rabbit
+not link. Under `task app-template:simulate` they are therefore **not defined**
+(`defined? http-get` → `0`); use `task app-template:build` and flash a rabbit
 ([#46]). Documenting a word that "works" in the simulator but not on the device
 is the bug tracked in [#57]/[#37].
 
@@ -261,7 +261,7 @@ curl -s -d '1 counter +!  counter @' localhost:8080/eval
 ## Build device bytecode
 
 ```sh
-task build:app:template
+task app-template:build
 ```
 
 Note: running standalone **on the rabbit** additionally needs WiFi/DHCP/DNS
@@ -275,4 +275,4 @@ blueprint for composing lib blocks.
 1. Copy this folder: `cp -r src/app-template src/app-<name>`
 2. Rewrite `app.mtl` (keep `handle_request`, or drop HTTP entirely and use
    other blocks — `lib/net/sse_server.mtl`, `lib/sys/task.mtl`, …).
-3. `task simulate:app TARGET=app-<name>`
+3. `task app-<name>:simulate`

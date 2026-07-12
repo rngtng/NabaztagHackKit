@@ -5,7 +5,7 @@
 # for the header-compatibility rationale). Every target runs in Docker; the only
 # host requirement is Docker + Task.
 #
-#   task luac:firmwareV2 SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
+#   task firmwareV2:luac SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
 #
 # The image is built with the *repo root* as its Docker context (not this folder)
 # so its Dockerfile can COPY the sibling lua/ tree - hence dir: USER_WORKING_DIR
@@ -24,7 +24,7 @@ tasks:
       - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
 
   compile:
-    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task luac:firmwareV2 SOURCE=in.lua OUT=out.lc'
+    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc'
     deps: [image]
     dir: '{{.USER_WORKING_DIR}}'
     requires:

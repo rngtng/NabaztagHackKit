@@ -1,71 +1,197 @@
-# firmwareV2 - bring-up build for the eLua-successor (Lua 5.4) port to the
-# Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI). Every target runs in the Docker
-# toolchain (see Dockerfile), so the only host requirements are Docker + Task.
+# firmwareV2 - self-contained build/simulate/flash/repl for the eLua-successor
+# (Lua 5.4) port to the Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI). Root only
+# `includes:` this under the `firmwareV2` namespace, so targets are:
+#   task firmwareV2:build            -> bin/hello.{elf,hex,bin}  (M0)
+#   task firmwareV2:build APP=blink  -> bin/blink.{elf,hex,bin}
+#   task firmwareV2:simulate         -> run in the Unicorn simulator (#96)
+#   task firmwareV2:repl             -> Lua REPL in the simulator (#92)
+#   task firmwareV2:flash            -> flash over JTAG via the Pi bridge (#90)
+#   task firmwareV2:repl:hw          -> flash + capture the semihosting console
+#   task firmwareV2:luac             -> host luac Lua->bytecode (#133)
+#   task firmwareV2:test:luac        -> source vs #LC bytecode round-trip
 #
-#   task firmwareV2:compile            -> bin/hello.{elf,hex,bin}  (M0)
-#   task firmwareV2:compile APP=blink  -> bin/blink.{elf,hex,bin}  (M1, later)
+# Every Docker target runs in the toolchain image; flashing/console (JTAG, USB)
+# runs host-side via tools/openocd/flash.py. Artifacts land in bin/ (and obj/).
 #
-# Artifacts land in bin/ (and obj/) on the host via a bind mount.
-# Flashing over JTAG (bin/*.elf) is added in M2 (#90); see tools/openocd.
+# NOTE on var names: this leaf's own tasks use FV_IMAGE / FV_DIR, NOT the generic
+# IMAGE / DIR. Task bleeds a child include's vars up into the parent's task scope,
+# so the nested luac include (which sets IMAGE/DIR) would otherwise clobber this
+# leaf's own image/dir. Unique names sidestep the collision.
 version: '3'
 
 vars:
-  IMAGE: '{{.IMAGE | default "nabaztag-sdk-firmwarev2"}}'
-  DIR: '{{.DIR | default "."}}'
+  FV_IMAGE: '{{.FV_IMAGE | default "nabaztag-sdk-firmwarev2"}}'
+  FV_DIR: '{{.FV_DIR | default "src/firmwareV2"}}'   # repo-root-relative: `dir:` resolves against the including (root) Taskfile
   APP: '{{.APP | default "hello"}}'
+
+includes:
+  luac: # host Lua->bytecode compiler (built with repo root as Docker context)
+    taskfile: ../../tools/luac/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
 tasks:
   image:
     internal: true   # built on demand as a dep; rebuilt when the toolchain changes
-    dir: '{{.DIR}}'
+    dir: '{{.FV_DIR}}'
     cmds:
-      - docker build -t {{.IMAGE}} .
+      - docker build -t {{.FV_IMAGE}} .
 
-  compile:
-    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:compile [APP=hello]'
-    dir: '{{.DIR}}'
+  build:
+    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:build [APP=hello]'
+    dir: '{{.FV_DIR}}'
     cmds:
       - task: image
       # bind-mount the tree at /work; obj/ and bin/ land back on the host.
-      - 'docker run --rm -v "$(realpath .):/work" {{.IMAGE}} make APP={{.APP}}'
+      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}'
 
   sim-image:
     internal: true   # Unicorn simulator image (#96); rebuilt when sim/ changes
-    dir: '{{.DIR}}/sim'
+    dir: '{{.FV_DIR}}/sim'
     cmds:
-      - docker build -t {{.IMAGE}}-sim .
+      - docker build -t {{.FV_IMAGE}}-sim .
 
   simulate:
     desc: 'Run a bring-up app in the Unicorn simulator, no hardware (#96). Usage: task firmwareV2:simulate [APP=hello] [ARGS=-v]'
-    dir: '{{.DIR}}'
+    dir: '{{.FV_DIR}}'
     cmds:
-      - task: compile
+      - task: build
         vars:
           APP: '{{.APP}}'
       - task: sim-image
       # mount the built ELFs read-only; simulate.py is the image entrypoint
-      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.IMAGE}}-sim {{.ARGS}} /mnt/{{.APP}}.elf'
+      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.FV_IMAGE}}-sim {{.ARGS}} /mnt/{{.APP}}.elf'
 
   repl:
-    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua feeds a script, or omit it for a live interactive prompt. Usage: task firmwareV2:repl [SCRIPT=path/to.lua] [N=budget]'
-    dir: '{{.DIR}}'
+    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua runs a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133). Usage: task firmwareV2:repl [SCRIPT=path/to.lua] [LC=1] [N=budget]'
+    dir: '{{.USER_WORKING_DIR}}'
+    interactive: true
+    deps:
+      - task: luac:image   # only actually used when LC/.lc converts below; cheap when cached
+    cmds:
+      # Resolve SCRIPT to an absolute path here (cwd = repo root) so the runner's
+      # bind mount works regardless of its own dir; empty when omitted, which the
+      # runner treats as "run the interactive prompt". With LC=1 (or a .lc SCRIPT)
+      # first run it through replpipe.py -> a framed temp file, so the REPL is fed
+      # bytecode frames exactly as the parser-less image will be.
+      - task: repl:run
+        vars:
+          SCRIPT:
+            sh: |
+              [ -n "{{.SCRIPT}}" ] || exit 0
+              case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
+              if [ -n "$lc" ]; then
+                fr="$(mktemp)"
+                python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$fr" 1>&2
+                echo "$fr"
+              else
+                realpath "{{.SCRIPT}}"
+              fi
+          N: '{{.N}}'
+
+  repl:run:
+    internal: true   # inner runner: SCRIPT is already an absolute path (or empty)
+    dir: '{{.FV_DIR}}'
     interactive: true
     cmds:
-      - task: compile
+      - task: build
         vars:
           APP: lua
       - task: sim-image
-      # With SCRIPT: mount the built ELF + the Lua file (read-only) and feed it
+      # With SCRIPT: mount the built ELF + the input file (read-only) and feed it
       # verbatim to the semihosting console. Without SCRIPT: run interactively
       # (-it) so SYS_READC/WRITEC read/echo your real terminal - a live REPL.
       - >-
         {{if .SCRIPT}}docker run --rm -v "$(realpath bin):/mnt:ro" -v "$(realpath {{.SCRIPT}}):/in.lua:ro"
-        {{.IMAGE}}-sim -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
-        --rm -it -v "$(realpath bin):/mnt:ro" {{.IMAGE}}-sim --interactive /mnt/lua.elf{{end}}
+        {{.FV_IMAGE}}-sim -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
+        --rm -it -v "$(realpath bin):/mnt:ro" {{.FV_IMAGE}}-sim --interactive /mnt/lua.elf{{end}}
+
+  flash:
+    desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
+    summary: 'Usage: task firmwareV2:flash [APP=hello] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP: '{{.APP | default "hello"}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    cmds:
+      - task: build
+        vars:
+          APP: '{{.APP}}'
+      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf
+
+  repl:hw:
+    desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
+    summary: 'Usage: task firmwareV2:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP: '{{.APP | default "lua"}}'
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    deps:
+      - task: luac:image   # host luac for the LC conversion below; cheap when cached
+    cmds:
+      - task: build
+        vars:
+          APP: '{{.APP}}'
+      # With LC=1 (or a .lc SCRIPT), convert to a framed bytecode file first; flash.py
+      # itself stays unchanged (and generic for V1) - it just feeds whatever file it gets.
+      - |
+        set -e
+        INPUT="{{.SCRIPT}}"
+        case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
+        if [ -n "{{.SCRIPT}}" ] && [ -n "$lc" ]; then
+          INPUT="$(mktemp)"
+          python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$INPUT"
+        fi
+        python3 tools/openocd/flash.py --semihosting --host {{.PI_HOST}} \
+          --configs tools/openocd --elf src/firmwareV2/bin/{{.APP}}.elf \
+          ${INPUT:+--input "$INPUT"}
+
+  luac:
+    desc: 'Compile a Lua source file to 32-bit device bytecode with the host luac (#133).'
+    summary: 'Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc. Bytecode loads on the rabbit as-is (parser-less end-game); see tools/luac/README.md.'
+    dir: '{{.USER_WORKING_DIR}}'
+    cmds:
+      - task: luac:compile
+        vars:
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.OUT}}'
+
+  test:luac:
+    desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'
+    summary: 'Usage: task firmwareV2:test:luac [SCRIPT=src/firmwareV2/examples/luac-roundtrip.lua]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      SCRIPT: '{{.SCRIPT | default "src/firmwareV2/examples/luac-roundtrip.lua"}}'
+    deps:
+      - task: build
+        vars: {APP: lua}
+      - task: sim-image             # tags {{FV_IMAGE}}-sim = nabaztag-sdk-firmwarev2-sim
+      - task: luac:image            # host luac, used by replpipe.py below
+    cmds:
+      # Feed SCRIPT to the sim two ways - verbatim source and replpipe-framed
+      # bytecode - and require byte-identical console output. Same elf + budget,
+      # so the only variable is the input encoding. Real nonzero exit on drift.
+      - |
+        set -e
+        SIM={{.FV_IMAGE}}-sim
+        BIN="$(realpath src/firmwareV2/bin)"
+        SRC="$(realpath {{.SCRIPT}})"
+        FR="$(mktemp)"; trap 'rm -f "$FR"' EXIT
+        python3 tools/luac/replpipe.py "{{.SCRIPT}}" -o "$FR"
+        run() { docker run --rm -v "$BIN:/mnt:ro" -v "$1:/in:ro" "$SIM" \
+                  -n 120000000 --input-file /in /mnt/lua.elf; }
+        A="$(run "$SRC")"; B="$(run "$FR")"
+        if [ "$A" = "$B" ]; then
+          echo "luac round-trip: source == #LC bytecode, output identical ✓"
+        else
+          echo "luac round-trip MISMATCH (source vs bytecode):"
+          diff <(printf '%s\n' "$A") <(printf '%s\n' "$B") || true
+          exit 1
+        fi
 
   clean:
     desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker images'
-    dir: '{{.DIR}}'
+    dir: '{{.FV_DIR}}'
     cmds:
       - rm -rf bin obj
-      - docker rmi {{.IMAGE}} {{.IMAGE}}-sim || true
+      - docker rmi {{.FV_IMAGE}} {{.FV_IMAGE}}-sim || true
