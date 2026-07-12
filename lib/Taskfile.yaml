@@ -1,0 +1,53 @@
+# lib — the MTL standard library, plus its own test harness (#63).
+#
+# Root `includes:` this under the `lib` namespace, so the MTL unit tests run as
+# `lib:test` (root keeps a thin `test` alias that delegates here). The test
+# suite lives in test/test.mtl and exercises the lib modules, so its Taskfile
+# belongs with the code it tests — and it, not root, owns the preprocessor/mtl
+# toolchain includes.
+#
+# Relocatable: works from the repo root (`task lib:test`) AND from `cd lib &&
+# task test`. REPO = repo root (this Taskfile is 1 level down); it's passed as
+# WORKDIR so the shared preprocessor/mtl tools mount the repo root (the tests
+# #include lib/ modules from there), not the cwd.
+version: '3'
+
+vars:
+  OUT: '{{.OUT | default "build"}}'
+  REPO:
+    sh: cd '{{.TASKFILE_DIR}}/..' && pwd
+
+includes:
+  preprocessor:
+    taskfile: ../tools/preprocessor/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../tools/preprocessor}
+  mtl:
+    taskfile: ../tools/mtl_linux/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../tools/mtl_linux}
+
+tasks:
+  test:
+    desc: 'Preprocess and run the MTL unit tests (test/test.mtl).'
+    summary: 'Usage: task lib:test'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      SOURCE: "test/test.mtl"
+      TEST_OUT: '{{.OUT}}/test'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          WORKDIR: '{{.REPO}}'
+          SOURCE: '{{.SOURCE}}'
+          OUT: '{{.TEST_OUT}}/merged.mtl'
+      - task: mtl:test
+        vars:
+          WORKDIR: '{{.REPO}}'
+          SOURCE: '{{.TEST_OUT}}/merged.mtl'
+
+  clean:
+    desc: 'Remove the MTL toolchain Docker images (preprocessor + mtl).'
+    cmds:
+      - task: preprocessor:clean
+      - task: mtl:clean

@@ -90,7 +90,7 @@ Both methods write the same native firmware; they differ only in transport.
 1. **JTAG (OpenOCD + GDB)** — a physical probe (Raspberry Pi bit-bang or FTDI Bus
    Blaster) wired to the board. Low-level; the only path that can recover a bricked
    device. Full procedure and wiring: [`tools/openocd/README.md`](../../tools/openocd/README.md).
-2. **Config page (no probe)** — `task firmware:sim` packs `Nab.bin` into an encrypted,
+2. **Config page (no probe)** — `task firmware:package` packs `Nab.bin` into an encrypted,
    signed `.sim` (via the Python `tools/mkfirmware/`), which you upload through the
    Nabaztag's own config mode (blue LEDs). No probe, but needs a working bootloader
    already on the device.

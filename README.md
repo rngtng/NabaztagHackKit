@@ -51,34 +51,16 @@ Run `task --list` to list all targets.
 
 ### Compile & Simulate
 
-Compile an MTL boot source to bytecode:
+Run the fwV1 test suite:
 
 ```
-task boot:build
+task verify
 ```
 
-Run the boot app in the simulator:
+Run the fwV2 test suite:
 
 ```
-task boot:simulate
-```
-
-Finally, compile the firmware sources to bytecode, including the boot code:
-
-```
-task firmware:build
-```
-
-Disassemble the built firmware ELF (e.g. to compare codegen between optimization levels):
-
-```
-task firmware:disasm > Nab.dis
-```
-
-Run the lib test suite:
-
-```
-task test
+task verifyV2
 ```
 
 ### Standard Library - lib/

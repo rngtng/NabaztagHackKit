@@ -1,15 +1,19 @@
 # boot — self-contained build/simulate for the boot MTL image (#63).
 #
 # Root only `includes:` this under the `boot` namespace → `boot:build` /
-# `boot:simulate`. The build emits raw bytecode (SIGN=false) plus the dumpbc.c
-# debug dump that `firmware:build` compiles into the C VM (bootstrap order in
-# CLAUDE.md). Preprocess→compile plumbing is duplicated with the other MTL
-# leaves for now (#63).
+# `boot:simulate`. Relocatable (repo root AND `cd src/boot && task build`);
+# REPO = repo root, passed as WORKDIR so the shared preprocessor/mtl tools mount
+# it. The build emits raw bytecode (SIGN=false) plus the dumpbc.c debug dump that
+# `firmware:build` compiles into the C VM (bootstrap order in CLAUDE.md).
 version: '3'
 
+# SOURCE is hardcoded per task (not a var): a `{{.SOURCE | default}}` leaf-global
+# reads an ambient SOURCE, which bleeds across sibling leaves (bootV2 clobbered
+# boot). Boot always builds src/boot/boot.mtl.
 vars:
   OUT: '{{.OUT | default "build"}}'
-  SOURCE: '{{.SOURCE | default "src/boot/boot.mtl"}}'
+  REPO:
+    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
 
 includes:
   preprocessor:
@@ -24,37 +28,41 @@ includes:
 tasks:
   build:
     desc: 'Build boot bytecode → build/boot (raw, unsigned). Emits dumpbc.c for firmware:build.'
-    summary: 'Usage: task boot:build [SOURCE=src/boot/boot.mtl] [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
+    summary: 'Usage: task boot:build [OUT=build]'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       APP_OUT: '{{.OUT}}/boot'
     cmds:
       - task: preprocessor:preprocess
         vars:
-          SOURCE: '{{.SOURCE}}'
+          WORKDIR: '{{.REPO}}'
+          SOURCE: src/boot/boot.mtl
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
+          INCLUDES: '. src/boot'
       - task: mtl:compile
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.APP_OUT}}/merged.mtl'
           OUT: '{{.APP_OUT}}'
           SIGN: 'false'
 
   simulate:
     desc: 'Simulate boot.mtl in config mode. Config UI served at http://localhost:8080.'
-    summary: 'Usage: task boot:simulate [SOURCE=src/boot/boot.mtl] [OUT=build] [PORT=8080]'
-    dir: '{{.USER_WORKING_DIR}}'
+    summary: 'Usage: task boot:simulate [OUT=build] [PORT=8080]'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       APP_OUT: '{{.OUT}}/boot_simu'
     cmds:
       - task: preprocessor:preprocess
         vars:
-          SOURCE: '{{.SOURCE}}'
+          WORKDIR: '{{.REPO}}'
+          SOURCE: src/boot/boot.mtl
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. {{dir .SOURCE}}'
+          INCLUDES: '. src/boot'
           DEFINES: 'SIMU BOOT'
       - task: mtl:simulate
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.APP_OUT}}/merged.mtl'
           PORT: '{{.PORT}}'
           CLI_ARGS: '{{.CLI_ARGS}}'

@@ -14,7 +14,7 @@ tasks:
   preprocess:
     desc: 'Preprocess MTL source. Usage: task preprocess SOURCE=<path.mtl> OUT=<out.mtl> [DEFINES="FOO BAR"]'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     requires:
       vars: [SOURCE, OUT]
     vars:

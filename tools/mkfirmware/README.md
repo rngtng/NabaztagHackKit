@@ -16,7 +16,7 @@ Run directly from this directory:
 
 From the repo root, one task chains boot → firmware → sign → verify:
 
-    task firmware:sim                            # → build/firmware/Nab.sim (signed + verified)
+    task firmware:package                        # → build/firmware/Nab.sim (signed + verified)
 
 It runs, in order:
 

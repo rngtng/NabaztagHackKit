@@ -1,22 +1,25 @@
 # NabaztagSDK — unified entrypoint.
 #
 # Every build runs inside Docker, so the only host requirements are Docker and
-# Task (https://taskfile.dev). Each src/<name> layer is self-contained: it owns
-# its Taskfile with the layer's verbs (build / simulate / flash / …). This root
-# file only `includes:` those leaves under a per-layer namespace, so targets read
-# as `<layer>:<verb>` — e.g. `task firmwareV2:flash`, `task app-piper:build`,
-# `task boot:simulate`. Run `task` with no args to list everything.
+# Task (https://taskfile.dev). Each layer is self-contained: it owns its Taskfile
+# with the layer's verbs (build / simulate / flash / …) and pulls in whatever
+# tools it needs. This root file only `includes:` those leaves under a per-layer
+# namespace, so targets read as `<layer>:<verb>` — e.g. `task firmwareV2:flash`,
+# `task app-piper:build`, `task boot:simulate`, `task lib:test`. Every leaf is
+# relocatable: `task <layer>:<verb>` here == `cd <layer> && task <verb>` there.
+# Run `task` with no args to list everything.
 #
-# Cross-layer orchestration (`test`, `verify`, `clean`) stays here because it
-# isn't any single layer's verb. Decentralised per #63 — the per-leaf duplication
-# of the MTL preprocess→compile plumbing is intentional for now and DRYed later.
+# Root owns no toolchain includes and re-implements nothing: `test` delegates to
+# `lib:test`; `verify`/`clean` just chain the layers' own verbs. Decentralised
+# per #63 — remaining per-leaf duplication is intentional for now (DRY: #187).
 version: '3'
 
 vars:
   OUT: build
 
 includes:
-  # ------------------------ src layers (public <layer>:<verb>) ----------------
+  lib: # MTL standard library + its test harness (owns the preprocessor/mtl toolchain)
+    taskfile: ./lib/Taskfile.yaml
   app-template: # MTL device-stack template app
     taskfile: ./src/app-template/Taskfile.yaml
   app-piper: # MTL piper app
@@ -28,70 +31,31 @@ includes:
   bootV2: # V2 boot MTL image
     taskfile: ./src/bootV2/Taskfile.yaml
   firmware: # NabGCC-based C VM firmware
-    # No IMAGE/DIR vars here on purpose: include-vars propagate into a leaf's own
-    # nested includes and would clobber their IMAGE/DIR (Task var precedence). The
-    # leaf bakes its own defaults, which do NOT leak. Same for firmwareV2.
     taskfile: ./src/firmware/Taskfile.yaml
-  firmwareV2: # eLua-successor V2 firmware (Lua 5.4) — ARM7TDMI/ML67Q4051 (#87)
+  firmwareV2: # Lua-successor V2 firmware (Lua 5.4)
     taskfile: ./src/firmwareV2/Taskfile.yaml
 
-  # ------------------------ shared toolchain (internal) -----------------------
-  # Only used by the cross-layer `test` and `clean` targets below; the layers
-  # themselves pull the same tools in via their own (internal) includes.
-  preprocessor: # MTL preprocessor — expand #include / #ifdef (tools/preprocessor)
-    internal: true
-    taskfile: ./tools/preprocessor/Taskfile.yaml
-    vars:
-      IMAGE: nabaztag-sdk-preprocessor
-      DIR: ./tools/preprocessor/
-  mtl: # MTL toolchain — compile + simulate (tools/mtl_linux)
-    internal: true
-    taskfile: ./tools/mtl_linux/Taskfile.yaml
-    vars:
-      IMAGE: nabaztag-sdk-mtl
-      DIR: ./tools/mtl_linux/
-  testvm: # Native C VM smoke-test harness (tools/testvm)
-    internal: true
-    taskfile: ./tools/testvm/Taskfile.yaml
-    vars:
-      IMAGE: nabaztag-sdk-testvm
-      DIR: ./tools/testvm/
-
 tasks:
-  test:
-    desc: 'Preprocess and run MTL unit tests.'
-    summary: 'Usage: task test'
-    dir: '{{.USER_WORKING_DIR}}'
-    vars:
-      SOURCE: "test/test.mtl"
-      TEST_OUT: '{{.OUT}}/test'
-    cmds:
-      - task: preprocessor:preprocess
-        vars:
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.TEST_OUT}}/merged.mtl'
-      - task: mtl:test
-        vars:
-          SOURCE: '{{.TEST_OUT}}/merged.mtl'
-
   verify:
-    desc: 'Definition of done: run before every commit. Tests + firmware VM regression guard + boot + app-piper + device template + app-sse + firmwareV2 all build.'
-    dir: '{{.USER_WORKING_DIR}}'
+    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV1 all build.'
     cmds:
-      - task: test
+      - task: lib:test
+      - task: boot:build
+      - task: app-piper:build
+      - task: app-template:build
+      - task: app-sse:build
       - task: firmware:test:bugs
-      - task: build:boot
-      - task: build:app:piper
-      - task: build:app:template
-      - task: build:app:sse
-      - task: build:firmwareV2
+      - task: firmwareV2:build
+
+  verifyV2:
+    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV2 all build.'
+    cmds:
+      - task: firmwareV2:build
 
   clean:
-    desc: 'Clean all build artifacts (firmware, boot, etc.)'
+    desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:
-      - task: mtl:clean
-      - task: preprocessor:clean
+      - task: lib:clean
       - task: firmware:clean
       - task: firmwareV2:clean
-      - task: testvm:clean
       - rm -rf '{{.OUT}}'

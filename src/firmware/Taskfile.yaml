@@ -1,27 +1,33 @@
 # firmware — self-contained build/simulate/flash for the NabGCC C VM (#63).
 #
 # Root only `includes:` this under the `firmware` namespace, so targets are
-# `firmware:build` / `firmware:sim` / `firmware:flash` / `firmware:disasm` /
+# `firmware:build` / `firmware:package` / `firmware:flash` / `firmware:disasm` /
 # `firmware:test` / `firmware:test:bugs`. Every target runs in the Docker
 # toolchain (see Dockerfile); host needs only Docker, Task and git.
 #   bin/Nab.elf  → flash with OpenOCD/GDB (see README "Flash")
-#   bin/Nab.sim  → upload via the config page (blue LEDs)
+#   bin/Nab.sim  → upload via the config page (blue LEDs) — built by firmware:package
 #
 # The C VM compiles boot's dumpbc.c into bc.c, so `firmware:build` needs boot
-# bytecode first (bootstrap order in CLAUDE.md). `firmware:sim`/`firmware:flash`
+# bytecode first (bootstrap order in CLAUDE.md). `firmware:package`/`firmware:flash`
 # chain `boot:build` (nested include) themselves; bare `firmware:build` assumes
 # build/boot already exists.
 #
-# NOTE on var names: this leaf's own tasks use FW_IMAGE / FW_DIR / BC_SOURCE,
-# NOT the generic IMAGE / DIR / SOURCE. Task bleeds a child include's vars up
-# into the parent's task scope, so the nested boot/mkfirmware/testvm includes
-# (which all use IMAGE/DIR, and boot which defaults SOURCE) would otherwise
-# clobber this leaf's own IMAGE/DIR/SOURCE. Unique names sidestep the collision.
+# Relocatable (works from repo root AND `cd src/firmware && task <verb>`). Two
+# rules make that work around Task quirks:
+#   * `dir:` is ALWAYS `{{.TASKFILE_DIR}}` (this leaf's own dir). Task doubles an
+#     absolute `dir` that comes from any other var, so REPO is never used as a dir.
+#   * REPO (clean repo root, via sh) is used only as a *path value* — a prefix on
+#     repo-level files (build/, tools/) and as WORKDIR handed to the nested tool
+#     tasks (which mount it).
+# FW_IMAGE is the leaf's own default (NOT passed from root): Task bleeds a child
+# include's vars up into the parent's scope, so a generic IMAGE would be clobbered
+# by the nested mkfirmware/testvm includes. A unique name sidesteps that.
 version: '3'
 
 vars:
   FW_IMAGE: '{{.FW_IMAGE | default "nabaztag-sdk-firmware"}}'
-  FW_DIR: '{{.FW_DIR | default "src/firmware"}}'   # repo-root-relative: `dir:` resolves against the including (root) Taskfile
+  REPO:
+    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
   OUT: '{{.OUT | default "build"}}'
 
 includes:
@@ -40,13 +46,13 @@ includes:
 tasks:
   image:
     internal: true   # built on demand as a dep; rebuilt when the toolchain changes
-    dir: '{{.FW_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     cmds:
       - docker build -t {{.FW_IMAGE}} .
 
   compile:
     internal: true   # raw `make`; firmware:build wraps it with the bc.c dance
-    dir: '{{.FW_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     cmds:
       - task: image
       # bind-mount the firmware tree at /work; obj/ and bin/ land back on the host.
@@ -55,7 +61,7 @@ tasks:
 
   dis:
     internal: true   # objdump helper behind firmware:disasm
-    dir: '{{.FW_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     requires:
       vars: [ELF]
     cmds:
@@ -65,22 +71,22 @@ tasks:
   build:
     desc: 'Build the C firmware → build/firmware/Nab.{elf,hex,bin}. Compiles boot dumpbc.c into bc.c (run boot:build first).'
     summary: 'Usage: task firmware:build [BC_SOURCE=build/boot/dumpbc.c] [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'   # src/firmware; repo-level paths are prefixed with {{.REPO}}
     vars:
       BC_SOURCE: '{{.BC_SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
       FIRMWARE_OUT: '{{.OUT}}/firmware'
     cmds:
       # firmware needs the latest dumpbc.c in src/bc.c
-      - cp '{{.BC_SOURCE}}' src/firmware/src/bc.c
+      - cp '{{.REPO}}/{{.BC_SOURCE}}' src/bc.c
       - task: compile
-      - rm -rf '{{.FIRMWARE_OUT}}'
-      - mv src/firmware/bin '{{.FIRMWARE_OUT}}'
-      - rm -rf src/firmware/obj src/firmware/src/bc.c
+      - rm -rf '{{.REPO}}/{{.FIRMWARE_OUT}}'
+      - mv bin '{{.REPO}}/{{.FIRMWARE_OUT}}'
+      - rm -rf obj src/bc.c
 
-  sim:
+  package:
     desc: 'Build the full firmware and sign it for web upload → build/firmware/Nab.sim. Chains boot:build → build → sign → verify.'
-    summary: 'Usage: task firmware:sim [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
+    summary: 'Usage: task firmware:package [OUT=build]'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       FIRMWARE_OUT: '{{.OUT}}/firmware'
     cmds:
@@ -88,59 +94,65 @@ tasks:
       - task: build
       - task: mkfirmware:sign
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.FIRMWARE_OUT}}/Nab.bin'
           OUT: '{{.FIRMWARE_OUT}}/Nab.sim'
       - task: mkfirmware:verify
         vars:
+          WORKDIR: '{{.REPO}}'
           FILE: '{{.FIRMWARE_OUT}}/Nab.sim'
       - 'echo "[firmware] {{.FIRMWARE_OUT}}/Nab.sim ready — upload via the config page (blue LEDs)"'
 
   flash:
     desc: 'Flash the V1 boot firmware to real hardware over JTAG, via the Raspberry Pi bridge. Chains boot:build → build → flash.py.'
     summary: 'Usage: task firmware:flash [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
       FIRMWARE_OUT: '{{.OUT}}/firmware'
     cmds:
       - task: boot:build
       - task: build
-      - python3 tools/openocd/flash.py --host {{.PI_HOST}} --configs tools/openocd --elf {{.FIRMWARE_OUT}}/Nab.elf
+      - python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} --configs '{{.REPO}}/tools/openocd' --elf '{{.REPO}}/{{.FIRMWARE_OUT}}/Nab.elf'
 
   disasm:
     desc: 'Disassemble a built firmware ELF with the toolchain objdump → stdout. Requires firmware:build first.'
     summary: 'Usage: task firmware:disasm [ELF=build/firmware/Nab.elf] > Nab.dis'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       ELF: '{{.ELF | default (printf "%s/firmware/Nab.elf" .OUT)}}'
     cmds:
       - task: dis
         vars:
-          ELF: '{{printf "%s/%s" .USER_WORKING_DIR .ELF}}'
+          ELF: '{{.REPO}}/{{.ELF}}'
 
   test:
     desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires boot:build first.'
     summary: 'Usage: task firmware:test [BC_SOURCE=build/boot/dumpbc.c] [DURATION=5]'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       BC_SOURCE: '{{.BC_SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
       DURATION: '{{.DURATION | default 5}}'
     cmds:
       - task: testvm:test
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.BC_SOURCE}}'
           SOCK_DIR: '{{.OUT}}'
           DURATION: '{{.DURATION}}'
 
   test:bugs:
     desc: 'Reproduce the flagged firmware VM memory-safety bugs under AddressSanitizer.'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     cmds:
       - task: testvm:bugs
+        vars:
+          WORKDIR: '{{.REPO}}'
 
   clean:
-    desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker image'
-    dir: '{{.FW_DIR}}'
+    desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker images (incl. testvm)'
+    dir: '{{.TASKFILE_DIR}}'
     cmds:
       - rm -rf bin obj
       - docker rmi {{.FW_IMAGE}} || true
+      - task: testvm:clean

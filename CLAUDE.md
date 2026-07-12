@@ -69,14 +69,16 @@ JTAG/flash/console task instead of re-deriving from here; full recipe still in
   Claude Code remote sandbox only — bakes the egress proxy's CA into the
   `python:3.12-slim`/`debian:bookworm-slim` base images so `apt-get`/`pip` inside
   our Dockerfiles can reach the network. No-ops everywhere else.
-- **The MTL build/simulate tasks (`<layer>:build` / `<layer>:simulate`) and `task test` always exit 0** — the MTL compiler and simulator
+- **The MTL build/simulate tasks (`<layer>:build` / `<layer>:simulate`) and `task lib:test` always exit 0** — the MTL compiler and simulator
   report fatal errors on stderr but never fail the process. Both are wrapped to
   scan their own output for `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error`
   and turn that into a real nonzero exit — trust the exit code, don't grep manually.
-- **`task verify` is the definition of done. Run it before every commit** — it
-  chains `test` + `boot:build` + `app-piper:build` + `app-template:build` +
+- **`task verify` is the definition of done. Run it before every commit related to firmware or mtl V1** — it
+  chains `lib:test` + `boot:build` + `app-piper:build` + `app-template:build` +
   `app-sse:build` + `firmwareV2:build`. All must be green;
-  a change that only passes `task test` can still break a build.
+- **`task verifyV2` is the definition of done. Run it before every commit related to firmwareV2 or lua** — it
+  chains `firmwareV2:build`. All must be green;
+  a change that only passes `task lib:test` can still break a build.
 - For simulator e2e checks: `task <app>:simulate`/`boot:simulate` in the background,
   then `curl --noproxy localhost -m 5 localhost:8080/...` (the session's HTTPS
   proxy otherwise intercepts plain `curl localhost`).
