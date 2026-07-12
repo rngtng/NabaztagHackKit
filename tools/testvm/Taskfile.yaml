@@ -54,7 +54,7 @@ tasks:
           sh -c "make && (timeout {{.DURATION}} ./testvm; ec=\$?; [ \$ec -eq 0 ] || [ \$ec -eq 124 ]) "'
 
   bugs:
-    desc: 'Build & run the firmware VM bug-reproduction harness under AddressSanitizer (issue #66). Exits nonzero while any flagged bug still reproduces.'
+    desc: 'Regression guard: build & run the firmware VM memory-safety scenarios (#66 findings #69/#70) under AddressSanitizer. All must stay clean; exits nonzero if a fixed OOB bug is reintroduced.'
     deps: [image]
     dir: '{{.USER_WORKING_DIR}}'
     cmds:

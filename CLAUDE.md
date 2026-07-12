@@ -119,11 +119,13 @@ re-deriving from here.
   one `int32_t[VMEM_LENGTH]` array). Stack words are tagged: low bit = pointer,
   else int; a "pointer" is a *word index*, not an address. GC **reboots** on OOM.
 - **To exercise the real VM natively**, use `tools/testvm` — build under
-  AddressSanitizer via `task test:firmware-bugs`. Its `README.md` has the VM
-  internals cheat-sheet (value tagging, block layout, how to drive `interpGo()`
-  from a few hand-assembled opcodes with no bytecode file). ASan only catches
-  accesses that leave the whole heap array, so drive indices past `VMEM_LENGTH`
-  or call helpers on separate `malloc`'d buffers.
+  AddressSanitizer via `task test:firmware-bugs`, an ASan **regression guard**
+  for the fixed memory-safety bugs (#69/#70) that runs as part of `task verify`;
+  every scenario must stay clean. Its `README.md` has the VM internals
+  cheat-sheet (value tagging, block layout, how to drive `interpGo()` from a few
+  hand-assembled opcodes with no bytecode file). ASan only catches accesses that
+  leave the whole heap array, so drive indices past `VMEM_LENGTH` or call helpers
+  on separate `malloc`'d buffers.
 
 ## Working agreement
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
