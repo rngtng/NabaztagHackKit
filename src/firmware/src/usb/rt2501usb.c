@@ -53,7 +53,6 @@ PDEVINFO rt2501_dev;
 
 uint8_t rt2501_mac[IEEE80211_ADDR_LEN];
 static uint16_t rt2501_eeprom_defaults[RT2501_NUM_EEPROM_BBP_PARMS];
-static uint8_t rt2501_BbpRssiToDbmDelta;
 static EEPROM_ANTENNA_STRUC rt2501_Antenna;
 static uint32_t rt2501_RfFreqOffset; /* Frequency offset for channel switching */
 static uint8_t rt2501_auto_tx_agc; /* Enable driver auto Tx Agc control */
@@ -334,8 +333,6 @@ static int32_t rt2501_setup_eeprom(void)
 
   /* Disable TxAgc if the based value is not right */
   if (rt2501_TSSI_Ref == 0xff) rt2501_auto_tx_agc = 0;
-
-  rt2501_BbpRssiToDbmDelta = 0x79;
 
   rt2501_read_eeprom(rt2501_dev, RT2501_EEPROM_FREQ_OFFSET,
          &value,
@@ -792,6 +789,39 @@ static uint8_t rt2501_frame[RT2501_MAX_FRAME_SIZE] __attribute__ ((aligned(4)));
 
 static void rt2501_submit_rx(void);
 
+/*
+ * Decode the BBP PlcpRssi byte into an approximate dBm value.
+ *
+ * Backported from Linux rt2x00's rt73usb_agc_to_rssi() (drivers/net/wireless/
+ * ralink/rt2x00/rt73usb.c). The PlcpRssi byte is NOT a flat linear reading: it
+ * packs a 5-bit AGC value (bits 0-4) and a 2-bit LNA gain state (bits 5-6, bit
+ * 7 reserved) - matching RXD_W1_RSSI_AGC (0x1f00) / RXD_W1_RSSI_LNA (0x6000) in
+ * the reference rt73usb.h. RSSI = AGC*2 - offset, where the offset is selected
+ * by the LNA gain state (64/74/90) and shifted by the EEPROM RSSI#1 offset
+ * (Linux's lna_gain). Only the 2.4 GHz b/g path is ported: the Nabaztag module
+ * has no external LNA, so the +14 external-LNA term and the whole 5 GHz branch
+ * are omitted. Returns 0 (no valid reading) when the LNA state is 0, matching
+ * the reference's default case.
+ */
+static int16_t rt2501_agc_to_rssi(uint8_t plcp_rssi)
+{
+  uint8_t agc = plcp_rssi & 0x1f;
+  uint8_t lna = (plcp_rssi >> 5) & 0x03;
+  int16_t offset;
+
+  switch(lna) {
+    case 3:  offset = 90; break;
+    case 2:  offset = 74; break;
+    case 1:  offset = 64; break;
+    default: return 0; /* LNA state 0: no valid reading (per reference) */
+  }
+  /* Linux seeds offset with lna_gain (= -EEPROM RSSI#1 offset for b/g) before
+   * adding the per-LNA-state constant; RssiOffset1 is read from EEPROM 0x9a in
+   * rt2501_setup_eeprom() and was previously a dead store. */
+  offset -= rt2501_RssiOffset1;
+  return (int16_t)(agc * 2) - offset;
+}
+
 static void rt2501_rx_callback(PURB urb)
 {
   PRXD_STRUC rxd;
@@ -822,7 +852,7 @@ static void rt2501_rx_callback(PURB urb)
     if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))) {
       ieee80211_input(rt2501_frame+sizeof(RXD_STRUC),
           rxd->DataByteCnt,
-          rxd->PlcpRssi-rt2501_BbpRssiToDbmDelta);
+          rt2501_agc_to_rssi(rxd->PlcpRssi));
     }
     rt2501_frame_position = 0;
   } else {
