@@ -335,16 +335,11 @@ int sysCmp(char *dst,int i,int ldst,char *src,int j,int lsrc,int len)
     {
         return 0;
     }
-    if ((i+len>ldst)&&(j+len>lsrc))
+    if (i+len>ldst) len=ldst-i;
+    if (j+len>lsrc) len=lsrc-j;
+    if (len<=0)
     {
-        if (ldst-i>lsrc-j)
-        {
-            len=ldst-i;
-        }
-        else
-        {
-            len=lsrc-j;
-        }
+        return 0;
     }
     dst+=i;
     src+=j;

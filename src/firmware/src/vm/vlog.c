@@ -172,13 +172,10 @@ int32_t sysCmp(uint8_t *dst,int32_t i,int32_t ldst,uint8_t *src,int32_t j,int32_
 {
 	if ((i<0)||(j<0)||(len<=0))
     return 0;
-	if ((i+len>ldst)&&(j+len>lsrc))
-  {
-    if (ldst-i>lsrc-j)
-      len=ldst-i;
-    else
-      len=lsrc-j;
-  }
+	if (i+len>ldst) len=ldst-i;
+	if (j+len>lsrc) len=lsrc-j;
+	if (len<=0)
+    return 0;
 	dst+=i;
 	src+=j;
 	while((len--)>0)
