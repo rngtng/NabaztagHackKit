@@ -393,7 +393,7 @@ void interpGo()
                 if ((p!=NIL)&&(i!=NIL))
                 {
                     p=VALTOPNT(p);
-                    if ((i>=0)||(i<VSIZE(p)))
+                    if ((i>=0)&&(i<VSIZE(p)))
                     {
                         VSTORE(p,i,v);
                     }
@@ -409,7 +409,7 @@ void interpGo()
                 {
                     i=VALTOINT(i);
                     p=VALTOPNT(p);
-                    if ((i>=0)||(i<VSIZE(p)))
+                    if ((i>=0)&&(i<VSIZE(p)))
                     {
                         VSTORE(p,i,v);
                     }
@@ -448,7 +448,7 @@ void interpGo()
                 {
                     i=VALTOINT(i);
                     p=VALTOPNT(p);
-                    if ((i>=0)||(i<VSIZE(p)))
+                    if ((i>=0)&&(i<VSIZE(p)))
                     {
                         VSTORE(p,i,v);
                     }
