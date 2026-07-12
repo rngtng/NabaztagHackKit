@@ -58,8 +58,8 @@ containing `\0`; compare via `strget`/`strsub` instead for binary data.
 
 ## Manual/integration checks outside the automated suite
 
-- `test/sse_test_app.mtl` — a standalone SSE broadcaster
-  (`task simulate:app SOURCE=test/sse_test_app.mtl`), exercised with
+- `test/sse_test_app.mtl` — a standalone SSE broadcaster (feed it to the MTL
+  simulator like any app; cf. `task app-sse:simulate`), exercised with
   `curl -sN --noproxy localhost localhost:8080/`.
 - `src/app-template/` — the end-to-end proof that lib blocks compose into a
   runnable app; see its `README.md`.

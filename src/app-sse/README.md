@@ -6,7 +6,7 @@ client every 2 seconds.
 ## Run it (simulator)
 
 ```bash
-task simulate:app:sse
+task app-sse:simulate
 ```
 
 then, on the client side:
@@ -21,7 +21,7 @@ curl -sN http://localhost:8080/
 ## Build device bytecode
 
 ```bash
-task build:app:sse
+task app-sse:build
 ```
 
 Like `app-template`, `main.mtl` selects its transport with the `SIMU`

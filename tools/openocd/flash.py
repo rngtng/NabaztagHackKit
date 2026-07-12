@@ -223,7 +223,7 @@ def parse_args():
 def main():
     a = parse_args()
     if not a.elf.is_file():
-        raise SystemExit(f"ELF not found: {a.elf} (build it first: task build:firmwareV2)")
+        raise SystemExit(f"ELF not found: {a.elf} (build it first: task firmwareV2:build)")
     if a.input and not a.input.is_file():
         raise SystemExit(f"--input file not found: {a.input}")
 

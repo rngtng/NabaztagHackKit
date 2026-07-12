@@ -16,7 +16,7 @@ drivers (`src/firmware/src/hal`), the USB host stack for the RT2501 WiFi dongle
 **MTL bytecode VM interpreter** (`src/firmware/src/vm`). It has no external build
 dependencies — the ARM toolchain builds it on its own.
 
-Build it with `task build:firmware` (see the README for the full target list). The
+Build it with `task firmware:build` (see the README for the full target list). The
 firmware and the 32-bit MTL toolchain build in **separate Docker images** because the
 ARM cross-compiler is unstable under amd64 emulation and must stay in a native image.
 
@@ -90,7 +90,7 @@ Both methods write the same native firmware; they differ only in transport.
 1. **JTAG (OpenOCD + GDB)** — a physical probe (Raspberry Pi bit-bang or FTDI Bus
    Blaster) wired to the board. Low-level; the only path that can recover a bricked
    device. Full procedure and wiring: [`tools/openocd/README.md`](../../tools/openocd/README.md).
-2. **Config page (no probe)** — `task build:sim` packs `Nab.bin` into an encrypted,
+2. **Config page (no probe)** — `task firmware:sim` packs `Nab.bin` into an encrypted,
    signed `.sim` (via the Python `tools/mkfirmware/`), which you upload through the
    Nabaztag's own config mode (blue LEDs). No probe, but needs a working bootloader
    already on the device.

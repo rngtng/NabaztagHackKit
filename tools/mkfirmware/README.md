@@ -16,12 +16,12 @@ Run directly from this directory:
 
 From the repo root, one task chains boot → firmware → sign → verify:
 
-    task build:sim                            # → build/firmware/Nab.sim (signed + verified)
+    task firmware:sim                            # → build/firmware/Nab.sim (signed + verified)
 
 It runs, in order:
 
-    task build:boot                           # 1. build boot bytecode → build/boot/
-    task build:firmware                       # 2. compile C firmware  → build/firmware/Nab.bin
+    task boot:build                           # 1. build boot bytecode → build/boot/
+    task firmware:build                       # 2. compile C firmware  → build/firmware/Nab.bin
     task mkfirmware:sign   SOURCE=... OUT=...  # 3. sign  → build/firmware/Nab.sim
     task mkfirmware:verify FILE=...            # 4. check the .sim is well-formed
 

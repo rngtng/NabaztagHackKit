@@ -48,9 +48,9 @@ simulated, and tested. (Boot-embedded vs remote-load embedding strategies:
 
 ## Three test/simulate levels — complementary, keep all
 
-- **`task simulate:firmware`** (`tools/testvm/`) — compiles the **C VM** natively and
+- **`task firmware:test`** (`tools/testvm/`) — compiles the **C VM** natively and
   smoke-runs bytecode → catches VM bugs.
-- **`task simulate:boot` / `simulate:app`** (`mtl_simu`) — runs an **MTL app** on the
+- **`task boot:simulate` / `<app>:simulate`** (`mtl_simu`) — runs an **MTL app** on the
   host with faked hardware → catches app-logic bugs.
 - **`task test`** (`test/`) — the **MTL assertion framework** run through the simulator
   → unit tests for `lib/`.

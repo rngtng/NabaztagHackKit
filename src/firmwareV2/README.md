@@ -109,9 +109,9 @@ concrete C subsystems. Two structural gaps it names are worth calling out:
 Host needs only Docker + Task; the ARM toolchain lives in the Docker image.
 
 ```sh
-task build:firmwareV2            # -> bin/hello.{elf,hex,bin}  (M0, toolchain check)
-task build:firmwareV2 APP=blink  # -> bin/blink.{elf,hex,bin}  (M1, LED blink)
-task build:firmwareV2 APP=lua    # -> bin/lua.{elf,hex,bin}    (M4, Lua 5.4 REPL)
+task firmwareV2:build            # -> bin/hello.{elf,hex,bin}  (M0, toolchain check)
+task firmwareV2:build APP=blink  # -> bin/blink.{elf,hex,bin}  (M1, LED blink)
+task firmwareV2:build APP=lua    # -> bin/lua.{elf,hex,bin}    (M4, Lua 5.4 REPL)
 ```
 
 `arm-none-eabi-gcc` + newlib-nano, `-mcpu=arm7tdmi -mthumb -mthumb-interwork`,
@@ -189,8 +189,8 @@ guarantees the header sizes line up and keeps the two from drifting; the full
 rule is in [`tools/luac/README.md`](../../tools/luac/README.md).
 
 ```sh
-task luac:firmwareV2 SOURCE=foo.lua OUT=foo.lc   # compile to stripped device bytecode
-task test:firmwareV2:luac                        # sim round-trip: source vs bytecode must match
+task firmwareV2:luac SOURCE=foo.lua OUT=foo.lc   # compile to stripped device bytecode
+task firmwareV2:test:luac                        # sim round-trip: source vs bytecode must match
 ```
 
 Because bytecode chunks contain `\n`/NUL and the console is line-oriented, the
@@ -207,20 +207,20 @@ Run the compiled ELF in an instruction-level simulator ([`sim/`](sim/),
 Unicorn Engine, issue #96) - no JTAG, no device:
 
 ```sh
-task simulate:firmwareV2                        # run bin/hello.elf, report reaching main
-task simulate:firmwareV2 APP=blink ARGS=-v      # -v logs every peripheral (MMIO) write
-task simulate:firmwareV2 APP=blink ARGS="-v -n 8000000"  # bigger budget: see a full blink cycle
-task simulate:firmwareV2 APP=lua ARGS="-n 60000000"      # M4: boots Lua, runs print(1+1) over the semihost console
+task firmwareV2:simulate                        # run bin/hello.elf, report reaching main
+task firmwareV2:simulate APP=blink ARGS=-v      # -v logs every peripheral (MMIO) write
+task firmwareV2:simulate APP=blink ARGS="-v -n 8000000"  # bigger budget: see a full blink cycle
+task firmwareV2:simulate APP=lua ARGS="-n 60000000"      # M4: boots Lua, runs print(1+1) over the semihost console
 ```
 
 Lua needs a large instruction budget (interpreter bring-up); the semihosting
 console output is printed in the run summary. To drive the **REPL** yourself, use
-`task repl:firmwareV2` - a live prompt, or a script fed in:
+`task firmwareV2:repl` - a live prompt, or a script fed in:
 
 ```sh
-task repl:firmwareV2                                               # live interactive prompt (type Lua, Ctrl-D to exit)
-task repl:firmwareV2 SCRIPT=src/firmwareV2/examples/repl-demo.lua  # feed a .lua file, print the transcript
-task repl:firmwareV2 SCRIPT=…/luac-roundtrip.lua LC=1             # feed it as #LC bytecode frames instead of source (#133)
+task firmwareV2:repl                                               # live interactive prompt (type Lua, Ctrl-D to exit)
+task firmwareV2:repl SCRIPT=src/firmwareV2/examples/repl-demo.lua  # feed a .lua file, print the transcript
+task firmwareV2:repl SCRIPT=…/luac-roundtrip.lua LC=1             # feed it as #LC bytecode frames instead of source (#133)
 ```
 
 The live prompt reads your terminal via semihosting `SYS_READC` (needs a TTY);
@@ -297,23 +297,23 @@ build time.
 |---|---|---|---|
 | M0 | Scaffold build layer | #88 | done (hardware-confirmed: PC parks in `main`) |
 | M1 | Bare-metal LED blink | #89 | done (sim + hardware) - see LED-map note below |
-| M2 | JTAG flash workflow (Task targets) | #90 | done (`task flash:firmwareV2`) |
+| M2 | JTAG flash workflow (Task targets) | #90 | done (`task firmwareV2:flash`) |
 | M3 | Semihosting console feasibility | #91 | done - proven on hardware (needs a HW breakpoint at the SWI vector; recipe in tools/openocd) |
 | M4 | Lua 5.4 core + REPL | #92 | done (sim + hardware): REPL runs on the rabbit over the M3 semihosting console |
 | M5 | Lua bindings: LEDs, buttons, ears | #93 | LEDs + button done (`nab` module, hardware-verified); ears deferred to M10 (need an FTM timer/PWM/encoder subsystem, none in firmwareV2 yet) |
 | M6 | Lua binding: AT45DB161B flash | #94 | **not applicable** - no external serial flash on the LLC2_4c board. Built `nab.flash` + an AT45 driver, then hardware read `id`/`status` = `0` (no device on `CS_FLASH`); the [teardown](../../docs/hardware-dissection.md) lists no flash chip and Violet's own `common.h` defines `CS_FLASH` only for LLC2_3. Reverted. |
 | M7 | Reclaim internal flash budget | #106 | **done (hardware-verified)**: **48 B → ~32 KB free** by moving Lua's console + number I/O off newlib - custom decimal parser vs `strtof`/gdtoa (M7.2 #108), libm-free `^`/`%` (M7.3 #109), bare-metal `abort` (M7.4 #110), semihosting console (M7.1 #107), and an in-tree `snprintf`/`vsnprintf` (M7.5 #114) dropping the stdio FILE layer. |
 | M8 | Lua audio - VS1003 codec | #116 | **done (hardware-verified)**: `nab.beep` plays an audible tone on the speaker. VS1003B confirmed on SPI0 (probe: SS_VER=3), trimmed driver ported (`src/hal/audio.c`). Beep is fixed-level (VS1003 sine test bypasses volume); volume-controlled PCM playback + the wheel/jack are follow-ups. |
-| M9 | Lua RFID - CRX14 over I2C (+ I2C bring-up) | #117 | **built, sim-verified; hardware confirmation pending** (no JTAG rig access from this sandbox): I2C bus (`src/hal/i2c.c`, verbatim port) + CRX14 driver (`src/hal/rfid.c`, trimmed to UID read) + `nab.rfid()`. The CR14 coupler is teardown-documented (`docs/hardware-dissection.md`) but not yet bus-probed - run `task repl:firmwareV2:hw APP=rfidprobe` on real hardware to confirm before trusting `nab.rfid()` (see the M6 AT45 lesson: photo/schematic presence isn't proof a chip answers). |
-| M10 | Lua ear-motor bindings - PWM + encoder | #118 | **implemented, hardware verification pending** - no JTAG/Pi access from the environment this was built in. Turns out no IRQ/timer-subsystem bring-up was actually needed (see the Ears section below): `hal/motor.c` ported, `nab.ear_move`/`nab.ear_stop`/`nab.ear_pos` bindings + an `earprobe` app added. Whoever has the rig should run `task flash:firmwareV2 APP=earprobe` before trusting the bindings. |
+| M9 | Lua RFID - CRX14 over I2C (+ I2C bring-up) | #117 | **built, sim-verified; hardware confirmation pending** (no JTAG rig access from this sandbox): I2C bus (`src/hal/i2c.c`, verbatim port) + CRX14 driver (`src/hal/rfid.c`, trimmed to UID read) + `nab.rfid()`. The CR14 coupler is teardown-documented (`docs/hardware-dissection.md`) but not yet bus-probed - run `task firmwareV2:repl:hw APP=rfidprobe` on real hardware to confirm before trusting `nab.rfid()` (see the M6 AT45 lesson: photo/schematic presence isn't proof a chip answers). |
+| M10 | Lua ear-motor bindings - PWM + encoder | #118 | **implemented, hardware verification pending** - no JTAG/Pi access from the environment this was built in. Turns out no IRQ/timer-subsystem bring-up was actually needed (see the Ears section below): `hal/motor.c` ported, `nab.ear_move`/`nab.ear_stop`/`nab.ear_pos` bindings + an `earprobe` app added. Whoever has the rig should run `task firmwareV2:flash APP=earprobe` before trusting the bindings. |
 | M11 | Lua WiFi - USB host + RT2501 | #119 | open epic - flash end-game measured in #128: wifi C is ~26 KB, so the full image fits only as a parser-less prod build (decided; REPL compiles off-device via host `luac`) + compressed resident bootstrap; prerequisites: #125 (V1 station association broken) and the `luac` cross-compile task (#133) |
 | - | tooling: Unicorn simulator | #96 | first cut done |
 | - | M8 follow-up: `nab.play`/`nab.tone`/`nab.wheel`, wheel-click + jack probe | #123 | **code done, hardware verification pending** (no JTAG/Pi access this session - no `ssh` binary in this environment). `nab.play` streams real decoded audio over SDI so `nab.volume` actually works (VS1003B decodes WAV, per the teardown); `nab.tone` builds a demo WAV; `nab.wheel` reads ADC ch.2 (ported register sequence). Neither can be exercised in the simulator (DREQ/ADC-completion unmodeled - confirmed by running both to the instruction-budget cap). `gpioprobe` (a new probe app) is ready to find the click switch + jack pin but has not been run. |
 
 ## Flashing
 ```sh
-task flash:firmwareV2            # APP=hello (M0)
-task flash:firmwareV2 APP=blink  # M1, visible LED blink
+task firmwareV2:flash            # APP=hello (M0)
+task firmwareV2:flash APP=blink  # M1, visible LED blink
 ```
 Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge. Builds, ships
 this repo's configs + ELF to the Pi, drives OpenOCD + gdb, verifies the write.
@@ -322,7 +322,7 @@ Setup + wiring + the manual fallback: [`tools/openocd/README.md`](../../tools/op
 ## LED map (verified on hardware, feeds M5 #93)
 The raw `LED_RGB_n` -> physical map (`led.h`, inherited from `src/firmware`) was
 unlabeled and the old `blink` comment wrongly called channel 1 the "nose".
-Verified on board `LLC2_4c` with the `ledmap` probe (`task flash:firmwareV2
+Verified on board `LLC2_4c` with the `ledmap` probe (`task firmwareV2:flash
 APP=ledmap` lights all five a distinct colour at once):
 
 | Channel | Physical |
@@ -426,7 +426,7 @@ cannot be exercised in the simulator: DREQ is not modeled there (see
 Simulate, below), so the feed's bounded per-byte wait always spins to its cap
 - confirmed by running it in-sim, which burns the whole instruction budget
 stuck in that loop rather than completing. Whoever next has hardware access:
-`task flash:firmwareV2 APP=lua` then `task repl:firmwareV2:hw APP=lua` and try
+`task firmwareV2:flash APP=lua` then `task firmwareV2:repl:hw APP=lua` and try
 the snippet above, by ear.
 
 ### `nab.wheel` - the back wheel (#123, M8 follow-up)
@@ -460,7 +460,7 @@ M10 ear-motor driver landed).
 This port was written from a sandbox with no JTAG rig access, so unlike M8 (whose
 `nab.beep` was hardware-verified before merge), `nab.rfid()` has only been
 exercised in the simulator so far. Before relying on it: flash `rfidprobe`
-(`task repl:firmwareV2:hw APP=rfidprobe`) and confirm the console reports
+(`task firmwareV2:repl:hw APP=rfidprobe`) and confirm the console reports
 `CRX14 ALIVE` - it does the same parameter-register write(0x10)/read-back round
 trip `init_rfid()` does, directly over `hal/i2c.c`, independent of the higher
 `hal/rfid.c` layer. The CR14 coupler's presence is teardown-documented
@@ -493,7 +493,7 @@ to drain the FIFO first.
   wheel to its click, or inserting/removing a jack, while it runs shows up as
   a diff in the console log:
   ```sh
-  task repl:firmwareV2:hw APP=gpioprobe   # then operate the wheel/jack by hand
+  task firmwareV2:repl:hw APP=gpioprobe   # then operate the wheel/jack by hand
   ```
   Not run this session (no JTAG/Pi access) - whoever has hardware access next
   should run it and note which port(s), if any, change.

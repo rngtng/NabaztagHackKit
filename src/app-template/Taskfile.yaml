@@ -1,0 +1,59 @@
+# app-template — self-contained build/simulate for this MTL app (#63).
+#
+# The root Taskfile only `includes:` this under the `app-template` namespace, so
+# targets are `app-template:build` / `app-template:simulate`. The MTL toolchain
+# (preprocessor + mtl_linux) is pulled in as nested includes; that preprocess→
+# compile plumbing is duplicated across the app leaves for now (#63) — a shared
+# src/apps helper is the DRY follow-up.
+version: '3'
+
+vars:
+  TARGET: app-template
+  OUT: '{{.OUT | default "build"}}'
+
+includes:
+  preprocessor:
+    taskfile: ../../tools/preprocessor/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../../tools/preprocessor}
+  mtl:
+    taskfile: ../../tools/mtl_linux/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../../tools/mtl_linux}
+
+tasks:
+  build:
+    desc: 'Build app-template → build/app-template.'
+    summary: 'Usage: task app-template:build [OUT=build]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+      - task: mtl:compile
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          OUT: '{{.APP_OUT}}'
+
+  simulate:
+    desc: 'Simulate app-template in the MTL simulator. HTTP UI at http://localhost:8080.'
+    summary: 'Usage: task app-template:simulate [OUT=build] [PORT=8080]'
+    dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+    cmds:
+      - task: preprocessor:preprocess
+        vars:
+          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          OUT: '{{.APP_OUT}}/merged.mtl'
+          INCLUDES: 'src/{{.TARGET}} lib/'
+          DEFINES: SIMU
+      - task: mtl:simulate
+        vars:
+          SOURCE: '{{.APP_OUT}}/merged.mtl'
+          PORT: '{{.PORT}}'
+          CLI_ARGS: '{{.CLI_ARGS}}'

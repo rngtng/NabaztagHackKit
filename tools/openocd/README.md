@@ -22,9 +22,9 @@ task from the repo root - it builds the app, ships this repo's configs + ELF to
 the Pi, drives OpenOCD + gdb, verifies the write, and tears the bridge down:
 
 ```sh
-task flash:firmwareV2                       # APP defaults to hello (M0)
-task flash:firmwareV2 APP=blink             # M1 - visible LED blink
-task flash:firmwareV2 APP=blink PI_HOST=me@other-pi.local
+task firmwareV2:flash                       # APP defaults to hello (M0)
+task firmwareV2:flash APP=blink             # M1 - visible LED blink
+task firmwareV2:flash APP=blink PI_HOST=me@other-pi.local
 ```
 
 The task wraps [`flash.py`](flash.py). It aborts if the JTAG chain check
@@ -191,15 +191,15 @@ needs one non-obvious tweak:
   keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
   serviced identically.
 
-### One command (M3/M4): `task repl:firmwareV2:hw`
+### One command (M3/M4): `task firmwareV2:repl:hw`
 
 This recipe is now wrapped in a task - the single command to flash an app and
 read its console (`print()` / the REPL) on the rabbit:
 
 ```sh
-task repl:firmwareV2:hw                                   # APP=lua, capture boot output
-task repl:firmwareV2:hw APP=console                       # the M3 probe
-task repl:firmwareV2:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
+task firmwareV2:repl:hw                                   # APP=lua, capture boot output
+task firmwareV2:repl:hw APP=console                       # the M3 probe
+task firmwareV2:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
 ```
 
 It builds the app, ships it, and drives the exact OpenOCD chain below
@@ -212,7 +212,7 @@ they idle) - so a scripted run finishes in seconds instead of waiting out
 New probe apps should `sh_puts("<<FV_DONE>>\n")` before their idle loop.
 The manual chain below is the fallback / what the task does under the hood.
 
-Run it manually (console.elf already built with `task build:firmwareV2 APP=console`):
+Run it manually (console.elf already built with `task firmwareV2:build APP=console`):
 
 ```sh
 sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
@@ -248,7 +248,7 @@ is stable.
 > 1. (deferred) Patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD` on
 >    cores without vector catch - then plain `arm semihosting enable` works, no
 >    `rbp`/`bp` dance (needs an OpenOCD rebuild).
-> 2. **Done** - folded into `flash.py --semihosting` / `task repl:firmwareV2:hw`,
+> 2. **Done** - folded into `flash.py --semihosting` / `task firmwareV2:repl:hw`,
 >    so the console/REPL is one command instead of a hand-typed `-c` chain + pipe.
 
 ## Troubleshooting

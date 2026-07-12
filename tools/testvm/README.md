@@ -15,9 +15,9 @@ Taskfile's path assumptions).
 Build the boot bytecode first, then run the smoke test against it:
 
 ```
-task build:boot
-task test:firmware               # bounded run (default 5s); pass = exit 0 or timeout
-task test:firmware DURATION=15   # longer window
+task boot:build
+task firmware:test               # bounded run (default 5s); pass = exit 0 or timeout
+task firmware:test DURATION=15   # longer window
 ```
 
 To watch it run interactively instead of a bounded smoke test:
@@ -40,7 +40,7 @@ needed — each scenario either calls a firmware helper directly or hand-assembl
 a few opcodes and enters the real `interpGo()`.
 
 ```
-task test:firmware-bugs      # build + run all scenarios under ASan (part of `task verify`)
+task firmware:test:bugs      # build + run all scenarios under ASan
 ```
 
 Scenarios (selected internally by `bugrepro <name>`), all expected **clean**:
