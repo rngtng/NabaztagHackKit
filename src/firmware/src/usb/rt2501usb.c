@@ -421,9 +421,10 @@ static void rt2501_antenna_setting()
   if(rt2501_Antenna.field.RxDefaultAntenna == RT2501_SOFTWARE_DIVERSITY)
     rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_A;
 
-  // SH 060918 : on force le mode HARDWARE_DIVERSITY pour améliorer la réception de l'antenne
-//        rt2501_Antenna.field.RxDefaultAntenna = RT2501_HARDWARE_DIVERSITY;
-  rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_A;
+  /* RX is pinned to antenna B; hardware/software diversity is not used. (SH
+   * 060918 tried HARDWARE_DIVERSITY to improve reception but left it disabled.)
+   * A dead `= RT2501_ANTENNA_A` store used to sit here, immediately overwritten
+   * by the line below - removed. */
   rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_B;
   /*
      driver must disable Rx when switching antenna, otherwise ASIC will keep default state
