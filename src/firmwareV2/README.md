@@ -471,6 +471,30 @@ had no such documentation and was reverted) - but per the CLAUDE.md
 peripheral-exists rule, a documented chip still isn't a *responding* chip until
 someone runs the probe.
 
+### RFID reliability fix (#180)
+`nab.rfid()` reads reported as slow/unreliable in the field. Code inspection
+(no hardware access this session either, so still simulator-only) found the
+likely cause: `check_rfid_devices()` called `init_rfid()` unconditionally,
+which itself calls `close_rfid()` first - so **every single poll dropped the
+RF field and re-raised it**. The CRX14's tags are passive and draw their power
+from that field, so a script polling `nab.rfid()` in a tight loop
+(`examples/rfid-led-ears.lua`'s `run()`) was power-cycling whatever tag sat on
+the coupler on every call, which is a plausible source of intermittent
+detection. Fixed: `hal/rfid.c` now tracks field state (`field_on`) and only
+does the full field drop/re-raise once; once the field is on, later scans just
+`completion_rfid()` (deselect) before a fresh anti-collision round, and the
+field is only forced back off on a genuine I2C error (so the next poll starts
+from a clean reset instead of retrying a wedged bus). `check_rfid_devices()`
+also now bails out as soon as `i2c_ok` goes false instead of running the
+remaining anti-collision steps (each with a 1000-retry budget) to completion,
+which addresses the "slow" half of #180 on a real I2C fault. **Still open:**
+the inter-command settle delay (`rfid_delay_1ms`, a `CLR_WDT` busy-loop guess -
+see the no-timer-subsystem note above) is unverified against real hardware
+timing; the original V1 driver used a calibrated hardware-timer `DelayMs(1)`
+here. Tuning that properly needs the same timer/scheduler substrate #184 asks
+for - tracked separately in #195 (also scopes the bigger ask from #180: an
+event/callback-shaped `nab.rfid()` instead of a poll), not addressed by this fix.
+
 ### SPI0 RX-FIFO + DREQ (M8 gotcha)
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of
 SCI writes fills the RX FIFO and shifts later `vlsi_read_sci` results. `audio.c`

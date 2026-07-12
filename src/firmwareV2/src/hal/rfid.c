@@ -13,6 +13,15 @@
 
 static uint8_t i2c_ok;
 
+/* Tracks whether the RF field is currently energized. A passive tag draws its
+ * power from this field, so toggling it off/on drives a full tag power-cycle
+ * (~ms of settle time) on every single scan - the #180 root cause: a script
+ * polling nab.rfid() in a tight loop was power-cycling the tag every poll,
+ * making detection intermittent. Once the field is on, later scans only need
+ * to deselect (completion_rfid) before a fresh anti-collision round, not drop
+ * the field. */
+static uint8_t field_on;
+
 /* No timer/DelayMs subsystem in firmwareV2 yet (see hal/audio.c's audio_delay).
  * The CRX14 needs a short settle after each I2C stop before the next command
  * gets an answer (per the original driver's comments); sized the same order of
@@ -53,13 +62,22 @@ static uint16_t readcheck(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 /**
  * @brief Turn ON electromagnetic field and initialize CRX14
  *
+ * If the field is already on (a prior scan left it energized), this only
+ * deselects any previously-selected tag so a fresh anti-collision round can
+ * run - it does not drop and re-raise the field, which would power-cycle
+ * whatever tag is currently sitting on the coupler.
+ *
  * @retval 1 on success
  * @retval 0 on error
  */
 uint8_t init_rfid(void)
 {
   uint8_t dummy_tab[2];
-  /* Turn OFF RF */
+
+  if (field_on)
+    return completion_rfid();
+
+  /* Turn OFF RF (also clears any stale select state) */
   close_rfid();
   /* Turn ON RF */
   dummy_tab[0]=CRX14_PARAMETER_REGISTER;
@@ -68,7 +86,8 @@ uint8_t init_rfid(void)
     return 0;
 
   /* Check if module is ON */
-  return dummy_tab[0]==0x10;
+  field_on = dummy_tab[0]==0x10;
+  return field_on;
 }
 
 /**
@@ -87,6 +106,7 @@ uint8_t close_rfid(void)
   dummy_tab[1]=0x00;
   if(!writecheck(CRX14_ADDR,dummy_tab,2) || !readcheck(CRX14_ADDR,dummy_tab,1))
     return 0;
+  field_on = 0;
   /* Check if module is OFF */
   return (dummy_tab[0]==0x00);
 }
@@ -209,12 +229,16 @@ uint8_t check_rfid_devices(struct rfid_tag *p_tags)
   /* Turn ON RFID */
   init_rfid();
   rfid_delay_1ms();
+  if (!i2c_ok)
+    return 0;
 
   /* Run Initiate Command to tags */
   initiate_rfid();
   rfid_delay_1ms();
   /* Read reception buffer */
   read_frame_rfid(dummy_tab, 2);
+  if (!i2c_ok)
+    return 0;
 
   /* return if no tag detected */
   if(dummy_tab[0]==0x00)
@@ -225,6 +249,8 @@ uint8_t check_rfid_devices(struct rfid_tag *p_tags)
   rfid_delay_1ms();
   /* Read reception buffer */
   read_frame_rfid(dummy_tab, 19);
+  if (!i2c_ok)
+    return 0;
 
   /* Check detected devices => CHIP_ID */
   dummy_short = (dummy_tab[2]<<8) + dummy_tab[1];
@@ -246,11 +272,15 @@ uint8_t check_rfid_devices(struct rfid_tag *p_tags)
     select_tag_rfid((p_tags+dummy_cmpt)->chip_id);
     rfid_delay_1ms();
     read_frame_rfid(dummy_tab, 2);
+    if (!i2c_ok)
+      return dummy_cmpt; /* tags before this one already have a valid UID */
 
     /* Get UID of selected tag */
     get_uid_rfid();
     rfid_delay_1ms();
     read_frame_rfid(dummy_tab, 9);
+    if (!i2c_ok)
+      return dummy_cmpt;
 
     /* Copy UID to struct */
     for(dummy_cmpt_2=0; dummy_cmpt_2<8; dummy_cmpt_2++)
@@ -262,15 +292,21 @@ uint8_t check_rfid_devices(struct rfid_tag *p_tags)
 
 /**
  * @brief nab.rfid() entry point: scan and return the first tag's UID.
+ *
+ * Leaves the RF field on between calls (see init_rfid) so a tag sitting on
+ * the coupler stays powered across repeated polls, instead of being reset
+ * every call. Only forces the field back off on an I2C error, so the next
+ * poll starts from a clean hard reset rather than retrying a wedged bus.
  */
 int8_t rfid_read_uid(uint8_t uid_out[8])
 {
   struct rfid_tag tags[RFID_MAX_TAGS];
   i2c_ok = 1;
   uint8_t n = check_rfid_devices(tags);
-  close_rfid();
-  if (!i2c_ok)
+  if (!i2c_ok) {
+    close_rfid();
     return -1;
+  }
   if (n == 0)
     return 0;
   for (uint8_t i = 0; i < 8; i++)
