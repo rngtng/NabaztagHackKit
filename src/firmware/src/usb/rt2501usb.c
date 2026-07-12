@@ -829,6 +829,62 @@ static int16_t rt2501_agc_to_rssi(uint8_t plcp_rssi)
   return (int16_t)(agc * 2) - offset;
 }
 
+/* SHARED_KEY_TABLE holds 16 entries (rt2501usb_hw.h); the RX descriptor's
+ * KeyIndex indexes it. Last-accepted CCMP packet number per key slot, reset to 0
+ * on key (re)install in rt2501_set_key(). */
+#define RT2501_NUM_SHARED_KEYS 16
+static uint64_t rt2501_rx_ccmp_pn[RT2501_NUM_SHARED_KEYS];
+
+/*
+ * Reconstruct the 48-bit CCMP packet number from the hardware RX descriptor's
+ * Iv/Eiv words. Per the RT2571W/rt73 CCMP layout the cipher header's 8 octets
+ * land little-endian as: Iv = PN0 | PN1<<8 | rsvd<<16 | keyid<<24, Eiv = PN2 |
+ * PN3<<8 | PN4<<16 | PN5<<24. The 802.11i PN is little-endian (PN0 least
+ * significant). NOTE: this byte layout is from the vendor-driver convention and
+ * still needs on-device confirmation (issue #154 DoD) - if it is wrong the
+ * replay check below would mis-order PNs.
+ */
+static uint64_t rt2501_ccmp_pn(uint32_t iv, uint32_t eiv)
+{
+  uint64_t pn;
+
+  pn  = (uint64_t)(iv & 0x0000ffff);                 /* PN0, PN1 */
+  pn |= (uint64_t)(eiv & 0x0000ffff) << 16;          /* PN2, PN3 */
+  pn |= (uint64_t)((eiv >> 16) & 0x0000ffff) << 32;  /* PN4, PN5 */
+  return pn;
+}
+
+/*
+ * 802.11i RX replay protection for CCMP (AES) data frames. Returns 1 if the
+ * frame should be accepted, 0 if it is a replay and must be dropped; updates the
+ * per-key last-accepted PN on accept.
+ *
+ * Scoped to CCMP: WEP/TKIP/unencrypted frames are always accepted here (#154
+ * scopes data-path replay protection to CCMP, aligned with #124's plan to drop
+ * the older ciphers). The hardware exposes the received PN in the descriptor's
+ * Iv/Eiv words specifically for this check (see PRXD_STRUC). PN is a 48-bit
+ * monotonic counter reset to 0 on key install, so a valid frame has PN strictly
+ * greater than the last accepted one. This complements eapol.c's replay counter,
+ * which only covers the 4-way-handshake EAPOL-Key messages, not the data path.
+ */
+static uint8_t rt2501_rx_replay_ok(PRXD_STRUC rxd)
+{
+  uint64_t pn;
+
+  if(rxd->CipherAlg != RT2501_CIPHER_AES)
+    return 1;
+  if(rxd->KeyIndex >= RT2501_NUM_SHARED_KEYS)
+    return 1; /* key slot outside the tracked table - don't guess */
+
+  pn = rt2501_ccmp_pn(rxd->Iv, rxd->Eiv);
+  if(pn <= rt2501_rx_ccmp_pn[rxd->KeyIndex]) {
+    DBG_WIFI("RX CCMP replay - frame dropped"EOL);
+    return 0;
+  }
+  rt2501_rx_ccmp_pn[rxd->KeyIndex] = pn;
+  return 1;
+}
+
 static void rt2501_rx_callback(PURB urb)
 {
   PRXD_STRUC rxd;
@@ -856,7 +912,8 @@ static void rt2501_rx_callback(PURB urb)
         rxd->Eiv);
       DBG_WIFI(dbg_buffer);
 #endif
-    if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))) {
+    if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))
+       && rt2501_rx_replay_ok(rxd)) {
       ieee80211_input(rt2501_frame+sizeof(RXD_STRUC),
           rxd->DataByteCnt,
           rt2501_agc_to_rssi(rxd->PlcpRssi));
@@ -1136,6 +1193,11 @@ int32_t rt2501_set_key(uint8_t index, uint8_t *key, uint8_t *txmic, uint8_t *rxm
     key_length = EAPOL_AES_EK_LENGTH;
     break;
   }
+
+  /* Reset the RX replay counter for this key slot: a freshly (re)installed key
+   * starts a new PN sequence from 0 (see rt2501_rx_replay_ok). */
+  if(index < RT2501_NUM_SHARED_KEYS)
+    rt2501_rx_ccmp_pn[index] = 0;
 
   /* Mark the key invalid */
   csr0 = rt2501_read(rt2501_dev, RT2501_SEC_CSR0);
