@@ -2092,7 +2092,7 @@ int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_m
             encryption_overhead = 20; /* (TKIP) IV[8] + MIC[8] + ICV[4] */
             break;
           case IEEE80211_CIPHER_CCMP:
-            encryption_overhead = 16; /* (AES) IV[8] + MIC[8] // FIXME May be 20... ? */
+            encryption_overhead = 16; /* (AES/CCMP) header[8] + MIC[8]; TKIP's 20 above does not apply */
             break;
           default:
             break;
