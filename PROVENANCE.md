@@ -205,6 +205,18 @@ against the reference.
   assume. Not yet hardware-verified (needs the on-device RSSI-vs-distance log the
   issue's DoD calls for); GPLv2 note: only the ~10-line formula/constants were
   ported, not code copied verbatim.
+- **Bounded BBP/RF busy-bit polling** (#156): the BBP/RF serial-access busy-bit
+  polls in `rt2501usb_io.c` (`rt2501_read_bbp`/`rt2501_write_bbp`/`rt2501_write_rf`)
+  were unbounded `do { } while(Busy)` loops — a stuck busy bit (marginal power-up
+  or wedged ASIC, cf. #144/#134) would hang this single-threaded firmware with no
+  recovery. Added a shared `rt2501_wait_csr_ready()` helper bounding the poll at
+  `RT2501_REGBUSY_COUNT` (100) retries, mirroring Linux's `REGISTER_BUSY_COUNT` /
+  `rt2x00usb_regbusy_read` (each poll here is already a full USB control transfer,
+  so the count is the meaningful bound — no per-iteration delay). On exhaustion it
+  logs and the callers abort via their existing return contract (writes return 0;
+  reads return 0 as an invalid-value sentinel — the BBP-R0 readiness probe already
+  retries at a higher level, so no hang). No happy-path behavior change. Concept
+  ported from the reference, not code.
 
 ## Vendoring hygiene
 
