@@ -16,7 +16,7 @@ tasks:
   sign:
     desc: 'Sign a firmware .bin for web upload.  Usage: task sign SOURCE=<fw.bin> [OUT=<fw.sim>]'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'   # resolve SOURCE/OUT relative to the dir the user ran `task` from
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'   # resolve SOURCE/OUT relative to the dir the user ran `task` from
     requires:
       vars: [SOURCE]
     vars:
@@ -28,7 +28,7 @@ tasks:
 
   verify:
     desc: 'Check a signed .sim is well-formed.  Usage: task verify FILE=<fw.sim>'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     requires:
       vars: [FILE]
     cmds:

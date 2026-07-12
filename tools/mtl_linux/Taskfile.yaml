@@ -14,7 +14,7 @@ tasks:
   compile:
     desc: 'Compile MTL source → bytecode.  Usage: task mtl:compile SOURCE=<src.mtl> [OUT=<dir>] [SIGN=false].  Writes <name>.bin and a dumpbc.c debug dump into OUT (defaults to cwd).'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'   # resolve SOURCE/OUT relative to the dir the user ran `task` from, not the Taskfile's
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'   # resolve SOURCE/OUT relative to the dir the user ran `task` from, not the Taskfile's
     requires:
       vars: [SOURCE]
     vars:
@@ -33,7 +33,7 @@ tasks:
   simulate:
     desc: 'Run an MTL app in the simulator (config baked in).  Usage: task mtl:simulate SOURCE=<app>.mtl [PORT=<host-port>] [-- extra args]'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'   # resolve SOURCE relative to the dir the user ran `task` from, not the Taskfile's
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'   # resolve SOURCE relative to the dir the user ran `task` from, not the Taskfile's
     requires:
       vars: [SOURCE]
     vars:
@@ -49,7 +49,7 @@ tasks:
   test:
     desc: 'Run an MTL test program in the simulator; fails on "!!" assertion failures or compile errors.  Usage: task mtl:test SOURCE=<test>.mtl'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     requires:
       vars: [SOURCE]
     cmds:

@@ -19,14 +19,14 @@ vars:
 tasks:
   image:
     internal: true   # rebuilt on demand; the COPYed lua/ tree cache-busts it when Lua changes
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     cmds:
       - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
 
   compile:
     desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     requires:
       vars: [SOURCE, OUT]
     cmds:

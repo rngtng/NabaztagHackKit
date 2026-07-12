@@ -14,7 +14,7 @@ tasks:
   simulate:
     desc: 'Build and run testvm against boot bytecode. Requires build:boot first. Usage: task testvm:simulate [SOURCE=build/boot/dumpbc.c] [SOCK_DIR=build]'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.SOURCE | default "build/boot/dumpbc.c"}}'
       SOCK_DIR: '{{.SOCK_DIR | default "."}}'
@@ -34,7 +34,7 @@ tasks:
   test:
     desc: 'Build testvm and smoke-test it against boot bytecode for a bounded run. Requires build:boot first. Usage: task testvm:test [SOURCE=build/boot/dumpbc.c] [SOCK_DIR=build] [DURATION=5]'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     vars:
       SOURCE: '{{.SOURCE | default "build/boot/dumpbc.c"}}'
       SOCK_DIR: '{{.SOCK_DIR | default "."}}'
@@ -56,7 +56,7 @@ tasks:
   bugs:
     desc: 'Regression guard: build & run the firmware VM memory-safety scenarios (#66 findings #69/#70) under AddressSanitizer. All must stay clean; exits nonzero if a fixed OOB bug is reintroduced.'
     deps: [image]
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     cmds:
       # same mount layout as simulate/test: firmware at /work, this layer at /work/testvm
       - 'docker run --rm --init

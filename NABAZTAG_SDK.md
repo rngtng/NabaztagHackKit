@@ -52,7 +52,7 @@ simulated, and tested. (Boot-embedded vs remote-load embedding strategies:
   smoke-runs bytecode → catches VM bugs.
 - **`task boot:simulate` / `<app>:simulate`** (`mtl_simu`) — runs an **MTL app** on the
   host with faked hardware → catches app-logic bugs.
-- **`task test`** (`test/`) — the **MTL assertion framework** run through the simulator
+- **`task lib:test`** (`test/`) — the **MTL assertion framework** run through the simulator
   → unit tests for `lib/`.
 
 ## Language & tooling choices

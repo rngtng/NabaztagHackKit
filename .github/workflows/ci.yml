@@ -17,21 +17,13 @@ jobs:
     name: test + verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      # Host needs only Docker + Task; both are provided by the runner /
-      # this idempotent bootstrap. The proxy-CA shim inside the script
-      # no-ops here (no /root/.ccr/ca-bundle.crt) and Docker is already up,
-      # so it effectively just installs `task`.
       - name: Bootstrap toolchain (Docker + Task)
         run: ./scripts/claude-setup.sh
 
-      # Fast signal first: the MTL unit tests. `task test` self-checks its
-      # own output and exits nonzero on Syntax/Typechecking/EMPTY/OM errors.
-      - name: Run tests
-        run: task test
-
-      # Definition of done: test + boot + app-piper + app-template + app-sse
-      # must all build. Re-runs test (cheap) so this job is the merge gate.
-      - name: Run verify
+      - name: Run verify Firmware + mtl V1
         run: task verify
+
+      - name: Run verify Firmware + mtl V2
+        run: task verifyV2

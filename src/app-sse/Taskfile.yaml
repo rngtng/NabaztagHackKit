@@ -1,13 +1,17 @@
 # app-sse — self-contained build/simulate for the SSE server MTL app (#63).
 #
 # Root only `includes:` this under the `app-sse` namespace → `app-sse:build` /
-# `app-sse:simulate`. Preprocess→compile plumbing is duplicated across app
-# leaves for now (#63); a shared src/apps helper is the DRY follow-up.
+# `app-sse:simulate`. Relocatable (repo root AND `cd src/app-sse && task build`);
+# REPO = repo root, passed as WORKDIR so the shared preprocessor/mtl tools mount
+# it (the app needs lib/, outside this folder). Preprocess→compile plumbing is
+# duplicated across app leaves for now (#63); shared helper is the DRY follow-up (#187).
 version: '3'
 
 vars:
   TARGET: app-sse
   OUT: '{{.OUT | default "build"}}'
+  REPO:
+    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
 
 includes:
   preprocessor:
@@ -23,35 +27,39 @@ tasks:
   build:
     desc: 'Build the SSE server app → build/app-sse.'
     summary: 'Usage: task app-sse:build [OUT=build]'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       APP_OUT: '{{.OUT}}/{{.TARGET}}'
     cmds:
       - task: preprocessor:preprocess
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: 'src/{{.TARGET}}/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
           INCLUDES: 'src/{{.TARGET}} lib/'
       - task: mtl:compile
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.APP_OUT}}/merged.mtl'
           OUT: '{{.APP_OUT}}'
 
   simulate:
     desc: 'Simulate the SSE server app in the MTL simulator. HTTP UI at http://localhost:8080.'
     summary: 'Usage: task app-sse:simulate [OUT=build] [PORT=8080]'
-    dir: '{{.USER_WORKING_DIR}}'
+    dir: '{{.TASKFILE_DIR}}'
     vars:
       APP_OUT: '{{.OUT}}/{{.TARGET}}'
     cmds:
       - task: preprocessor:preprocess
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: 'src/{{.TARGET}}/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
           INCLUDES: 'src/{{.TARGET}} lib/'
           DEFINES: SIMU
       - task: mtl:simulate
         vars:
+          WORKDIR: '{{.REPO}}'
           SOURCE: '{{.APP_OUT}}/merged.mtl'
           PORT: '{{.PORT}}'
           CLI_ARGS: '{{.CLI_ARGS}}'

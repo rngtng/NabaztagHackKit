@@ -111,7 +111,7 @@
     matched month names (case mismatch)
   * app-piper `utils/utils.mtl` deduplicated: 44 of 55 funs were lib/std
     copies; itoanil/liststrlen/mac_to_hex/dump helpers landed in lib
-  * `task test` now also fails on compiler errors reported via stderr
+  * `task lib:test` now also fails on compiler errors reported via stderr
   * suite: 379 assertions / 28 scenarios
 
 ## v2.0.0-alpha4 - 04-07-2026
@@ -126,7 +126,7 @@
     json, word, xmlparser, task scheduler, and the entire Forth core
     (9 duplicated files + 92 dictionary entries removed); telnet REPL rewired
     to the lib `write_fn`/`readline_cb` I/O abstraction
-  * test suite: 358 assertions / 27 scenarios (`task test`) — new md5, sock,
+  * test suite: 358 assertions / 27 scenarios (`task lib:test`) — new md5, sock,
     http_server, task, xmlparser, forth (stack/arithmetic/comparison/logical/
     control/string/list/output/json) and fixarg-semantics suites;
     test tree mirrors lib layout
