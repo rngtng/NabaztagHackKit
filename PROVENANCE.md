@@ -227,6 +227,21 @@ against the reference.
   unconditional `smart = !(rf1 == RF5225 || rf1 == RF2527)` (bit enabled for
   2528/5226, disabled for 5225/2527). Logic unchanged — just relocated so it's
   reachable. Concept from the reference, not code.
+- **RX replay (PN) protection for CCMP** (#154): `rt2501_rx_callback` read the
+  descriptor's `Iv`/`Eiv` (which carry the received CCMP packet number) only for
+  debug printing — nothing rejected a replayed data frame. The only replay logic
+  in the tree (`eapol.c`) covers the 4-way-handshake EAPOL-Key messages, not the
+  data path. Added a per-key 48-bit PN counter (`rt2501_rx_ccmp_pn[]`, indexed by
+  the descriptor `KeyIndex`, reset to 0 on key (re)install in `rt2501_set_key`)
+  and a `rt2501_rx_replay_ok()` gate that drops any CCMP frame whose PN is not
+  strictly greater than the last accepted one for that key. Scoped to CCMP/AES per
+  the issue + #124 (WEP/TKIP/unencrypted are passed through untouched); per-key
+  tracking gives the pairwise key and the GTK independent PN spaces for free. The
+  48-bit PN is reconstructed from `Iv`/`Eiv` per the RT2571W/rt73 vendor layout —
+  **byte order still needs on-device confirmation** (issue #154 DoD: a crafted
+  capture-and-resend must be dropped); not exercisable in the `mtl_linux`
+  simulator, which models the MTL/VM layer, not the C firmware's USB/crypto RX
+  path. Concept/register semantics from the reference, not code.
 
 ## Vendoring hygiene
 
