@@ -368,14 +368,28 @@ vs `0xFE` identical). See also the SPI0 RX-FIFO/DREQ note below - the fix that
 made the beep reliable. `ms` (on `nab.beep`) is a rough CPU busy-loop (no timer
 subsystem yet).
 
-**`nab.ear_*` (M10, #118) is hardware-verified.** Both motors drive and
-both encoders count (`earprobe` probe, `FTM0C`/`FTM1C` nonzero; ~0x31 and
-~0x2F pulses after a ~2 s run). A bug found during the hardware pass was
+**`nab.ear_*` (M10, #118) is hardware-verified at full speed only.** Both
+motors drive and both encoders count (`earprobe` probe, `FTM0C`/`FTM1C`
+nonzero; ~0x31 and ~0x2F pulses after a ~2 s run) - but that probe only ever
+called `run_motor(n, 255, ...)`. A bug found during the hardware pass was
 fixed before this landed: `init_ears` was missing the `PORTSEL3` pin-mux
 setup that maps PF0-PF5 to the FTM peripheral. `src/firmware`'s `init_io`
 sets `PORTSEL3 = 0x05550000` (with `MOTOR_SPEED_CONTROL`); `init_ears`
 now mirrors this. Without it the FTM PWM output pins stayed as GPIO and
 the encoders never reached the FTM counters.
+
+**Caveat (#179): the `speed` parameter itself was never hardware-verified.**
+`src/firmware`'s own VM never exposed variable speed either -
+`sysMotorset()` (`src/firmware/src/vm/vlog.c`) hardcodes `run_motor(motor,
+255, ...)`; fw1 was direction-only. `speed` only became reachable from a
+caller with M10's `nab.ear_move`, and `earprobe` inherited the fw1 habit of
+only testing 255. A user calling `nab.ear_move(RIGHT_MOTOR, 100, 'forward')`
+got a motor hum with no movement - plausibly these gearmotors just don't
+have enough torque at ~40% PWM duty to break static friction through the
+ear gear train, but that's unconfirmed. `earprobe` now also sweeps a range
+of partial speeds per motor (255 down to 20) and reports the encoder delta
+at each step; run it and read off where movement actually stops before
+trusting `nab.ear_move` below full speed.
 
 - **No IRQ/timer subsystem was actually needed**, despite the milestone's
   framing. `init_pwm()` only pokes the FTM0-5 timer control registers once;
