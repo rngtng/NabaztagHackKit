@@ -149,6 +149,15 @@ tasks:
         vars:
           WORKDIR: '{{.REPO}}'
 
+  test:crypto:
+    desc: 'Known-answer test for AES-128 + RFC 3394 GTK key-unwrap (FIPS-197 / RFC 3394 vectors, #152).'
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - task: image   # firmware image bundles a native gcc for host-side tests
+      - >
+        docker run --rm -v "$(realpath .):/work" {{.FW_IMAGE}}
+        sh -c "gcc -Wall -Wextra -Wpedantic -Iinc test/aes128_kat.c src/net/aes128.c -o /tmp/aes128_kat && /tmp/aes128_kat"
+
   clean:
     desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker images (incl. testvm)'
     dir: '{{.TASKFILE_DIR}}'
