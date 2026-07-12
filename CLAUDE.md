@@ -129,5 +129,8 @@ re-deriving from here.
 Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
 `PROVENANCE.md` in sync as decisions land (roadmap → GitHub Issues). Surface genuine forks as decisions;
 otherwise pick the convention above and proceed.
+- **A PR that resolves an issue must say `Fixes #<n>` in its body** (GitHub closing
+  keyword — `Fixes`/`Closes`/`Resolves`) so the issue auto-closes on merge. One line, at
+  the top of the body.
 - **Multi-milestone arc = one feature branch**, not a fresh branch per milestone. If
   you must stack, branch off the current tip (never off `main`) and say so up front.
