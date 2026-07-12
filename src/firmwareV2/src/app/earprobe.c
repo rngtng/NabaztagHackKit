@@ -7,15 +7,21 @@
  * an SCI round-trip to prove aliveness), the ear motors are a known-populated
  * part - the rabbit visibly has two ears. The cheap disqualifying test here is
  * simpler: run each motor briefly and check whether its FTM0/FTM1 pulse-capture
- * counter (get_motor_position) actually moves. This has NOT been run against
- * real hardware from this environment (no JTAG/Pi access) - run it once before
- * trusting nab.ear_move/nab.ear_pos:
+ * counter (get_motor_position) actually moves.
  *
  *   task flash:firmwareV2 APP=earprobe
  *   task repl:firmwareV2:hw APP=earprobe
  *
  * Output is ARM semihosting (the M3 #91 console). No timer subsystem exists
  * (see README), so "briefly" is a CPU busy-loop, same caveat as nab.beep's ms.
+ *
+ * Issue #179: the original probe (probe_motor, still run below) only ever
+ * called run_motor() at speed=255 - the "hardware-verified" claim in
+ * PROVENANCE.md/README.md never actually covered the `speed` parameter itself.
+ * A user hitting nab.ear_move(n, 100, 'forward') got a motor hum with no
+ * movement. sweep_motor() below drives each motor across a range of partial
+ * speeds and reports the encoder delta per step, to find whether/where there
+ * is a minimum effective duty cycle for these gearmotors.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -130,6 +136,37 @@ static void probe_motor(uint8_t number)
   sh_puts(c_after != 0 ? "PASS: encoder counted\n" : "FAIL: encoder STUCK\n");
 }
 
+/* Drive `number` FORWARD at each speed in turn (~1.5 s each), reporting the
+ * encoder delta over that window - a wrapping 16-bit counter, so plain
+ * subtraction is correct even across a wrap. A short stopped gap between
+ * steps lets the previous step's motion fully settle before the next starts. */
+static void sweep_motor(uint8_t number)
+{
+  static const uint8_t speeds[] = {255, 200, 150, 120, 100, 80, 60, 40, 20};
+
+  sh_puts("--- motor "); sh_puthex16(number); sh_puts(" speed sweep (FORWARD) ---\n");
+
+  for (unsigned i = 0; i < sizeof(speeds) / sizeof(speeds[0]); i++) {
+    uint8_t speed = speeds[i];
+    uint16_t before = get_motor_position(number);
+
+    run_motor(number, speed, FORWARD);
+    busy_delay(1500000UL);
+    stop_motor(number);
+
+    uint16_t after = get_motor_position(number);
+    uint16_t delta = (uint16_t)(after - before);
+
+    sh_puts("speed=");
+    sh_puthex8(speed);
+    sh_puts(" delta=");
+    sh_puthex16(delta);
+    sh_puts(delta != 0 ? " MOVED\n" : " STUCK (hum only?)\n");
+
+    busy_delay(300000UL); /* settle before the next step */
+  }
+}
+
 int main(void)
 {
   init_ears();
@@ -159,6 +196,10 @@ int main(void)
   stop_motor(2);
   sh_puts("motor1 pos="); sh_puthex16(get_motor_position(1)); sh_puts("\n");
   sh_puts("motor2 pos="); sh_puthex16(get_motor_position(2)); sh_puts("\n");
+
+  /* --- #179: partial-speed sweep, never exercised before --- */
+  sweep_motor(1);
+  sweep_motor(2);
 
   sh_puts("<<FV_DONE>>\n");   /* early-exit signal for flash.py */
   for (;;) {
