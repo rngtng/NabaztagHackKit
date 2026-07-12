@@ -1,18 +1,19 @@
 /**
  * @file bugrepro.c
- * @brief Native reproduction harness for firmware VM bugs (issue #66).
+ * @brief Regression guard for the firmware VM memory-safety bugs from issue #66.
  *
  * Links the *real* firmware VM sources (../src/vm, ../src/net) together with
- * the testvm sim stubs and drives the actual buggy code paths. Built with
- * AddressSanitizer so out-of-bounds accesses abort with a precise report.
+ * the testvm sim stubs and drives the exact code paths that used to overrun.
+ * Built with AddressSanitizer so any reintroduced out-of-bounds access aborts
+ * with a precise report.
  *
- * Each scenario is selected by argv[1] so a single out-of-bounds abort does
- * not mask the others. A scenario "reproduces" when ASan reports the access;
- * once the underlying bug is fixed the same scenario runs clean.
+ * All scenarios are expected to run CLEAN now that the bugs are fixed; each is
+ * selected by argv[1] so a single abort does not mask the others. A scenario
+ * that trips ASan again means the corresponding fix has been reverted/broken.
  *
- *   ./bugrepro syscmp    -> vlog.c sysCmp()      : OOB read  (issue: strcmp overread)
- *   ./bugrepro store     -> vinterp.c OPstore    : OOB write (issue: || guard tautology)
- *   ./bugrepro setstruct -> vinterp.c OPsetstruct: OOB write (issue: || guard tautology)
+ *   ./bugrepro syscmp    -> vlog.c sysCmp()      : OOB read  (fixed #70 -- len clamp)
+ *   ./bugrepro store     -> vinterp.c OPstore    : OOB write (fixed #69 -- && guard)
+ *   ./bugrepro setstruct -> vinterp.c OPsetstruct: OOB write (fixed #69 -- && guard)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,12 +37,14 @@ int32_t sysCmp(uint8_t *dst, int32_t i, int32_t ldst,
                uint8_t *src, int32_t j, int32_t lsrc, int32_t len);
 
 /* ---------------------------------------------------------------------------
- * Scenario 1: sysCmp() out-of-bounds read.
+ * Scenario 1: sysCmp() out-of-bounds read (fixed #70).
  *
- * sysCmp only clamps len when *both* operands overrun. When just one overruns
- * (exactly the case OPvstrcmp produces for a default-length `strcmp` on two
- * strings of different length) len is left unclamped and the shorter buffer is
- * read past its end. Separate malloc()s make ASan flag the exact byte.
+ * Before #70, sysCmp only clamped len when *both* operands would overrun, so
+ * when just one overran -- exactly the case OPvstrcmp produces for a default-
+ * length `strcmp` on two strings of different length -- len was left unclamped
+ * and the shorter buffer was read past its end. sysCmp now clamps len against
+ * each buffer independently, so this compare stays in bounds and runs clean.
+ * Separate malloc()s make ASan pin the exact byte if the clamp regresses.
  * ------------------------------------------------------------------------- */
 static int scen_syscmp(void)
 {
@@ -51,8 +54,9 @@ static int scen_syscmp(void)
     memcpy(src, "AA", 2);
 
     /* i+len (0+4) does NOT exceed ldst(4); j+len (0+4) DOES exceed lsrc(2).
-     * sysCmp's `(i+len>ldst)&&(j+len>lsrc)` guard is false -> no clamp ->
-     * the loop reads src[2] (and src[3]) which are past the 2-byte buffer. */
+     * With the old `(i+len>ldst)&&(j+len>lsrc)` guard the src overrun was not
+     * clamped and the loop read src[2]/src[3] past the 2-byte buffer. The fix
+     * clamps len=lsrc-j, so the read stops at the buffer end. */
     int r = sysCmp(dst, 0, 4, src, 0, 2, 4);
 
     printf("sysCmp returned %d (expected a clamped, in-bounds compare)\n", r);
@@ -100,12 +104,13 @@ static void vm_run(const uint8_t *code, int code_len)
 #define FUN_HEADER 0x00, 0x00, 0x00
 
 /* ---------------------------------------------------------------------------
- * Scenario 2: OPstore out-of-bounds write.
+ * Scenario 2: OPstore out-of-bounds write (fixed #69).
  *
- * `t.[i] <- v` compiles to OPstore, guarded by `(i>=0)||(i<VSIZE(p))` — a
- * tautology, so any index is accepted. We make a 2-slot table and store at a
- * huge index that lands past the end of the _vmem_heap array; ASan flags the
- * write. A correct `&&` guard would drop the store and run clean.
+ * `t.[i] <- v` compiles to OPstore. The guard used to be `(i>=0)||(i<VSIZE(p))`
+ * -- a tautology that accepted any index. We make a 2-slot table and store at a
+ * huge index that lands past the end of the _vmem_heap array. With the fixed
+ * `&&` guard the store is dropped and the run stays clean; a regression to `||`
+ * makes ASan flag the write.
  * ------------------------------------------------------------------------- */
 static int scen_store(void)
 {
@@ -125,8 +130,8 @@ static int scen_store(void)
 }
 
 /* ---------------------------------------------------------------------------
- * Scenario 3: OPsetstruct out-of-bounds write (same tautology guard).
- * `p.[i] <- v` with i from the stack.
+ * Scenario 3: OPsetstruct out-of-bounds write (fixed #69, same guard).
+ * `p.[i] <- v` with i from the stack; clean with the `&&` guard.
  * ------------------------------------------------------------------------- */
 static int scen_setstruct(void)
 {

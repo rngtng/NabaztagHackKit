@@ -31,29 +31,32 @@ task testvm:simulate SOURCE=build/boot/dumpbc.c
 format). A button push can be simulated by writing one byte to the `button.sock`
 Unix datagram socket under `SOCK_DIR` (default `.`, or `build/` via `test:firmware`).
 
-## Bug reproduction harness (issue #66)
+## Memory-safety regression guard (issue #66)
 
 `bugrepro.c` + `run-bugrepro.sh` build the real firmware VM sources under
-AddressSanitizer and drive the exact buggy code paths for the memory-safety
-issues flagged in issue #66. No bytecode file is needed — each scenario either
-calls a firmware helper directly or hand-assembles a few opcodes and enters the
-real `interpGo()`.
+AddressSanitizer and drive the exact code paths that used to overrun, guarding
+the memory-safety bugs found in issue #66 (now fixed). No bytecode file is
+needed — each scenario either calls a firmware helper directly or hand-assembles
+a few opcodes and enters the real `interpGo()`.
 
 ```
-task test:firmware-bugs      # build + run all scenarios under ASan
+task test:firmware-bugs      # build + run all scenarios under ASan (part of `task verify`)
 ```
 
-Scenarios (selected internally by `bugrepro <name>`):
+Scenarios (selected internally by `bugrepro <name>`), all expected **clean**:
 
-| scenario    | firmware code                       | bug                                              |
+| scenario    | firmware code                       | guarded bug (fixed)                              |
 |-------------|-------------------------------------|--------------------------------------------------|
-| `syscmp`    | `vlog.c` `sysCmp()`                 | length not clamped when one operand overruns → OOB read |
-| `store`     | `vinterp.c` `OPstore`               | `(i>=0)||(i<VSIZE(p))` bounds guard is a tautology → OOB write |
-| `setstruct` | `vinterp.c` `OPsetstruct`           | same tautology guard → OOB write                 |
+| `syscmp`    | `vlog.c` `sysCmp()`                 | #70 — length not clamped when one operand overruns → OOB read |
+| `store`     | `vinterp.c` `OPstore`               | #69 — `(i>=0)||(i<VSIZE(p))` bounds guard was a tautology → OOB write |
+| `setstruct` | `vinterp.c` `OPsetstruct`           | #69 — same tautology guard → OOB write           |
 
-This is a **regression guard**: it exits nonzero (and prints the ASan report
-with the offending `vinterp.c`/`vlog.c` line) while a bug is still present, and
-runs clean once the guard is fixed.
+This is a **regression guard**: every scenario must run clean. If a fix is
+reverted or broken, the matching scenario trips ASan and the run exits nonzero
+(printing the report with the offending `vinterp.c`/`vlog.c` line). Runs as part
+of `task verify`. (#71's `OPstrcmp` over-read isn't ASan-visible — both strings
+live in the shared heap and the over-read hits zeroed padding — so it has no
+scenario here; it's guarded by inspection + the build.)
 
 ## VM internals cheat-sheet (for writing native tests)
 

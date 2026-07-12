@@ -172,10 +172,11 @@ tasks:
           SOURCE: '{{.TEST_OUT}}/merged.mtl'
 
   verify:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV2 all build.'
+    desc: 'Definition of done: run before every commit. Tests + firmware VM regression guard + boot + app-piper + device template + app-sse + firmwareV2 all build.'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: test
+      - task: test:firmware-bugs
       - task: build:boot
       - task: build:app:piper
       - task: build:app:template
@@ -283,7 +284,7 @@ tasks:
           DURATION: '{{.DURATION}}'
 
   test:firmware-bugs:
-    desc: 'Reproduce the flagged firmware VM memory-safety bugs under AddressSanitizer.'
+    desc: 'Regression guard for the fixed firmware VM memory-safety bugs (#69/#70) under AddressSanitizer. Must stay clean.'
     dir: '{{.USER_WORKING_DIR}}'
     cmds:
       - task: testvm:bugs
