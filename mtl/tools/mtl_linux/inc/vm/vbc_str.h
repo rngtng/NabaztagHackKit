@@ -4,8 +4,8 @@
 #ifndef VBC_STR_H_
 # define VBC_STR_H_
 
-// cette table ne sert qu'à l'affichage du bytecode dans la console
-#define MaxOpcode 153
+// cette table ne sert qu'ï¿½ l'affichage du bytecode dans la console
+#define MaxOpcode 154
 const char* strbytecod[MaxOpcode]=
 {
     "exec",
@@ -160,7 +160,8 @@ const char* strbytecod[MaxOpcode]=
     "rfidWrite",
     "i2cRead",
     "i2cWrite",
-    "strright"
+    "strright",
+    "ledfade"
 };
 
 #endif // ! VBC_STR_H_

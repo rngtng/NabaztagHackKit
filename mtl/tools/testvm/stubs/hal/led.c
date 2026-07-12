@@ -7,3 +7,8 @@ void set_led(uint8_t led,uint32_t color)
 {
 
 }
+
+void led_fade(uint8_t led,uint32_t color,uint32_t ms)
+{
+
+}

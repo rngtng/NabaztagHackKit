@@ -157,4 +157,5 @@
 #define OPi2cRead 150
 #define OPi2cWrite 151
 #define OPstrright 152
+#define OPledfade 153
 #endif // ! VBC_H_

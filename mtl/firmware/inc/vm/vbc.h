@@ -157,5 +157,7 @@
 #define OPrfidWrite 149
 #define OPi2cRead 150
 #define OPi2cWrite 151
+// 152 = OPstrright (toolchain only, not implemented in this VM)
+#define OPledfade 153
 
 

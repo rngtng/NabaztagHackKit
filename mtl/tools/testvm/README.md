@@ -97,3 +97,14 @@ returning an error; and the firmware VM (`mtl/firmware/src/vm/`) and the MTL
 simulator VM (`mtl/tools/mtl_linux/src/vm/`) are **twin copies of the same code**
 — a VM bug or fix almost always applies to both, so grep the sibling before
 concluding a divergence is intentional.
+
+
+## Keeping stubs in sync with the HAL
+
+The VM links against the host stubs in `stubs/`, not the real firmware HAL. Any
+time a VM opcode adds a call into a hardware-facing module (`hal/`, `usb/`,
+`utils/`), the corresponding symbol needs a stub here — otherwise the native
+link fails with `undefined reference to <symbol>` even though the firmware build
+is fine. (This is exactly how the `ledfade` opcode broke `test:firmware`: it
+added a `led_fade()` call in `vm/vlog.c` with no matching stub in
+`stubs/hal/led.c`.)

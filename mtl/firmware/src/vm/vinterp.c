@@ -673,6 +673,11 @@ void interpGo()
         sysLed(VALTOINT(VSTACKGET(1)),VALTOINT(VSTACKGET(0)));
         (void)VPULL();
         break;
+      case OPledfade:
+        sysLedFade(VALTOINT(VSTACKGET(2)),VALTOINT(VSTACKGET(1)),VALTOINT(VSTACKGET(0)));
+        (void)VPULL();
+        (void)VPULL();
+        break;
       case OPmotorset:
         sysMotorset(VALTOINT(VSTACKGET(1)),VALTOINT(VSTACKGET(0)));
         (void)VPULL();

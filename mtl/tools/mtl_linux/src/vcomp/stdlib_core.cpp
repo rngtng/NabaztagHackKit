@@ -26,7 +26,7 @@
 
 
 // types de base
-#define NBcore 119 /******** A ACTUALISER! ************/
+#define NBcore 120 /******** A ACTUALISER! ************/
 // mnemonic
 const char* corename[]=
     /* 1*/ {NULL,NULL,NULL,NULL,NULL,"hd","tl","Secholn","Secho","Iecholn",					                             //10
@@ -44,7 +44,8 @@ const char* corename[]=
             /*13*/"reboot","flashFirmware","strcmp","adp2wav","wav2adp","alaw2wav","wav2alaw",	                          //10+8+8+8+8+8+5+10+10+10+8+8+7
             /*14*/"crypt","uncrypt","rfidGetList","rfidRead","rfidWrite",                                                 //10+8+8+8+8+8+5+10+10+10+8+8+7+5
             /*15*/"i2cRead", "i2cWrite",                                                                                  //10+8+8+8+8+8+5+10+10+10+8+8+7+5+2 => 115
-            /*16*/"strright","strcrypt8","loadf","savef"
+            /*16*/"strright","strcrypt8","loadf","savef",
+            /*17*/"ledfade"
            };
 
 // Opcode
@@ -65,6 +66,7 @@ int coreval[]=
             /*14*/OPcrypt,OPuncrypt,OPrfidGetList,OPrfidRead,OPrfidWrite,
             /*15*/OPi2cRead, OPi2cWrite,
             /*16*/OPstrright,OPstrright,OPstrright,OPstrright,
+            /*17*/OPledfade,
            };
 // N args
 int corecode[]=
@@ -83,7 +85,8 @@ int corecode[]=
             /*13*/2,3,2,5,5,6,6,
             /*14*/5,5,0,2,3,
             /*15*/2,3,
-            /*16*/2,3,1,2
+            /*16*/2,3,1,2,
+            /*17*/3
            };
 // Proto
 const char* coretype[]=
@@ -109,7 +112,8 @@ const char* coretype[]=
             /*13*/"fun[I I]I","fun[S I I]I","fun[S S]I","fun[S I S I I]S","fun[S I S I I]S","fun[S I S I I I]S","fun[S I S I I I]S",
             /*14*/"fun[S I I I I]I","fun[S I I I I]I","fun[]list S","fun[S I]S","fun[S I S]I",
             /*15*/"fun[I I]S", "fun[I S I]I",
-            /*16*/"fun[S I]S","fun[S I I][S I]","fun[S]S","fun[S S]I"
+            /*16*/"fun[S I]S","fun[S I I][S I]","fun[S]S","fun[S S]I",
+            /*17*/"fun[I I I]I"
            };
 
 

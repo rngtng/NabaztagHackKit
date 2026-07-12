@@ -418,6 +418,11 @@ void sysLed(int32_t led,int32_t col)
   set_led(led,col);
 }
 
+void sysLedFade(int32_t led,int32_t col,int32_t ms)
+{
+  led_fade(led,col,ms);
+}
+
 void sysMotorset(int32_t motor,int32_t sens)
 {
   motor=1+(motor&1);

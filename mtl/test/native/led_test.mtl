@@ -1,0 +1,12 @@
+let test "led" -> t in
+(
+  assert_equalI 0  (led 0 0xFF0000);
+  assert_equalI 4  (led 4 0)
+);
+
+let test "ledfade" -> t in
+(
+  // returns the led index like led; simulator applies the color instantly
+  assert_equalI 1  (ledfade 1 0x00FF00 200);
+  assert_equalI 2  (ledfade 2 0 0)
+);

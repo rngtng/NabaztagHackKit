@@ -55,6 +55,7 @@ int sysListswitchstr(int p,char* key);
 
 
 void sysLed(int led,int col);
+void sysLedFade(int led,int col,int ms);
 void sysMotorset(int motor,int sens);
 int sysMotorget(int motor);
 int sysButton2();
