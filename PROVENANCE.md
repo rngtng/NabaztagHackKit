@@ -13,7 +13,7 @@ not here.
 | `mtl/tools/preprocessor/` | written for this repo | pcpp-based `#include`/`#ifdef` preprocessor, replacing piper's Perl one. |
 | `mtl/tools/mockserver/` | written for this repo | stdlib-only Python mock HTTP file server (#39); serves an app's `assets/` so the sim fetches `init.forth`/`bc.jsp`/`*.mp3` end-to-end. |
 | `mtl/firmware/` | `nabgcc` fork @ `2894846` (dockerized `ed3972c`) | C bytecode VM + drivers ported to `arm-none-eabi-gcc`; WPA2 branch. The `src/vm/` here is the twin of `mtl_linux`'s - fix both. |
-| `mtl/boot/` | Violet/IAR boot via `firmware_nabaztag`, split into modules | Recovery path (WiFi provisioning + `bc.jsp` fetch). Device TCP/IP/DHCP/DNS/HTTP/WiFi now compose the shared `mtl/lib/net` stack (#47, #103); `ipv4/dns/http/wifi.mtl` are thin wrappers over lib. |
+| `mtl/boot/`, `mtl/bootV2/` | Violet/IAR boot via `firmware_nabaztag`, split into modules | Recovery path (WiFi provisioning + `bc.jsp` fetch). `boot/` is the pristine split; in `bootV2/` the device TCP/IP/DHCP/DNS/HTTP/WiFi compose the shared `mtl/lib/net` stack (#47, #103) — `ipv4/dns/http/wifi.mtl` are thin wrappers over lib. |
 | `mtl/apps/piper/` | `nabaztag-piper` (ServerlessNabaztag fork) @ `3ccbf2d` | The MTL app + Forth interpreter + HTTP/telnet runtime. Most former bulk now extracted into `mtl/lib/`. |
 | `mtl/lib/` | `mtl_library` curated stdlib + extracted from `nabaztag-piper` | Generic building blocks pulled out behind seams (see `mtl/lib/README.md`). Forth interpreter core: Copyright (c) 2025 Andrea Bonomi, **MIT** (per-file headers). |
 | `mtl/docs/` | `mtl_library` + original `NabaztagHackKit` Ruby gem `_docs/` | MTL grammar + opcode reference. |
