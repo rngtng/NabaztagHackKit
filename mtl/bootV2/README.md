@@ -16,8 +16,10 @@ to preserve the hold-button config-portal recovery path (#103). The **simulator
 build** (`SIMU`) keeps boot's own compact resolver/client/state machine over the
 `tcpudp_emu.mtl` shim, so `mtl:bootV2:simulate` is unaffected.
 
-Flash to real hardware with `task mtl:firmware:flash` (JTAG, via the Pi bridge —
-see `../tools/openocd/README.md`). Hardware status: the config-portal (master/AP)
+Flash to real hardware by embedding this bytecode in the firmware image:
+`task mtl:bootV2:build`, then `task mtl:firmware:flash BC_SOURCE=build/bootV2/dumpbc.c`
+(JTAG, via the Pi bridge — see `../tools/openocd/README.md`; without `BC_SOURCE`
+the firmware embeds `mtl/boot`'s bytecode). Hardware status: the config-portal (master/AP)
 path is verified on-device; the **station path can't associate yet** — `netState`
 reports `RT2501_S_BROKEN`, a C-firmware/RT2501 radio issue below the MTL layer
 (#125).

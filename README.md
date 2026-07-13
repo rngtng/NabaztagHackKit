@@ -40,7 +40,8 @@ layer is self-contained and relocatable: `task mtl:lib:test` here ==
 docs/            Shared hardware notes: teardown, C-firmware architecture, JTAG
 mtl/             Track A - C-VM + MTL + Forth
   firmware/        C bytecode VM, HAL, USB, audio, WPA2 (bare-metal ARM7TDMI)
-  boot/  bootV2/   Boot/provisioning image (WiFi setup + OTA); bootV2 = tag-V2 board
+  boot/  bootV2/   Boot/provisioning image (WiFi setup + OTA); boot = pristine
+                   Violet split, bootV2 = the same boot converged onto lib/net
   apps/            MTL apps (piper, sse, template, ping)
   lib/             Reusable MTL standard library
   test/            MTL unit tests (lib/ coverage)
