@@ -181,7 +181,7 @@ $(OBJDIR)/%.o : %.s
 # compiler-generated dependency info
 -include $(OBJS:.o=.d)
 
-bin/%.elf : $(OBJS)
+bin/%.elf : $(OBJS) $(LDSCRIPT)
 	@test -d $(@D) || mkdir -pm 775 $(@D)
 	$(CC) $(LDFLAGS) -o $@ $(OBJS) $(LIBS)
 

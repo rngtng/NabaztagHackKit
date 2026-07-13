@@ -25,22 +25,31 @@ SECTIONS
     KEEP(*(.startup.*))          /* reset/clock/EMC bring-up - keep under --gc-sections */
     *(.text.*)                   /* remaining code */
     *(.glue_7t) *(.glue_7)
+    . = ALIGN(4);                /* pad section SIZE to a word (see note below) */
   } >IntROM
-  . = ALIGN(4);
 
   /* .rodata section which is used for read-only data (constants) */
   .rodata :
   {
     *(.rodata.*)
+    . = ALIGN(4);
   } >IntROM
-  . = ALIGN(4);
 
   /* Bytecode */
   .bytecode :
   {
     *(.bytecode.*)
+    . = ALIGN(4);
   } >IntROM
   _etext = . ;
+
+  /* NOTE: the ALIGN(4) above lives INSIDE each flash section (not after it) so
+   * the padding bytes are actually emitted, making every section's SIZE a
+   * multiple of 4. The ml67q40xx OpenOCD flash driver's block-write path
+   * programs `count/4` words and silently DROPS a trailing partial word, so a
+   * loadable image whose byte length is not a multiple of 4 loses its last
+   * 1-3 bytes on flash (compare-sections then reports MIS-MATCHED). Word-
+   * padding the sections sidesteps that driver bug without an OpenOCD rebuild. */
   PROVIDE (etext = .);
 
   /* .data section which is used for initialized data */
