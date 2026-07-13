@@ -1,23 +1,15 @@
 /**
  * @file blink.c
- * @brief M1 bring-up app (issue #89): the first flash-and-run binary.
+ * @brief Blink the nose LED (LED_RGB_5) red forever - the first binary that
+ *        touches a peripheral, validating startup + linker + toolchain plus the
+ *        SPI + LED driver copied from src/firmware.
  *
- * Blinks the nose LED (LED_RGB_5) red on/off forever. It is the first binary that touches
- * a peripheral, so it validates the startup + linker + toolchain path proven by
- * M0 (hello.c) plus the SPI + LED driver copied from src/firmware - before any
- * Lua lands. On real hardware (confirmed over JTAG after M2), a steadily
- * blinking red nose means the whole bring-up chain works end to end.
+ * Delay is a calibrated software busy-loop, NOT the timer-based DelayMs: there
+ * is no interrupt controller or timer here yet, and it is the only delay the
+ * instruction-level simulator can observe (it models no timers). LOOPS_PER_MS
+ * is a first estimate for the 33 MHz core; tune on hardware if too fast/slow.
  *
- * Delay: a calibrated software busy-loop, NOT the timer-based DelayMs from
- * src/firmware/src/utils/delay.c. That routine spins on counter_timer, which is
- * only advanced by the System Timer IRQ - and M1 brings up neither the interrupt
- * controller nor a timer (that arrives with a later milestone). A busy-loop
- * keeps this first binary self-contained (no IRQ subsystem to get wrong) and is
- * the only delay the instruction-level simulator can observe, since it models no
- * timers (see sim/simulate.py). LOOPS_PER_MS is an untested first estimate for
- * the 33 MHz core; tune it on hardware in M2 if the blink is too fast/slow.
- *
- * I/O bring-up here is the LED-only subset of src/firmware's init_io() for this
+ * I/O bring-up is the LED-only subset of src/firmware's init_io() for this
  * board (PCB_RELEASE == LLC2_4c): the CS_LED and MODE_LED lines are plain GPIO
  * and must be driven as outputs before the LED driver can clock the TLC594x.
  * init_spi() itself selects the SPI0/SPI1 pin functions.
@@ -29,7 +21,7 @@
 #include "hal/led.h"
 
 /* Approx. inner-loop iterations per millisecond on the 33 MHz ARM7TDMI.
- * First estimate only - calibrate against a stopwatch on hardware (M2). */
+ * First estimate only - calibrate against a stopwatch on hardware. */
 #define LOOPS_PER_MS 3000u
 #define BLINK_MS     250u
 

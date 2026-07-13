@@ -1,22 +1,16 @@
 /**
  * @file rfidprobe.c
- * @brief M9 probe (issue #117): confirm the I2C bus works and the CRX14 RFID
- *        coupler responds before trusting the full nab.rfid() binding.
+ * @brief Confirm the I2C bus works and the CRX14 RFID coupler responds before
+ *        trusting the full nab.rfid() binding. Bring up I2C, then do the same
+ *        parameter-register write(0x10)/read-back round trip init_rfid() does
+ *        (turn the RF field on and read it back) - a live coupler answers 0x10,
+ *        a floating/dead bus does not.
  *
- * The board teardown (docs/hardware-dissection.md) photo- and text-confirms a
- * "STMicro CR14 contactless coupler... I2C interface" - so unlike the M6 AT45
- * flash phantom (#94, no chip on this board revision), the peripheral's
- * existence is already documented. Per the CLAUDE.md peripheral-exists rule we
- * still prove it responds over the bus, since a populated I2C header is not
- * proof the chip answers: bring up I2C, then do the same parameter-register
- * write(0x10)/read-back round trip init_rfid() does (turn the RF field on and
- * read it back) - a live coupler answers 0x10, a floating/dead bus does not.
+ * Exercises hal/i2c.c (the generic bus primitive) directly rather than the
+ * higher hal/rfid.c layer, so a failure localises to "no I2C ACK" vs "I2C fine,
+ * CRX14 silent" instead of blaming the whole driver stack.
  *
- * This exercises hal/i2c.c (the generic bus primitive) directly rather than
- * the higher hal/rfid.c layer, so a failure localises to "no I2C ACK" vs
- * "I2C fine, CRX14 silent" instead of blaming the whole driver stack.
- *
- * Output is ARM semihosting (the M3 #91 console), so run it debugger-attached:
+ * Output is ARM semihosting, so run it debugger-attached:
  *   task repl:firmwareV2:hw APP=rfidprobe
  */
 #include "ml674061.h"
@@ -25,7 +19,7 @@
 #include "hal/i2c.h"
 #include "hal/rfid.h"   /* CRX14_ADDR / CRX14_PARAMETER_REGISTER only */
 
-/* ---- semihosting console (M3 #91 path) ----------------------------------- */
+/* ---- semihosting console ------------------------------------------------- */
 #define SYS_WRITEC 0x03
 
 static inline int semihost(int op, void *arg)
@@ -97,7 +91,7 @@ int main(void)
 
   sh_puts("<<FV_DONE>>\n");   /* early-exit signal for flash.py */
   for (;;) {
-    /* idle; the report above is the whole probe */
+    /* idle */
   }
   return 0;
 }

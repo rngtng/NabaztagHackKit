@@ -1,8 +1,8 @@
 // Boot DNS resolver.
 //
-// Device build (#47): converged onto lib/net/dns.mtl (the boot copy this
-// replaced was a near-verbatim ancestor of it). The lib client keys off a
-// netdnslist and runs a periodic task; boot's historical names map on top.
+// Device build: converged onto lib/net/dns.mtl (the boot copy this replaced
+// was a near-verbatim ancestor of it). The lib client keys off a netdnslist
+// and runs a periodic task; boot's historical names map on top.
 //
 // Simulator build: keeps boot's original single-server resolver over the
 // tcpudp_emu UDP shim (simulate:boot is unaffected by the device convergence).

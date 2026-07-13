@@ -1,16 +1,9 @@
 /**
  * @file gpioprobe.c
- * @brief GPIO-scan probe (issue #123): find the wheel's end-of-travel click
- *        switch and check whether the audio-jack insert changes any GPIO.
- *
- * Two items from #123 need a *human with JTAG/Pi access* wiggling the
- * hardware while watching the console - this session had neither, so per the
- * CLAUDE.md peripheral-exists rule (the M6 AT45 phantom, #94) no driver is
- * built for either without a confirmed signal first. This probe is that
- * confirming step, in the same spirit as audioprobe.c (M8) and ledmap.c (M5):
- * it dumps every readable GPIO input port and reports which bytes changed, so
- * turning the wheel to its end-of-travel click, or inserting/removing a jack,
- * shows up as a diff in the console log.
+ * @brief GPIO-scan probe: find the wheel's end-of-travel click switch and check
+ *        whether the audio-jack insert changes any GPIO. Dumps every readable
+ *        GPIO input port and reports which bytes changed, so turning the wheel
+ *        to its click, or inserting/removing a jack, shows up as a diff.
  *
  * Run it debugger-attached and watch the transcript while operating the
  * rabbit by hand:
@@ -23,7 +16,7 @@
 #include "ml674061.h"
 #include "common.h"
 
-/* ---- semihosting console (M3 #91 path) ------------------------------------ */
+/* ---- semihosting console ------------------------------------------------- */
 #define SYS_WRITEC 0x03
 
 static inline int semihost(int op, void *arg)
@@ -94,7 +87,7 @@ int main(void)
       prev[i] = cur;
     }
     first = 0;
-    busy_delay(1000000UL); /* ~poll rate; no timer subsystem, see CLAUDE.md */
+    busy_delay(1000000UL); /* ~poll rate; no timer subsystem */
   }
   return 0;
 }

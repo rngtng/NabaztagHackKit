@@ -1,14 +1,12 @@
 /**
  * @file ledmap.c
- * @brief LED-map probe (M5 prep, issue #93): light every LED_RGB_* a distinct
- *        colour at once so a single flash reveals which physical LED each raw
- *        channel index drives.
- *
- * blink.c (M1) drove LED_RGB_1 and lit a *belly* LED, not the "nose" its
- * comment claimed - so the raw LED_RGB_n -> physical map (inherited from
- * src/firmware) is unverified for this board (LLC2_4c). set_led_rgb accumulates
- * into led_intensity[] (each call masks only its own LED's bytes), so setting
- * all five in a row holds them lit simultaneously. Read the map off the board:
+ * @brief LED-map probe: light every LED_RGB_* a distinct colour at once so a
+ *        single flash reveals which physical LED each raw channel index drives
+ *        (the raw LED_RGB_n -> physical map inherited from src/firmware is
+ *        unverified for this board, LLC2_4c). set_led_rgb accumulates into
+ *        led_intensity[] (each call masks only its own LED's bytes), so setting
+ *        all five in a row holds them lit simultaneously. Read the map off the
+ *        board:
  *
  *   LED_RGB_1 = RED    LED_RGB_2 = GREEN   LED_RGB_3 = BLUE
  *   LED_RGB_4 = WHITE  LED_RGB_5 = YELLOW (RED+GREEN)

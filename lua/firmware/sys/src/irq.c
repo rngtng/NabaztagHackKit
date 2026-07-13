@@ -26,15 +26,13 @@ void null_handler(void)
 }
 
 /**
- * @brief Enable/disable IRQ (M9, #117: needed by hal/i2c.c's bus-transaction
- * critical sections). ARMv4T Thumb code cannot touch CPSR's I-bit directly
- * (no CPSIE/CPSID until ARMv6). Implemented as ARM-mode functions that
- * manipulate CPSR directly — avoids the SWI vector (0x8), which conflicts
- * with the semihosting HW breakpoint used by the JTAG console (any SWI
- * through 0x8 fires the BP; OpenOCD halts on non-semihosting SWI ops).
- * Nothing in firmwareV2 unmasks a real IRQ source yet, so today these are
- * inert; they matter once a timer/UART IRQ lands and could preempt an I2C
- * transfer.
+ * @brief Enable/disable IRQ (needed by hal/i2c.c's bus-transaction critical
+ * sections). ARMv4T Thumb code cannot touch CPSR's I-bit directly (no
+ * CPSIE/CPSID until ARMv6). Implemented as ARM-mode functions that manipulate
+ * CPSR directly - avoids the SWI vector (0x8), which conflicts with the
+ * semihosting HW breakpoint used by the JTAG console (any SWI through 0x8 fires
+ * the BP; OpenOCD halts on non-semihosting SWI ops). These matter once a
+ * timer/UART IRQ lands and could preempt an I2C transfer.
  */
 __attribute__((target("arm")))
 void __disable_interrupt(void)

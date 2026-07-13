@@ -1,6 +1,6 @@
 /**
  * @file audio.h
- * @brief VLSI VS1003B audio codec over SPI0 (M8, #116).
+ * @brief VLSI VS1003B audio codec over SPI0.
  *
  * Trimmed from src/firmware/src/hal/audio.c (Violet / RedoX GCC port) for the
  * firmwareV2 Lua runtime: chip bring-up, SCI register access, volume, amplifier,
@@ -45,12 +45,11 @@ void vlsi_ampli(uint8_t on);
 void vlsi_sine(uint8_t freq_n, uint8_t on);
 
 /* Stream a buffer (e.g. a WAV/MP3/ADPCM-WAV file) over SDI for the decoder to
- * play - the VS1003B decodes MP3/WMA/WAV/MIDI (docs/hardware-dissection.md), so
- * unlike vlsi_sine this is real decoded audio and SCI_VOLUME actually
- * attenuates it. Blocking: soft-resets the decoder, then waits on DREQ per byte
- * (bounded) like vlsi_sine's control feed, then flushes the decoder's tail with
- * zero endFillBytes before returning. Turns the amplifier on/off around
- * playback. Issue #123 follow-up to M8 (#116). */
+ * play - the VS1003B decodes MP3/WMA/WAV/MIDI, so unlike vlsi_sine this is real
+ * decoded audio and SCI_VOLUME actually attenuates it. Blocking: soft-resets
+ * the decoder, waits on DREQ per byte (bounded) like vlsi_sine's control feed,
+ * then flushes the decoder's tail with zero endFillBytes before returning.
+ * Turns the amplifier on/off around playback. */
 void vlsi_play(const uint8_t *data, uint32_t len);
 
 #endif

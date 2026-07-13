@@ -1,6 +1,6 @@
 /**
  * @file adc.c
- * @brief Analog-to-digital access for the back wheel (issue #123).
+ * @brief Analog-to-digital access for the back wheel.
  *
  * Trimmed port of the ADC bring-up in src/firmware/src/main.c (`ADCON0`/
  * `ADCON1`/`ADCON2` init, PD2 -> ADC2 pin mux) plus the register sequence in

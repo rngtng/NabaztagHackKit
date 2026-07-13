@@ -1,34 +1,28 @@
 /**
  * @file earprobe.c
- * @brief M10 probe (issue #118): confirm the ear motors + encoders respond
- *        before trusting the Lua nab.ear_* bindings.
- *
- * Unlike M6's AT45 flash (a chip the board never had) or M8's VS1003 (needing
- * an SCI round-trip to prove aliveness), the ear motors are a known-populated
- * part - the rabbit visibly has two ears. The cheap disqualifying test here is
- * simpler: run each motor briefly and check whether its FTM0/FTM1 pulse-capture
- * counter (get_motor_position) actually moves.
+ * @brief Confirm the ear motors + encoders respond before trusting the Lua
+ *        nab.ear_* bindings. Cheap disqualifying test: run each motor briefly
+ *        and check whether its FTM0/FTM1 pulse-capture counter
+ *        (get_motor_position) actually moves.
  *
  *   task flash:firmwareV2 APP=earprobe
  *   task repl:firmwareV2:hw APP=earprobe
  *
- * Output is ARM semihosting (the M3 #91 console). No timer subsystem exists
- * (see README), so "briefly" is a CPU busy-loop, same caveat as nab.beep's ms.
+ * Output is ARM semihosting. No timer subsystem exists, so "briefly" is a CPU
+ * busy-loop, same caveat as nab.beep's ms.
  *
- * Issue #179: the original probe (probe_motor, still run below) only ever
- * called run_motor() at speed=255 - the "hardware-verified" claim in
- * PROVENANCE.md/README.md never actually covered the `speed` parameter itself.
- * A user hitting nab.ear_move(n, 100, 'forward') got a motor hum with no
- * movement. sweep_motor() below drives each motor across a range of partial
- * speeds and reports the encoder delta per step, to find whether/where there
- * is a minimum effective duty cycle for these gearmotors.
+ * probe_motor only ever runs at speed=255, so it never covered the `speed`
+ * parameter itself (a user hitting nab.ear_move(n, 100, 'forward') got a motor
+ * hum with no movement). sweep_motor() drives each motor across partial speeds
+ * and reports the encoder delta per step, to find whether/where there is a
+ * minimum effective duty cycle for these gearmotors.
  */
 #include "ml674061.h"
 #include "common.h"
 
 #include "hal/motor.h"
 
-/* ---- semihosting console (M3 #91 path) ----------------------------------- */
+/* ---- semihosting console ------------------------------------------------- */
 #define SYS_WRITEC 0x03
 
 static inline int semihost(int op, void *arg)
@@ -197,7 +191,7 @@ int main(void)
   sh_puts("motor1 pos="); sh_puthex16(get_motor_position(1)); sh_puts("\n");
   sh_puts("motor2 pos="); sh_puthex16(get_motor_position(2)); sh_puts("\n");
 
-  /* --- #179: partial-speed sweep, never exercised before --- */
+  /* --- partial-speed sweep --- */
   sweep_motor(1);
   sweep_motor(2);
 

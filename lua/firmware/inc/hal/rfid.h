@@ -1,16 +1,16 @@
 /**
  * @file rfid.h
- * @brief STMicro CRX14/CR14 RFID coupler over I2C (M9, #117).
+ * @brief STMicro CRX14/CR14 RFID coupler over I2C.
  *
  * Trimmed port of src/firmware/src/hal/rfid.c's API (Violet / RedoX GCC port):
  * keeps CRX14 bring-up, the anti-collision initiate/slot-marker/select dance,
  * and UID read. Drops the SRIX EEPROM read/write path (write_eeprom_rfid,
  * read_eeprom_rfid, and the UID->CHIP_ID re-select helpers built on them) -
- * out of scope for this milestone (UID read only); see PROVENANCE.md.
+ * UID read only.
  *
  * Coupler: STMicro CR14 on I2C, confirmed present in the teardown
- * (docs/hardware-dissection.md - "STMicro CR14 contactless coupler... I2C
- * interface"). Tags are ST SRIX-family (ISO 14443 type B-ish anti-collision).
+ * (docs/hardware-dissection.md). Tags are ST SRIX-family (ISO 14443 type
+ * B-ish anti-collision).
  */
 #ifndef _RFID_H_
 #define _RFID_H_

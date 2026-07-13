@@ -1,12 +1,12 @@
 /**
  * @file console.c
- * @brief M3 semihosting-console probe (issue #91): prove ARM semihosting I/O
- *        works on real hardware under OpenOCD, not only in the Unicorn sim.
+ * @brief Semihosting-console probe: prove ARM semihosting I/O works on real
+ *        hardware under OpenOCD, not only in the Unicorn sim.
  *
- * Issues the same Thumb `svc 0xAB` semihosting call that lua.c (M4) uses for its
- * REPL console, via SYS_WRITEC (0x03) - one svc per char, the exact path newlib
- * _write() and hence Lua print() take on hardware. Each char is a separate SWI
- * trap + service + resume, so a clean run also proves OpenOCD's post-semihosting
+ * Issues the same Thumb `svc 0xAB` semihosting call lua.c uses for its REPL
+ * console, via SYS_WRITEC (0x03) - one svc per char, the exact path newlib
+ * _write() and hence Lua print() take. Each char is a separate SWI trap +
+ * service + resume, so a clean run also proves OpenOCD's post-semihosting
  * resume path is stable on this ARM7TDMI (EmbeddedICE v1, no vector catch).
  *
  * Serviced by OpenOCD when attached over JTAG with `arm semihosting enable` and

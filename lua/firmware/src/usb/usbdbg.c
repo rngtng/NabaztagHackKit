@@ -1,10 +1,10 @@
 /**
  * @file usbdbg.c
- * @brief Debug console for the vendored usb/ sources (M11a, #143).
+ * @brief Debug console for the vendored usb/ sources.
  *
  * dbg_buffer is V1's shared sprintf target (referenced only from DBG_* paths;
  * --gc-sections drops it from non-debug images). dbg_puts routes to the JTAG
- * semihosting console - same SYS_WRITEC path as the probe apps (M3 #91).
+ * semihosting console via the SYS_WRITEC path.
  */
 #include "utils/debug.h"
 

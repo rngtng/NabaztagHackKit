@@ -27,10 +27,10 @@
 #define RGB_WHITE	0x007F7F7F
 
 // Led number definitions - raw TLC5922 channel index in bits 31->24.
-// Physical positions verified on hardware (LLC2_4c, issue #93) with the ledmap
-// probe: 1-4 are the four belly "directional cones", 5 is the nose. This is the
-// RAW channel map; set_led() applies a separate logical remap via convled[] in
-// led.c (its logical numbering is unverified - revisit for the M5 LED binding).
+// Physical positions verified on hardware (LLC2_4c) with the ledmap probe:
+// 1-4 are the four belly "directional cones", 5 is the nose. This is the RAW
+// channel map; set_led() applies a separate logical remap via convled[] in
+// led.c (its logical numbering is unverified).
 #define LED_RGB_1		0x01000000	/* belly (upper) */
 #define LED_RGB_2		0x02000000	/* belly bottom  */
 #define LED_RGB_3		0x03000000	/* belly left    */

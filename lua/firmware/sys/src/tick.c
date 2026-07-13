@@ -1,13 +1,12 @@
 /**
  * @file tick.c
- * @brief 1 ms system tick (M11a, #143) - firmwareV2's first live IRQ.
+ * @brief 1 ms system tick - firmwareV2's first live IRQ.
  *
  * The USB host stack needs V1's 1 ms counter_timer (URB timeouts, DelayMs in
  * enumeration) - mirrors src/firmware main.c's timer setup: system timer
  * reload 0xF830 = 1 ms @ 32 MHz, ISR on INT_SYSTEM_TIMER (0). init.s already
  * starts the timer (10 ms, ring-osc path); init_tick() reprograms it to 1 ms
- * and unmasks the interrupt. Until now nothing on firmwareV2 unmasked a real
- * IRQ source (see irq.c) - verify tick liveness on hardware before trusting
+ * and unmasks the interrupt. Verify tick liveness on hardware before trusting
  * anything built on it.
  */
 #include "ml674061.h"

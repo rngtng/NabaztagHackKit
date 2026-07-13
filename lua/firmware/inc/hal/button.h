@@ -1,6 +1,6 @@
 /**
  * @file button.h
- * @brief Head push-button low-level access (M5, issue #93).
+ * @brief Head push-button low-level access.
  */
 #ifndef _BUTTON_H_
 #define _BUTTON_H_

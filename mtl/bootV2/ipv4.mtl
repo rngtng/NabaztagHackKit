@@ -1,9 +1,9 @@
-// Boot IPv4/ARP/TCP/UDP + DHCP — converged onto the shared lib/net stack (#47).
+// Boot IPv4/ARP/TCP/UDP + DHCP - converged onto the shared lib/net stack.
 //
 // This file used to be a full duplicate of lib/net/ipv4/* + the DHCP client.
 // It now composes the lib/net implementation directly (the same stack the
-// apps run and that was device-proven in #46) and exposes boot's historical
-// call names as thin aliases so the rest of src/boot is untouched.
+// apps run) and exposes boot's historical call names as thin aliases so the
+// rest of src/boot is untouched.
 //
 // Included only on the device build; the simulator uses tcpudp_emu.mtl.
 #include "lib/protos/net_protos.mtl"

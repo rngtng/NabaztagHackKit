@@ -1,18 +1,13 @@
 /**
  * @file audioprobe.c
- * @brief M8 probe (issue #116): confirm the VLSI VS1003B audio codec is alive
- *        on SPI0 before porting the full driver + Lua bindings.
- *
- * The board teardown (docs/hardware-dissection.md) photo-confirms a VS1003B, but
- * per the CLAUDE.md peripheral-exists rule (learned from the M6 AT45 phantom,
- * #94) we prove the chip actually responds over the bus before building on it.
- * This is the cheapest disqualifying test: reset the chip, read SCI_STATUS (its
- * version nibble should be 3 for a VS1003), then write VOLUME and read it back -
- * a write/read-back round-trip is proof the chip is present, not just floating
- * lines. A DREQ timeout keeps a missing/dead chip from hanging the probe.
+ * @brief Confirm the VLSI VS1003B audio codec is alive on SPI0 before building
+ *        on it. Cheapest disqualifying test: reset the chip, read SCI_STATUS
+ *        (version nibble should be 3 for a VS1003), then write VOLUME and read
+ *        it back - a round-trip proves the chip is present, not just floating
+ *        lines. A DREQ timeout keeps a missing/dead chip from hanging the probe.
  *
  * Audio is on SPI0 (WriteSPI/ReadSPI); the LEDs are on SPI1 - separate buses.
- * Output is ARM semihosting (the M3 #91 console), so run it debugger-attached:
+ * Output is ARM semihosting, so run it debugger-attached:
  *   task repl:firmwareV2:hw APP=audioprobe
  */
 #include "ml674061.h"
@@ -20,7 +15,7 @@
 
 #include "hal/spi.h"
 
-/* ---- semihosting console (M3 #91 path) ----------------------------------- */
+/* ---- semihosting console ------------------------------------------------- */
 #define SYS_WRITEC 0x03
 
 static inline int semihost(int op, void *arg)
@@ -144,7 +139,7 @@ int main(void)
 
   sh_puts("<<FV_DONE>>\n");   /* early-exit signal for flash.py */
   for (;;) {
-    /* idle; the report above is the whole probe */
+    /* idle */
   }
   return 0;
 }

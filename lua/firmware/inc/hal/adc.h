@@ -1,12 +1,11 @@
 /**
  * @file adc.h
- * @brief Analog-to-digital access for the back wheel (issue #123).
+ * @brief Analog-to-digital access for the back wheel.
  *
  * The wheel is wired to ADC channel 2 (PD2), per src/firmware/src/main.c's
- * bring-up (`ADCON1_CH2` + the PD2 -> ADC2 pin mux) and the firmwareV2 README's
- * hardware notes recorded during M8 (#116) bring-up. Ported register sequence
- * only - the wheel's *meaning* (a volume pot) is still to be hardware-confirmed
- * by whoever has JTAG/Pi access; see nab.wheel() in src/app/lua.c.
+ * bring-up (`ADCON1_CH2` + the PD2 -> ADC2 pin mux). Ported register sequence
+ * only - the wheel's *meaning* (a volume pot) is still to be hardware-confirmed;
+ * see nab.wheel() in src/app/lua.c.
  */
 #ifndef _ADC_H_
 #define _ADC_H_
