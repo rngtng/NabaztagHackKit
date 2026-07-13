@@ -6,9 +6,12 @@ origins in `PROVENANCE.md`. (Global `~/.claude/CLAUDE.md` rules still apply — 
 `fd`/`rg`, `uv`, prefer Taskfile, commit per change, code minimalism.)
 
 ## What this is
-A layered SDK for the Nabaztag: **C VM firmware → MTL toolchain → MTL app → Forth scripts**.
-This repo is the rebooted **NabaztagHackKit** on branch **`sdk** (upstream
-`rngtng/NabaztagHackKit`; the user *is* rngtng — free to rename/restructure their repos).
+An SDK for the Nabaztag, split into two independent firmware tracks (see #188):
+- **`mtl/`** — the classic stack: **C VM firmware → MTL toolchain → MTL app → Forth scripts**.
+- **`lua/`** — a re-architecture: bare-metal PUC-Rio Lua 5.4 replacing the VM.
+
+Board revision (`LLC2_2`/`LLC2_3`/`LLC2_4c`) is a separate axis inside the `mtl` track.
+Upstream `rngtng/NabaztagHackKit`; the user *is* rngtng — free to rename/restructure their repos.
 
 **Scope:** toolchain only (build / simulate / test / flash-upload). **Exclude** high-level
 apps — Home Assistant, weather, TTS. Tie-break when unsure: **prefer `nabaztag-piper`**.
@@ -31,37 +34,32 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - The MTL image is **amd64** (32-bit tools) → emulated on Apple Silicon. `cc1`
   **occasionally segfaults** ("internal compiler error") — it's non-deterministic, **re-run**.
 
-## Openocd / hardware flashing (firmwareV2)
+## Openocd / hardware flashing (lua track)
 JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
 **The full workflow — flash/REPL tasks, peripheral-existence check, semihosting
 breakpoint gotcha, run serialisation, `<<FV_DONE>>` marker, hardware-debugging
-discipline — now lives in the `hw-flash-repl` skill.** Invoke it for any
-JTAG/flash/console task instead of re-deriving from here; full recipe still in
-`tools/openocd/README.md`, board teardown in `docs/hardware-dissection.md`.
+discipline — lives in the `hw-flash-repl` skill.** Invoke it for any JTAG/flash/console
+task; full recipe in `lua/tools/openocd/README.md`, teardown in `docs/hardware-dissection.md`.
 
-## Firmware design principles (firmwareV2)
-- **Five binding design principles (#183) live in [`src/firmwareV2/README.md`](src/firmwareV2/README.md#design-principles):**
+## Firmware design principles (lua track)
+- **Five binding design principles (#183) live in [`lua/firmware/README.md`](lua/firmware/README.md#design-principles):**
   (1) layered API — HAL in C, behaviour in Lua, only thin `nab.*` bindings across the seam;
   (2) cooperative event-driven core — never Lua in an ISR; (3) explicit flash/heap +
   error budget — every chunk under `lua_pcall`; (4) partial-update-friendly script slots
-  (M11 remote loading, not reflash); (5) sandbox by construction — trimmed stdlib, only the
-  `nab` HAL API. **Honour them on new firmwareV2 work; a change that breaks one needs a stated reason.**
+  (remote loading, not reflash); (5) sandbox by construction — trimmed stdlib, only the
+  `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
-## Firmware flash budget (firmwareV2)
-- **lua.elf flash budget: ~24.6 KB free of 124 KB after M9+M10 (101,800 B used); was ~30 KB after M8 (#116); ~48 B before M7 (#106).**
-  M7 (incl. M7.5 #114) moved Lua's number I/O + console fully off newlib - the
-  `luai_*`/printf helpers in `src/app/lua.c` + macro overrides in `lua/luaconf.h`
-  Local-config block; the ~10 KB of newlib still linked is soft-float/memcpy/malloc,
-  essentially irreducible. Float *printing* stays approximate (integer part + `.0`;
-  whole floats correct) pending a real dtoa. **The end-game is measured + decided in #128**:
-  wifi C (M11) costs ~26 KB and a resident Lua boot ~12 KB compressed, so the final
-  wifi image is **parser-less by design** (−19 KB) plus a compressed bootstrap - the
-  rabbit only handles `luac` bytecode; the REPL compiles each line off-device with a
-  `LUA_32BITS`-matched host `luac` (flash.py / dev server), and today's `APP=lua`
-  stays the dev image - `-Os` (−1.3 KB) and Lua 5.5 (#104) are NOT levers. When
-  adding bindings, pick a real lever (see #128), not error-string shaving.
-  `task firmwareV2:build APP=lua` fails loudly on overflow.
+## Firmware flash budget (lua track)
+- **`lua.elf` budget: ~24.6 KB free of 124 KB internal flash (101,800 B used).** Lua's
+  number I/O + console are off newlib (`luai_*`/printf helpers in
+  `lua/firmware/src/app/lua.c` + macro overrides in `lua/firmware/lua/luaconf.h`); the
+  ~10 KB of newlib still linked (soft-float/memcpy/malloc) is essentially irreducible.
+  Float *printing* stays approximate (integer part + `.0`) pending a real dtoa.
+  **End-game decided in #128:** the final wifi image is **parser-less by design** - the
+  rabbit runs only `luac` bytecode; the REPL compiles each line off-device with a
+  `LUA_32BITS`-matched host `luac`. `-Os` and Lua 5.5 are NOT levers - pick a real lever
+  (see #128), not error-string shaving. `task lua:firmware:build APP=lua` fails loudly on overflow.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
@@ -69,17 +67,19 @@ JTAG/flash/console task instead of re-deriving from here; full recipe still in
   Claude Code remote sandbox only — bakes the egress proxy's CA into the
   `python:3.12-slim`/`debian:bookworm-slim` base images so `apt-get`/`pip` inside
   our Dockerfiles can reach the network. No-ops everywhere else.
-- **The MTL build/simulate tasks (`<layer>:build` / `<layer>:simulate`) and `task lib:test` always exit 0** — the MTL compiler and simulator
-  report fatal errors on stderr but never fail the process. Both are wrapped to
-  scan their own output for `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error`
-  and turn that into a real nonzero exit — trust the exit code, don't grep manually.
-- **`task verify` is the definition of done. Run it before every commit related to firmware or mtl V1** — it
-  chains `lib:test` + `boot:build` + `app-piper:build` + `app-template:build` +
-  `app-sse:build` + `firmware:test:bugs` + `firmware:test:crypto` + `firmwareV2:build`. All must be green;
-- **`task verifyV2` is the definition of done. Run it before every commit related to firmwareV2 or lua** — it
-  chains `firmwareV2:build`. All must be green;
-  a change that only passes `task lib:test` can still break a build.
-- For simulator e2e checks: `task <app>:simulate`/`boot:simulate` in the background,
+- **The MTL build/simulate tasks (`mtl:<layer>:build`/`:simulate`) and `task mtl:lib:test` always
+  exit 0** — the MTL compiler and simulator report fatal errors on stderr but never fail the
+  process. Both are wrapped to scan their own output for
+  `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error` and turn that into a real nonzero
+  exit — trust the exit code, don't grep manually.
+- **`task mtl:verify` is the definition of done for the mtl track. Run before every mtl commit** —
+  chains `mtl:lib:test` + `mtl:boot:build` + `mtl:app-{piper,template,sse}:build` +
+  `mtl:firmware:test:bugs` + `mtl:firmware:test:crypto`. All must be green.
+- **`task lua:verify` (== root `task verifyV2`) is the definition of done for the lua track. Run
+  before every lua commit** — chains `lua:firmware:build`.
+- **`task verify` runs both tracks** (`mtl:verify` + `lua:verify`). A change that only passes
+  `mtl:lib:test` can still break a build.
+- For simulator e2e checks: `task mtl:<app>:simulate`/`mtl:boot:simulate` in the background,
   then `curl --noproxy localhost -m 5 localhost:8080/...` (the session's HTTPS
   proxy otherwise intercepts plain `curl localhost`).
 
@@ -102,7 +102,7 @@ short `README.md`. Verify by actually running the task in Docker — not just "i
 
 ## Testing
 Harness architecture, stub-ordering rationale, and "how to add a test for a new
-lib module" live in `test/README.md` — read it before touching `test/lib/_test.mtl`.
+lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/lib/_test.mtl`.
 
 ## MTL language gotchas
 
@@ -112,17 +112,17 @@ simulator heap OOM signatures, etc.) now live in the **`mtl-lang` skill**.
 Invoke it when editing an `.mtl` file or chasing a compiler error instead of
 re-deriving from here.
 
-## Firmware C VM gotchas
+## Firmware C VM gotchas (mtl track)
 - **The firmware VM and the `mtl_linux` simulator VM are twin copies of the same
-  C** (`src/firmware/src/vm/` vs `tools/mtl_linux/src/vm/`). A VM bug or fix almost
+  C** (`mtl/firmware/src/vm/` vs `mtl/tools/mtl_linux/src/vm/`). A VM bug or fix almost
   always applies to both — grep the sibling before concluding a divergence is
   intentional, and patch both when fixing.
 - **`_bytecode` aliases `_vmem_heap`** (bytecode + heap + downward value stack share
   one `int32_t[VMEM_LENGTH]` array). Stack words are tagged: low bit = pointer,
   else int; a "pointer" is a *word index*, not an address. GC **reboots** on OOM.
-- **To exercise the real VM natively**, use `tools/testvm` — build under
-  AddressSanitizer via `task firmware:test:bugs`, an ASan **regression guard**
-  for the fixed memory-safety bugs (#69/#70) that runs as part of `task verify`;
+- **To exercise the real VM natively**, use `mtl/tools/testvm` — build under
+  AddressSanitizer via `task mtl:firmware:test:bugs`, an ASan **regression guard**
+  for the fixed memory-safety bugs (#69/#70) that runs as part of `task mtl:verify`;
   every scenario must stay clean. Its `README.md` has the VM internals
   cheat-sheet (value tagging, block layout, how to drive `interpGo()` from a few
   hand-assembled opcodes with no bytecode file). ASan only catches accesses that
