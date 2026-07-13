@@ -53,7 +53,6 @@ PDEVINFO rt2501_dev;
 
 uint8_t rt2501_mac[IEEE80211_ADDR_LEN];
 static uint16_t rt2501_eeprom_defaults[RT2501_NUM_EEPROM_BBP_PARMS];
-static uint8_t rt2501_BbpRssiToDbmDelta;
 static EEPROM_ANTENNA_STRUC rt2501_Antenna;
 static uint32_t rt2501_RfFreqOffset; /* Frequency offset for channel switching */
 static uint8_t rt2501_auto_tx_agc; /* Enable driver auto Tx Agc control */
@@ -189,6 +188,15 @@ static const RT2501_RF_REGS RF5225RegTable[] = {
 };
 #define RT2501_NUM_OF_5225_CHNL (sizeof(RF5225RegTable) / sizeof(RT2501_RF_REGS))
 
+/* Bounds for the radio bring-up polls below (#144). On a marginal power-up the
+ * dongle can enumerate but leave BBP/RF half-initialised; without a cap these
+ * waits spin forever and bring-up hangs silently with no recovery. Exhausting
+ * the budget instead returns failure, so rt2501_connect() tears the device down
+ * and rt2501_state() reports RT2501_S_BROKEN - an observable state the #125
+ * reboot watchdog can act on. Budgets (~10s each) stay under that >15s window. */
+#define RT2501_SETUP_CSR12_TRIES 10  /* x DelayMs(1000): MAC_CSR12.BbpRfStatus  */
+#define RT2501_SETUP_BBP_TRIES   20  /* x DelayMs(500):  BBP R0 ready           */
+
 static int32_t rt2501_setup(void)
 {
   uint32_t i;
@@ -238,7 +246,7 @@ static int32_t rt2501_setup(void)
   DBG_WIFI("OK!"EOL);
 
   DBG_WIFI("Waiting for the hardware to be up and running...");
-  while(1) {
+  for(i = 0; i < RT2501_SETUP_CSR12_TRIES; i++) {
     DBG_WIFI(".");
     csr12.word = rt2501_read(rt2501_dev, RT2501_MAC_CSR12);
     if(csr12.field.BbpRfStatus) break;
@@ -246,14 +254,22 @@ static int32_t rt2501_setup(void)
     if(!rt2501_write(rt2501_dev, RT2501_MAC_CSR12, 0x4)) return 0;
     DelayMs(1000);
   }
+  if(i == RT2501_SETUP_CSR12_TRIES) {
+    DBG_WIFI("BBP/RF status never ready - abort"EOL);
+    return 0;
+  }
   DBG_WIFI("OK!"EOL);
 
   DBG_WIFI("Setting up BBP...");
   /* Make sure BBP is okay */
-  while(1) {
+  for(i = 0; i < RT2501_SETUP_BBP_TRIES; i++) {
     if(rt2501_read_bbp(rt2501_dev, RT2501_BBP_R0) != 0) break;
     DelayMs(500);
     DBG_WIFI(".");
+  }
+  if(i == RT2501_SETUP_BBP_TRIES) {
+    DBG_WIFI("BBP R0 never ready - abort"EOL);
+    return 0;
   }
 
   /* Initialize BBP register to default values */
@@ -334,8 +350,6 @@ static int32_t rt2501_setup_eeprom(void)
 
   /* Disable TxAgc if the based value is not right */
   if (rt2501_TSSI_Ref == 0xff) rt2501_auto_tx_agc = 0;
-
-  rt2501_BbpRssiToDbmDelta = 0x79;
 
   rt2501_read_eeprom(rt2501_dev, RT2501_EEPROM_FREQ_OFFSET,
          &value,
@@ -424,9 +438,10 @@ static void rt2501_antenna_setting()
   if(rt2501_Antenna.field.RxDefaultAntenna == RT2501_SOFTWARE_DIVERSITY)
     rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_A;
 
-  // SH 060918 : on force le mode HARDWARE_DIVERSITY pour améliorer la réception de l'antenne
-//        rt2501_Antenna.field.RxDefaultAntenna = RT2501_HARDWARE_DIVERSITY;
-  rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_A;
+  /* RX is pinned to antenna B; hardware/software diversity is not used. (SH
+   * 060918 tried HARDWARE_DIVERSITY to improve reception but left it disabled.)
+   * A dead `= RT2501_ANTENNA_A` store used to sit here, immediately overwritten
+   * by the line below - removed. */
   rt2501_Antenna.field.RxDefaultAntenna = RT2501_ANTENNA_B;
   /*
      driver must disable Rx when switching antenna, otherwise ASIC will keep default state
@@ -644,19 +659,26 @@ void rt2501_switch_channel(uint8_t channel)
         break;
       }
     }
-
-    BbpReg = rt2501_read_bbp(rt2501_dev, RT2501_BBP_R3);
-    if ((rt2501_Antenna.field.RfIcType == RT2501_RFIC_5225)
-        || (rt2501_Antenna.field.RfIcType == RT2501_RFIC_2527))
-      BbpReg &= 0xFE; /* b0=0 for no Smart mode */
-    else
-      BbpReg |= 0x01; /* b0=1 for Smart mode */
-    rt2501_write_bbp(rt2501_dev, RT2501_BBP_R3, BbpReg);
     break;
 
   default:
     break;
   }
+
+  /* BBP R3 "smart mode" bit (b0): enabled for every RF chip except RFIC
+   * 5225/2527, matching Linux rt73usb_config_channel's
+   * smart = !(rf1 == RF5225 || rf1 == RF2527). Runs for all chips (previously
+   * this was misplaced inside the 5225/2527 case, so it never ran for the
+   * 2528/5226 chip actually on this board and the "smart on" branch was dead
+   * code). rt2501_antenna_setting() cleared this bit earlier, so we
+   * read-modify-write to re-derive it here. */
+  BbpReg = rt2501_read_bbp(rt2501_dev, RT2501_BBP_R3);
+  if ((rt2501_Antenna.field.RfIcType == RT2501_RFIC_5225)
+      || (rt2501_Antenna.field.RfIcType == RT2501_RFIC_2527))
+    BbpReg &= 0xFE; /* b0=0 for no Smart mode */
+  else
+    BbpReg |= 0x01; /* b0=1 for Smart mode */
+  rt2501_write_bbp(rt2501_dev, RT2501_BBP_R3, BbpReg);
 
   if (Bbp94 != BBPR94_DEFAULT)
     rt2501_write_bbp(rt2501_dev, RT2501_BBP_R94, Bbp94);
@@ -792,6 +814,95 @@ static uint8_t rt2501_frame[RT2501_MAX_FRAME_SIZE] __attribute__ ((aligned(4)));
 
 static void rt2501_submit_rx(void);
 
+/*
+ * Decode the BBP PlcpRssi byte into an approximate dBm value.
+ *
+ * Backported from Linux rt2x00's rt73usb_agc_to_rssi() (drivers/net/wireless/
+ * ralink/rt2x00/rt73usb.c). The PlcpRssi byte is NOT a flat linear reading: it
+ * packs a 5-bit AGC value (bits 0-4) and a 2-bit LNA gain state (bits 5-6, bit
+ * 7 reserved) - matching RXD_W1_RSSI_AGC (0x1f00) / RXD_W1_RSSI_LNA (0x6000) in
+ * the reference rt73usb.h. RSSI = AGC*2 - offset, where the offset is selected
+ * by the LNA gain state (64/74/90) and shifted by the EEPROM RSSI#1 offset
+ * (Linux's lna_gain). Only the 2.4 GHz b/g path is ported: the Nabaztag module
+ * has no external LNA, so the +14 external-LNA term and the whole 5 GHz branch
+ * are omitted. Returns 0 (no valid reading) when the LNA state is 0, matching
+ * the reference's default case.
+ */
+static int16_t rt2501_agc_to_rssi(uint8_t plcp_rssi)
+{
+  uint8_t agc = plcp_rssi & 0x1f;
+  uint8_t lna = (plcp_rssi >> 5) & 0x03;
+  int16_t offset;
+
+  switch(lna) {
+    case 3:  offset = 90; break;
+    case 2:  offset = 74; break;
+    case 1:  offset = 64; break;
+    default: return 0; /* LNA state 0: no valid reading (per reference) */
+  }
+  /* Linux seeds offset with lna_gain (= -EEPROM RSSI#1 offset for b/g) before
+   * adding the per-LNA-state constant; RssiOffset1 is read from EEPROM 0x9a in
+   * rt2501_setup_eeprom() and was previously a dead store. */
+  offset -= rt2501_RssiOffset1;
+  return (int16_t)(agc * 2) - offset;
+}
+
+/* SHARED_KEY_TABLE holds 16 entries (rt2501usb_hw.h); the RX descriptor's
+ * KeyIndex indexes it. Last-accepted CCMP packet number per key slot, reset to 0
+ * on key (re)install in rt2501_set_key(). */
+#define RT2501_NUM_SHARED_KEYS 16
+static uint64_t rt2501_rx_ccmp_pn[RT2501_NUM_SHARED_KEYS];
+
+/*
+ * Reconstruct the 48-bit CCMP packet number from the hardware RX descriptor's
+ * Iv/Eiv words. Per the RT2571W/rt73 CCMP layout the cipher header's 8 octets
+ * land little-endian as: Iv = PN0 | PN1<<8 | rsvd<<16 | keyid<<24, Eiv = PN2 |
+ * PN3<<8 | PN4<<16 | PN5<<24. The 802.11i PN is little-endian (PN0 least
+ * significant). NOTE: this byte layout is from the vendor-driver convention and
+ * still needs on-device confirmation (issue #154 DoD) - if it is wrong the
+ * replay check below would mis-order PNs.
+ */
+static uint64_t rt2501_ccmp_pn(uint32_t iv, uint32_t eiv)
+{
+  uint64_t pn;
+
+  pn  = (uint64_t)(iv & 0x0000ffff);                 /* PN0, PN1 */
+  pn |= (uint64_t)(eiv & 0x0000ffff) << 16;          /* PN2, PN3 */
+  pn |= (uint64_t)((eiv >> 16) & 0x0000ffff) << 32;  /* PN4, PN5 */
+  return pn;
+}
+
+/*
+ * 802.11i RX replay protection for CCMP (AES) data frames. Returns 1 if the
+ * frame should be accepted, 0 if it is a replay and must be dropped; updates the
+ * per-key last-accepted PN on accept.
+ *
+ * Scoped to CCMP: WEP/TKIP/unencrypted frames are always accepted here (#154
+ * scopes data-path replay protection to CCMP, aligned with #124's plan to drop
+ * the older ciphers). The hardware exposes the received PN in the descriptor's
+ * Iv/Eiv words specifically for this check (see PRXD_STRUC). PN is a 48-bit
+ * monotonic counter reset to 0 on key install, so a valid frame has PN strictly
+ * greater than the last accepted one. This complements eapol.c's replay counter,
+ * which only covers the 4-way-handshake EAPOL-Key messages, not the data path.
+ */
+static uint8_t rt2501_rx_replay_ok(PRXD_STRUC rxd)
+{
+  uint64_t pn;
+
+  if(rxd->CipherAlg != RT2501_CIPHER_AES)
+    return 1;
+  if(rxd->KeyIndex >= RT2501_NUM_SHARED_KEYS)
+    return 1; /* key slot outside the tracked table - don't guess */
+
+  pn = rt2501_ccmp_pn(rxd->Iv, rxd->Eiv);
+  if(pn <= rt2501_rx_ccmp_pn[rxd->KeyIndex]) {
+    DBG_WIFI("RX CCMP replay - frame dropped"EOL);
+    return 0;
+  }
+  rt2501_rx_ccmp_pn[rxd->KeyIndex] = pn;
+  return 1;
+}
+
 static void rt2501_rx_callback(PURB urb)
 {
   PRXD_STRUC rxd;
@@ -819,10 +930,11 @@ static void rt2501_rx_callback(PURB urb)
         rxd->Eiv);
       DBG_WIFI(dbg_buffer);
 #endif
-    if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))) {
+    if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))
+       && rt2501_rx_replay_ok(rxd)) {
       ieee80211_input(rt2501_frame+sizeof(RXD_STRUC),
           rxd->DataByteCnt,
-          rxd->PlcpRssi-rt2501_BbpRssiToDbmDelta);
+          rt2501_agc_to_rssi(rxd->PlcpRssi));
     }
     rt2501_frame_position = 0;
   } else {
@@ -1099,6 +1211,11 @@ int32_t rt2501_set_key(uint8_t index, uint8_t *key, uint8_t *txmic, uint8_t *rxm
     key_length = EAPOL_AES_EK_LENGTH;
     break;
   }
+
+  /* Reset the RX replay counter for this key slot: a freshly (re)installed key
+   * starts a new PN sequence from 0 (see rt2501_rx_replay_ok). */
+  if(index < RT2501_NUM_SHARED_KEYS)
+    rt2501_rx_ccmp_pn[index] = 0;
 
   /* Mark the key invalid */
   csr0 = rt2501_read(rt2501_dev, RT2501_SEC_CSR0);
