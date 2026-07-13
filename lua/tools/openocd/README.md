@@ -170,11 +170,49 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
+## UART console (TX-only, 38400 8N1, #203) — preferred for output
+
+Since #203 the firmware has a real UART: a TX-only UART0 HAL
+(`lua/firmware/src/hal/uart.c`, OKI pins **PB0=TX / PB1=RX**, 38400 8N1, no
+flow control). Unlike semihosting it needs no OpenOCD session and never halts
+the CPU — **prefer it for console output**; semihosting remains only where you
+need *input* (the interactive REPL) until UART RX lands (#203).
+
+> The baud is 38400, not 115200: the ML67Q4051 UART peripheral clock is a
+> **measured 8.00 MHz** (not the 33 MHz CPU clock), so 115200 is unreachable.
+> `DLL=13` → 38462 ≈ 38400 +0.16%. Details + how to re-measure with the
+> `uartcal` app: [`lua/firmware/inc/hal/uart.h`](../../firmware/inc/hal/uart.h)
+> and #203.
+
+Wiring to the Pi rig **crosses over** (GND common):
+
+| Rabbit | Pi BCM GPIO | Pi physical pin |
+|---|---|---|
+| PB0 (TX) | GPIO15 / RXD | 10 |
+| PB1 (RX) | GPIO14 / TXD | 8 |
+
+Validate the link end-to-end with the banner probe, then read:
+
+```sh
+task lua:firmware:flash APP=uartprobe          # rabbit spews "NAB-UART-PROBE alive @38400 8N1"
+# on the Pi:
+sudo systemctl stop serial-getty@ttyAMA0       # frees /dev/serial0 (getty squats on it; re-enables on reboot)
+sudo stty -F /dev/serial0 38400 raw -echo
+sudo cat /dev/serial0                          # /dev/serial0 is root:tty 600
+```
+
+Pi-side gotchas: no pyserial on the rig (use stdlib `termios` from Python);
+to diagnose a dead line without a scope, `sudo pinctrl set <gpio> ip pd;
+pinctrl get <gpio>` — a driven line reads `hi` (the external source beats the
+pull-down), a floating one reads `lo` (this is how a TX/RX swap shows up).
+
 ## Semihosting console + Lua REPL (#91)
 
-The board has **no UART**, so the Lua REPL does console I/O over **ARM
+Before #203 the board had no UART, so all console I/O runs over **ARM
 semihosting** — the app issues Thumb `svc 0xAB` and OpenOCD services the
-`SYS_WRITEC`/`SYS_READC` syscalls. Proven on hardware with the `console` probe
+`SYS_WRITEC`/`SYS_READC` syscalls. It is still the only *input* path (the
+interactive REPL's `SYS_READC`) and what newlib `_write`/Lua `print()` are
+wired to today. Proven on hardware with the `console` probe
 (`lua/firmware/src/app/console.c`), but the ML67's ARM7TDMI needs one non-obvious
 tweak:
 
