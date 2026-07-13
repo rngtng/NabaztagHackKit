@@ -124,8 +124,8 @@ decodes and runs it - the same path the future parser-less image is fed. `replpi
 the sender.
 
 ## Simulate (no hardware)
-Run the ELF in an instruction-level simulator ([`sim/`](sim/), Unicorn Engine, #96) - no
-JTAG, no device:
+Run the ELF in an instruction-level simulator ([`../tools/simulator/`](../tools/simulator/),
+Unicorn Engine, #96) - no JTAG, no device:
 
 ```sh
 task lua:firmware:simulate                          # run bin/hello.elf, report reaching main
@@ -137,8 +137,8 @@ To drive the **REPL**: `task lua:firmware:repl` (live prompt via semihosting `SY
 needs a TTY) or feed a file:
 
 ```sh
-task lua:firmware:repl SCRIPT=lua/apps/repl-demo.lua        # feed a .lua file, print transcript
-task lua:firmware:repl SCRIPT=lua/apps/luac-roundtrip.lua LC=1  # feed as #LC bytecode frames
+task lua:firmware:repl SCRIPT=apps/repl-demo.lua        # feed a .lua file, print transcript
+task lua:firmware:repl SCRIPT=apps/luac-roundtrip.lua LC=1  # feed as #LC bytecode frames
 ```
 
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
@@ -172,7 +172,8 @@ src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture p
 src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
 src/app/*.c         one app per binary (see APP=); *probe.c are hardware bring-up probes
 lua/                vendored PUC-Rio Lua 5.4 core; build compiles a subset (Makefile LUA_CORE/LUA_LIB)
-sim/                Unicorn instruction-level simulator (#96)
+../tools/simulator/ Unicorn instruction-level simulator (#96)
+../tools/luac/      host luac matching the device's bytecode format (#133)
 ```
 `sys/`, `inc/common.h`, and `hal/` are **copied** from `mtl/firmware` (the vendored `nabgcc`
 port) - a register fix there may apply here, grep the sibling. Otherwise self-contained; no
@@ -202,7 +203,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 
 ## Flashing
 ```sh
-task lua:firmware:flash            # APP=hello
+task lua:firmware:flash            # APP defaults to lua
 task lua:firmware:flash APP=blink  # visible LED blink
 ```
 Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge: builds, ships configs + ELF

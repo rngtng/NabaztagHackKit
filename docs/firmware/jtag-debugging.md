@@ -9,7 +9,7 @@ the `mod_serial` mod), so JTAG carries everything.
 
 The recipes below assume OpenOCD is already running against the board on
 `localhost:3333` (GDB) / `4444` (telnet). Adjust the ELF path
-(`build/firmware/Nab.elf`) and host as needed.
+(`mtl/build/firmware/Nab.elf`) and host as needed.
 
 ---
 
@@ -36,7 +36,7 @@ Chain `-ex` directly. `maint set target-async off` is required or `continue`
 returns immediately and later commands fail with "target running".
 
 ```bash
-gdb-multiarch -q -nx build/firmware/Nab.elf \
+gdb-multiarch -q -nx mtl/build/firmware/Nab.elf \
   -ex 'maint set target-async off' \
   -ex 'target extended-remote localhost:3333' \
   -ex 'monitor reset halt' \
@@ -56,7 +56,7 @@ and is **not** inlined at `-O1` (`interpGo` is reliable; tiny functions like
 `usbhost_events`/`hcd_rh_events` are inlined and their breakpoints never fire).
 
 ```bash
-gdb-multiarch -q -nx build/firmware/Nab.elf \
+gdb-multiarch -q -nx mtl/build/firmware/Nab.elf \
   -ex 'maint set target-async off' \
   -ex 'target extended-remote localhost:3333' \
   -ex 'hbreak interpGo' \

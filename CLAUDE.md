@@ -73,8 +73,8 @@ task; full recipe in `lua/tools/openocd/README.md`, teardown in `docs/hardware-d
   `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error` and turn that into a real nonzero
   exit — trust the exit code, don't grep manually.
 - **`task mtl:verify` is the definition of done for the mtl track. Run before every mtl commit** —
-  chains `mtl:lib:test` + `mtl:boot:build` + `mtl:app-{piper,template,sse}:build` +
-  `mtl:firmware:test:bugs` + `mtl:firmware:test:crypto`. All must be green.
+  chains `mtl:app-{piper,template,sse}:build` + `mtl:boot:build` + `mtl:bootV2:build` +
+  `mtl:lib:test` + `mtl:firmware:test` (vm smoke + ASan bugs + crypto KAT). All must be green.
 - **`task lua:verify` (== root `task verifyV2`) is the definition of done for the lua track. Run
   before every lua commit** — chains `lua:firmware:build`.
 - **`task verify` runs both tracks** (`mtl:verify` + `lua:verify`). A change that only passes

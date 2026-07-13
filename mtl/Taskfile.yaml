@@ -39,7 +39,7 @@ includes:
 
 tasks:
   verify:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV1 all build.'
+    desc: 'Definition of done: run before every mtl commit. All apps + boot + bootV2 build; lib + firmware tests pass.'
     cmds:
       - task: app-piper:build
       - task: app-template:build

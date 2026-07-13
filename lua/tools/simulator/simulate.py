@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Instruction-level simulator for the firmwareV2 ARM7TDMI ELF (issue #96).
+"""Instruction-level simulator for the lua-firmware ARM7TDMI ELF (issue #96).
 
 QEMU has no OKI ML67Q4051 machine model and our memory map does not fit any
 stock QEMU board, so we drive the CPU core directly with the Unicorn Engine and
@@ -17,7 +17,7 @@ What it does:
 
 What it does NOT do: model timing, or any peripheral it does not stub beyond
 instant completion (audio, WiFi, real timers). It validates code paths + GPIO +
-SPI/I2C framing + console, not analog behaviour. See src/firmwareV2/README.md.
+SPI/I2C framing + console, not analog behaviour. See lua/firmware/README.md.
 """
 import argparse
 import sys
@@ -287,7 +287,7 @@ class Sim:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Unicorn simulator for firmwareV2 ELFs")
+    ap = argparse.ArgumentParser(description="Unicorn simulator for lua-firmware ELFs")
     ap.add_argument("elf", help="path to the ELF to run (e.g. bin/hello.elf)")
     ap.add_argument("-n", "--budget", type=int, default=None,
                     help="max instructions to execute (default 300000, or ~2e9 "

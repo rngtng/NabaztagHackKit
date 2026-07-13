@@ -20,14 +20,10 @@ Grammar reference: [../docs/grammar.md](../docs/grammar.md)
 
 ```
 lib/
-├── protos/          Shared types & forward declarations
-│   ├── sock_protos.mtl   Sock type — shared by http_server & sse_server
-│   ├── sse_protos.mtl    SSE public API protos
-│   ├── forth_protos.mtl  Word/Forth types + interpreter protos
-│   ├── task_type.mtl     Bare Task/TaskStatus types (no scheduler protos)
-│   ├── task_protos.mtl   task_type.mtl + scheduler protos
-│   ├── ascii_protos.mtl
-│   └── word_protos.mtl
+├── protos/          Shared types & forward declarations — one `<module>_protos.mtl`
+│                    per module (sock, sse, forth, tcp, dns, …), plus bare type
+│                    files (task_type.mtl, colors.mtl). Include these to consume a
+│                    module's API without pulling in its implementation.
 │
 ├── std/             Pure data primitives (no VM I/O)
 │   ├── string.mtl        String helpers (strstr, to_lower, pads, …)
@@ -94,7 +90,9 @@ lib/
 │   ├── word.mtl          Word dict/list accessors
 │   ├── json.mtl          JSON parser producing Words + json-parse/json-get
 │   ├── stack.mtl / arithmetic.mtl / comparison.mtl / logical.mtl
-│   └── control.mtl / list.mtl / string.mtl / output.mtl
+│   ├── control.mtl / list.mtl / string.mtl / output.mtl / memory.mtl
+│   └── time.mtl / task.mtl / hw.mtl / net.mtl   opt-in word packs over
+│                     lib/sys + lib/hw + lib/net (see mtl/apps/template)
 │
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
@@ -235,7 +233,7 @@ constants must be defined before including a `lib/net` server. Include
 `lib/net/tcp.mtl` (the VM-native adapter; call `netstart` in `main`) — that's
 what `mtl/apps/template` and `mtl/apps/sse` do. The boot uses its fuller
 `mtl/bootV2/tcpudp_emu.mtl` (adds UDP/DHCP); unit tests use the capturing stubs
-in `test/lib/_test.mtl`.
+in `mtl/test/lib/_test.mtl`.
 
 ### JSON builder
 

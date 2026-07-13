@@ -1,17 +1,17 @@
 ---
 name: hw-flash-repl
-description: Flashing a firmwareV2 app to real Nabaztag:tag hardware over JTAG, or reading its console/REPL. Use whenever the task involves the Raspberry Pi JTAG rig (jtag.local), openocd, semihosting console output, or verifying a driver/binding against actual hardware rather than the simulator.
+description: Flashing a lua-track firmware app to real Nabaztag:tag hardware over JTAG, or reading its console/REPL. Use whenever the task involves the Raspberry Pi JTAG rig (jtag.local), openocd, semihosting console output, or verifying a driver/binding against actual hardware rather than the simulator.
 ---
 
-# Hardware flash + console (firmwareV2, JTAG)
+# Hardware flash + console (lua firmware, JTAG)
 
-Full recipe and troubleshooting: `tools/openocd/README.md`. Board teardown /
+Full recipe and troubleshooting: `lua/tools/openocd/README.md`. Board teardown /
 chip inventory: `docs/hardware-dissection.md`.
 
 ## Always use the taskified path
 
-- **Flash**: `task flash:firmwareV2 [APP=hello] [PI_HOST=tobi@jtag.local]`
-- **Read console / REPL**: `task repl:firmwareV2:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
+- **Flash**: `task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]`
+- **Read console / REPL**: `task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
 
 Never hand-roll `scp` + `openocd` + `gdb` - the raw ssh+openocd path is denied,
 and both operations are already taskified. If a task doesn't cover what you
@@ -37,7 +37,7 @@ The ARM7TDMI EmbeddedICE on this board is v1 with no vector-catch, so
 openocd's default auto-breakpoint at the SWI vector `0x8` fails (flash is
 read-only there). The fix is a **hardware breakpoint at `0x8`** + `rbp 0x8`,
 set *after* the final `reset halt` (reset wipes the ICE watchpoint regs).
-`task repl:firmwareV2:hw` already does this - you only need to know it when
+`task lua:firmware:repl:hw` already does this - you only need to know it when
 debugging why a manual openocd session hangs at the SWI vector. (Cleaner fix
 still TODO: patch openocd `arm7_9_setup_semihosting` to use `BKPT_HARD`.)
 
@@ -47,7 +47,7 @@ the SWI dispatch table) halts OpenOCD without resuming - output just stops
 after the last print before that SWI, no error. Fix: replace SWI-based helpers
 with ARM-mode functions (`__attribute__((target("arm")))`) that manipulate
 CPSR directly (`mrs`/`msr cpsr_c`), bypassing the SWI vector. See the M9 fix
-in `src/firmwareV2/sys/src/irq.c` (#117).
+in `lua/firmware/sys/src/irq.c` (#117).
 
 ## Reading the console
 
@@ -84,7 +84,7 @@ to the semihosting/flash mechanics above. The patched openocd sources live on
 the Pi at `~/nabgcc/openocd-0.8.0/src` - a semihosting/flash hunch is cheap to
 confirm there before burning a round-trip. (M8/#116 burned ~7 round-trips on a
 silent beep whose cause - SPI0 RX-FIFO never drained by `WriteSPI`, DREQ dips
-after SCI writes - was readable in `src/hal/audio.c` + `spi.c` up front.)
+after SCI writes - was readable in `lua/firmware/src/hal/audio.c` + `spi.c` up front.)
 
 ## When a probe works but the full app doesn't
 
@@ -104,12 +104,12 @@ ExtRAM) triggers constantly.
   the user, and even gave self-contradictory results.
 - **Checkpoint after ~3 failed same-symptom round-trips.** Stop and write
   knowns/unknowns/next-experiment rather than continuing to guess.
-- **Get the peripheral datasheet, and diff FW1 (`src/firmware`, the working
-  oracle), before guessing a chip's registers.** Most #123 dead-ends -
+- **Get the peripheral datasheet, and diff the mtl firmware (`mtl/firmware`,
+  the working oracle), before guessing a chip's registers.** Most #123 dead-ends -
   `SM_SDISHARE` (shared-chip-select decode mode), VS1003 decodes MP3 not raw
   PCM WAV, endFillByte, `CLOCKF` encoding + post-reset timing - were plain
   datasheet facts, guessed one costly round-trip at a time.
-- **Before diagnosing any firmwareV2 driver, grep `inc/common.h` for
+- **Before diagnosing any lua-firmware driver, grep `lua/firmware/inc/common.h` for
   `#define` compile-time switches** (e.g. `MOTOR_SPEED_CONTROL`, `DRIVER_ST`).
   They flip entire code paths - M10/#118 wasted 2 hardware rounds diagnosing
   GPIO when `MOTOR_SPEED_CONTROL` had already switched motor drive to the FTM

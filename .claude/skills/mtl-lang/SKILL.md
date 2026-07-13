@@ -1,11 +1,11 @@
 ---
 name: mtl-lang
-description: Writing or debugging MTL source (.mtl files under src/, lib/, test/) — the compiler's parsing/typechecking quirks and how to read its error output. Use whenever editing an .mtl file, chasing a "Syntax error"/"Typechecking error"/"is EMPTY"/"?OM Error", or adding a new lib module.
+description: Writing or debugging MTL source (.mtl files under mtl/) — the compiler's parsing/typechecking quirks and how to read its error output. Use whenever editing an .mtl file, chasing a "Syntax error"/"Typechecking error"/"is EMPTY"/"?OM Error", or adding a new lib module.
 ---
 
 # MTL language gotchas
 
-Full rationale: `CLAUDE.md` → "MTL language gotchas". Testing conventions: `test/README.md`.
+Full rationale: `CLAUDE.md` → "MTL language gotchas". Testing conventions: `mtl/test/README.md`.
 
 - **A compiler error's reported line is the closing bracket of the enclosing
   function, not the offending line.** Binary-search by commenting out chunks of
@@ -25,7 +25,7 @@ Full rationale: `CLAUDE.md` → "MTL language gotchas". Testing conventions: `te
 - **Duplicate `fun` definitions are legal; a call site binds whichever
   definition was most recent *at its point of compilation*.** A later
   redefinition does NOT retroactively rebind earlier callers. This is used
-  deliberately (e.g. piper's `tcpudp_emu.mtl` override, `test/lib/_test.mtl`'s
+  deliberately (e.g. piper's `tcpudp_emu.mtl` override, `mtl/test/lib/_test.mtl`'s
   stubs) — put overrides/stubs *before* the `include` of whatever consumes them.
 - **But duplicate definitions of the same name still share one type** — the
   checker unifies all signatures. A stub must be type-compatible with the real
@@ -44,8 +44,8 @@ Full rationale: `CLAUDE.md` → "MTL language gotchas". Testing conventions: `te
 
 ## Before concluding a build is broken
 
-`task build:*` and `task test` always exit 0 even on a real MTL failure — the
-compiler/simulator report fatal errors on stderr but never fail the process.
-The Taskfile wrapper greps for `Syntax error`/`Typechecking error`/`is EMPTY`/
-`?OM Error` to turn that into a real exit code — trust the exit code, don't
-eyeball the output yourself and don't assume 0 means clean.
+The MTL compiler/simulator behind `task mtl:<layer>:build` and `task
+mtl:lib:test` reports fatal errors on stderr but always exits 0. The Taskfile
+wrapper greps for `Syntax error`/`Typechecking error`/`is EMPTY`/`?OM Error`
+to turn that into a real exit code — trust the task's exit code, don't
+eyeball the output yourself and don't assume a bare 0 means clean.
