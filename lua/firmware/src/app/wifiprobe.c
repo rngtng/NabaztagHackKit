@@ -33,6 +33,8 @@
 
 #include "usb/usbh.h"
 #include "usb/usbctrl.h"
+#include "usb/hcd.h"
+#include "usb/hcdmem.h"
 #include "usb/rt2501usb.h"
 #include "net/eapol.h"
 
@@ -89,10 +91,35 @@ static void sh_putmac(const uint8_t *m)
 static struct rt2501_scan_result seen[MAX_SEEN];
 static volatile int scan_hits;
 
+#ifdef WIFI_SSID
+/* Dedicated capture slot for the target AP: in a dense environment the scan
+ * sees far more networks than MAX_SEEN (164 observed), so a weak guest AP
+ * whose probe-response arrives late is silently dropped from seen[] and the
+ * join stage never runs. V1 has no such cap (the VM builds an unbounded
+ * list), so record the target out-of-band the moment it appears. */
+static struct rt2501_scan_result target_seen;
+static volatile int target_hit;
+
+static int ssid_is_target(const uint8_t *ssid)
+{
+  const char *w = WIFI_SSID;
+  int j;
+  for (j = 0; w[j] && (char)ssid[j] == w[j]; j++)
+    ;
+  return !w[j] && !ssid[j];
+}
+#endif
+
 static void scan_cb(struct rt2501_scan_result *r, void *userparam)
 {
   int i, j;
   (void)userparam;
+#ifdef WIFI_SSID
+  if (!target_hit && ssid_is_target(r->ssid)) {
+    target_seen = *r;
+    target_hit = 1;
+  }
+#endif
   for (i = 0; i < scan_hits && i < MAX_SEEN; i++) {
     for (j = 0; j < 6; j++)
       if (seen[i].bssid[j] != r->bssid[j])
@@ -123,18 +150,30 @@ static void print_scan_results(void)
   }
 }
 
-/* V1 main.c's pump: usb events + rx drain + the ~100 ms driver timer */
+/* V1 main.c's pump: usb events + rx drain + the driver timer. V1 fires
+ * rt2501_timer every 4th ~50 ms outer iteration (~200 ms); the 802.11
+ * AUTH/ASSOC timeouts are tick counts (10), so a faster tick here would
+ * halve the response window V1 gives the AP. */
+static uint32_t pump_last_timer; /* persists across pump_ms calls: a caller
+                                  * pumping in 100 ms slices must not reset
+                                  * the 200 ms tick phase every call, or the
+                                  * driver timer never fires at all. */
 static void pump_ms(uint32_t ms)
 {
-  uint32_t t0 = counter_timer, last_timer = counter_timer;
+  uint32_t t0 = counter_timer;
   struct rt2501buffer *r;
 
   while (counter_timer - t0 < ms) {
     usbhost_events();
-    while ((r = rt2501_receive()) != NULL)
-      ; /* drain; driver frees via buffer queue - nothing to do with data here */
-    if (counter_timer - last_timer >= 100) {
-      last_timer = counter_timer;
+    while ((r = rt2501_receive()) != NULL) {
+      /* EAPOL frames are consumed (and freed) inside rt2501_receive; anything
+       * returned is a data frame the caller owns - V1 main.c hcd_frees it. */
+      disable_ohci_irq();
+      hcd_free(r);
+      enable_ohci_irq();
+    }
+    if (counter_timer - pump_last_timer >= 200) {
+      pump_last_timer = counter_timer;
       rt2501_timer();
     }
   }
@@ -177,6 +216,26 @@ static const char *dot11_name(int32_t s)
   default:                return "?";
   }
 }
+
+/* Decode the reject code the 802.11 stack latched at a silent fall-back to
+ * IDLE - the one datum the state trace alone can't show (why the AP dropped
+ * us). AUTH-deny/ASSOC-reject codes are 802.11 status codes; DEAUTH is a
+ * reason code. See ieee80211_reject in ieee80211.c. */
+static void print_reject(void)
+{
+  uint16_t r = ieee80211_reject;
+  if (!r)
+    return;
+  sh_puts(" reject=");
+  switch (r >> 12) {
+  case 1:  sh_puts("AUTH-deny");    break;
+  case 2:  sh_puts("ASSOC-reject"); break;
+  case 3:  sh_puts("DEAUTH");       break;
+  default: sh_puts("?");            break;
+  }
+  sh_puts(" code=");
+  sh_putdec(r & 0x0FFF);
+}
 #endif
 
 int main(void)
@@ -188,8 +247,6 @@ int main(void)
   int attempt;
 
   init_uart();
-
-  sh_puts("#119 RT2501 802.11 bring-up probe\n");
 
   /* Park the audio amplifier: probes never init audio, so the amp pin sits
    * in its power-on state and USB traffic on the ExtRAM/EMC bus couples into
@@ -207,6 +264,17 @@ int main(void)
   /* [1] tick IRQ (see usbprobe.c) */
   init_irq();
   init_tick();
+
+  /* The JTAG flash resets the CPU immediately, but the UART capture tool
+   * (uart_repl.py) only stops the serial-getty and attaches to /dev/serial0
+   * ~2-4 s later - until it does, the getty consumes everything the device
+   * prints. That silently ate the banner and the whole [1]-[4] bring-up trace
+   * (first captured line was [5]). Stay quiet until the reader owns the port.
+   * DelayMs needs the tick, so this must sit after init_tick(). */
+  DelayMs(6000);
+
+  sh_puts("#119 RT2501 802.11 bring-up probe\n");
+
   for (spin = 0; spin < 2000000; spin++)
     CLR_WDT;
   sh_puts("[1] tick counter_timer=");
@@ -232,14 +300,15 @@ int main(void)
     sh_puts("[2][3] usb host bring-up, attempt ");
     sh_putdec(attempt);
     sh_puts("\n");
-    if (attempt > 1) {
-      /* ML60842 re-init alone doesn't recover a wedged dongle - its 8051
-       * keeps running whatever state the last session left. Drop VBUS so
-       * the (internal, host-port-powered) module actually cold-boots. */
-      sh_puts("    VBUS power-cycle\n");
-      usbctrl_vbus_set(VBUS_OFF);
-      DelayMs(1000);
-    }
+    /* ML60842 re-init alone doesn't recover a wedged dongle - its 8051 keeps
+     * running whatever state the last session left, and a JTAG reflash resets
+     * only the CPU, never the dongle (a prior run that died mid-association
+     * leaves it wedged: enumeration still passes but RX stays dead). Drop
+     * VBUS unconditionally so the (internal, host-port-powered) module
+     * cold-boots every run, like a real power-on does for V1. */
+    sh_puts("    VBUS power-cycle\n");
+    usbctrl_vbus_set(VBUS_OFF);
+    DelayMs(1000);
     if (usbctrl_init(USB_HOST) != 0) {
       sh_puts("    usbctrl_init FAIL\n");
       continue;
@@ -267,6 +336,9 @@ int main(void)
   sh_puts(state != RT2501_S_BROKEN ? " PASS\n" : " FAIL - driver never came up\n");
   if (state == RT2501_S_BROKEN)
     goto done;
+  /* Freshly cold-booted radio scans poorly for the first moments (2 networks
+   * seen vs ~60 warm); let the BBP/RF settle before the first pass. */
+  pump_ms(2000);
 
   /* [5] scan. With a target SSID, scan DIRECTED (pass the SSID): the probe
    * request carries it, so the AP answers with a probe-response even when we
@@ -283,7 +355,10 @@ int main(void)
     int want_target = 0;
 #endif
     scan_hits = 0;
-    for (pass = 1; pass <= 2; pass++) {
+#ifdef WIFI_SSID
+    target_hit = 0;
+#endif
+    for (pass = 1; pass <= 5; pass++) {
       sh_puts("[5] scan pass ");
       sh_putdec(pass);
       sh_puts(scan_ssid ? " (directed)...\n" : " (broadcast)...\n");
@@ -294,17 +369,8 @@ int main(void)
       if (!want_target)
         break;
 #ifdef WIFI_SSID
-      {
-        int i, j, found = 0;
-        for (i = 0; i < scan_hits && i < MAX_SEEN; i++) {
-          const char *w = WIFI_SSID;
-          for (j = 0; w[j] && (char)seen[i].ssid[j] == w[j]; j++)
-            ;
-          if (!w[j] && !seen[i].ssid[j]) { found = 1; break; }
-        }
-        if (found)
-          break;
-      }
+      if (target_hit)
+        break;
 #endif
     }
     sh_puts("[5] scan finished: ");
@@ -323,26 +389,21 @@ int main(void)
    * drives V1 to BROKEN. */
   {
     static uint8_t pmk[32];
+#ifdef WIFI_BSSID
     static struct rt2501_scan_result synth;
+#endif
     struct rt2501_scan_result *target = NULL;
     int32_t last_state, s;
-    int i, j;
 
-    for (i = 0; i < scan_hits && i < MAX_SEEN; i++) {
-      const char *w = WIFI_SSID;
-      for (j = 0; w[j] && (char)seen[i].ssid[j] == w[j]; j++)
-        ;
-      if (!w[j] && !seen[i].ssid[j]) {
-        target = &seen[i];
-        break;
-      }
-    }
+    if (target_hit)
+      target = &target_seen;
 #ifdef WIFI_BSSID
     if (target == NULL) {
       /* Scan missed it (weak band-edge AP) - synthesize the target from the
        * known BSSID/channel so the association path is tested regardless.
        * Parse "aa:bb:cc:dd:ee:ff" -> 6 bytes. */
       const char *b = WIFI_BSSID;
+      int i, j;
       for (i = 0; i < 6; i++) {
         uint8_t hi = (b[0] <= '9') ? b[0] - '0' : (b[0] | 0x20) - 'a' + 10;
         uint8_t lo = (b[1] <= '9') ? b[1] - '0' : (b[1] | 0x20) - 'a' + 10;
@@ -379,7 +440,10 @@ int main(void)
                         (int32_t)sizeof(WIFI_SSID) - 1, pmk);
 
     sh_puts("[6] rt2501_auth...\n");
-    rt2501_auth(target->ssid, rt2501_mac, target->bssid, target->channel,
+    ieee80211_reject = 0;   /* clear any stale latch before this join */
+    /* 2nd arg is the AP's MAC (auth frame addr1/receiver) - V1 passes the
+     * scan result's mac field, NOT our own rt2501_mac. */
+    rt2501_auth(target->ssid, target->mac, target->bssid, target->channel,
                 target->rateset, IEEE80211_AUTH_OPEN, target->encryption, pmk);
 
     /* Pump and report every state-machine transition; the auth/assoc/EAPOL
@@ -391,10 +455,25 @@ int main(void)
     last_state = -1;
     {
       int32_t last_dot11 = -1, d;
+      uint32_t last_try = counter_timer;
+      int tries = 1;
       do {
         pump_ms(100);
         s = rt2501_state();
         d = ieee80211_state;
+        /* V1's boot loop re-auths whenever the state machine falls back to
+         * IDLE (single-shot auth/assoc regularly loses a frame to a weak AP);
+         * mirror that here or one lost response fails the whole probe. */
+        if (d == IEEE80211_S_IDLE && counter_timer - last_try >= 3000) {
+          tries++;
+          sh_puts("    retry rt2501_auth #");
+          sh_putdec(tries);
+          sh_puts("\n");
+          rt2501_auth(target->ssid, target->mac, target->bssid,
+                      target->channel, target->rateset, IEEE80211_AUTH_OPEN,
+                      target->encryption, pmk);
+          last_try = counter_timer;
+        }
         if (s != last_state || d != last_dot11) {
           last_state = s;
           last_dot11 = d;
@@ -408,14 +487,19 @@ int main(void)
           sh_putdec((int32_t)ieee80211_timeout);
           sh_puts(" eapol=");
           sh_putdec(eapol_state);
+          print_reject();
           sh_puts("\n");
         }
       } while (s != RT2501_S_CONNECTED && counter_timer - t0 < 30000);
     }
 
-    sh_puts(s == RT2501_S_CONNECTED
-              ? "[6] ASSOCIATED - WPA handshake complete\n"
-              : "[6] FAIL - not connected after 30s\n");
+    if (s == RT2501_S_CONNECTED) {
+      sh_puts("[6] ASSOCIATED - WPA handshake complete\n");
+    } else {
+      sh_puts("[6] FAIL - not connected after 30s (last");
+      print_reject();
+      sh_puts(")\n");
+    }
   }
 #endif
 

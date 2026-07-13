@@ -58,6 +58,12 @@ static const uint8_t ieee80211_wpa2_oui[IEEE80211_OUI_LEN] =
 int32_t ieee80211_mode;
 int32_t ieee80211_state;
 uint32_t ieee80211_timeout;
+/* lua-track wifiprobe diagnostic: the AP's reject code at the point the join
+ * silently falls back to IDLE, latched for the probe's main loop to print.
+ * The reject path runs in the RX/URB callback, where DBG_WIFI perturbs join
+ * timing - latch instead. Packed (stage<<12)|code: stage 1=AUTH 2=ASSOC
+ * 3=DEAUTH; 0 = no reject seen. */
+volatile uint16_t ieee80211_reject;
 static rt2501_scan_callback ieee80211_scallback;
 static void *ieee80211_scallback_userparam;
 
@@ -1350,6 +1356,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 						}
 						if(((frame_current[4] << 0)|(frame_current[5] << 8)) != IEEE80211_STATUS_SUCCESS) {
 							DBG_WIFI("Open auth failed: denied by AP"EOL);
+							ieee80211_reject = 0x1000 | (((frame_current[4] << 0)|(frame_current[5] << 8)) & 0x0FFF);
 							ieee80211_state = IEEE80211_S_IDLE;
 							break;
 						}
@@ -1426,6 +1433,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 					sprintf(dbg_buffer, "Assoc failed by AP (0x%04lx)"EOL, assoc_code);
 					DBG_WIFI(dbg_buffer);
 #endif
+					ieee80211_reject = 0x2000 | (assoc_code & 0x0FFF);
 					ieee80211_state = IEEE80211_S_IDLE;
 					break;
 				}
@@ -1463,6 +1471,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 						(frame_current[0] << 0)|(frame_current[1] << 8));
 					DBG_WIFI(dbg_buffer);
 #endif
+					ieee80211_reject = 0x3000 | (((frame_current[0] << 0)|(frame_current[1] << 8)) & 0x0FFF);
 					ieee80211_state = IEEE80211_S_IDLE;
 				}
 			} else {
