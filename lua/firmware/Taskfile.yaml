@@ -8,6 +8,7 @@
 #   task lua:firmware:repl             -> Lua REPL in the simulator (#92)
 #   task lua:firmware:flash            -> flash over JTAG via the Pi bridge (#90)
 #   task lua:firmware:repl:hw          -> flash + capture the semihosting console
+#   task lua:firmware:luac             -> compile SOURCE= to device bytecode OUT=
 #   task lua:firmware:test:luac        -> source vs #LC bytecode round-trip
 #
 # Relocatable: every target works both from the repo root (`task
@@ -41,12 +42,11 @@ vars:
   APP: '{{.APP | default "lua"}}'
 
 includes:
-  luac: # host Lua->bytecode compiler (built with repo root as Docker context)
+  luac: # host Lua->bytecode compiler (built with the lua layer root as Docker context)
     taskfile: ../tools/luac/Taskfile.yaml
-    internal: true
     vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
-  simulator: # Unicorn simulator (built with repo root as Docker context)
+  simulator: # Unicorn simulator (built with the lua layer root as Docker context)
     taskfile: ../tools/simulator/Taskfile.yaml
     internal: true
     vars: {IMAGE: nabaztag-sdk-simulator, DIR: tools/simulator}
@@ -59,7 +59,7 @@ tasks:
       - docker build -t {{.FV_IMAGE}} .
 
   build:
-    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task firmwareV2:build [APP=hello] [DEBUG=1]'
+    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task lua:firmware:build [APP=hello] [DEBUG=1]'
     # DEBUG=1 (M11, #119) turns on the vendored usb/net stacks' semihosting
     # trace macros; artifact becomes bin/<APP>-dbg.elf (separate obj tree).
     dir: '{{.TASKFILE_DIR}}'
@@ -80,7 +80,7 @@ tasks:
       - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} {{.ARGS}} /mnt/{{.APP}}.elf'
 
   repl:
-    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua runs a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133). Usage: task firmwareV2:repl [SCRIPT=path/to.lua] [LC=1] [N=budget]'
+    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua runs a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133). Usage: task lua:firmware:repl [SCRIPT=path/to.lua] [LC=1] [N=budget]'
     dir: '{{.TASKFILE_DIR}}'
     interactive: true
     deps:
@@ -130,7 +130,7 @@ tasks:
 
   flash:
     desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
-    summary: 'Usage: task firmwareV2:flash [APP=hello] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    summary: 'Usage: task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
       APP: '{{.APP | default "lua"}}'
@@ -143,7 +143,7 @@ tasks:
 
   repl:hw:
     desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
-    summary: 'Usage: task firmwareV2:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
+    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
       APP: '{{.APP | default "lua"}}'
@@ -169,17 +169,6 @@ tasks:
         python3 '{{.REPO}}/tools/openocd/flash.py' --semihosting --host {{.PI_HOST}} \
           --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
           ${INPUT:+--input "$INPUT"}
-
-  # luac:
-  #   desc: 'Compile a Lua source file to 32-bit device bytecode with the host luac (#133).'
-  #   summary: 'Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc. Bytecode loads on the rabbit as-is (parser-less end-game); see tools/luac/README.md.'
-  #   dir: '{{.TASKFILE_DIR}}'
-  #   cmds:
-  #     - task: luac:compile
-  #       vars:
-  #         WORKDIR: '{{.REPO}}'
-  #         SOURCE: '{{.SOURCE}}'
-  #         OUT: '{{.OUT}}'
 
   test:luac:
     desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'

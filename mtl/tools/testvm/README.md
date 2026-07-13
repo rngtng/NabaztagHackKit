@@ -23,7 +23,7 @@ task mtl:firmware:test:vm DURATION=15     # longer window
 To watch it run interactively instead of a bounded smoke test:
 
 ```
-task mtl:firmware:testvm:simulate SOURCE=build/boot/dumpbc.c
+task mtl:firmware:simulate                # [BC_SOURCE=build/boot/dumpbc.c]
 ```
 
 `SOURCE` is a `dumpbc.c` file as written by `mtl_compiler` (raw bytecode, i.e.

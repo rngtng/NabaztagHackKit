@@ -1,32 +1,38 @@
-# tools/luac - host-native Lua->bytecode compiler for firmwareV2 (#133).
+# tools/luac - host-native Lua->bytecode compiler for the lua firmware (#133).
 #
-# Built from the vendored src/firmwareV2/lua/ tree + our LUA_32BITS luaconf.h, so
+# Built from the vendored lua/firmware/lua/ tree + our LUA_32BITS luaconf.h, so
 # the bytecode it emits loads on the rabbit's lundump.c unchanged (see Dockerfile
 # for the header-compatibility rationale). Every target runs in Docker; the only
 # host requirement is Docker + Task.
 #
-#   task firmwareV2:luac SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
+#   task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
 #
-# The image is built with the *repo root* as its Docker context (not this folder)
-# so its Dockerfile can COPY the sibling lua/ tree - hence dir: USER_WORKING_DIR
-# and the -f path below, the same cross-folder trick tools/testvm uses.
+# The image is built with the *lua layer root* as its Docker context (not this
+# folder) so its Dockerfile can COPY the sibling firmware/lua/ tree - hence the
+# WORKDIR/REPO dir and the -f path below, the same cross-folder trick
+# mtl/tools/testvm uses.
 version: '3'
 
 vars:
   IMAGE: '{{.IMAGE | default "nabaztag-sdk-luac"}}'
   DIR: '{{.DIR | default "./tools/luac/"}}'
+  # OUT passthrough: without it the root Taskfile's OUT=build leaks in ahead of
+  # a CLI-supplied OUT (same pattern as the other leaves).
+  OUT: '{{.OUT}}'
 
 tasks:
   image:
     internal: true   # rebuilt on demand; the COPYed lua/ tree cache-busts it when Lua changes
-    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    # Docker context = the lua layer root (two dirs up from this leaf), so the
+    # Dockerfile can COPY the sibling firmware/lua/ tree.
+    dir: '{{.WORKDIR | default (printf "%s/../.." .TASKFILE_DIR)}}'
     cmds:
       - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
 
-  compile:
-    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc'
+  default:
+    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task lua:firmware:luac SOURCE=in.lua OUT=out.lc'
     deps: [image]
-    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    dir: '{{.USER_WORKING_DIR}}'
     requires:
       vars: [SOURCE, OUT]
     cmds:

@@ -51,7 +51,7 @@ a source line. `replpipe.py` is the sender.
 task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc
 
 # Round-trip test (sim): SCRIPT fed as source vs. as #LC frames must match.
-task lua:firmware:test:luac [SCRIPT=lua/apps/luac-roundtrip.lua]
+task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua]
 
 # Drive the sim / hardware REPL with bytecode instead of source:
 task lua:firmware:repl SCRIPT=foo.lua LC=1        # (or a .lc SCRIPT)

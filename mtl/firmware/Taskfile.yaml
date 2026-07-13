@@ -4,8 +4,8 @@
 # `firmware:build` / `firmware:package` / `firmware:flash` / `firmware:disasm` /
 # `firmware:test` / `firmware:test:bugs`. Every target runs in the Docker
 # toolchain (see Dockerfile); host needs only Docker, Task and git.
-#   bin/Nab.elf  → flash with OpenOCD/GDB (see README "Flash")
-#   bin/Nab.sim  → upload via the config page (blue LEDs) — built by firmware:package
+#   build/firmware/Nab.elf → flash with OpenOCD/GDB (see README "Flash")
+#   build/firmware/Nab.sim → upload via the config page (blue LEDs) — built by firmware:package
 #
 # The C VM compiles boot's dumpbc.c into bc.c, so `firmware:build` needs boot
 # bytecode first (bootstrap order in CLAUDE.md). `firmware:package`/`firmware:flash`
@@ -138,6 +138,19 @@ tasks:
       - task: test:vm
       - task: test:bugs
       - task: test:crypto
+
+  simulate:
+    desc: 'Run the native C VM (testvm) interactively against boot bytecode, foreground. Requires boot:build first.'
+    summary: 'Usage: task firmware:simulate [BC_SOURCE=build/boot/dumpbc.c]. Button push: write a byte to build/button.sock.'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      BC_SOURCE: '{{.BC_SOURCE | default (printf "%s/boot/dumpbc.c" .OUT)}}'
+    cmds:
+      - task: testvm:simulate
+        vars:
+          WORKDIR: '{{.REPO}}'
+          SOURCE: '{{.BC_SOURCE}}'
+          SOCK_DIR: '{{.OUT}}'
 
   test:vm:
     desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires boot:build first.'
