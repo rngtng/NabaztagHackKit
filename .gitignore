@@ -20,3 +20,4 @@ build
 /mtl/tools/testvm/testvm
 /mtl/tools/testvm/bugrepro
 /mtl/tools/testvm/bc.c
+__pycache__/
