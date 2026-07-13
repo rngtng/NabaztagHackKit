@@ -8,11 +8,19 @@
 # (#63); shared helper is the DRY follow-up (#187).
 version: '3'
 
+# Source/output paths are hardcoded per task (not leaf-global vars): a leaf-global
+# bleeds across the sibling apps:* includes (piper would read app-sse's paths), the
+# same hazard boot/bootV2 call out. piper builds apps/piper/main.mtl → build/app-piper.
 vars:
-  TARGET: app-piper
   OUT: '{{.OUT | default "build"}}'
+  # REPO = this leaf's layer root (the child of the repo root). Resolved by
+  # walking up to just below the .git dir, NOT by a fixed `../..` depth: Task
+  # keeps one entry per leaf-global var name, so a fixed-depth `REPO` formula from
+  # a sibling leaf at a different depth can be applied here (Go map order is
+  # random) and silently pick the wrong dir. A depth-independent formula is
+  # identical in every leaf, so any cross-applied copy still resolves correctly.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
 
 includes:
   preprocessor:
@@ -34,14 +42,14 @@ tasks:
     summary: 'Usage: task app-piper:build [OUT=build]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      APP_OUT: '{{.OUT}}/app-piper'
     cmds:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          SOURCE: 'apps/piper/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
+          INCLUDES: 'apps/piper lib/'
       - task: mtl:compile
         vars:
           WORKDIR: '{{.REPO}}'
@@ -53,14 +61,14 @@ tasks:
     summary: 'Usage: task app-piper:simulate [OUT=build] [PORT=8080]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      APP_OUT: '{{.OUT}}/app-piper'
     cmds:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          SOURCE: 'apps/piper/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
+          INCLUDES: 'apps/piper lib/'
           DEFINES: SIMU
       - task: mtl:simulate
         vars:
@@ -70,11 +78,11 @@ tasks:
           CLI_ARGS: '{{.CLI_ARGS}}'
 
   simulate:mock:
-    desc: 'Simulate app-piper end-to-end with the mock file server (serves src/app-piper/assets, e.g. init.forth).'
+    desc: 'Simulate app-piper end-to-end with the mock file server (serves apps/piper/assets, e.g. init.forth).'
     summary: 'Usage: task app-piper:simulate:mock'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      APP_OUT: '{{.OUT}}/app-piper'
       NET: nabaztag-mocknet
       MOCK_IP: 172.30.0.10
       ASSETS: assets   # leaf-relative: cwd is this app's own dir
@@ -91,9 +99,9 @@ tasks:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          SOURCE: 'apps/piper/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
+          INCLUDES: 'apps/piper lib/'
           DEFINES: SIMU
       - task: mtl:simulate
         vars:

@@ -26,8 +26,12 @@ version: '3'
 
 vars:
   FW_IMAGE: '{{.FW_IMAGE | default "nabaztag-sdk-firmware"}}'
+  # REPO = the mtl layer root, resolved depth-independently (walk up to just below
+  # .git). MUST be identical in every leaf: Task keeps one entry per leaf-global
+  # var name, so a fixed-depth formula from a sibling at another depth can be
+  # applied here with the wrong root (random Go map order). See mtl/boot.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
   OUT: '{{.OUT | default "build"}}'
 
 includes:
@@ -35,13 +39,13 @@ includes:
     taskfile: ../boot/Taskfile.yaml
     internal: true
   mkfirmware:
-    taskfile: ../../tools/mkfirmware/Taskfile.yaml
+    taskfile: ../tools/mkfirmware/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-mkfirmware, DIR: ../../tools/mkfirmware}
+    vars: {IMAGE: nabaztag-sdk-mkfirmware, DIR: ../tools/mkfirmware}
   testvm:
-    taskfile: ../../tools/testvm/Taskfile.yaml
+    taskfile: ../tools/testvm/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-testvm, DIR: ../../tools/testvm}
+    vars: {IMAGE: nabaztag-sdk-testvm, DIR: ../tools/testvm}
 
 tasks:
   image:
@@ -127,6 +131,15 @@ tasks:
           ELF: '{{.REPO}}/{{.ELF}}'
 
   test:
+    desc: 'Run all firmware tests'
+    summary: 'Usage: task firmware:test'
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - task: test:vm
+      - task: test:bugs
+      - task: test:crypto
+
+  test:vm:
     desc: 'Smoke-test the firmware C VM (native build, not the MTL simulator) against boot bytecode. Requires boot:build first.'
     summary: 'Usage: task firmware:test [BC_SOURCE=build/boot/dumpbc.c] [DURATION=5]'
     dir: '{{.TASKFILE_DIR}}'

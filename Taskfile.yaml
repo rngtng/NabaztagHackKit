@@ -9,54 +9,39 @@
 # relocatable: `task <layer>:<verb>` here == `cd <layer> && task <verb>` there.
 # Run `task` with no args to list everything.
 #
-# Root owns no toolchain includes and re-implements nothing: `test` delegates to
-# `lib:test`; `verify`/`clean` just chain the layers' own verbs. Decentralised
-# per #63 — remaining per-leaf duplication is intentional for now (DRY: #187).
+# Root owns no toolchain includes and re-implements nothing: `verify`/`clean`
+# just chain the two layers' own verbs. Sources are split into two self-contained
+# layers — `mtl/` (the MTL/C V1 stack) and `lua/` (the Lua V2 firmware) — each of
+# which owns its own leaf includes, so targets read as `<layer>:<sub>:<verb>` —
+# e.g. `task mtl:app-piper:build`, `task mtl:boot:simulate`, `task mtl:lib:test`,
+# `task lua:firmware:flash`. Decentralised per #63 — remaining per-leaf
+# duplication is intentional for now (DRY: #187).
 version: '3'
 
 vars:
   OUT: build
 
 includes:
-  lib: # MTL standard library + its test harness (owns the preprocessor/mtl toolchain)
-    taskfile: ./lib/Taskfile.yaml
-  app-template: # MTL device-stack template app
-    taskfile: ./src/app-template/Taskfile.yaml
-  app-piper: # MTL piper app
-    taskfile: ./src/app-piper/Taskfile.yaml
-  app-sse: # MTL SSE server app
-    taskfile: ./src/app-sse/Taskfile.yaml
-  boot: # boot MTL image (WiFi provisioning + OTA)
-    taskfile: ./src/boot/Taskfile.yaml
-  bootV2: # V2 boot MTL image
-    taskfile: ./src/bootV2/Taskfile.yaml
-  firmware: # NabGCC-based C VM firmware
-    taskfile: ./src/firmware/Taskfile.yaml
-  firmwareV2: # Lua-successor V2 firmware (Lua 5.4)
-    taskfile: ./src/firmwareV2/Taskfile.yaml
+  mtl: # MTL/C V1 stack: standard library, apps, boot, C VM firmware + toolchain
+    taskfile: ./mtl/Taskfile.yaml
+  lua: # Lua-successor V2 firmware (Lua 5.4)
+    taskfile: ./lua/Taskfile.yaml
 
 tasks:
   verify:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV1 all build.'
+    desc: 'Definition of done: run before every commit. Builds/tests both layers (MTL V1 + Lua V2).'
     cmds:
-      - task: lib:test
-      - task: boot:build
-      - task: app-piper:build
-      - task: app-template:build
-      - task: app-sse:build
-      - task: firmware:test:bugs
-      - task: firmware:test:crypto
-      - task: firmwareV2:build
+      - task: mtl:verify
+      - task: lua:verify
 
   verifyV2:
-    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV2 all build.'
+    desc: 'Definition of done for the Lua (V2) layer only.'
     cmds:
-      - task: firmwareV2:build
+      - task: lua:verify
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:
-      - task: lib:clean
-      - task: firmware:clean
-      - task: firmwareV2:clean
+      - task: mtl:clean
+      - task: lua:clean
       - rm -rf '{{.OUT}}'

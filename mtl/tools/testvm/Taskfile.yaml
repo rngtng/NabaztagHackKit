@@ -24,7 +24,7 @@ tasks:
       - defer: rm -f tools/testvm/bc.c
       # firmware's vm/net sources mount at /work; testvm's own sources overlay at /work/testvm
       - 'docker run --rm --init
-          -v "$(realpath src/firmware):/work"
+          -v "$(realpath firmware):/work"
           -v "$(realpath tools/testvm):/work/testvm"
           -v "$(realpath {{.SOCK_DIR}}):/sock"
           -w /work/testvm
@@ -46,7 +46,7 @@ tasks:
       # a clean exit (0) or a timeout while still running (124) both mean the VM
       # survived DURATION seconds without crashing (segfault -> 139); that's a pass
       - 'docker run --rm --init
-          -v "$(realpath src/firmware):/work"
+          -v "$(realpath firmware):/work"
           -v "$(realpath tools/testvm):/work/testvm"
           -v "$(realpath {{.SOCK_DIR}}):/sock"
           -w /work/testvm
@@ -60,7 +60,7 @@ tasks:
     cmds:
       # same mount layout as simulate/test: firmware at /work, this layer at /work/testvm
       - 'docker run --rm --init
-          -v "$(realpath src/firmware):/work"
+          -v "$(realpath firmware):/work"
           -v "$(realpath tools/testvm):/work/testvm"
           -w /work/testvm
           {{.IMAGE}}

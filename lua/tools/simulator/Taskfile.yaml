@@ -1,0 +1,22 @@
+# tools/simulator - Unicorn simulator for the Lua V2 firmware (#96).
+#
+# Owns only the image *build* (from the lua layer root as Docker context, like
+# tools/luac). The image is run by the firmware leaf itself (`lua:firmware:
+# simulate`/`repl`), which lives next to the built bin/ELFs.
+version: '3'
+
+vars:
+  IMAGE: '{{.IMAGE | default "nabaztag-sdk-simulator"}}'
+  DIR: '{{.DIR | default "./tools/simulator/"}}'
+
+tasks:
+  image:
+    internal: true   # rebuilt on demand; the COPYed simulate.py cache-busts it when the sim changes
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    cmds:
+      - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
+
+  clean:
+    desc: 'Remove the tools/simulator Docker image'
+    cmds:
+      - docker rmi {{.IMAGE}} || true

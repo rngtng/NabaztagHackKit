@@ -1,0 +1,57 @@
+# NabaztagSDK — MTL/C V1 layer entrypoint.
+#
+# Every build runs inside Docker, so the only host requirements are Docker and
+# Task (https://taskfile.dev). Each leaf is self-contained: it owns its Taskfile
+# with the layer's verbs (build / simulate / flash / …) and pulls in whatever
+# tools it needs. This layer file only `includes:` those leaves under a per-leaf
+# namespace, so targets read as `<leaf>:<verb>` — e.g. `task app-piper:build`,
+# `task boot:simulate`, `task lib:test`, `task firmware:build`. Every leaf is
+# relocatable: `task <leaf>:<verb>` here == `cd <leaf> && task <verb>` there.
+# Run `task` with no args to list everything.
+#
+# This file owns no toolchain includes and re-implements nothing: `verify`/`clean`
+# just chain the leaves' own verbs. Decentralised per #63 — remaining per-leaf
+# duplication is intentional for now (DRY: #187).
+version: '3'
+
+vars:
+  OUT: build
+
+includes:
+  # Distinct top-level namespaces (NOT a shared `apps:` prefix): sibling includes
+  # that share a namespace segment cross-contaminate each other's leaf-global vars
+  # (REPO/WORKDIR bleed → the wrong app's source is preprocessed). One namespace
+  # each keeps them isolated.
+  app-template: # MTL device-stack template app
+    taskfile: ./apps/template/Taskfile.yaml
+  app-piper: # MTL piper app
+    taskfile: ./apps/piper/Taskfile.yaml
+  app-sse: # MTL SSE server app
+    taskfile: ./apps/sse/Taskfile.yaml
+  boot: # boot MTL image (WiFi provisioning + OTA)
+    taskfile: ./boot/Taskfile.yaml
+  bootV2: # V2 boot MTL image
+    taskfile: ./bootV2/Taskfile.yaml
+  firmware: # NabGCC-based C VM firmware
+    taskfile: ./firmware/Taskfile.yaml
+  lib: # MTL standard library + its test harness (owns the preprocessor/mtl toolchain)
+    taskfile: ./lib/Taskfile.yaml
+
+tasks:
+  verify:
+    desc: 'Definition of done: run before every commit. Tests + boot + app-piper + device template + app-sse + firmwareV1 all build.'
+    cmds:
+      - task: app-piper:build
+      - task: app-template:build
+      - task: app-sse:build
+      - task: boot:build
+      - task: bootV2:build
+      - task: lib:test
+      - task: firmware:test
+
+  clean:
+    desc: 'Clean all build artifacts and the layers'' Docker images.'
+    cmds:
+      - task: lib:clean
+      - task: firmware:clean
+      - rm -rf '{{.OUT}}'

@@ -1,29 +1,35 @@
 # boot — self-contained build/simulate for the boot MTL image (#63).
 #
 # Root only `includes:` this under the `boot` namespace → `boot:build` /
-# `boot:simulate`. Relocatable (repo root AND `cd src/boot && task build`);
-# REPO = repo root, passed as WORKDIR so the shared preprocessor/mtl tools mount
-# it. The build emits raw bytecode (SIGN=false) plus the dumpbc.c debug dump that
-# `firmware:build` compiles into the C VM (bootstrap order in CLAUDE.md).
+# `boot:simulate`. Relocatable (mtl layer root AND `cd mtl/boot && task build`);
+# REPO = the mtl layer root, passed as WORKDIR so the shared preprocessor/mtl
+# tools mount it. The build emits raw bytecode (SIGN=false) plus the dumpbc.c
+# debug dump that `firmware:build` compiles into the C VM (bootstrap order in
+# CLAUDE.md).
 version: '3'
 
 # SOURCE is hardcoded per task (not a var): a `{{.SOURCE | default}}` leaf-global
 # reads an ambient SOURCE, which bleeds across sibling leaves (bootV2 clobbered
-# boot). Boot always builds src/boot/boot.mtl.
+# boot). Boot always builds boot/boot.mtl.
 vars:
   OUT: '{{.OUT | default "build"}}'
+  # REPO = the mtl layer root, resolved depth-independently (walk up to just below
+  # .git), NOT a fixed `../` depth: Task keeps one entry per leaf-global var name,
+  # so a sibling leaf's fixed-depth REPO formula can be applied here with the
+  # wrong depth (random Go map order). An identical formula in every leaf is
+  # collision-proof - any cross-applied copy still resolves the same root.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
 
 includes:
   preprocessor:
-    taskfile: ../../tools/preprocessor/Taskfile.yaml
+    taskfile: ../tools/preprocessor/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../../tools/preprocessor}
+    vars: {IMAGE: nabaztag-sdk-preprocessor, DIR: ../tools/preprocessor}
   mtl:
-    taskfile: ../../tools/mtl_linux/Taskfile.yaml
+    taskfile: ../tools/mtl_linux/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../../tools/mtl_linux}
+    vars: {IMAGE: nabaztag-sdk-mtl, DIR: ../tools/mtl_linux}
 
 tasks:
   build:
@@ -36,9 +42,9 @@ tasks:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: src/boot/boot.mtl
+          SOURCE: boot/boot.mtl
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. src/boot'
+          INCLUDES: '. boot'
       - task: mtl:compile
         vars:
           WORKDIR: '{{.REPO}}'
@@ -56,9 +62,9 @@ tasks:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: src/boot/boot.mtl
+          SOURCE: boot/boot.mtl
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: '. src/boot'
+          INCLUDES: '. boot'
           DEFINES: 'SIMU BOOT'
       - task: mtl:simulate
         vars:

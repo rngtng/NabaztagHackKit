@@ -1,16 +1,14 @@
 # OS noise
 .DS_Store
-.task
 
 # Makefiles are project source — override a global `makefile` ignore some setups have
 !Makefile
 
-
+.task
+build
+.env
+.luacframe.*
 *.bin
-/src/firmware/bin
-/tools/testvm/testvm
-/tools/testvm/bugrepro
-/tools/testvm/bc.c
 *.lst
 *.d
 *.sym
@@ -19,5 +17,6 @@
 *.o
 
 # task build output (OUT=build in Taskfile.yaml)
-/build/
-.env
+/mtl/tools/testvm/testvm
+/mtl/tools/testvm/bugrepro
+/mtl/tools/testvm/bc.c

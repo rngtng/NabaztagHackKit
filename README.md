@@ -1,4 +1,4 @@
-# Nabaztag Hack Kit
+# Nabaztag HackKit
 
 A complete MTL firmware and SDK for the Nabaztag v1/v2 IoT rabbit — including a dockerized toolchain, a reusable MTL standard library, a Forth interpreter, and a full application stack for WiFi, audio, RFID, LEDs, and ears.
 
