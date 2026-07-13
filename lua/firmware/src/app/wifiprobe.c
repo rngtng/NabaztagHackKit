@@ -1,10 +1,10 @@
 /**
  * @file wifiprobe.c
- * @brief RT2501 802.11 bring-up probe (M11b, #119): firmware blob load, MAC
- *        from EEPROM, and an AP scan with per-network results - proves USB
- *        bulk transfers, the 8051 firmware upload, radio RX and the
- *        beacon-parse path end-to-end. No association yet (that is the next
- *        stage, where V1's #125 station bug lives).
+ * @brief RT2501 802.11 bring-up probe: firmware blob load, MAC from EEPROM, an
+ *        AP scan with per-network results, and (with WIFI_SSID set) STA
+ *        association + WPA handshake - proves USB bulk transfers, the 8051
+ *        firmware upload, radio RX, the beacon-parse path and the join path
+ *        end-to-end.
  *
  * Stages ([1]-[3] identical to usbprobe.c):
  *   [4] rt2501_driver_install + pump until the driver claims the dongle
@@ -14,6 +14,7 @@
  *       usbhost_events/rt2501_receive/rt2501_timer exactly like V1 main.c;
  *       each callback prints SSID/channel/RSSI/encryption; ends when the
  *       state machine leaves RT2501_S_SCAN.
+ *   [6] (WIFI_SSID only) associate + 4-way handshake against the test AP.
  *
  * Run: task repl:firmwareV2:hw APP=wifiprobe
  * Hardware-only (the sim has no OHCI model).
@@ -175,7 +176,7 @@ static const char *state_name(int32_t s)
 
 /* The 802.11 state machine itself (ieee80211.h extern) - rt2501_state()
  * flattens AUTH/ASSOC/EAPOL into CONNECTING, but *which* of those the
- * machine dies in is exactly the #125 question. */
+ * machine dies in is what we want to see. */
 static const char *dot11_name(int32_t s)
 {
   switch (s) {
@@ -329,7 +330,7 @@ int main(void)
 #ifdef WIFI_SSID
   /* [6] STA association + WPA handshake against the test AP (SSID/PSK from
    * the environment at build time - see Makefile). This is the path that
-   * drives V1 to BROKEN (#125). */
+   * drives V1 to BROKEN. */
   {
     static uint8_t pmk[32];
     static struct rt2501_scan_result synth;
@@ -393,9 +394,9 @@ int main(void)
 
     /* Pump and report every state-machine transition; the auth/assoc/EAPOL
      * exchange runs inside the stack (rx IRQ + rt2501_timer retries).
-     * ieee80211_state is tracked separately - which sub-state dies is the
-     * #125 question (AUTH: no/bad auth response; ASSOC: assoc rejected,
-     * e.g. RSN IE; EAPOL: 4-way handshake). */
+     * ieee80211_state is tracked separately - which sub-state dies tells us
+     * where (AUTH: no/bad auth response; ASSOC: assoc rejected, e.g. RSN IE;
+     * EAPOL: 4-way handshake). */
     t0 = counter_timer;
     last_state = -1;
     {

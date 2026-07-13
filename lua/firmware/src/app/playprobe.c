@@ -1,7 +1,7 @@
 /**
  * @file playprobe.c
- * @brief #123 decode-isolation probe: does the VS1003 actually decode a PCM
- *        stream, and does CLOCKF (the PLL clock) stick?
+ * @brief Decode-isolation probe: does the VS1003 actually decode a PCM stream,
+ *        and does CLOCKF (the PLL clock) stick?
  *
  * audioprobe.c proved the chip is alive and SCI read/write work at slow SPI.
  * This probe adds the minimum decode path (CLOCKF -> readback -> feed a tiny

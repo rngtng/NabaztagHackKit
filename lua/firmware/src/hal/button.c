@@ -1,13 +1,11 @@
 /**
  * @file button.c
- * @brief Head push-button low-level access (M5, issue #93).
+ * @brief Head push-button low-level access.
  *
  * The Nabaztag:tag head button is a single active-low GPIO on P3.1 (the
  * INT_SWITCH line). src/firmware wires an EXINT3 interrupt for it but leaves it
- * disabled and polls instead (see push_button_value in src/firmware); we do the
- * same - a plain polled read, no IRQ/timer subsystem needed. Plain C (no Lua),
- * so it is safe to auto-compile into every firmwareV2 app; the Lua binding that
- * exposes it lives in src/app/lua.c.
+ * disabled and polls instead; we do the same - a plain polled read, no IRQ.
+ * The Lua binding that exposes it lives in src/app/lua.c.
  */
 #include "ml674061.h"
 #include "common.h"

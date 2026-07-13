@@ -1,6 +1,6 @@
 /**
  * @file i2c.h
- * @brief OKI ML67Q4051 I2C peripheral - low-level access (M9, #117).
+ * @brief OKI ML67Q4051 I2C peripheral - low-level access.
  *
  * Verbatim port of src/firmware/src/hal/i2c.c's API (Violet / RedoX GCC port).
  * Register defs (I2CCTL/I2CSR/I2CDR/...) already live in sys/inc/ml674061.h -

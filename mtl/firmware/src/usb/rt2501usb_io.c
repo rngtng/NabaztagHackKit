@@ -17,7 +17,7 @@
  * Retry budget for the PHY CSR serial-access busy-bit poll. The reference
  * driver bounds equivalent polling at REGISTER_BUSY_COUNT (100) retries and
  * treats exhaustion as a hard failure (rt2x00usb_regbusy_read in Linux's
- * rt73usb.c) instead of spinning forever - backported here per #156. Every poll
+ * rt73usb.c) instead of spinning forever - backported here. Every poll
  * below is already a full USB control transfer (~ms), so the retry count is the
  * meaningful bound and no extra per-iteration delay is needed; on a healthy boot
  * the bit clears within an iteration or two.
@@ -34,7 +34,7 @@
 /**
  * @brief Bounded wait for a PHY CSR serial-access busy bit to clear.
  *
- * A stuck busy bit (marginal power-up or a wedged ASIC, cf. #144/#134) would
+ * A stuck busy bit (marginal power-up or a wedged ASIC) would
  * otherwise hang this single-threaded firmware in an unbounded poll with no
  * recovery path.
  *

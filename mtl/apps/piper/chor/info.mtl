@@ -92,7 +92,7 @@ var _info_animations = {
 }
 };;
 
-// v21 : changé couleur jaune clair (11) de 0xffff80 à 0xffcc00 (bug 197)
+// v21 : changé couleur jaune clair (11) de 0xffff80 à 0xffcc00
 var info_palette={
 //    0:black  1:red    2:green  3:yellow 4:blue   5:violet 6:cyan   7:white
      0x000000 0xff0000 0x00ff00 0xffff00 0x0000aa 0xff00ff 0x00ffff 0xffffff

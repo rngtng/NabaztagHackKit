@@ -1,9 +1,9 @@
 /**
  * @file fmtprobe.c
- * @brief #123 format-isolation probe: feed the VS1003 a REAL WAV then a REAL
- *        MP3 (generated on the host, embedded as tones.h) to find out which
- *        format it actually decodes. Uses the same minimal, proven init as
- *        playprobe.c (init confirmed correct there: CLOCKF=0xc000, ver=3).
+ * @brief Format-isolation probe: feed the VS1003 a REAL WAV then a REAL MP3
+ *        (generated on the host, embedded as tones.h) to find out which format
+ *        it actually decodes. Uses the same minimal init as playprobe.c
+ *        (CLOCKF=0xc000, ver=3).
  *
  * Listen: first sound = WAV, second (after a pause) = MP3. HDAT1 is read right
  * after each feed (nonzero => the decoder recognised that format).

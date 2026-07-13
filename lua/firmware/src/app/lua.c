@@ -1,41 +1,26 @@
 /**
  * @file lua.c
- * @brief M4 bring-up app (issue #92): boot PUC-Rio Lua 5.4 and run a REPL.
+ * @brief Boot PUC-Rio Lua 5.4 and run a REPL - the first real language runtime
+ *        on the ML67Q4051. Opens a trimmed stdlib, runs an embedded demo chunk,
+ *        then drops into a REPL. Console = ARM semihosting; heap = 1 MB ExtRAM.
  *
- * First binary that runs a real language runtime on the ML67Q4051. It brings up
- * the vendored Lua 5.4 core (see ../../lua/, PROVENANCE.md), opens a trimmed set
- * of standard libraries, runs an embedded demo chunk, then drops into a REPL.
- *
- * Console + heap, the two things a hosted Lua assumes but bare metal does not:
- *
- *   - Console: ARM semihosting (SWI 0x123456 / Thumb `svc 0xAB`) is the M3 (#91)
- *     no-UART console. The newlib syscalls _read/_write below route stdin/stdout
- *     through SYS_READC/SYS_WRITEC, so Lua's print() and the REPL prompt reach the
- *     GDB/OpenOCD console on hardware and the Unicorn simulator (#96) off hardware.
- *     On real hardware this needs M2's OpenOCD `arm semihosting enable`; until then
- *     the simulator is the console (it implements these same SWIs, see sim/).
- *
- *   - Heap: 16 KB of internal RAM is far too small for a Lua state, so _sbrk hands
- *     out the 1 MB external RAM window (0xD0000000) that init.s' EMC setup brings
- *     up. The linker's IntRAM heap (__heap_start__) is left unused here.
- *
- * DoD (#92): REPL reachable over the console; `print(1+1)` works. In the simulator
- * the embedded demo proves it; SYS_READC returns 0 (no input) so the REPL then
- * sees EOF and exits. On hardware the REPL reads real keystrokes over the console.
+ * Bare metal supplies neither, so this file also overrides the newlib syscalls
+ * (_read/_write over semihosting, _sbrk into ExtRAM) and Lua's number/printf
+ * helpers to keep the buffered-FILE + libm layers out of the flash budget.
  */
 #include <errno.h>
-#include <stdarg.h>   /* vsnprintf override (M7.5, #114) */
+#include <stdarg.h>   /* vsnprintf override */
 #include <stddef.h>
-#include <stdint.h>   /* uintptr_t in the %p path (M7.5, #114) */
+#include <stdint.h>   /* uintptr_t in the %p path */
 #include <stdio.h>
-#include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer (#133) */
+#include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer */
 #include <string.h>   /* strcmp - LED-name lookup in the nab binding */
 
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
 
-/* M5 (#93) hardware bindings: LED driver + head button. */
+/* Hardware bindings: LED driver + head button. */
 #include "ml674061.h"
 #include "common.h"
 #include "hal/spi.h"
@@ -45,11 +30,11 @@
 #include "hal/adc.h"
 #include "hal/i2c.h"
 #include "hal/rfid.h"
-#include "hal/motor.h"   /* M10 (#118): ear motors + encoders */
+#include "hal/motor.h"   /* ear motors + encoders */
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
 
-/* ---- ARM semihosting (the M3 #91 no-UART console) ------------------------ */
+/* ---- ARM semihosting (the no-UART console) ------------------------------- */
 /* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
  * simulator (and OpenOCD/GDB on hardware) traps `svc 0xAB` and services it. */
 #define SYS_WRITEC 0x03   /* write the single char at *r1                     */
@@ -99,7 +84,7 @@ int _read(int fd, char *ptr, int len)
 
 /* Read one line into buf (keeps the trailing '\n', NUL-terminates), built on
  * the single-char _read syscall. Replaces fgets() so the REPL needs no newlib
- * stdio FILE layer (M7.1, #107). Returns NULL on immediate EOF, like fgets. */
+ * stdio FILE layer. Returns NULL on immediate EOF, like fgets. */
 static char *sh_gets(char *buf, int size)
 {
   int i = 0;
@@ -119,7 +104,7 @@ static char *sh_gets(char *buf, int size)
   return buf;
 }
 
-/* ---- Lua console output (M7.1, #107) ------------------------------------- */
+/* ---- Lua console output -------------------------------------------------- */
 /* luaconf.h routes lua_writestring/writeline/writestringerror here so print()
  * and the error/panic paths write straight to the semihosting _write syscall,
  * never linking newlib's buffered-FILE layer (~6 KB). */
@@ -129,7 +114,7 @@ void luai_writestring(const char *s, size_t l)
 }
 
 /* Every lua_writestringerror call site (lauxlib panic/warn) uses a "%s"-style
- * format with one const char* arg. snprintf is our own (M7.5, below). */
+ * format with one const char* arg. snprintf is our own (below). */
 void luai_writestringerror(const char *fmt, const char *arg)
 {
   char b[128];
@@ -141,20 +126,18 @@ void luai_writestringerror(const char *fmt, const char *arg)
   _write(2, b, n);
 }
 
-/* ---- compact vsnprintf/snprintf, overriding newlib (M7.5, #114) ---------- */
-/* Overriding these strong symbols is the last flash-reclaim lever: Lua's number
+/* ---- compact vsnprintf/snprintf, overriding newlib ----------------------- */
+/* Overriding these strong symbols keeps ~12 KB out of flash: Lua's number
  * formatting (lua_number2str/lua_integer2str/lua_pointer2str) and string.format
  * route through snprintf, and newlib's snprintf (_svfprintf_r) drags in the
- * buffered-FILE layer (~12 KB) via __sinit's CHECK_INIT. This implementation
- * needs no FILE machinery.
+ * buffered-FILE layer via __sinit's CHECK_INIT. This needs no FILE machinery.
  *
  * Supports the conversions Lua emits: d i u o x X c s p % - with flags
  * (-+space 0 #), width and precision (both incl '*'), and length modifiers
  * (h/hh/l/ll/L/z/t/j, parsed; values are fetched as `long` since LUA_32BITS
  * makes lua_Integer and pointers 32-bit, so no 64-bit divide helpers are
  * pulled). Float conversions (f e g a, any case) stay approximate - integer
- * part + ".0" - float printing is still not properly supported (was already
- * stubbed pre-M7; a real dtoa is future work). */
+ * part + ".0" - a real dtoa is future work. */
 
 #define PF_LEFT  1
 #define PF_PLUS  2
@@ -350,7 +333,7 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
   return r;
 }
 
-/* ---- decimal string -> Lua number (M7.2, #108) --------------------------- */
+/* ---- decimal string -> Lua number ---------------------------------------- */
 /* Replaces strtof as Lua's lua_str2number (see luaconf.h). strtof drags in
  * newlib's double strtod + gdtoa multi-precision machinery (~14 KB). Lua only
  * reaches here for *decimal float* numerals - luaO_str2num tries the integer
@@ -361,8 +344,7 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
  * unconsumed char, leave it at 's' (return 0) when no digit is seen. Mantissa
  * is accumulated in a float and scaled by 10^exp via binary exponentiation, so
  * only single-float mul/div are used (no libm, no strtod). Last-ulp rounding is
- * looser than strtof - acceptable here (integer-first target; float printing is
- * already stubbed, #92). */
+ * looser than strtof - acceptable here (integer-first target). */
 #define LUAI_ISDIGIT(c) ((c) >= '0' && (c) <= '9')
 
 LUA_NUMBER luai_str2number(const char *s, char **endptr)
@@ -432,7 +414,7 @@ LUA_NUMBER luai_str2number(const char *s, char **endptr)
   return val;
 }
 
-/* ---- float ^ and % without libm (M7.3, #109) ----------------------------- */
+/* ---- float ^ and % without libm ------------------------------------------ */
 /* luaconf.h routes luai_numpow/luai_nummod here so Lua's `^` and float `%` do
  * not pull libm's powf/fmodf (~4 KB: __ieee754_powf/fmodf, scalbnf, wf_pow).
  * `^` yields a float in Lua: integer exponents are exact (binary
@@ -469,11 +451,10 @@ LUA_NUMBER luai_fmod(LUA_NUMBER a, LUA_NUMBER b)
   return m;
 }
 
-/* ---- abort: halt, don't raise(SIGABRT) (M7.4, #110) ---------------------- */
+/* ---- abort: halt, don't raise(SIGABRT) ----------------------------------- */
 /* newlib's abort() calls raise() + _exit(), pulling the signal machinery
  * (raise/signal/_kill_r/_getpid). Bare metal has no OS to signal, so halt in
- * place. The other M7.4 targets (strerror/strstr via luaL_fileresult/gsub) were
- * already removed by --gc-sections once the io/os libs were excluded. */
+ * place. */
 void abort(void)
 {
   for (;;) {
@@ -497,12 +478,11 @@ void *_sbrk(ptrdiff_t incr)
   return prev;
 }
 
-/* ---- M5/M8/M9/M10 hardware bindings (#93,#116,#117,#118): the `nab` module */
-/* Exposes the LEDs, head button, audio, RFID coupler, and (M10) ear motors to
- * Lua. */
+/* ---- hardware bindings: the `nab` module --------------------------------- */
+/* Exposes the LEDs, head button, audio, RFID coupler, and ear motors to Lua. */
 
 /* nab.led(name, r, g, b): light an RGB LED. name is one of
- * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c #93 -
+ * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c -
  * see inc/hal/led.h). r/g/b are 7-bit intensities (0..127), the TLC5922 range. */
 static int nab_led(lua_State *L)
 {
@@ -562,11 +542,10 @@ static int nab_beep(lua_State *L)
   return 0;
 }
 
-/* nab.play(data): stream a byte buffer (e.g. a WAV/MP3 file's bytes) to the
- * VS1003 decoder over SDI - the VS1003B decodes MP3/WMA/WAV/MIDI
- * (docs/hardware-dissection.md), so unlike nab.beep this is real decoded
- * audio and nab.volume actually attenuates it (issue #123 follow-up to M8
- * #116). Blocking: returns once the buffer is fed and flushed. */
+/* nab.play(data): stream a byte buffer (e.g. an MP3 file's bytes) to the
+ * VS1003 decoder over SDI. Unlike nab.beep this is real decoded audio and
+ * nab.volume actually attenuates it. Blocking: returns once the buffer is fed
+ * and flushed. */
 static int nab_play(lua_State *L)
 {
   size_t len;
@@ -575,22 +554,20 @@ static int nab_play(lua_State *L)
   return 0;
 }
 
-/* nab.tone(): a small built-in MP3 tone (nab_tone_mp3, generated - see
- * tone_mp3.h) so nab.play + nab.volume are demoable without shipping a file.
- * It is MP3, not raw PCM WAV, because the VS1003B on this board decodes MP3 but
- * does NOT decode PCM WAV (hardware-verified, #123). Feed to nab.play. */
+/* nab.tone(): a small built-in MP3 tone (nab_tone_mp3, see tone_mp3.h) so
+ * nab.play + nab.volume are demoable without shipping a file. It is MP3, not
+ * raw PCM WAV: the VS1003B on this board decodes MP3 but NOT PCM WAV
+ * (hardware-verified). Feed to nab.play. */
 static int nab_tone(lua_State *L)
 {
   lua_pushlstring(L, (const char *)nab_tone_mp3, sizeof nab_tone_mp3);
   return 1;
 }
 
-/* nab.wheel(): 8-bit ADC ch.2 reading (0..255). Hardware notes recorded during
- * M8 (#116) bring-up: the back wheel is almost certainly an analog pot on this
- * channel (ADCON1_CH2, same register sequence as src/firmware's
- * get_adc_value) - unconfirmed on hardware for this issue's follow-up (no
- * JTAG/Pi access this session). To map it to volume: `nab.volume(nab.wheel())`
- * in a polling loop. */
+/* nab.wheel(): 8-bit ADC ch.2 reading (0..255). The back wheel is almost
+ * certainly an analog pot on this channel (ADCON1_CH2, same register sequence
+ * as src/firmware's get_adc_value) - not yet hardware-confirmed. To map it to
+ * volume: `nab.volume(nab.wheel())` in a polling loop. */
 static int nab_wheel(lua_State *L)
 {
   lua_pushinteger(L, adc_read_ch2());
@@ -710,7 +687,7 @@ static const luaL_Reg loadedlibs[] = {
     {LUA_GNAME, luaopen_base},
     {LUA_TABLIBNAME, luaopen_table},
     {LUA_STRLIBNAME, luaopen_string},
-    {"nab", luaopen_nab},   /* M5/M8/M9 (#93, #116, #117): LEDs + button + audio + RFID */
+    {"nab", luaopen_nab},   /* LEDs + button + audio + RFID + ears */
     {NULL, NULL},
 };
 
@@ -766,19 +743,18 @@ static int load_line(lua_State *L, const char *line)
   return luaL_loadstring(L, line);
 }
 
-/* ---- off-device luac bytecode frames (#133) ------------------------------ */
-/* The parser-less wifi image (M11, #119) drops lparser/llex/lcode to reclaim
- * ~19 KB, so it can only load bytecode. Host-side luac (tools/luac) compiles
- * each REPL line off-device and ships the chunk here as a framed hex payload:
+/* ---- off-device luac bytecode frames ------------------------------------- */
+/* The parser-less wifi image drops lparser/llex/lcode to reclaim ~19 KB, so it
+ * can only load bytecode. Host-side luac (tools/luac) compiles each REPL line
+ * off-device and ships the chunk here as a framed hex payload:
  *
  *     #LC:<len>\n            header line (len = chunk size in bytes, decimal)
  *     <2*len hex chars>      the chunk, whitespace/newlines ignored (wrapped 64c)
  *
  * Raw bytecode can't ride this line-oriented console directly (chunks contain
  * '\n'/NUL and sh_gets is line-based), hence the hex framing. This dev image
- * still has the parser, so it accepts frames *alongside* source lines - which is
- * exactly what makes the pipe verifiable now: the same line fed as source and as
- * a frame must produce identical output. */
+ * still has the parser, so it accepts frames *alongside* source lines: the same
+ * line fed as source and as a frame must produce identical output. */
 #define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
 
 /* Read the next hex digit off the console, skipping the whitespace the sender
@@ -818,7 +794,7 @@ static void skip_to_eol(void)
  * 2*len hex chars into a fresh buffer, and load it as a Lua chunk. Leaves the
  * compiled chunk on the stack on success (like load_line), else pushes an error
  * message and returns non-LUA_OK. No strtol - a manual digit loop keeps newlib
- * out (M7). The buffer comes from the external-RAM heap (_sbrk). */
+ * out. The buffer comes from the external-RAM heap (_sbrk). */
 static int load_lc_frame(lua_State *L, const char *line)
 {
   const char *p = line + 4; /* past "#LC:" */
@@ -886,7 +862,7 @@ static void repl(lua_State *L)
   while (sh_gets(line, sizeof line) != NULL) {
     int status;
     if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':')
-      status = load_lc_frame(L, line); /* off-device luac bytecode (#133) */
+      status = load_lc_frame(L, line); /* off-device luac bytecode */
     else
       status = load_line(L, line); /* Lua source (parser-ful dev image) */
     if (status != LUA_OK)
@@ -908,10 +884,10 @@ static void init_hw(void)
   init_spi();
   init_led_rgb_driver();
   init_button();
-  init_vlsi();   /* M8 (#116): VS1003 audio codec on SPI0, for nab.beep/volume */
-  init_adc();    /* #123: ADC ch.2 (PD2), for nab.wheel() */
-  init_i2c();    /* M9 (#117): I2C bus, for the CRX14 RFID coupler / nab.rfid() */
-  init_ears();   /* M10 (#118): FTM PWM + encoder timers, for nab.ear_* */
+  init_vlsi();   /* VS1003 audio codec on SPI0, for nab.beep/volume */
+  init_adc();    /* ADC ch.2 (PD2), for nab.wheel() */
+  init_i2c();    /* I2C bus, for the CRX14 RFID coupler / nab.rfid() */
+  init_ears();   /* FTM PWM + encoder timers, for nab.ear_* */
 }
 
 int main(void)

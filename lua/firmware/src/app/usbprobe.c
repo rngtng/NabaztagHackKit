@@ -1,15 +1,15 @@
 /**
  * @file usbprobe.c
- * @brief USB host bring-up probe (M11a, #143): prove the ML60842 OHCI stack
- *        port end-to-end - tick IRQ alive, controller alive, root-hub port
- *        connect, enumeration - and print the internal RT2501 dongle's
- *        device descriptor (expect VID:PID 148f:2573).
+ * @brief USB host bring-up probe: prove the ML60842 OHCI stack port end-to-end
+ *        - tick IRQ alive, controller alive, root-hub port connect, enumeration
+ *        - and print the internal RT2501 dongle's device descriptor (expect
+ *        VID:PID 148f:2573).
  *
- * Staged with an objective printed signal per step (hardware-debug doctrine:
- * register readbacks, not by-ear/by-eye):
+ * Staged with an objective printed signal per step (register readbacks, not
+ * by-ear/by-eye):
  *   [1] init_irq + init_tick, busy-wait, counter_timer readback - the first
- *       live IRQ on firmwareV2; everything else depends on it (DelayMs, URB
- *       timeouts), so it gets a PASS/FAIL before USB is touched.
+ *       live IRQ; everything else depends on it (DelayMs, URB timeouts), so it
+ *       gets a PASS/FAIL before USB is touched.
  *   [2] usbctrl_init(USB_HOST) + HcRevision readback (expect 0x10, OHCI 1.0).
  *   [3] usbhost_init (hcd_init: ComRAM allocator + HCCA + OHCI IRQs on) and
  *       the EXINT2 hookup (mirrors V1 main.c reg_irq_handler).
@@ -18,7 +18,7 @@
  *       descriptor.
  *
  * Run: task repl:firmwareV2:hw APP=usbprobe
- * Sim runs boot but see no device (sim stubs the ML60842 region, emulates no
+ * Sim runs boot but sees no device (sim stubs the ML60842 region, emulates no
  * OHCI) - hardware-only verification.
  */
 #include "ml674061.h"
@@ -32,7 +32,7 @@
 #include "usb/usbh.h"
 #include "usb/usbctrl.h"
 
-/* ---- semihosting console (M3 #91 path) ---------------------------------- */
+/* ---- semihosting console ------------------------------------------------- */
 #define SYS_WRITEC 0x03
 
 static inline int semihost(int op, void *arg)

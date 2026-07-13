@@ -188,12 +188,12 @@ static const RT2501_RF_REGS RF5225RegTable[] = {
 };
 #define RT2501_NUM_OF_5225_CHNL (sizeof(RF5225RegTable) / sizeof(RT2501_RF_REGS))
 
-/* Bounds for the radio bring-up polls below (#144). On a marginal power-up the
+/* Bounds for the radio bring-up polls below. On a marginal power-up the
  * dongle can enumerate but leave BBP/RF half-initialised; without a cap these
  * waits spin forever and bring-up hangs silently with no recovery. Exhausting
  * the budget instead returns failure, so rt2501_connect() tears the device down
- * and rt2501_state() reports RT2501_S_BROKEN - an observable state the #125
- * reboot watchdog can act on. Budgets (~10s each) stay under that >15s window. */
+ * and rt2501_state() reports RT2501_S_BROKEN - an observable state the reboot
+ * watchdog can act on. Budgets (~10s each) stay under that >15s window. */
 #define RT2501_SETUP_CSR12_TRIES 10  /* x DelayMs(1000): MAC_CSR12.BbpRfStatus  */
 #define RT2501_SETUP_BBP_TRIES   20  /* x DelayMs(500):  BBP R0 ready           */
 
@@ -859,8 +859,8 @@ static uint64_t rt2501_rx_ccmp_pn[RT2501_NUM_SHARED_KEYS];
  * land little-endian as: Iv = PN0 | PN1<<8 | rsvd<<16 | keyid<<24, Eiv = PN2 |
  * PN3<<8 | PN4<<16 | PN5<<24. The 802.11i PN is little-endian (PN0 least
  * significant). NOTE: this byte layout is from the vendor-driver convention and
- * still needs on-device confirmation (issue #154 DoD) - if it is wrong the
- * replay check below would mis-order PNs.
+ * still needs on-device confirmation - if it is wrong the replay check below
+ * would mis-order PNs.
  */
 static uint64_t rt2501_ccmp_pn(uint32_t iv, uint32_t eiv)
 {
@@ -877,9 +877,9 @@ static uint64_t rt2501_ccmp_pn(uint32_t iv, uint32_t eiv)
  * frame should be accepted, 0 if it is a replay and must be dropped; updates the
  * per-key last-accepted PN on accept.
  *
- * Scoped to CCMP: WEP/TKIP/unencrypted frames are always accepted here (#154
- * scopes data-path replay protection to CCMP, aligned with #124's plan to drop
- * the older ciphers). The hardware exposes the received PN in the descriptor's
+ * Scoped to CCMP: WEP/TKIP/unencrypted frames are always accepted here (data-path
+ * replay protection is scoped to CCMP, aligned with the plan to drop the older
+ * ciphers). The hardware exposes the received PN in the descriptor's
  * Iv/Eiv words specifically for this check (see PRXD_STRUC). PN is a 48-bit
  * monotonic counter reset to 0 on key install, so a valid frame has PN strictly
  * greater than the last accepted one. This complements eapol.c's replay counter,

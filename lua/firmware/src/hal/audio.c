@@ -1,15 +1,14 @@
 /**
  * @file audio.c
- * @brief VLSI VS1003B audio codec over SPI0 (M8, #116).
+ * @brief VLSI VS1003B audio codec over SPI0.
  *
  * Trimmed port of src/firmware/src/hal/audio.c (Violet / RedoX). Keeps the SCI
  * read/write protocol, chip bring-up, volume, amplifier, and the built-in sine
- * test verbatim in behaviour. SCI framing was hardware-verified by the M8 probe
- * (SS_VER=3, VOLUME write/read-back). See inc/hal/audio.h.
+ * test verbatim in behaviour. SCI framing was hardware-verified (SS_VER=3,
+ * VOLUME write/read-back). See inc/hal/audio.h.
  *
- * Issue #123 (M8 follow-up) adds vlsi_play(): real SDI-stream playback, so
- * SCI_VOLUME actually attenuates decoded audio (unlike the sine test above).
- * ADPCM record is still dropped (future work, no mic use case yet).
+ * vlsi_play() does real SDI-stream playback, so SCI_VOLUME actually attenuates
+ * decoded audio (unlike the sine test). ADPCM record is dropped (future work).
  */
 #include "ml674061.h"
 #include "common.h"
@@ -83,8 +82,8 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
 /* Last volume requested via set_vlsi_volume(). The single SCI write below does
  * not durably stick: the Lua heap lives in ExtRAM, and EMC bus activity between
  * a bare VOLUME write and the next decode clears the VS1003's SCI config
- * (CLOCKF/VOLUME reproducibly knocked to 0 by an ExtRAM burst - see #123). So we
- * cache the value and re-assert it inside vlsi_play(), in the same post-EMC
+ * (CLOCKF/VOLUME reproducibly knocked to 0 by an ExtRAM burst). So we cache the
+ * value and re-assert it inside vlsi_play(), in the same post-EMC
  * window where MODE is rewritten - that is the only reason MODE/CLOCKF survive,
  * and VOLUME needs the identical treatment to actually attenuate playback. */
 static uint8_t vlsi_volume = 0x20;
@@ -141,10 +140,10 @@ void init_vlsi(void)
   vlsi_write_sci(VS1003_CLOCKF, 0xc000);
   audio_delay(200000);
   wait_dreq();
-  /* DIAGNOSTIC (#123): keep SPI0 slow (~2 MHz) - do NOT speed up to ~8 MHz yet.
-   * At 8 MHz, SCI reads returned garbage and playback was slow+static, which
-   * only happens if CLKI never left base XTAL (max SCI = CLKI/7). Staying slow
-   * lets us read registers back reliably to confirm whether CLOCKF took. */
+  /* Keep SPI0 slow (~2 MHz) - do NOT speed up to ~8 MHz. At 8 MHz, SCI reads
+   * returned garbage and playback was slow+static, which only happens if CLKI
+   * never left base XTAL (max SCI = CLKI/7). Staying slow lets us read
+   * registers back reliably to confirm whether CLOCKF took. */
 
   set_vlsi_volume(0x20);
 }
@@ -179,7 +178,7 @@ void vlsi_play(const uint8_t *data, uint32_t len)
 
   /* Re-assert the volume here, right before the SDI feed. A bare write from
    * nab.volume() does not survive the EMC traffic the Lua heap generates before
-   * playback (#123); rewriting it in this window - like MODE above - is what
+   * playback; rewriting it in this window - like MODE above - is what
    * makes nab.volume actually attenuate the decoded stream. No EMC access falls
    * between this write and the feed below, so it lands. */
   vlsi_write_sci(VS1003_VOLUME, (vlsi_volume << 8) | vlsi_volume);

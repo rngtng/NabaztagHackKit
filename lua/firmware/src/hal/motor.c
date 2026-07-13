@@ -5,10 +5,10 @@
  * @date 2015/09/07
  * @brief Motors low level access
  *
- * Ported verbatim from src/firmware/src/hal/motor.c (M10, #118) - see motor.h
- * for why no IRQ/timer subsystem bring-up is needed. init_ears() at the bottom
- * is new: the pin bring-up src/firmware does inline in main.c's init_io (no
- * equivalent exists in firmwareV2), trimmed to the PWM_MCC lines only.
+ * Ported verbatim from src/firmware/src/hal/motor.c - see motor.h for why no
+ * IRQ/timer subsystem bring-up is needed. init_ears() at the bottom is new: the
+ * pin bring-up src/firmware does inline in main.c's init_io, trimmed to the
+ * PWM_MCC lines only.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -269,14 +269,13 @@ uint16_t get_motor_position(uint8_t number)
 }
 
 /**
- * @brief Bring up the ear motors (M10, #118).
+ * @brief Bring up the ear motors.
  *
- * firmwareV2 has no init_io()/main.c equivalent, so this does the motor subset
- * of what src/firmware's main.c does inline before calling init_pwm(): set the
- * PWM_MCC pin directions, park them low, then let init_pwm() hand control of
- * those same pins to the FTM peripheral (the GPIO direction bit stays "output";
- * the FTM hardware drives the pin's output level once its timer is enabled).
- * Mirrors the per-board pin list src/firmware/src/main.c's init_io uses.
+ * Does the motor subset of what src/firmware's main.c does inline before
+ * calling init_pwm(): set the PWM_MCC pin directions, park them low, then let
+ * init_pwm() hand control of those same pins to the FTM peripheral (the GPIO
+ * direction bit stays "output"; the FTM hardware drives the pin's output level
+ * once its timer is enabled). Mirrors the per-board pin list in init_io.
  */
 void init_ears(void)
 {

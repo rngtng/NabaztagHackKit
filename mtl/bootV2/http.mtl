@@ -1,8 +1,8 @@
 // Boot HTTP client.
 //
-// Device build (#47): converged onto lib/net/http.mtl, which additionally
-// handles 302 redirects (the boot copy this replaced did not). boot's
-// historical call names map onto the lib names below.
+// Device build: converged onto lib/net/http.mtl, which additionally handles
+// 302 redirects (the boot copy this replaced did not). boot's historical call
+// names map onto the lib names below.
 //
 // Simulator build: keeps boot's original client over the tcpudp_emu TCP shim.
 

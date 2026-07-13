@@ -1,6 +1,6 @@
 /**
  * @file rfid.c
- * @brief STMicro CRX14/CR14 RFID coupler over I2C (M9, #117).
+ * @brief STMicro CRX14/CR14 RFID coupler over I2C.
  *
  * Trimmed port of src/firmware/src/hal/rfid.c (Violet / RedoX GCC port) - see
  * hal/rfid.h for what was dropped (EEPROM read/write) and why.
@@ -15,11 +15,10 @@ static uint8_t i2c_ok;
 
 /* Tracks whether the RF field is currently energized. A passive tag draws its
  * power from this field, so toggling it off/on drives a full tag power-cycle
- * (~ms of settle time) on every single scan - the #180 root cause: a script
- * polling nab.rfid() in a tight loop was power-cycling the tag every poll,
- * making detection intermittent. Once the field is on, later scans only need
- * to deselect (completion_rfid) before a fresh anti-collision round, not drop
- * the field. */
+ * (~ms of settle time) on every single scan - a tight nab.rfid() poll loop
+ * would then power-cycle the tag every poll, making detection intermittent.
+ * Once the field is on, later scans only need to deselect (completion_rfid)
+ * before a fresh anti-collision round, not drop the field. */
 static uint8_t field_on;
 
 /* No timer/DelayMs subsystem in firmwareV2 yet (see hal/audio.c's audio_delay).

@@ -11,7 +11,7 @@
 // the machine to reconnectW, aborting the association mid-flight (thrash - it
 // never connects). Boot does its own retry in boot_loop (BOOT_WIFITIMEOUT ->
 // wifi_init + next AP) and never calls ears_init, so lib's ears_stop on the
-// reconnect path is wrong for boot too. Apps keep the default behaviour. (#103)
+// reconnect path is wrong for boot too. Apps keep the default behaviour.
 #define WIFI_NO_AUTO_RECONNECT
 
 proto main 0;;

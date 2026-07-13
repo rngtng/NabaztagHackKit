@@ -122,10 +122,10 @@
 /*
 @@ LUA_32BITS enables Lua with 32-bit integers and 32-bit floats.
 */
-/* NabaztagHackKit (firmwareV2, M4 #92): default flipped to 1.
+/* NabaztagHackKit (firmwareV2): default flipped to 1.
 ** The ML67Q4051 is a 32-bit ARM7TDMI with NO FPU - 'long long'/'double'
 ** would pull in expensive soft-float/64-bit helpers and bloat the 124 KB
-** flash. 32-bit 'int' integers + 32-bit 'float' fit the core. See PROVENANCE.md. */
+** flash. 32-bit 'int' integers + 32-bit 'float' fit the core. */
 #define LUA_32BITS	1
 
 
@@ -799,9 +799,9 @@
 */
 
 /*
-** firmwareV2 (#133): the block below is the on-device Local config - the M7.1/
-** M7.2/M7.3 luai_* overrides that swap newlib/libm out for the semihosting
-** console + compact number helpers in src/app/lua.c. They only make sense in
+** firmwareV2: the block below is the on-device Local config - the luai_*
+** overrides that swap newlib/libm out for the semihosting console + compact
+** number helpers in src/app/lua.c. They only make sense in
 ** the ARM firmware. A host build of luac (tools/luac) compiles this same tree
 ** with -DLUA_HOST_LUAC so these fall back to the stock C library (fwrite,
 ** strtof, pow/fmod); LUA_32BITS stays defined for both, so the bytecode the
@@ -813,7 +813,7 @@
 #if !defined(LUA_HOST_LUAC)		/* { device-only overrides */
 
 /*
-** firmwareV2 (M7.1, #107): route Lua's console output through ARM semihosting
+** firmwareV2: route Lua's console output through ARM semihosting
 ** instead of the newlib stdio FILE layer. The stock lua_writestring/writeline/
 ** writestringerror (lauxlib.h) call fwrite/fprintf/fflush on stdout/stderr,
 ** which drags in the whole buffered-FILE machinery (~6 KB: findfp/fflush/
@@ -830,13 +830,13 @@ extern void luai_writestringerror (const char *fmt, const char *arg);
 #define lua_writestringerror(s,p)  luai_writestringerror((s), (p))
 
 /*
-** firmwareV2 (M7.2, #108): replace strtof for decimal string->number with a
-** compact parser (luai_str2number in src/app/lua.c). strtof pulls newlib's
-** double strtod + gdtoa multi-precision path (~14 KB: strtod/mprec/gethex/
-** hexnan). Integer literals never reach here - luaO_str2num tries l_str2int
-** first; only decimal float literals/coercions do. The target is integer-first
-** with float *printing* already stubbed (#92), so reduced last-ulp precision is
-** acceptable. Hex-float parsing (lua_strx2number, Lua's own) is unaffected.
+** firmwareV2: replace strtof for decimal string->number with a compact parser
+** (luai_str2number in src/app/lua.c). strtof pulls newlib's double strtod +
+** gdtoa multi-precision path (~14 KB: strtod/mprec/gethex/hexnan). Integer
+** literals never reach here - luaO_str2num tries l_str2int first; only decimal
+** float literals/coercions do. The target is integer-first with float
+** *printing* already stubbed, so reduced last-ulp precision is acceptable.
+** Hex-float parsing (lua_strx2number, Lua's own) is unaffected.
 */
 #undef lua_str2number
 /* LUA_NUMBER (the macro), not lua_Number - the typedef is in lua.h, which has
@@ -845,7 +845,7 @@ extern LUA_NUMBER luai_str2number (const char *s, char **endptr);
 #define lua_str2number(s,p)        luai_str2number((s), (p))
 
 /*
-** firmwareV2 (M7.3, #109): drop the libm float ops pulled by Lua's arithmetic.
+** firmwareV2: drop the libm float ops pulled by Lua's arithmetic.
 ** luai_numpow uses pow() and luai_nummod uses fmod() (llimits.h), each dragging
 ** in libm (powf/__ieee754_powf, fmodf/__ieee754_fmodf, scalbnf). ^ always
 ** yields a float in Lua; luai_pow computes integer exponents exactly by

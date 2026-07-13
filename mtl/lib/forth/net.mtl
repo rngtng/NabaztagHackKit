@@ -6,10 +6,9 @@
  * simulator too), these words need the full MTL net stack: `http_request`
  * lives in lib/net/http.mtl and `wifi_mac_addr` in lib/net/wifi.mtl, both
  * pulled in only by lib/net/net.mtl (the device build). The simulator's
- * transport (lib/net/tcp.mtl) links neither, so include this pack — and its
- * dictionary entries — under `#ifndef SIMU` only. See src/app-template for the
- * wiring and #57 for why documenting a word that "works" in the simulator but
- * not on the rabbit is a bug (#37).
+ * transport (lib/net/tcp.mtl) links neither, so include this pack - and its
+ * dictionary entries - under `#ifndef SIMU` only. See src/app-template for the
+ * wiring.
  *
  * Migrated from src/app-piper/forth/net.mtl (Copyright (c) 2025 Andrea Bonomi,
  * MIT). Deliberately excludes piper's `tcp-listen`, whose callback is hardwired

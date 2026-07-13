@@ -1,6 +1,6 @@
 /**
  * @file uart.h
- * @brief Minimal TX-only UART0 driver for firmwareV2 bring-up (issue #TBD).
+ * @brief Minimal TX-only UART0 driver for firmwareV2 bring-up.
  *
  * OKI ML67Q4051 UART0 on port PB0 (TX) / PB1 (RX), 38400 baud 8N1, no flow
  * control. Trimmed port of the proven V1 driver (mtl/firmware/src/hal/uart.c):
@@ -23,7 +23,7 @@
 #define DLM_BAUD  0x00  /**< @brief divisor latch MSB - 38400 baud @ 8 MHz F_uart */
 #define DLL_BAUD  0x0D  /**< @brief divisor latch LSB - 38400 baud (8e6/(16*13)) */
 
-/** @brief Configure UART0 pins + 115200 8N1, TX-only (no interrupts). */
+/** @brief Configure UART0 pins + 38400 8N1, TX-only (no interrupts). */
 void init_uart(void);
 /** @brief Blocking write of one byte (spins on THR-empty). */
 void putch_uart(uint8_t c);

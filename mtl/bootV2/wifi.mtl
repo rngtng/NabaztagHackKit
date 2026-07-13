@@ -1,6 +1,6 @@
 // Boot WiFi state machine + config-portal (master/AP) mode.
 //
-// Device build (#103): converged onto lib/net/wifi.mtl - the same task-driven
+// Device build: converged onto lib/net/wifi.mtl - the same task-driven
 // station+master state machine the apps run. lib's master-mode entry now reads
 // the button (WIFI_MASTER_MODE, defined by boot) so the hold-button config
 // portal recovery path is preserved, and drives the config server via the
@@ -10,8 +10,7 @@
 // Simulator build: keeps boot's original single-file state machine over the
 // tcpudp_emu shim, exposing the same public surface (_wifi_master / _wifi_scans
 // / _wifi_try / wifi / wifi_init) so config_server.mtl, boot_loop.mtl and
-// main.mtl are build-agnostic. simulate:boot is unaffected by the device
-// convergence.
+// main.mtl are build-agnostic.
 
 #ifndef SIMU
 

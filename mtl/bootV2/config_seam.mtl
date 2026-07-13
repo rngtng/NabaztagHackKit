@@ -3,7 +3,7 @@
 // app-side (see lib/net/config_defaults.mtl); boot is that "app".
 //
 // Accessors the boot device stack reads, wired onto boot's confGet* getters:
-//   wifi_* + net_ip/netmask/net_gw   -> lib/net/wifi.mtl (#103)
+//   wifi_* + net_ip/netmask/net_gw   -> lib/net/wifi.mtl
 //   dhcp                             -> lib/net/dhcp.mtl + lib/net/wifi.mtl
 //   net_dns                          -> lib/net/dns.mtl + lib/net/wifi.mtl
 //   proxy*                           -> lib/net/http.mtl

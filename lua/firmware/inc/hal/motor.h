@@ -1,20 +1,17 @@
 /**
  * @file motor.h
- * @brief Ear DC-motor + encoder driver over the OKI FTM timer/PWM block (M10, #118).
+ * @brief Ear DC-motor + encoder driver over the OKI FTM timer/PWM block.
  *
- * Ported from src/firmware/src/hal/motor.c (Violet / RedoX GCC port). Despite
- * the milestone's framing ("PWM + timer/IRQ subsystem"), the real driver needs
- * no interrupt at all: init_pwm() only pokes the FTM0-5 timer control registers
- * (register writes, same style as hal/led.c's SPI setup); run_motor()/
- * stop_motor() drive the PWM duty registers directly; and get_motor_position()
- * reads a free-running hardware pulse-capture counter (FTM0GR/FTM1GR) - no
- * CPU-side counting or ISR involved. See PROVENANCE.md.
+ * Ported from src/firmware/src/hal/motor.c (Violet / RedoX GCC port). No
+ * interrupt needed: init_pwm() only pokes the FTM0-5 timer control registers;
+ * run_motor()/stop_motor() drive the PWM duty registers directly; and
+ * get_motor_position() reads a free-running hardware pulse-capture counter
+ * (FTM0GR/FTM1GR) - no CPU-side counting or ISR involved.
  *
- * The position counter is a raw, monotonically-wrapping edge count (16-bit),
- * not a homed/absolute position. Turning that into "the ear points here" needs
- * the hole-counting state machine in lib/hw/ears.mtl (17 holes/rev, direction +
- * timeout-based arrival detection) - out of scope for this low-level driver +
- * binding cut; see the firmwareV2 README's Ears section.
+ * The position counter is a raw, monotonically-wrapping 16-bit edge count, not
+ * a homed/absolute position. Turning that into "the ear points here" needs the
+ * hole-counting state machine in lib/hw/ears.mtl (17 holes/rev, direction +
+ * timeout-based arrival detection).
  */
 #ifndef _MOTOR_H_
 #define _MOTOR_H_
@@ -23,8 +20,7 @@
 
 /* Bring up the FTM PWM (drive) + capture (encoder) timers: configures the
  * PWM_MCC pins as outputs, calls init_pwm(), and stops both motors. Call once
- * at startup (mirrors the motor subset of src/firmware/src/main.c's init_io,
- * which firmwareV2 has no equivalent of). */
+ * at startup (mirrors the motor subset of src/firmware/src/main.c's init_io). */
 void init_ears(void);
 
 /** @brief Init the PWM module to drive the 2 DC brush motors and count position. */

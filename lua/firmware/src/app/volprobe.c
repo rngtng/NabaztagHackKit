@@ -1,8 +1,8 @@
 /**
  * @file volprobe.c
- * @brief #123 volume-isolation probe: play the embedded MP3 at volume 0
- *        (loudest) then 254 (near-silent), minimal init, NO semihosting during
- *        the SDI feed (prints only between plays). If loudness clearly differs,
+ * @brief Volume-isolation probe: play the embedded MP3 at volume 0 (loudest)
+ *        then 254 (near-silent), minimal init, NO semihosting during the SDI
+ *        feed (prints only between plays). If loudness clearly differs,
  *        SCI_VOLUME works on decoded audio and the lua app's "no volume" is a
  *        context problem (init_hw and/or semihosting interleaved with SPI0),
  *        not the VS1003.
