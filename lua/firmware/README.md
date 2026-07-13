@@ -54,7 +54,9 @@ maps these onto C subsystems. Two structural gaps:
 - Internal flash `0x08000000`, 124 KB usable (last sector = config)
 - Internal RAM `0x10000000`, **16 KB** (too small for Lua)
 - External RAM `0xD0000000`, **1 MB** (Lua heap/data live here)
-- Debug: 8-pin JTAG only, **no UART broken out** on this board revision
+- Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 38400 8N1 - the UART
+  peripheral clock is a measured **8 MHz**, so 115200 is unreachable; #203).
+  UART is output-only today; input still runs over JTAG semihosting.
 - Board revision `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three tag sub-revisions
   (`LLC2_2`/`LLC2_3`/`LLC2_4c`), the one hardware-verified below. Pin diffs:
   [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release).
@@ -82,8 +84,12 @@ exempt (`-Wno-cast-align -Wno-error`) - not our code to fix; see the `Makefile`.
 Two things bare metal lacks:
 
 - **Console:** newlib `_read`/`_write` route stdin/stdout through **ARM semihosting**
-  (`svc 0xAB`) - the no-UART console. `print()` and the prompt reach the GDB/OpenOCD console
-  on hardware and the simulator off it.
+  (`svc 0xAB`). `print()` and the prompt reach the GDB/OpenOCD console on hardware and
+  the simulator off it. A **TX-only UART0 HAL** (38400 8N1, `src/hal/uart.c`) landed in
+  #203 - the plan is to move console *output* there (no JTAG session, no CPU halts) and
+  keep semihosting only for REPL *input* until UART RX + a `nab.uart` binding land
+  (#203 TODOs). Read it on the Pi rig: see
+  [`../tools/openocd/README.md`](../tools/openocd/README.md#uart-console-tx-only-38400-8n1-203--preferred-for-output).
 - **Heap:** `_sbrk` hands out the **1 MB ExtRAM** window (`0xD0000000`, set up by `init.s`);
   16 KB internal RAM is too small.
 
@@ -169,6 +175,7 @@ src/hal/adc.c       ADC ch.2 read (the back wheel)
 src/hal/i2c.c       I2C bus - OKI bring-up + polled master read/write
 src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
 src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture position, no IRQ
+src/hal/uart.c      TX-only UART0 @38400 8N1 (#203) - polled putch/putst, no RX yet
 src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
 src/app/*.c         one app per binary (see APP=); *probe.c are hardware bring-up probes
 lua/                vendored PUC-Rio Lua 5.4 core; build compiles a subset (Makefile LUA_CORE/LUA_LIB)
@@ -200,6 +207,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | M11 | WiFi - USB host + RT2501 | #119 | open epic. **M11a done, HW:** USB host stack ported, first live IRQ (1 ms tick), `usbprobe` enumerates the dongle (VID:PID `0db0:6877`, RT2501). Next: rt2501usb driver + 802.11 (prereq #125). |
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
+| - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
 
 ## Flashing
 ```sh

@@ -37,10 +37,13 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Openocd / hardware flashing (lua track)
 JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
-**The full workflow — flash/REPL tasks, peripheral-existence check, semihosting
-breakpoint gotcha, run serialisation, `<<FV_DONE>>` marker, hardware-debugging
-discipline — lives in the `hw-flash-repl` skill.** Invoke it for any JTAG/flash/console
-task; full recipe in `lua/tools/openocd/README.md`, teardown in `docs/hardware-dissection.md`.
+**Console output now prefers the UART tap (#203): TX-only UART0 @38400 8N1, read on
+the Pi's `/dev/serial0` — no OpenOCD session, no CPU halts. Semihosting is only for
+REPL *input* (and what `print()` is still wired to).** The full workflow — flash/REPL
+tasks, UART read commands, peripheral-existence check, semihosting breakpoint gotcha,
+run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives in the
+**`hw-flash-repl` skill**. Invoke it for any JTAG/flash/console task; full recipe in
+`lua/tools/openocd/README.md`, teardown in `docs/hardware-dissection.md`.
 
 ## Firmware design principles (lua track)
 - **Five binding design principles (#183) live in [`lua/firmware/README.md`](lua/firmware/README.md#design-principles):**

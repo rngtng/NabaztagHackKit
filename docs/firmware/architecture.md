@@ -135,7 +135,13 @@ The firmware's debug console *is* the UART: `consolestr()` → `putst_uart()`
 Settings once the mod is done, from `mtl/firmware/src/hal/uart.c` (`init_uart`,
 pins PB0/PB1 in their `TX_RS232`/`RX_RS232` secondary function):
 
-- **115200 baud, 8N1, no flow control.**
+- **Nominally 115200 baud, 8N1, no flow control — but the divisor is
+  mis-clocked.** The lua-track bring-up (#203) *measured* the ML67Q4051 UART
+  peripheral clock at **8.00 MHz** (not the 32 MHz this driver's header
+  assumes), so V1's `DLL=0x11` actually puts **~29.4 kbaud** on the wire —
+  near no standard rate, and likely never readable. Until the divisor is
+  retargeted (a #203 TODO; `DLL=13` → 38400 is the clean fit), don't expect a
+  115200 terminal to decode this console.
 - **3.3 V TTL levels** — use a 3.3 V USB-serial adapter or a MAX232 powered at
   3.3 V. Do **not** wire raw RS-232 voltages to the board.
 

@@ -1,9 +1,9 @@
 ---
 name: hw-flash-repl
-description: Flashing a lua-track firmware app to real Nabaztag:tag hardware over JTAG, or reading its console/REPL. Use whenever the task involves the Raspberry Pi JTAG rig (jtag.local), openocd, semihosting console output, or verifying a driver/binding against actual hardware rather than the simulator.
+description: Flashing a lua-track firmware app to real Nabaztag:tag hardware over JTAG, or reading its console (UART or semihosting REPL). Use whenever the task involves the Raspberry Pi JTAG rig (jtag.local), openocd, the UART serial console, semihosting output, or verifying a driver/binding against actual hardware rather than the simulator.
 ---
 
-# Hardware flash + console (lua firmware, JTAG)
+# Hardware flash + console (lua firmware, JTAG + UART)
 
 Full recipe and troubleshooting: `lua/tools/openocd/README.md`. Board teardown /
 chip inventory: `docs/hardware-dissection.md`.
@@ -16,6 +16,24 @@ chip inventory: `docs/hardware-dissection.md`.
 Never hand-roll `scp` + `openocd` + `gdb` - the raw ssh+openocd path is denied,
 and both operations are already taskified. If a task doesn't cover what you
 need, extend the task rather than shelling out around it.
+
+## Two consoles - pick by whether you need input
+
+- **UART (output only, preferred, #203):** UART0 TX @38400 8N1 on PB0, wired
+  to the Pi's `/dev/serial0`. No OpenOCD session, never halts the CPU - use it
+  for probe output and anything timing-sensitive (USB/WiFi). Read it on the Pi:
+  `sudo systemctl stop serial-getty@ttyAMA0` (re-enables on reboot), then
+  `sudo stty -F /dev/serial0 38400 raw -echo; sudo cat /dev/serial0`. Link sanity
+  check: `task lua:firmware:flash APP=uartprobe` -> a repeating
+  `NAB-UART-PROBE alive @38400 8N1` banner. Dead line without a scope:
+  `sudo pinctrl set <gpio> ip pd; pinctrl get <gpio>` - driven reads `hi`,
+  floating reads `lo` (how a TX/RX swap shows up). Not 115200: the UART clock
+  is a measured 8 MHz (`lua/firmware/inc/hal/uart.h`).
+- **Semihosting (input + output, legacy):** the only path with *input*
+  (`SYS_READC`), so the interactive REPL and `task lua:firmware:repl:hw` still
+  run on it; Lua `print()` is also still wired to it. Every char is a debugger
+  trap that halts the whole CPU - everything below about breakpoints, the
+  120s cap, `<<FV_DONE>>` and IRQ printing is semihosting-specific.
 
 ## Before writing any driver or binding
 
@@ -49,7 +67,7 @@ with ARM-mode functions (`__attribute__((target("arm")))`) that manipulate
 CPSR directly (`mrs`/`msr cpsr_c`), bypassing the SWI vector. See the M9 fix
 in `lua/firmware/sys/src/irq.c` (#117).
 
-## Reading the console
+## Reading the semihosting console (`repl:hw`)
 
 Semihosting apps print `<<FV_DONE>>` when finished (REPL after input EOF, a
 probe before it idles). `flash.py` streams console output live and exits on
@@ -126,3 +144,6 @@ transfers, and wedging runs in ways that vanish when you remove the print
 (#119 scan-callback lesson). Record data in a buffer inside the ISR; print
 from the main loop. Debug builds (`DEBUG=1`) trace from ISRs by design -
 expect them to perturb timing badly and use a longer `--run-timeout`.
+(UART `putch_uart` is polled-blocking too - ~0.3 ms/char at 38400 - far
+cheaper than a semihosting trap, but the buffer-in-ISR/print-in-main rule
+still applies.)
