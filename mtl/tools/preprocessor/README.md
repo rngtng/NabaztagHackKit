@@ -7,18 +7,19 @@ duplicate proto removal.
 
 ## Usage
 
-Direct Docker invocation:
+Direct Docker invocation (mount the `mtl/` tree — includes like `lib/…` resolve
+against the working directory):
 
 ```
-docker run --rm -v "$(pwd):/work:ro" -w /work preprocessor mtl/boot/boot.mtl > merged.mtl
-docker run --rm -v "$(pwd):/work:ro" -w /work preprocessor --define BOOT --define SIMU -I mtl/boot mtl/boot/boot.mtl > merged.mtl
+docker run --rm -v "$(pwd)/mtl:/work:ro" -w /work preprocessor boot/boot.mtl > merged.mtl
+docker run --rm -v "$(pwd)/mtl:/work:ro" -w /work preprocessor --define BOOT --define SIMU -I boot boot/boot.mtl > merged.mtl
 ```
 
-Local (requires `pip install pcpp`):
+Local (requires `pip install pcpp`; run from `mtl/`):
 
 ```
-python mtl/tools/preprocessor/preproc.py mtl/boot/boot.mtl
-python mtl/tools/preprocessor/preproc.py --test   # run self-tests
+python tools/preprocessor/preproc.py boot/boot.mtl
+python tools/preprocessor/preproc.py --test   # run self-tests
 ```
 
 Normally it runs as an internal step of the layer tasks (`mtl:lib:test`,
@@ -33,8 +34,8 @@ Normally it runs as an internal step of the layer tasks (`mtl:lib:test`,
 | `--test` | Run the built-in self-test and exit |
 | `--find-line FILE LINENUM` | Map a merged-file line number back to its source location |
 
-The repo root (`.`) is always on the search path, so `#include "mtl/lib/foo.mtl"`
-resolves from anywhere.
+The working directory (the `mtl/` tree in our tasks) is always on the search
+path, so `#include "lib/foo.mtl"` resolves from anywhere.
 
 ## Features
 

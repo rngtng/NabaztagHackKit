@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flash a firmwareV2 ELF to a Nabaztag over JTAG (M2, issue #90).
+"""Flash a firmware ELF to a Nabaztag over JTAG (M2, issue #90).
 
 JTAG flashing is the one SDK step that cannot run in Docker - it needs the
 physical JTAG adapter - so it runs on your workstation and drives a Raspberry Pi
@@ -223,7 +223,7 @@ def parse_args():
 def main():
     a = parse_args()
     if not a.elf.is_file():
-        raise SystemExit(f"ELF not found: {a.elf} (build it first: task firmwareV2:build)")
+        raise SystemExit(f"ELF not found: {a.elf} (build it first: task lua:firmware:build / task mtl:firmware:build)")
     if a.input and not a.input.is_file():
         raise SystemExit(f"--input file not found: {a.input}")
 

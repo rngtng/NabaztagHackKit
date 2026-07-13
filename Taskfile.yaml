@@ -1,21 +1,17 @@
 # NabaztagSDK — unified entrypoint.
 #
 # Every build runs inside Docker, so the only host requirements are Docker and
-# Task (https://taskfile.dev). Each layer is self-contained: it owns its Taskfile
-# with the layer's verbs (build / simulate / flash / …) and pulls in whatever
-# tools it needs. This root file only `includes:` those leaves under a per-layer
-# namespace, so targets read as `<layer>:<verb>` — e.g. `task firmwareV2:flash`,
-# `task app-piper:build`, `task boot:simulate`, `task lib:test`. Every leaf is
-# relocatable: `task <layer>:<verb>` here == `cd <layer> && task <verb>` there.
-# Run `task` with no args to list everything.
+# Task (https://taskfile.dev). Sources are split into two self-contained tracks
+# — `mtl/` (the MTL/C V1 stack) and `lua/` (the Lua V2 firmware) — each owning
+# its own Taskfile + leaf includes, so targets read as `<track>:<layer>:<verb>`
+# — e.g. `task mtl:app-piper:build`, `task mtl:boot:simulate`,
+# `task mtl:lib:test`, `task lua:firmware:flash`. Every leaf is relocatable:
+# `task mtl:lib:test` here == `cd mtl/lib && task test` there. Run `task` with
+# no args to list everything.
 #
 # Root owns no toolchain includes and re-implements nothing: `verify`/`clean`
-# just chain the two layers' own verbs. Sources are split into two self-contained
-# layers — `mtl/` (the MTL/C V1 stack) and `lua/` (the Lua V2 firmware) — each of
-# which owns its own leaf includes, so targets read as `<layer>:<sub>:<verb>` —
-# e.g. `task mtl:app-piper:build`, `task mtl:boot:simulate`, `task mtl:lib:test`,
-# `task lua:firmware:flash`. Decentralised per #63 — remaining per-leaf
-# duplication is intentional for now (DRY: #187).
+# just chain the two tracks' own verbs. Decentralised per #63 — remaining
+# per-leaf duplication is intentional for now (DRY: #187).
 version: '3'
 
 vars:

@@ -16,7 +16,7 @@ dongle (`mtl/firmware/src/usb`), the 802.11/crypto layer
 (`mtl/firmware/src/vm`). No external build dependencies — the ARM toolchain
 builds it on its own.
 
-Build it with `task mtl:firmware:build` → `build/firmware/Nab.{elf,hex,bin}`.
+Build it with `task mtl:firmware:build` → `mtl/build/firmware/Nab.{elf,hex,bin}`.
 The firmware and the 32-bit MTL toolchain build in **separate Docker images**
 because the ARM cross-compiler is unstable under amd64 emulation and must stay
 in a native image.

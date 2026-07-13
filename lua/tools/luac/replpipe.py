@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert Lua REPL input into the firmwareV2 #LC bytecode-frame stream (#133).
+"""Convert Lua REPL input into the lua-firmware #LC bytecode-frame stream (#133).
 
 The parser-less wifi image (M11, #119) only loads luac bytecode, so the REPL is
 fed compiled chunks instead of source. Raw bytecode can't ride the line-oriented

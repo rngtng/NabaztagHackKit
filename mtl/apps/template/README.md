@@ -10,7 +10,7 @@ A new app is **assembly + business logic**; everything else comes from `lib/`:
 ## Run it (simulator)
 
 ```sh
-task mtl:app-template:simulate   # config UI on http://localhost:8080
+task mtl:app-template:simulate   # Forth playground on http://localhost:8080
 curl -s localhost:8080/
 curl -s -d '2 3 + .' localhost:8080/eval
 # -> {"output": "5", "stack": ""}
