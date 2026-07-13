@@ -1,128 +1,95 @@
 # Nabaztag HackKit
 
-A complete MTL firmware and SDK for the Nabaztag v1/v2 IoT rabbit — including a dockerized toolchain, a reusable MTL standard library, a Forth interpreter, and a full application stack for WiFi, audio, RFID, LEDs, and ears.
+An SDK and dockerized toolchain for the Nabaztag:tag - the WiFi rabbit. Build,
+simulate, test and flash firmware for its ARM7TDMI without installing a toolchain:
+the only host requirements are [Docker](https://www.docker.com/) and
+[Task](https://taskfile.dev). Everything builds in containers.
 
 ![](http://github.com/rngtng/NabaztagHackKit.png)
 
-## Getting Started
+## Two tracks
 
-The only host requirements are [Docker](https://www.docker.com/) and [Task](https://taskfile.dev). Every build runs inside Docker — no toolchain to install locally.
+The repo holds two independent firmware tracks. They share the hardware, not an
+architecture.
 
-## Architecture
+| Track | Dir | What | Language stack |
+|-------|-----|------|----------------|
+| **mtl** | [`mtl/`](mtl/) | The classic stack, cleaned up and rebuilt: a C bytecode VM firmware running MTL apps, with a Forth interpreter on top. | C/ARM → MTL → Forth |
+| **lua** | [`lua/`](lua/) | A re-architecture: bare-metal PUC-Rio Lua 5.4 on the stock board, replacing the VM. | C/ARM → Lua |
 
-The project is split into three components: a toolchain and build system (`tools/`), a reusable standard library (`lib/`), and applications which integrates those. These are either the initial boot image (`src/boot/`), or main applications (`src/app-**`) loaded from remote.
+Board revision (`LLC2_2` / `LLC2_3` / `LLC2_4c`) is a separate axis inside the
+**mtl** track - not the same thing as the track split.
 
-```
- ┌─ Layer 3  Forth scripts (vl/*.forth)        edit-at-runtime, REPL      ← nabaztag-piper/vl
- │              ▲ interpreted by
- ├─ Layer 2  MTL app  (src/app-**/*.mtl)       incl. a Forth interpreter  ← nabaztag-piper/firmware
- │           + MTL stdlib (lib/*.mtl)          written in MTL             ← mtl_library/lib
- │              ▲ compiled to bytecode by
- │           MTL toolchain (mtl_comp/simu)     host-side                  ← nabgcc(mtl_linux)
- │              ▲ remotely loaded by
- ├─ Layer 1  MTL Boot app  (src/boot/*.mtl)    written in MTL             ← mtl_library/lib
- │              ▲ compiled to bytecode by
- │           MTL toolchain (mtl_comp/simu)     host-side                  ← nabgcc(mtl_linux)
- │              ▲ is packed with and runs on
- └─ Layer 0  C bytecode VM + drivers + WPA2    bare-metal ARM7TDMI        ← nabgcc  (origin: firmware_nabaztag)
-              flashed once to Oki ML67Q4051
-```
-
-
-### Directory Layout
+## Getting started
 
 ```
-docs/                Grammar, commands, hardware notes
-lib/                 Reusable MTL standard library
-src/app-piper/       Main application (Forth interpreter, audio, RFID, LEDs, ears, networking)
-src/boot/            Boot/provisioning image
-src/firmware/        C firmware (VM, HAL, USB, audio)
-tools/mtl_linux/     Dockerized MTL compiler and simulator
-tools/preprocessor/  Dockerized C preprocessor for MTL (pcpp-based)
-tools/mkfirmware/    Dockerized firmware packaging tool (.bin → signed .sim)
-tools/openocd/       JTAG debrick configs (Raspberry Pi + FTDI)
-test/                MTL unit tests (lib/ coverage)
-CHANGELOG.md         SDK-side changes, tagged by source area, so a diff can be cherry-picked back
+task              # list every target
+task verify       # build + test both tracks (definition of done)
+task mtl:verify   # mtl track only
+task lua:verify   # lua track only
 ```
 
-## Toolchain and build system - tools/
+Targets read as `<track>:<layer>:<verb>`, e.g. `task mtl:app-piper:build`,
+`task mtl:boot:simulate`, `task mtl:lib:test`, `task lua:firmware:build`. Each
+layer is self-contained and relocatable: `task mtl:lib:test` here ==
+`cd mtl/lib && task test` there.
 
-Run `task --list` to list all targets.
-
-### Compile & Simulate
-
-Run the fwV1 test suite:
-
-```
-task verify
-```
-
-Run the fwV2 test suite:
+## Layout
 
 ```
-task verifyV2
+docs/            Shared hardware notes: teardown, C-firmware architecture, JTAG
+mtl/             Track A - C-VM + MTL + Forth
+  firmware/        C bytecode VM, HAL, USB, audio, WPA2 (bare-metal ARM7TDMI)
+  boot/  bootV2/   Boot/provisioning image (WiFi setup + OTA); bootV2 = tag-V2 board
+  apps/            MTL apps (piper, sse, template, ping)
+  lib/             Reusable MTL standard library
+  test/            MTL unit tests (lib/ coverage)
+  tools/           MTL toolchain: mtl_linux (compiler+simulator), preprocessor,
+                   mkfirmware, mockserver, testvm, openocd
+  docs/            MTL grammar + opcode reference
+lua/             Track B - bare-metal Lua
+  firmware/        Lua 5.4 runtime + C HAL
+  apps/            Example Lua scripts
+  tools/           luac, Unicorn simulator, openocd
 ```
 
-### Standard Library - lib/
+## The mtl stack
 
-Each layer depends only on layers below it. The dependency rule is strict: nothing in `lib/` may reference hardware, WiFi, or app-specific state.
+Four layers, each depending only on those below. Flash the C VM once; iterate
+everything above it without a JTAG probe.
 
-| Layer | Modules | Dependencies |
-|-------|---------|--------------|
-| 0 — Utilities | `integer.mtl`, `string.mtl`, `list.mtl` | none (MTL built-ins only) |
-| 1 — Types | `protos/sock_protos.mtl`, `protos/forth_protos.mtl`, `protos/word_protos.mtl`, `protos/ascii_protos.mtl` | none |
-| 2 — Encoding | `b64.mtl`, `url.mtl`, `json.mtl`, `net.mtl`, `md5.mtl` | Layer 0 |
-| 3 — Network | `sock.mtl`, `http_server.mtl` | Layers 0–2 |
-| 4 — Hardware | tbd. | tbd. |
-| 5 — Forth | `forth.mtl` + `forth/*.mtl` | Layers 0–2 only |
+```
+Layer 3  Forth scripts (vl/*.forth)   edit-at-runtime, live REPL
+           ▲ interpreted by
+Layer 2  MTL app (mtl/apps/*)         + Forth interpreter, written in MTL
+         + MTL stdlib (mtl/lib/*)
+           ▲ compiled to bytecode by the MTL toolchain (host-side)
+           ▲ remotely loaded over HTTP by
+Layer 1  Boot image (mtl/boot/*)      WiFi provisioning + OTA
+           ▲ packed with and runs on
+Layer 0  C bytecode VM (mtl/firmware) bare-metal ARM7TDMI, flashed to Oki ML67Q4051
+```
 
+**MTL** ("Metal") is Sylvain Huet's ML/Lisp-family functional language for Violet,
+compiled to bytecode for a stack-machine VM. Forth is *not* MTL - it's a small
+interpreter written in MTL that runs user scripts at Layer 3. Details:
+[`docs/firmware/architecture.md`](docs/firmware/architecture.md).
 
-- `lib/forth` sits at Layer 5  I/O is wired by the caller through two callbacks stored in the interpreter state:
-- `write_fn` — output callback; called by the interpreter whenever it needs to write a string. Set to `nil` to buffer output in `f.output` instead.
-- `readline_cb` — pending-read callback; set by `READ-LINE` when the interpreter suspends waiting for a line. The transport layer delivers input by calling `f.readline_cb input` and clears this field.
+`mtl/lib/` is strictly layered and hardware-free (nothing references WiFi, HAL, or
+app state); see [`mtl/lib/README.md`](mtl/lib/README.md).
 
-This keeps the interpreter transport-agnostic. A socket-backed REPL, an HTTP-triggered script, and a task-spawned evaluation all use the same interpreter code with different write functions.
+## The lua track
 
-### src/boot/ — Boot Image
+An alternative Layer 0: PUC-Rio Lua 5.4 running bare-metal, with hardware behind a
+thin `nab.*` HAL. JTAG-flashed, no MTL. Design principles and current state:
+[`lua/firmware/README.md`](lua/firmware/README.md).
 
-The boot image handles WiFi provisioning (serves a captive-portal config page) and OTA firmware upgrades. It does **not** include `lib/` — it has its own minimal HTTP and TCP stack to keep the flash footprint small.
-
-┌─────────────────────────────────────────────────────────┐
-│  src/boot/         Boot image                           │
-│  ─ config server   WiFi provisioning UI                 │
-│  ─ firmware        OTA firmware upgrade                 │
-└─────────────────────────────────────────────────────────┘
-
-## Nabaztag Background
+## Background
 
 - [First-hand info from the creator](http://www.sylvain-huet.com/?lang=en#nabv2)
-- [Journal du lapin](https://www.journaldulapin.com/tag/nabaztag/)
-- [Protocol overview](http://www.sis.uta.fi/~spi/jnabserver/documentation/index.html)
+- [Journal du lapin](https://www.journaldulapin.com/tag/nabaztag/) - teardowns, WPA2 history
+- [RedoXyde/nabgcc](https://github.com/RedoXyde/nabgcc) - GCC firmware port (mtl Layer 0 origin)
+- [andreax79/ServerlessNabaztag](https://github.com/andreax79/ServerlessNabaztag) - MTL toolchain + Forth layer origin
 
-## Related Projects
-
-- [ccarlo64/firmware_nabaztag](https://github.com/ccarlo64/firmware_nabaztag) — WPA2 firmware
-- [RedoXyde/nabgcc](https://github.com/RedoXyde/nabgcc) — GCC-based firmware
-- [andreax79/ServerlessNabaztag](https://github.com/andreax79/ServerlessNabaztag)
-- https://github.com/RedoXyde/nabgcc/issues/9
-- https://github.com/RedoXyde/nabgcc/blob/wpa2/inc/common.h
-- https://github.com/ccarlo64/firmware_nabaztag
-- https://github.com/rngtng/mtl_linux
-- https://github.com/rngtng/mtl_library/commits/master/_docs/commands.md
-- https://github.com/andreax79/ServerlessNabaztag
-- https://github.com/jsapede/nabaztag-piper/network
-- https://github.com/jsapede/nabaztag-piper/commit/3d92eec8b777a7ccfd67cae4436bf3e4fffa7f2a
-- https://github.com/trcwm/Newbaztag/tree/master
-- https://github.com/vladger/NabaztagGPT
-- https://github.com/Desperado88/nabaztag-home-assistant-2025
-- https://www.journaldulapin.com/2018/04/19/tagtag-wpa2/
-- https://www.journaldulapin.com/2017/09/10/debriquer-nabaztag/
-- https://wk.redox.ws/dev/nab/v3/links
-- https://wk.redox.ws/dev/nab/v2/mod_serial
-- https://web.archive.org/web/20201028193157/http://petertyser.com/nabaztag-nabaztagtag-dissection/
-- https://nabaztag.com/controller
-- https://nabaztag.forumactif.fr/f4-rabbitz-life
-- https://www.hackster.io/rngtng/nabaztaginjector-an-arduino-rfid-hack-5f8df3
-- https://nabaztag.forumactif.fr/t13446-port-serie-uart-du-karotz-boot
-- https://nabazlab.sourceforge.net/index_en.htm
-- https://nabaztag.forumactif.fr/t15437-guide-ressusciter-son-nabaztagtag-v2-avec-upgrade-en-wpa-2-et-openjabnab
+Source origins and pinned commits: [`PROVENANCE.md`](PROVENANCE.md). Design
+rationale: [`NABAZTAG_SDK.md`](NABAZTAG_SDK.md).
