@@ -7,11 +7,17 @@
 # duplicated across app leaves for now (#63); shared helper is the DRY follow-up (#187).
 version: '3'
 
+# Source/output paths are hardcoded per task (not leaf-global vars): a leaf-global
+# bleeds across the sibling apps:* includes, the same hazard boot/bootV2 call out.
+# app-sse builds apps/sse/main.mtl → build/app-sse.
 vars:
-  TARGET: app-sse
   OUT: '{{.OUT | default "build"}}'
+  # REPO = the mtl layer root, resolved depth-independently (walk up to just below
+  # .git). MUST be identical in every leaf: Task keeps one entry per leaf-global
+  # var name, so a fixed-depth formula from a sibling at another depth can be
+  # applied here with the wrong root (random Go map order). See mtl/boot.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
 
 includes:
   preprocessor:
@@ -29,14 +35,14 @@ tasks:
     summary: 'Usage: task app-sse:build [OUT=build]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      APP_OUT: '{{.OUT}}/app-sse'
     cmds:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          SOURCE: 'apps/sse/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
+          INCLUDES: 'apps/sse lib/'
       - task: mtl:compile
         vars:
           WORKDIR: '{{.REPO}}'
@@ -48,14 +54,14 @@ tasks:
     summary: 'Usage: task app-sse:simulate [OUT=build] [PORT=8080]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP_OUT: '{{.OUT}}/{{.TARGET}}'
+      APP_OUT: '{{.OUT}}/app-sse'
     cmds:
       - task: preprocessor:preprocess
         vars:
           WORKDIR: '{{.REPO}}'
-          SOURCE: 'src/{{.TARGET}}/main.mtl'
+          SOURCE: 'apps/sse/main.mtl'
           OUT: '{{.APP_OUT}}/merged.mtl'
-          INCLUDES: 'src/{{.TARGET}} lib/'
+          INCLUDES: 'apps/sse lib/'
           DEFINES: SIMU
       - task: mtl:simulate
         vars:

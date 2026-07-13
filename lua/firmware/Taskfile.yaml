@@ -1,40 +1,55 @@
-# firmwareV2 - self-contained build/simulate/flash/repl for the eLua-successor
-# (Lua 5.4) port to the Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI). Root only
-# `includes:` this under the `firmwareV2` namespace, so targets are:
-#   task firmwareV2:build            -> bin/hello.{elf,hex,bin}  (M0)
-#   task firmwareV2:build APP=blink  -> bin/blink.{elf,hex,bin}
-#   task firmwareV2:simulate         -> run in the Unicorn simulator (#96)
-#   task firmwareV2:repl             -> Lua REPL in the simulator (#92)
-#   task firmwareV2:flash            -> flash over JTAG via the Pi bridge (#90)
-#   task firmwareV2:repl:hw          -> flash + capture the semihosting console
-#   task firmwareV2:luac             -> host luac Lua->bytecode (#133)
-#   task firmwareV2:test:luac        -> source vs #LC bytecode round-trip
+# firmware (Lua V2) - self-contained build/simulate/flash/repl for the
+# eLua-successor (Lua 5.4) port to the Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI).
+# The `lua` layer `includes:` this under the `firmware` namespace, so targets are
+# (from the repo root; `lua:` prefix drops when run inside the layer):
+#   task lua:firmware:build            -> bin/hello.{elf,hex,bin}  (M0)
+#   task lua:firmware:build APP=blink  -> bin/blink.{elf,hex,bin}
+#   task lua:firmware:simulate         -> run in the Unicorn simulator (#96)
+#   task lua:firmware:repl             -> Lua REPL in the simulator (#92)
+#   task lua:firmware:flash            -> flash over JTAG via the Pi bridge (#90)
+#   task lua:firmware:repl:hw          -> flash + capture the semihosting console
+#   task lua:firmware:test:luac        -> source vs #LC bytecode round-trip
 #
 # Relocatable: every target works both from the repo root (`task
-# firmwareV2:simulate`) and from inside the folder (`cd src/firmwareV2 && task
+# lua:firmware:simulate`) and from inside the folder (`cd lua/firmware && task
 # simulate`). Two rules make that work around Task quirks:
-#   * `dir:` is ALWAYS `{{.TASKFILE_DIR}}` (this leaf's own dir, src/firmwareV2).
+#   * `dir:` is ALWAYS `{{.TASKFILE_DIR}}` (this leaf's own dir, lua/firmware).
 #     Task doubles an absolute `dir` that comes from any other var.
-#   * REPO (clean repo root, via sh) is used only as a *path value* — a prefix on
-#     repo-level files (tools/openocd, tools/luac, user SCRIPT paths) and as
-#     WORKDIR handed to the nested luac tool. Bin/ELFs live here (bin/…), so they
-#     stay bare. SCRIPT/SOURCE args are repo-root-relative.
-# FV_IMAGE is the leaf's own default (NOT passed from root): Task bleeds a child
-# include's vars up into the parent's task scope, so a generic IMAGE would be
-# clobbered by the nested luac include. A unique name sidesteps that.
+#   * REPO (the lua layer root, via sh) is used only as a *path value* — a prefix
+#     on layer-level files (tools/openocd, tools/luac, user SCRIPT paths) and as
+#     WORKDIR handed to the nested luac/simulator tools (their Docker build
+#     context). Bin/ELFs live here (bin/…), so they stay bare. SCRIPT/SOURCE args
+#     are layer-root-relative.
+# FV_IMAGE / SIM_IMAGE are the leaf's own defaults (NOT passed from root): Task
+# bleeds a child include's vars up into the parent's task scope, so a generic
+# IMAGE would be clobbered by the nested luac/simulator includes. Unique names
+# sidestep that. The shared simulator image is built by the tool include but run
+# from here (where bin/ lives).
 version: '3'
 
 vars:
-  FV_IMAGE: '{{.FV_IMAGE | default "nabaztag-sdk-firmwarev2"}}'
+  FV_IMAGE: '{{.FV_IMAGE | default "nabaztag-sdk-lua-firmware"}}'
+  SIM_IMAGE: '{{.SIM_IMAGE | default "nabaztag-sdk-simulator"}}'
+  # REPO = the lua layer root, resolved depth-independently (walk up to just below
+  # .git). MUST be identical in every leaf (across BOTH layers): Task keeps one
+  # entry per leaf-global var name, so a fixed-depth formula from a sibling leaf
+  # at another depth can be applied here with the wrong root (random Go map
+  # order). A depth-independent formula is collision-proof - any cross-applied
+  # copy still resolves the correct layer root.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/../..' && pwd
-  APP: '{{.APP | default "hello"}}'
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+  APP: '{{.APP | default "lua"}}'
 
 includes:
   luac: # host Lua->bytecode compiler (built with repo root as Docker context)
-    taskfile: ../../tools/luac/Taskfile.yaml
+    taskfile: ../tools/luac/Taskfile.yaml
     internal: true
     vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
+
+  simulator: # Unicorn simulator (built with repo root as Docker context)
+    taskfile: ../tools/simulator/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-simulator, DIR: tools/simulator}
 
 tasks:
   image:
@@ -52,22 +67,17 @@ tasks:
       - task: image
       - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
 
-  sim-image:
-    internal: true   # Unicorn simulator image (#96); rebuilt when sim/ changes
-    dir: '{{.TASKFILE_DIR}}/sim'
-    cmds:
-      - docker build -t {{.FV_IMAGE}}-sim .
-
   simulate:
-    desc: 'Run a bring-up app in the Unicorn simulator, no hardware (#96). Usage: task firmwareV2:simulate [APP=hello] [ARGS=-v]'
+    desc: 'Run a bring-up app in the Unicorn simulator, no hardware (#96). Usage: task lua:firmware:simulate [APP=hello] [ARGS=-v]'
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - task: build
         vars:
           APP: '{{.APP}}'
-      - task: sim-image
-      # mount the built ELFs read-only; simulate.py is the image entrypoint
-      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.FV_IMAGE}}-sim {{.ARGS}} /mnt/{{.APP}}.elf'
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
+      # run from here (dir = this leaf) so bin/ is the freshly built ELF tree
+      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} {{.ARGS}} /mnt/{{.APP}}.elf'
 
   repl:
     desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua runs a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133). Usage: task firmwareV2:repl [SCRIPT=path/to.lua] [LC=1] [N=budget]'
@@ -89,7 +99,10 @@ tasks:
               [ -n "{{.SCRIPT}}" ] || exit 0
               case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
               if [ -n "$lc" ]; then
-                fr="$(mktemp)"
+                # bind-mounted into the sim by repl:run, so keep it under a
+                # Docker-shared host path (colima shares only /Users, so a bare
+                # mktemp in /tmp or /var/folders would mount as an empty dir).
+                fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
                 python3 {{.REPO}}/tools/luac/replpipe.py "{{.REPO}}/{{.SCRIPT}}" -o "$fr" 1>&2
                 echo "$fr"
               else
@@ -105,21 +118,22 @@ tasks:
       - task: build
         vars:
           APP: lua
-      - task: sim-image
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
       # With SCRIPT: mount the built ELF + the input file (read-only) and feed it
       # verbatim to the semihosting console. Without SCRIPT: run interactively
       # (-it) so SYS_READC/WRITEC read/echo your real terminal - a live REPL.
       - >-
         {{if .SCRIPT}}docker run --rm -v "$(realpath bin):/mnt:ro" -v "$(realpath {{.SCRIPT}}):/in.lua:ro"
-        {{.FV_IMAGE}}-sim -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
-        --rm -it -v "$(realpath bin):/mnt:ro" {{.FV_IMAGE}}-sim --interactive /mnt/lua.elf{{end}}
+        {{.SIM_IMAGE}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
+        --rm -it -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} --interactive /mnt/lua.elf{{end}}
 
   flash:
     desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
     summary: 'Usage: task firmwareV2:flash [APP=hello] [PI_HOST=tobi@jtag.local]. See tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP: '{{.APP | default "hello"}}'
+      APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
     cmds:
       - task: build
@@ -156,27 +170,28 @@ tasks:
           --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
           ${INPUT:+--input "$INPUT"}
 
-  luac:
-    desc: 'Compile a Lua source file to 32-bit device bytecode with the host luac (#133).'
-    summary: 'Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc. Bytecode loads on the rabbit as-is (parser-less end-game); see tools/luac/README.md.'
-    dir: '{{.TASKFILE_DIR}}'
-    cmds:
-      - task: luac:compile
-        vars:
-          WORKDIR: '{{.REPO}}'
-          SOURCE: '{{.SOURCE}}'
-          OUT: '{{.OUT}}'
+  # luac:
+  #   desc: 'Compile a Lua source file to 32-bit device bytecode with the host luac (#133).'
+  #   summary: 'Usage: task firmwareV2:luac SOURCE=in.lua OUT=out.lc. Bytecode loads on the rabbit as-is (parser-less end-game); see tools/luac/README.md.'
+  #   dir: '{{.TASKFILE_DIR}}'
+  #   cmds:
+  #     - task: luac:compile
+  #       vars:
+  #         WORKDIR: '{{.REPO}}'
+  #         SOURCE: '{{.SOURCE}}'
+  #         OUT: '{{.OUT}}'
 
   test:luac:
     desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'
-    summary: 'Usage: task firmwareV2:test:luac [SCRIPT=src/firmwareV2/examples/luac-roundtrip.lua]'
+    summary: 'Usage: task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      SCRIPT: '{{.SCRIPT | default "src/firmwareV2/examples/luac-roundtrip.lua"}}'
+      SCRIPT: '{{.SCRIPT | default "apps/luac-roundtrip.lua"}}'
     deps:
       - task: build
         vars: {APP: lua}
-      - task: sim-image             # tags {{FV_IMAGE}}-sim = nabaztag-sdk-firmwarev2-sim
+      - task: simulator:image       # shared Unicorn sim image = nabaztag-sdk-simulator
+        vars: {WORKDIR: '{{.REPO}}'}
       - task: luac:image            # host luac, used by replpipe.py below
         vars: {WORKDIR: '{{.REPO}}'}
     cmds:
@@ -185,10 +200,14 @@ tasks:
       # so the only variable is the input encoding. Real nonzero exit on drift.
       - |
         set -e
-        SIM={{.FV_IMAGE}}-sim
+        SIM={{.SIM_IMAGE}}
         BIN="$(realpath bin)"
         SRC="$(realpath '{{.REPO}}/{{.SCRIPT}}')"
-        FR="$(mktemp)"; trap 'rm -f "$FR"' EXIT
+        # The framed file is bind-mounted into the sim, so it must live under a
+        # Docker-shared host path. colima shares only the home tree (/Users), not
+        # /tmp or /var/folders, so a bare mktemp would mount as an empty dir. Put
+        # it under the repo (REPO is under /Users) and clean it up.
+        FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
         python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$FR"
         run() { docker run --rm -v "$BIN:/mnt:ro" -v "$1:/in:ro" "$SIM" \
                   -n 120000000 --input-file /in /mnt/lua.elf; }
@@ -202,9 +221,9 @@ tasks:
         fi
 
   clean:
-    desc: 'Remove firmwareV2 build artifacts (bin/, obj/) and the Docker images (incl. host luac)'
+    desc: 'Remove firmware (V2) build artifacts (bin/, obj/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - rm -rf bin obj
-      - docker rmi {{.FV_IMAGE}} {{.FV_IMAGE}}-sim || true
+      - docker rmi {{.FV_IMAGE}} {{.SIM_IMAGE}} || true
       - task: luac:clean

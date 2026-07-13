@@ -14,11 +14,11 @@
 # semihosting console + compact number helpers that live in the ARM firmware),
 # so host luac falls back to the stock C library / libm - no ARM toolchain here.
 #
-# NOTE: this image is built with the *repo root* as its context (see
-# Taskfile.yaml) so the COPY below can reach the firmwareV2 lua/ tree that lives
-# in another layer folder - mirroring tools/testvm, which likewise consumes a
-# sibling folder's C. The COPY layer cache-busts whenever those sources change,
-# so `luac` is always rebuilt in step with the vendored Lua.
+# NOTE: this image is built with the *lua layer root* as its context (see
+# Taskfile.yaml) so the COPY below can reach the firmware/lua/ tree that lives
+# in the sibling firmware folder - mirroring tools/testvm, which likewise
+# consumes a sibling folder's C. The COPY layer cache-busts whenever those
+# sources change, so `luac` is always rebuilt in step with the vendored Lua.
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -29,7 +29,7 @@ RUN apt-get update \
 
 # The vendored Lua core+libs, incl. our LUA_32BITS luaconf.h and luac.c (which
 # is vendored but never compiled into the firmware - it has its own main()).
-COPY src/firmwareV2/lua/ /opt/lua/
+COPY firmware/lua/ /opt/lua/
 
 # Build luac: every .c except lua.c (the interpreter's main() would clash with
 # luac.c's). -DLUA_HOST_LUAC selects the stock-libc fallbacks in luaconf.h.

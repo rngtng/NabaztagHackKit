@@ -1,6 +1,10 @@
 # Changes
 
-## Unreleased
+## v2.0.0-alpha12 - 12-07-2026
+
+* Huge Restructure - Split sources in mtl (V1) and lua(V2).
+
+## v2.0.0-alpha11 - 11-07-2026
 
   * docs: consolidated the firmware/JTAG docs onto the current SDK layout. The
     nabgcc-era debrick guide (`docs/firmware/DEBRICK.md`) was a duplicate of

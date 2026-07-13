@@ -1,0 +1,34 @@
+# NabaztagSDK — unified entrypoint.
+#
+# Every build runs inside Docker, so the only host requirements are Docker and
+# Task (https://taskfile.dev). Each layer is self-contained: it owns its Taskfile
+# with the layer's verbs (build / simulate / flash / …) and pulls in whatever
+# tools it needs. This root file only `includes:` those leaves under a per-layer
+# namespace, so targets read as `<layer>:<verb>` — e.g. `task firmwareV2:flash`,
+# `task app-piper:build`, `task boot:simulate`, `task lib:test`. Every leaf is
+# relocatable: `task <layer>:<verb>` here == `cd <layer> && task <verb>` there.
+# Run `task` with no args to list everything.
+#
+# Root owns no toolchain includes and re-implements nothing: `test` delegates to
+# `lib:test`; `verify`/`clean` just chain the layers' own verbs. Decentralised
+# per #63 — remaining per-leaf duplication is intentional for now (DRY: #187).
+version: '3'
+
+vars:
+  OUT: build
+
+includes:
+  firmware: # Lua-successor firmware (Lua 5.4)
+    taskfile: ./firmware/Taskfile.yaml
+
+tasks:
+  verify:
+    desc: 'Definition of done for the Lua (V2) layer: the firmware image builds (fails loudly on flash overflow).'
+    cmds:
+      - task: firmware:build
+
+  clean:
+    desc: 'Clean all build artifacts and the layers'' Docker images.'
+    cmds:
+      - task: firmware:clean
+      - rm -rf '{{.OUT}}'

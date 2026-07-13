@@ -14,8 +14,12 @@ version: '3'
 
 vars:
   OUT: '{{.OUT | default "build"}}'
+  # REPO = the mtl layer root, resolved depth-independently (walk up to just below
+  # .git). MUST be identical in every leaf: Task keeps one entry per leaf-global
+  # var name, so a fixed-depth formula from a sibling at another depth can be
+  # applied here with the wrong root (random Go map order). See mtl/boot.
   REPO:
-    sh: cd '{{.TASKFILE_DIR}}/..' && pwd
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
 
 includes:
   preprocessor:
