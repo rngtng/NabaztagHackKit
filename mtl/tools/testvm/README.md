@@ -1,67 +1,67 @@
 # testvm
 
-Native (x86) build of the firmware's own C bytecode VM (`src/firmware/src/vm`,
-`src/firmware/src/net`), with the hardware-facing modules (`hal/`, `usb/`, `utils/`)
-swapped for host stubs (`stubs/`). Loads real bytecode and runs it, so it catches VM
-bugs the MTL simulator (a separate, independent implementation) can't see.
+Native (x86) build of the firmware's own C bytecode VM (`mtl/firmware/src/vm`,
+`mtl/firmware/src/net`), with the hardware-facing modules (`hal/`, `usb/`,
+`utils/`) swapped for host stubs (`stubs/`). Loads real bytecode and runs it, so
+it catches VM bugs the MTL simulator (a separate, independent implementation)
+can't see.
 
-Vendored from `nabgcc/testvm/` — see `PROVENANCE.md` for the origin and the local
-fixes needed to get it building/running (missing headers, a stray `dbg_buffer`
-redefinition, a `consolestr` macro that isn't visible outside `vm/vlog.c`, and the
-Taskfile's path assumptions).
+Vendored from `nabgcc/testvm/` — see `PROVENANCE.md` for origin and the local
+build fixes (missing headers, a stray `dbg_buffer` redefinition, a `consolestr`
+macro not visible outside `vm/vlog.c`, Taskfile path assumptions).
 
 ## Usage
 
 Build the boot bytecode first, then run the smoke test against it:
 
 ```
-task boot:build
-task firmware:test               # bounded run (default 5s); pass = exit 0 or timeout
-task firmware:test DURATION=15   # longer window
+task mtl:boot:build
+task mtl:firmware:test:vm                 # bounded run (default 5s); pass = exit 0 or timeout
+task mtl:firmware:test:vm DURATION=15     # longer window
 ```
 
 To watch it run interactively instead of a bounded smoke test:
 
 ```
-task testvm:simulate SOURCE=build/boot/dumpbc.c
+task mtl:firmware:testvm:simulate SOURCE=build/boot/dumpbc.c
 ```
 
 `SOURCE` is a `dumpbc.c` file as written by `mtl_compiler` (raw bytecode, i.e.
-`SIGN=false` — the same format the simulator loads, not the signed device-flash
-format). A button push can be simulated by writing one byte to the `button.sock`
-Unix datagram socket under `SOCK_DIR` (default `.`, or `build/` via `test:firmware`).
+`SIGN=false` — the format the simulator loads, not the signed device-flash
+format). A button push is simulated by writing one byte to the `button.sock`
+Unix datagram socket under `SOCK_DIR` (default `.`, or `build/` via the test task).
 
-## Memory-safety regression guard (issue #66)
+## Memory-safety regression guard (#66)
 
 `bugrepro.c` + `run-bugrepro.sh` build the real firmware VM sources under
-AddressSanitizer and drive the exact code paths that used to overrun, guarding
-the memory-safety bugs found in issue #66 (now fixed). No bytecode file is
-needed — each scenario either calls a firmware helper directly or hand-assembles
-a few opcodes and enters the real `interpGo()`.
+AddressSanitizer and drive the exact code paths that used to overrun (the
+memory-safety bugs fixed in #66). No bytecode file is needed — each scenario
+either calls a firmware helper directly or hand-assembles a few opcodes and
+enters the real `interpGo()`.
 
 ```
-task firmware:test:bugs      # build + run all scenarios under ASan
+task mtl:firmware:test:bugs      # build + run all scenarios under ASan
 ```
 
 Scenarios (selected internally by `bugrepro <name>`), all expected **clean**:
 
-| scenario    | firmware code                       | guarded bug (fixed)                              |
-|-------------|-------------------------------------|--------------------------------------------------|
-| `syscmp`    | `vlog.c` `sysCmp()`                 | #70 — length not clamped when one operand overruns → OOB read |
-| `store`     | `vinterp.c` `OPstore`               | #69 — `(i>=0)||(i<VSIZE(p))` bounds guard was a tautology → OOB write |
-| `setstruct` | `vinterp.c` `OPsetstruct`           | #69 — same tautology guard → OOB write           |
+| scenario    | firmware code             | guarded bug (fixed)                              |
+|-------------|---------------------------|--------------------------------------------------|
+| `syscmp`    | `vlog.c` `sysCmp()`       | #70 — length not clamped when one operand overruns → OOB read |
+| `store`     | `vinterp.c` `OPstore`     | #69 — `(i>=0)||(i<VSIZE(p))` bounds guard was a tautology → OOB write |
+| `setstruct` | `vinterp.c` `OPsetstruct` | #69 — same tautology guard → OOB write           |
 
 This is a **regression guard**: every scenario must run clean. If a fix is
 reverted or broken, the matching scenario trips ASan and the run exits nonzero
-(printing the report with the offending `vinterp.c`/`vlog.c` line). Runs as part
-of `task verify`. (#71's `OPstrcmp` over-read isn't ASan-visible — both strings
-live in the shared heap and the over-read hits zeroed padding — so it has no
-scenario here; it's guarded by inspection + the build.)
+(printing the offending `vinterp.c`/`vlog.c` line). Runs as part of `task verify`.
+(#71's `OPstrcmp` over-read isn't ASan-visible — both strings live in the shared
+heap and the over-read hits zeroed padding — so it has no scenario; it's guarded
+by inspection + the build.)
 
 ## VM internals cheat-sheet (for writing native tests)
 
 Enough to add a new `bugrepro.c` scenario — or any native VM test — without
-re-deriving the layout. Definitions live in `src/firmware/inc/vm/vmem.h`.
+re-deriving the layout. Definitions live in `mtl/firmware/inc/vm/vmem.h`.
 
 **One array holds everything.** `_bytecode` is literally `(uint8_t*)_vmem_heap`
 (see `vloader.h`). The loader copies bytecode to the front of the heap; the heap
@@ -77,9 +77,9 @@ make a bug ASan-visible, either drive the index *past the whole array* (see the
 - int `i`  ↔  `INTTOVAL(i)` = `i<<1`,  back via `VALTOINT` = `v>>1`
 - heap ptr `p` ↔ `PNTTOVAL(p)` = `1+(p<<1)`, back via `VALTOPNT` = `v>>1`
 - `ISVALPNT(v)` = `v&1` (low bit tags pointer vs int); `NIL = -1`
-- a "pointer" `p` is a **word index** into `_vmem_heap`, not an address. Each
-  block is `[header(3 words)][payload]`; `VSIZE(p)`/`VSIZEBIN(p)` = element/byte
-  count, `VSTART(p)`/`VSTARTBIN(p)` = payload, `VFETCH/VSTORE` index the payload.
+- a "pointer" `p` is a **word index** into `_vmem_heap`, not an address. Each block
+  is `[header(3 words)][payload]`; `VSIZE(p)`/`VSIZEBIN(p)` = element/byte count,
+  `VSTART(p)`/`VSTARTBIN(p)` = payload, `VFETCH/VSTORE` index the payload.
 
 **Driving `interpGo()` without a bytecode file** (what `vm_run()` in `bugrepro.c`
 does): write opcode bytes near the front of `_bytecode`; point `_bc_tabfun` at a
@@ -93,7 +93,7 @@ peeks the table, so push table, index, value.
 
 **Other traps that cost time:** the VM never returns on its own (the smoke test
 relies on a timeout); GC **reboots** (`sysReboot`) on out-of-memory rather than
-returning an error; and the firmware VM (`src/firmware/src/vm/`) and the MTL
-simulator VM (`tools/mtl_linux/src/vm/`) are **twin copies of the same code** —
-a VM bug or fix almost always applies to both, so grep the sibling before
+returning an error; and the firmware VM (`mtl/firmware/src/vm/`) and the MTL
+simulator VM (`mtl/tools/mtl_linux/src/vm/`) are **twin copies of the same code**
+— a VM bug or fix almost always applies to both, so grep the sibling before
 concluding a divergence is intentional.

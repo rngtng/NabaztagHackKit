@@ -5,13 +5,13 @@ serial/UART unless the `mod_serial` mod is fitted). This maps every boot LED sta
 back to the bytecode that drives it, so a colour on the device tells you exactly
 which code path is live — useful when bringing up a freshly flashed rabbit.
 
-The boot MTL is readable source (`src/boot/`). It calls C HAL syscalls
+The boot MTL is readable source (`mtl/boot/`). It calls C HAL syscalls
 (`setleds`/`led`, `motorset`/`motorget`, `button2`) wired in
-`src/firmware/src/vm/vlog.c` → `src/firmware/src/hal/{led,motor}.c`.
+`mtl/firmware/src/vm/vlog.c` → `mtl/firmware/src/hal/{led,motor}.c`.
 
 > **Line numbers** below (`:NNNN`) index Violet's original monolithic
-> `boot.0.0.0.13.mtl`, from which `src/boot/*.mtl` is split. The self-test/LED logic
-> lives in `src/boot/main.mtl` here; the colour→meaning semantics are unchanged.
+> `boot.0.0.0.13.mtl`, from which `mtl/boot/*.mtl` is split. The self-test/LED logic
+> lives in `mtl/boot/main.mtl` here; the colour→meaning semantics are unchanged.
 
 ---
 
@@ -22,7 +22,7 @@ Ears spin forever by design; a button click is the only exit.
 
 | Symptom | Cause |
 |---|---|
-| All LEDs purple | `coltests[2] == 0xffff00` (yellow), shown magenta only **if** this unit has the Waitrony **green/blue swap** (`src/firmware/src/hal/led.c`). |
+| All LEDs purple | `coltests[2] == 0xffff00` (yellow), shown magenta only **if** this unit has the Waitrony **green/blue swap** (`mtl/firmware/src/hal/led.c`). |
 | Ears turn endlessly | `tests==2` loop flips both motors every ~8.2 s with **no stop condition** (`:2835-2843`). |
 | Root condition | `master != 0` → `button2` read **pressed at boot** → factory test sequence instead of normal boot / config AP. |
 
@@ -34,7 +34,7 @@ then one click (→ `tests=2`).
 ## LED colour reference
 
 `setleds col` = all 5 LEDs to `col` (`:147`). Colour is `0xRRGGBB`, standard RGB
-(`set_led`, `src/firmware/src/hal/led.c`). **Caveat:** some Waitrony LED batches ship
+(`set_led`, `mtl/firmware/src/hal/led.c`). **Caveat:** some Waitrony LED batches ship
 with **green/blue swapped**. On a swapped unit: `0xffff00` (yellow) → magenta/purple;
 `0xff00ff` (purple) → yellow. Trust the bytecode colour constant and confirm against
 the physical unit.
@@ -60,9 +60,9 @@ var coltests={0 0 0xffff00 0xff 0xff8000 0xffff 0xff00ff};;
 
 ## Flow diagram
 
-The state machine below is entirely **mtl-side** (`src/boot/main.mtl`, `main`+`loop`).
+The state machine below is entirely **mtl-side** (`mtl/boot/main.mtl`, `main`+`loop`).
 The **FW/C side has no state of its own** — `setleds`/`led` are thin HAL syscalls
-(`src/firmware/src/hal/led.c`) that just push a colour to the physical LEDs; every
+(`mtl/firmware/src/hal/led.c`) that just push a colour to the physical LEDs; every
 branch, timer, and transition lives in the mtl loop below.
 
 ```mermaid
@@ -160,7 +160,7 @@ The three branches the diagram makes explicit, matching how you reach each one:
 
 Endless ears appear in `tests==2` (no stop) and `tests==3` if the position
 encoder never reports motion (`get_motor_position` reads PWM capture counter
-`FTM0GR`/`FTM1GR`, `src/firmware/src/hal/motor.c`).
+`FTM0GR`/`FTM1GR`, `mtl/firmware/src/hal/motor.c`).
 
 ---
 
@@ -183,7 +183,7 @@ text stream that only exists if `mod_serial` is fitted.
 
 In short: results are **LED colour + audio, not a report** — nothing is written to
 flash. The only place raw numbers/text appear (encoder deltas, RFID tag id) is the
-`Secho`/`Iecho`/`Secholn` stream (`src/firmware/src/vm/vlog.c`), which requires the
+`Secho`/`Iecho`/`Secholn` stream (`mtl/firmware/src/vm/vlog.c`), which requires the
 `mod_serial` hardware mod; on a stock board you're reading colours and listening,
 nothing more.
 
@@ -209,5 +209,5 @@ between pulses — slower/faster pulses update position silently without relight
 
 This block also emits a terminal stream — `Secho "----refpos0/1 "; Iecholn i-count`
 plus `time_ms` + raw position per pulse (`:2864-2870`, `:2881-2887`), routed via
-`Secho`/`Iecho` → `src/firmware/src/vm/vlog.c`. Present only in `tests==3`; normal
+`Secho`/`Iecho` → `mtl/firmware/src/vm/vlog.c`. Present only in `tests==3`; normal
 boot stays LED-only.

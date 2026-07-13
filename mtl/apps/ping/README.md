@@ -1,3 +1,3 @@
 # Nabaztag Bytecode PING
 
-This folder contains the original bytecode `nominal-ping.mtl`.
+The original bytecode `nominal-ping.mtl`.

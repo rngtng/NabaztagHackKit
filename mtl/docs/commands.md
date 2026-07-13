@@ -1,11 +1,10 @@
-# Project METAL
+# Project METAL — VM command reference
 
-## Commands
-List of commands supported by the VM.  _custom_ got added by me (see lib `openNabaztag.mtl`)
-
+Commands supported by the VM. Rows tagged _custom_ were added in this codebase
+(see `openNabaztag.mtl`). Upstream reference:
 http://www.sylvain-huet.com/rsc/metal/doc/Metal.html
 
-### Native
+## Native
 
 | famille | label | type | commentaire |
 |   -- |  -- | -- | -- |
