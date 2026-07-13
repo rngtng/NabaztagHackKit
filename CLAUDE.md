@@ -24,9 +24,9 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Structure
 - **Self-contained layer folders.** Each tool/layer owns its `Dockerfile` + `Taskfile.yaml`.
   The root `Taskfile.yaml` only `includes:` them under a namespace. **No central `docker/`.**
-- **Tasks = minimal parameterized verbs** (e.g. `mtl:compile -- <src> <out>`,
-  `mtl:simulate -- …`). Bake toolchain *builds* into the image; mark build/image tasks
-  `internal: true`. Don't expose one task per Make target.
+- **Tasks = minimal parameterized verbs** (e.g. `mtl:app-piper:build`,
+  `mtl:boot:simulate`, `lua:firmware:flash APP=…`). Bake toolchain *builds* into the image;
+  mark build/image tasks `internal: true`. Don't expose one task per Make target.
 - Apply the minimalism rule to **interfaces (tasks/CLI/structure), not just code.**
 
 ## Docker + Task

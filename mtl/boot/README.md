@@ -1,12 +1,10 @@
 # Boot
 
-Find here the original & latest source of the boot.mtl file, which is the first program that runs on the Nabaztag.
-
-
-compile with:
+`boot.mtl` - the first MTL program that runs on the Nabaztag: WiFi provisioning + OTA,
+loaded unconditionally at power-on. Model:
+[`docs/firmware/architecture.md`](../../docs/firmware/architecture.md).
 
 ```
-task mtl:compile SOURCE=boot.mtl
+task mtl:boot:build       # compile boot.mtl -> bytecode
+task mtl:boot:simulate    # run it in the mtl_linux simulator
 ```
-
-It will produce a `boot.mtl` and `dumpbc.c` file in the current directory.

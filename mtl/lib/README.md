@@ -1,20 +1,20 @@
 # lib — Reusable MTL Library
 
-Portable MTL modules for the Nabaztag firmware. Each file is self-contained and `#include`-able on demand. No module pulls in more than it needs.
-
-The `lib/` modules should declare all external deps as `proto` at the top so each file is self-documenting and linter-friendly.
+Portable MTL modules for the Nabaztag firmware. Each file is self-contained,
+`#include`-able on demand, and pulls in no more than it needs. Modules declare
+external deps as `proto` at the top so each file is self-documenting.
 
 ## About MTL (Metal)
 
-MTL/Metal is a custom functional language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). Files end with `.mtl`. Key features used in this codebase:
+MTL/Metal is a custom functional language by [Sylvain Huet](http://www.sylvain-huet.com/?lang=en). Files end with `.mtl`. Key features used here:
 
-- **Types**: `type Sock=[field1 field2];;` — record types; fields accessed as `sock.field`
+- **Types**: `type Sock=[field1 field2];;` — record types; fields as `sock.field`
 - **Functions**: `fun name arg1 arg2 = body;;`
 - **Partial application**: `fixarg2 #fn val` — fixes argument 2 of `fn` as `val`
 - **Lists**: `hd`, `tl`, `::` (cons), `nil`
 - **Mutation**: `set field = value;` — in-place field update
 
-Grammar reference: [docs/grammar.md](docs/grammar.md)
+Grammar reference: [../docs/grammar.md](../docs/grammar.md)
 
 ## Architecture
 
@@ -99,14 +99,12 @@ lib/
 └── forth.mtl        Forth entry point — include this, not the sub-modules
 ```
 
-All planned building blocks are extracted; app-piper retains only the
-Violet-server protocol layers (trame/streaming/interactive/info), its servers,
-run loop, config, and app Forth words. Device configuration (wifi credentials, static IP, proxy, timezone) always
-stays app-side: lib modules declare `proto config_get_*` seams and the app
-supplies the accessors. app-piper derives them from the persistent flash blob;
-demo apps get sensible defaults from **`lib/net/config_defaults.mtl`** — the one
-canonical copy of the ~15 accessor bodies. In a device build (`#ifndef SIMU`),
-`#define` only the fields that differ, *before* including it:
+Device configuration (wifi credentials, static IP, proxy, timezone) stays
+app-side: lib modules declare `proto config_get_*` seams and the app supplies
+the accessors. app-piper derives them from the persistent flash blob; demo apps
+get defaults from **`lib/net/config_defaults.mtl`** — the one canonical copy of
+the ~15 accessor bodies. In a device build (`#ifndef SIMU`), `#define` only the
+fields that differ, *before* including it:
 
 ```
 #define CONFIG_WIFI_SSID  "MyNetwork"
@@ -115,20 +113,19 @@ canonical copy of the ~15 accessor bodies. In a device build (`#ifndef SIMU`),
 #include "lib/net/config_defaults.mtl"
 ```
 
-The preprocessor is a real cpp, so `#define X val` substitutes the token and the
+The preprocessor is a real cpp: `#define X val` substitutes the token and the
 header's `#ifndef` guards let the app-side `#define` win — no include-order
 gotcha. A new device app sets a few fields, not all fifteen.
 
-`lib/hw` decouples from app policy via seams: LED *animations* (what blinks
-when) stay app-side on top of the lib primitives; the ears state machine
-exposes `ears_touched_cb` (user turned an ear — return 1 to consume) and
-`ears_post_run_cb` (poll app state each tick); `rfid_poll` returns a fresh
-tag id and the app decides the reaction; `reclib` records and packages WAV,
-upload flow stays app-side.
+`lib/hw` decouples from app policy via seams: LED *animations* stay app-side on
+top of the lib primitives; the ears state machine exposes `ears_touched_cb`
+(user turned an ear — return 1 to consume) and `ears_post_run_cb` (poll app
+state each tick); `rfid_poll` returns a fresh tag id and the app decides the
+reaction; `reclib` records and packages WAV, upload flow stays app-side.
 
-**Starting a new app:** copy `src/app-template/` — `main.mtl` assembles lib
-blocks, `app.mtl` is the business logic. `task app-template:simulate` runs it on
-http://localhost:8080.
+**Starting a new app:** copy `mtl/apps/template/` — `main.mtl` assembles lib
+blocks, `app.mtl` is the business logic. `task mtl:app-template:simulate` runs it
+on http://localhost:8080.
 
 Note: the preprocessor treats **every file as `#pragma once`**, so modules can
 (and should) `#include` their own dependencies; consumers may include modules
@@ -235,10 +232,10 @@ needed). Maximum ~4–5 concurrent clients given the 1 MB RAM budget.
 
 **Prerequisites:** the `writetcp`/`closetcp`/`tcpcb` primitives and TCP
 constants must be defined before including a `lib/net` server. Include
-`lib/net/tcp.mtl` (the VM-native adapter; call `netstart` in `main`) —
-that's what `src/app-template` and `test/sse_test_app.mtl` do. The boot
-uses its fuller `src/boot/tcpudp_emu.mtl` (adds UDP/DHCP); unit tests use
-the capturing stubs in `test/lib/_test.mtl`.
+`lib/net/tcp.mtl` (the VM-native adapter; call `netstart` in `main`) — that's
+what `mtl/apps/template` and `mtl/apps/sse` do. The boot uses its fuller
+`mtl/bootV2/tcpudp_emu.mtl` (adds UDP/DHCP); unit tests use the capturing stubs
+in `test/lib/_test.mtl`.
 
 ### JSON builder
 
@@ -298,7 +295,7 @@ forth_interpreter_ex text nil nil task nil;;
 The whole suite runs in the simulator via:
 
 ```sh
-task test
+task mtl:lib:test
 ```
 
 Failures are marked with `!!` in the output (the simulator always exits 0 —
@@ -310,7 +307,7 @@ writes) so `net/` servers are tested without hardware, and `forth_run` /
 `forth_run_stack` helpers that execute a Forth program against the core
 dictionary and return its buffered output / final stack rendering.
 
-Each test file uses the framework from `test/assertions.mtl`:
+Each test file uses the framework from `test/_assertions.mtl`:
 
 ```mtl
 let scenario "my_module" -> s in
@@ -326,4 +323,4 @@ let scenario "my_module" -> s in
 Available assertions: `assert_equalI`, `assert_equalS`, `assert_nil`,
 `assert_equalIL`, `assert_equalSL`, `assert_equalTL`.
 
-For SSE integration testing without real hardware, see `test/sse_test_app.mtl` — a self-contained app that broadcasts a tick event every 2 s and can be exercised with `curl -sN http://localhost:<port>/`.
+For SSE integration testing without real hardware, see `mtl/apps/sse/` — a self-contained app that broadcasts a tick event every 2 s, exercised with `curl -sN http://localhost:<port>/`.

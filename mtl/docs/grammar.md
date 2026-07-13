@@ -1,18 +1,8 @@
-# Projet METAL
+# Projet METAL — Grammaire
 
-## Grammaire
+Grammaire du langage Métal. Auteur: Sylvain Huet.
 
-Auteur: Sylvain Huet
-Création: 13/01/03
-Dernière mise-à-jour: 20/02/07
-
-
-## Introduction
-### Aperçu sur le document
-Grammaire du langage Métal.
-
-## Description
-### Types
+## Types
 
     Type  =  B |  B( labels* )
      |  un |  wn
@@ -52,7 +42,7 @@ La première ligne définit l’expression Type, qui est en fait le type Scol. P
 L’expression TypeMono définit les types monomorphes (non polymorphes): la seule différence avec Type est l’absence des variables liées un.
 
 
-### Sources
+## Sources
 
 
     Metal = Definition*

@@ -10,7 +10,7 @@ A new app is **assembly + business logic**; everything else comes from `lib/`:
 ## Run it (simulator)
 
 ```sh
-task app-template:simulate   # config UI on http://localhost:8080
+task mtl:app-template:simulate   # config UI on http://localhost:8080
 curl -s localhost:8080/
 curl -s -d '2 3 + .' localhost:8080/eval
 # -> {"output": "5", "stack": ""}
@@ -22,9 +22,9 @@ left commented — they need the device build). Run the whole file through
 `/eval` in one shot:
 
 ```sh
-task app-template:simulate
+task mtl:app-template:simulate
 curl -s --noproxy localhost \
-     --data-binary @src/app-template/examples/demo.forth \
+     --data-binary @mtl/apps/template/examples/demo.forth \
      localhost:8080/eval
 ```
 
@@ -32,7 +32,7 @@ curl -s --noproxy localhost \
 
 `app.mtl` wires `forth_init_dictionary` to
 `set forth_dictionary = [dict: conc app_forth_words forth_core_words];`
-(mirroring `src/app-piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
+(mirroring `mtl/apps/piper/forth/dictionary.mtl`'s pattern), so `/eval` gets
 the **generic core** (`lib/forth/dictionary.mtl`, which now includes the
 memory/variable words) plus four shared opt-in packs — the time/date pack
 (`lib/forth/time.mtl`, over `lib/sys/time.mtl`), the task-control pack
@@ -144,7 +144,7 @@ The wall-clock words read the timezone/DST config through `config_get_city_code`
 / `config_get_dst`. On device these (and the WiFi/IP/proxy accessors) come from
 `lib/net/config_defaults.mtl`, included by `app.mtl`'s `#ifndef SIMU` block;
 override any field by `#define`-ing `CONFIG_CITY_CODE` / `CONFIG_DST` / … before
-that include (see `lib/README.md`). The simulator uses a fixed `UTC` / no-DST
+that include (see [../../lib/README.md](../../lib/README.md)). The simulator uses a fixed `UTC` / no-DST
 stub. Without a synced clock — always the case in the simulator — they report
 zeros / the epoch.
 
@@ -187,7 +187,7 @@ curl -s -d '1 task-stop    .' localhost:8080/eval   # or remove it entirely
 **Hardware** (`lib/forth/hw.mtl`) — thin wrappers over the VM's `led` /
 `motorset` / `motorget` natives via `lib/hw/leds.mtl` + `lib/hw/ears.mtl`.
 These natives exist in the simulator too, so they run under
-`task app-template:simulate` — LED writes appear as `[simuleds] led N 0x……`
+`task mtl:app-template:simulate` — LED writes appear as `[simuleds] led N 0x……`
 in the sim's stdout, and the sim models the ear motors — but physical
 confirmation needs a flashed rabbit ([#46]). `main.mtl` calls `ears_init` to
 start the ears state-machine task.
@@ -212,8 +212,8 @@ curl -s -d 'ears .s' localhost:8080/eval            # show both ear positions
 `wifi.mtl`) — **device build only.** These are compiled in exclusively under
 `#ifndef SIMU`: `http_request`/`wifi_mac_addr` live in the full MTL net stack
 (`lib/net/net.mtl`), which the simulator's transport (`lib/net/tcp.mtl`) does
-not link. Under `task app-template:simulate` they are therefore **not defined**
-(`defined? http-get` → `0`); use `task app-template:build` and flash a rabbit
+not link. Under `task mtl:app-template:simulate` they are therefore **not defined**
+(`defined? http-get` → `0`); use `task mtl:app-template:build` and flash a rabbit
 ([#46]). Documenting a word that "works" in the simulator but not on the device
 is the bug tracked in [#57]/[#37].
 
@@ -231,7 +231,7 @@ curl -s -d '"http://example.com/" http-get drop . cr' localhost:8080/eval
 ```
 
 `tcp-listen` (piper's fifth net word) is intentionally **not** migrated: it
-hardwires app-piper's telnet Forth server (`src/app-piper/srv/telnet_server.mtl`),
+hardwires app-piper's telnet Forth server (`mtl/apps/piper/srv/telnet_server.mtl`),
 an app service rather than a lib building block — the same line the hardware
 pack draws around piper's non-raw words.
 
@@ -261,18 +261,17 @@ curl -s -d '1 counter +!  counter @' localhost:8080/eval
 ## Build device bytecode
 
 ```sh
-task app-template:build
+task mtl:app-template:build
 ```
 
-Note: running standalone **on the rabbit** additionally needs WiFi/DHCP/DNS
-bring-up, which still lives in `src/app-piper/{ipv4,net}` — extracting that
-stack into `lib/` is a planned follow-up (tracked in GitHub Issues). Until then, device
-apps follow the app-piper pattern; this template is the simulator-first
-blueprint for composing lib blocks.
+Running standalone **on the rabbit** additionally needs WiFi/DHCP/DNS bring-up,
+now provided by `lib/net` (the device build pulls in `lib/net/net.mtl` and its
+settings from `lib/net/config_defaults.mtl`). This template is the
+simulator-first blueprint for composing lib blocks.
 
 ## Make it yours
 
-1. Copy this folder: `cp -r src/app-template src/app-<name>`
+1. Copy this folder: `cp -r mtl/apps/template mtl/apps/<name>`
 2. Rewrite `app.mtl` (keep `handle_request`, or drop HTTP entirely and use
    other blocks — `lib/net/sse_server.mtl`, `lib/sys/task.mtl`, …).
-3. `task app-<name>:simulate`
+3. `task mtl:app-<name>:simulate`

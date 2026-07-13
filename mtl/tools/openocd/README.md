@@ -1,11 +1,9 @@
 # Reflashing / debricking a Nabaztag:tag (V2) over JTAG (OpenOCD)
 
 Recover a dead **Nabaztag:tag (V2)** (OKI **ML67Q4051**, ARM7TDMI) by reflashing
-its firmware over JTAG with OpenOCD.
-
-The JTAG adapter is your choice. This guide uses a **Raspberry Pi as a bit-bang
-JTAG adapter** (no extra probe needed) as the worked example. An FTDI **Bus
-Blaster** config is also shipped if you have one.
+its firmware over JTAG with OpenOCD. This guide uses a **Raspberry Pi as a
+bit-bang JTAG adapter** as the worked example; an FTDI **Bus Blaster** config is
+also shipped.
 
 Configs in this dir:
 
@@ -15,44 +13,42 @@ Configs in this dir:
 | [`nabaztagv2.cfg`](nabaztagv2.cfg) | FTDI Bus Blaster |
 | [`target/ml67q4051.cfg`](target/ml67q4051.cfg) | the chip + 128 KB flash bank (shared by both) |
 
-## Flash a firmwareV2 app in one command (M2, #90)
+## Flash in one command
 
-Once the Pi is set up (steps 1 + wiring below, one-time), flashing is a single
-task from the repo root - it builds the app, ships this repo's configs + ELF to
-the Pi, drives OpenOCD + gdb, verifies the write, and tears the bridge down:
+Once the Pi is set up (step 1 + wiring below, one-time), flashing is a single
+task from the repo root — it builds, ships this repo's configs + ELF to the Pi,
+drives OpenOCD + gdb, verifies the write, and tears the bridge down:
 
 ```sh
-task firmwareV2:flash                       # APP defaults to hello (M0)
-task firmwareV2:flash APP=blink             # M1 - visible LED blink
-task firmwareV2:flash APP=blink PI_HOST=me@other-pi.local
+task mtl:firmware:flash                       # V1 boot firmware
+task mtl:firmware:flash PI_HOST=me@other-pi.local
 ```
 
-The task wraps [`flash.py`](flash.py). It aborts if the JTAG chain check
-(IDCODE `0x3f0f0f0f`) fails, before touching flash - the same make-or-break gate
-as the manual flow. The manual steps below are the fallback for debricking /
-debugging and document what the task does under the hood.
+The task wraps [`flash.py`](flash.py). It aborts if the JTAG chain check (IDCODE
+`0x3f0f0f0f`) fails, before touching flash. The manual steps below are the
+fallback for debricking / debugging and document what the task does under the hood.
 
 > `flash.py` runs OpenOCD with only `-f nabaztag-pi.cfg`, so that config must set
-> the JTAG clock (`adapter_khz`) itself - it does.
+> the JTAG clock (`adapter_khz`) itself — it does.
 
 ## Why a custom OpenOCD
 
 - Flash is a single 128 KB bank based at `0x08000000`.
 - **Mainline OpenOCD cannot program this flash.** The OKI flash routine lives in
-  a custom `ml67q40xx` NOR driver written by **RedoX**. A stock `apt install
-  openocd` fails with `Error: flash driver 'ml67q40xx' not found`. You must build
+  a custom `ml67q40xx` NOR driver by **RedoX**. A stock `apt install openocd`
+  fails with `Error: flash driver 'ml67q40xx' not found`. You must build
   **OpenOCD 0.8.0 + RedoX's OKI patch**.
-- The Nabaztag JTAG header exposes **RESETN only (no TRST)**, so the OpenOCD reset
-  mode is `srst_only` (set in the cfg).
+- The Nabaztag JTAG header exposes **RESETN only (no TRST)**, so the OpenOCD
+  reset mode is `srst_only` (set in the cfg).
 - ML67 and Pi GPIO are both **3.3 V logic** → no level shifter needed.
 - Reference: the [journaldulapin debrick guide](https://www.journaldulapin.com/2017/09/10/debriquer-nabaztag/)
-  — same chip, same RedoX patch, but it drives JTAG with a Bus Pirate.
+  — same chip, same RedoX patch, driven with a Bus Pirate.
 
 ## Hardware (Pi example)
 
-- Raspberry Pi with a GPIO header. This doc is tuned for a **Model A+ / Pi 1 /
-  Zero (BCM2835, single core)**. Pi 4 needs the right `peripheral_base`; Pi 5 must
-  use the `linuxgpiod` driver — neither matches the 0.8.0 build here.
+- Raspberry Pi with a GPIO header. Tuned for a **Model A+ / Pi 1 / Zero (BCM2835,
+  single core)**. Pi 4 needs the right `peripheral_base`; Pi 5 must use the
+  `linuxgpiod` driver — neither matches the 0.8.0 build here.
 - ~6 jumper wires.
 - Triangular ("tamper") screwdriver to open the Nabaztag base (4 screws).
 - The Nabaztag's **own power supply** (do not power it from the Pi).
@@ -84,7 +80,7 @@ Pi 26-pin (P1) header reference for locating the BCM GPIOs above:
 
 ### 1. Build patched OpenOCD 0.8.0 (one-time)
 
-This is the part that makes `ml67q40xx` flashing work. On the Pi:
+This is what makes `ml67q40xx` flashing work. On the Pi:
 
 ```sh
 sudo apt-get update
@@ -118,22 +114,21 @@ sudo make install                             # installs to /usr/local/bin/openo
 > the freshly built one by full path: `/usr/local/bin/openocd`.
 
 > **Using an FTDI probe (Bus Blaster) instead of the Pi?** Drop
-> `--enable-bcm2835gpio`, add `--enable-ftdi`, and you can build on any host (the
-> OKI patch is still required). Flash with `-f nabaztagv2.cfg` in step 4.
+> `--enable-bcm2835gpio`, add `--enable-ftdi`, and build on any host (the OKI
+> patch is still required). Flash with `-f nabaztagv2.cfg` in step 4.
 
 ### 2. Build firmware (on the dev host)
 
 ```sh
-cd src/firmware
-task compile          # -> bin/Nab.elf  (also .bin / .hex)
+task mtl:firmware:build          # -> mtl/firmware/bin/Nab.elf (also .bin / .hex)
 ```
 
 ### 3. Copy configs + firmware to the Pi
 
 ```sh
 # on the dev host, from the repo root
-scp -r tools/openocd pi@<pi-ip>:~/
-scp src/firmware/bin/Nab.elf pi@<pi-ip>:~/openocd/
+scp -r mtl/tools/openocd pi@<pi-ip>:~/
+scp mtl/firmware/bin/Nab.elf pi@<pi-ip>:~/openocd/
 ```
 
 ### 4. Start the JTAG bridge — Pi shell 1
@@ -174,45 +169,26 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
-## Semihosting console (M3, #91)
+## Semihosting console (#91)
 
-The board has **no UART**, so the firmwareV2 Lua REPL (M4) does console I/O over
-**ARM semihosting** - the app issues Thumb `svc 0xAB` and OpenOCD services the
+The board has **no UART**, so the Lua REPL does console I/O over **ARM
+semihosting** — the app issues Thumb `svc 0xAB` and OpenOCD services the
 `SYS_WRITEC`/`SYS_READC` syscalls. This is **proven on hardware** with the
-`console` probe (`src/firmwareV2/src/app/console.c`), but the ML67's ARM7TDMI
-needs one non-obvious tweak:
+`console` probe (`lua/firmware/src/app/console.c`), but the ML67's ARM7TDMI needs
+one non-obvious tweak:
 
 - Its **EmbeddedICE is version 1 → no vector catch**, so `arm semihosting enable`
   falls back to a **software** breakpoint at the SWI vector `0x8`. `0x8` is
-  **flash-mapped read-only**, so that write fails (`Unable to set 32 bit software
+  **flash-mapped read-only**, so the write fails (`Unable to set 32 bit software
   breakpoint at address 00000008`) and nothing traps.
 - Fix: drop the dead soft breakpoint and set a **hardware** one (ARM7TDMI has 2
   watchpoint units; a HW breakpoint needs no memory write). `arm_semihosting()`
   keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
   serviced identically.
 
-### One command (M3/M4): `task firmwareV2:repl:hw`
-
-This recipe is now wrapped in a task - the single command to flash an app and
-read its console (`print()` / the REPL) on the rabbit:
-
-```sh
-task firmwareV2:repl:hw                                   # APP=lua, capture boot output
-task firmwareV2:repl:hw APP=console                       # the M3 probe
-task firmwareV2:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
-```
-
-It builds the app, ships it, and drives the exact OpenOCD chain below
-(`flash.py --semihosting`: flash + `arm semihosting enable` + the HW-bp-at-`0x8`
-dance + `resume`), piping `SCRIPT` to the device's stdin and printing what comes
-back. The console is **streamed live**, and `flash.py` **early-exits** the moment
-the app prints the `<<FV_DONE>>` sentinel (the REPL after input EOF; probes before
-they idle) - so a scripted run finishes in seconds instead of waiting out
-`--run-timeout` (120 s, the hard-cap backstop for apps that never print it).
-New probe apps should `sh_puts("<<FV_DONE>>\n")` before their idle loop.
-The manual chain below is the fallback / what the task does under the hood.
-
-Run it manually (console.elf already built with `task firmwareV2:build APP=console`):
+The console/REPL is wrapped in the Lua layer's `lua:firmware:repl:hw` task (see
+[`lua/tools/openocd/README.md`](../../../lua/tools/openocd/README.md)). Run it
+manually (`console.elf` built with `task lua:firmware:build APP=console`):
 
 ```sh
 sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
@@ -223,33 +199,9 @@ sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
   -c "resume"
 ```
 
-`SYS_WRITEC` output lands on **OpenOCD's stdout** (it calls `putchar`);
-`SYS_READC` reads OpenOCD's stdin. Expected: `M3 WRITEC OK`, then the CPU idles
-in `main`.
-
-The **Lua REPL (M4) runs the same way** - flash `lua.elf` and pipe Lua into
-OpenOCD's stdin; results come back on stdout (per-char, so it is slow):
-
-```sh
-printf '1+1\n6*7\n10//3\nprint("lua on rabbit ok")\n' | sudo timeout 160 \
-  /usr/local/bin/openocd -f nabaztag-pi.cfg \
-  -c init -c "reset halt" -c "flash write_image erase lua.elf" \
-  -c "arm semihosting enable" \
-  -c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"
-```
-
-Prints the banner + `> 2 / 42 / 3 / lua on rabbit ok`. Integer math is exact;
-float *printing* is still stubbed (see the firmwareV2 README) - stick to integer
-ops for clean output. `timeout` ends the otherwise-forever OpenOCD server loop. `SYS_WRITE0` (whole-string) is best avoided - OpenOCD 0.8.0's read
-loop ran away on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use)
-is stable.
-
-> Follow-ups:
-> 1. (deferred) Patch OpenOCD's `arm7_9_setup_semihosting` to use `BKPT_HARD` on
->    cores without vector catch - then plain `arm semihosting enable` works, no
->    `rbp`/`bp` dance (needs an OpenOCD rebuild).
-> 2. **Done** - folded into `flash.py --semihosting` / `task firmwareV2:repl:hw`,
->    so the console/REPL is one command instead of a hand-typed `-c` chain + pipe.
+`SYS_WRITEC` output lands on **OpenOCD's stdout** (`putchar`); `SYS_READC` reads
+its stdin. `SYS_WRITE0` (whole-string) is best avoided — OpenOCD 0.8.0's read
+loop runs away on it; per-char `SYS_WRITEC` is stable.
 
 ## Troubleshooting
 
@@ -265,12 +217,12 @@ is stable.
   -y tcl` (lets its configure use system `tclsh` instead of compiling jimsh0).
 - **`make` errors with `implicit-function-declaration` / `incompatible-pointer-types`
   / `int-conversion`** → gcc 14 promotes these to errors by default. Add the
-  `CFLAGS="-Wno-error=..."` shown in the configure step above and re-`./configure`.
+  `CFLAGS="-Wno-error=..."` shown in the configure step and re-`./configure`.
 - **IDCODE shows but rabbit still won't boot after flashing** → the firmware build
-  itself may be broken (e.g. mid-feature work on the current branch). Flash a
-  **known-good earlier commit**: checkout the commit, `task compile`, repeat step 5.
-- **Flash slow / minor warnings mid-write** → bit-bang on a 700 MHz ARM11 is slow
-  but reliable for 128 KB; only a final failure matters.
+  itself may be broken (mid-feature work). Flash a **known-good earlier commit**:
+  checkout the commit, rebuild, repeat step 5.
+- **Flash slow / minor warnings mid-write** → bit-bang is slow but reliable for
+  128 KB; only a final failure matters.
 - **Inspect interactively** → `telnet localhost 4444` while OpenOCD runs, then
   `halt`, `reg`, `flash banks`.
 
@@ -278,11 +230,11 @@ is stable.
 
 `flash.py`'s defaults (`--host tobi@jtag.local`, native-GPIO `nabaztag-pi.cfg`,
 `--remote-dir openocd`) suit the current single-rig setup; every one is an
-overridable flag, so another Pi/user/adapter needs no code change - just args
-(or new `PI_HOST=` etc. on the task).
+overridable flag, so another Pi/user/adapter needs no code change — just args (or
+`PI_HOST=` on the task).
 
 What is *structurally* Pi-specific is the remote model itself: scp/ssh + `sudo`
 (for `/dev/mem`). A local FTDI probe (Bus Blaster + `nabaztagv2.cfg`, OpenOCD on
-this host, no ssh/sudo) would be a `--local` path. `flash.py` keeps
-copy/start/stop in their own functions so that day it's a branch, not a rewrite;
-it isn't built yet (no probe on hand to test against).
+this host, no ssh/sudo) would be a `--local` path; `flash.py` keeps
+copy/start/stop in their own functions so that day it's a branch, not a rewrite.
+Not built yet (no probe on hand to test against).
