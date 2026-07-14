@@ -166,11 +166,36 @@ task lua:firmware:repl SCRIPT=apps/foo.lc               # feed prebuilt .lc byte
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
 `lua`). The simulator maps the real memory regions, runs from `Reset_Handler`, stubs
 peripheral pages, models **instant SPI completion** (a data-register write sets `SPIF`), and
-models the **UART0 console**. It has **no timing, audio, WiFi, RFID, or real timers**, so it
-validates code paths + GPIO + SPI framing + console, not analog behaviour. Delays must be
-software busy-loops to be observable. **DREQ (VS1003 ready) and the ADC completion bit are
-unmodeled** - any bounded busy-wait on them (`nab.play`, `nab.wheel`) spins to its cap in-sim
-and is hardware-only. QEMU isn't used (no ML67Q4051 machine, memory map doesn't fit).
+models the **UART0 console**. Beyond the 1 ms System Timer (below), it has **no timing, audio,
+WiFi, RFID, or analog model**, so it validates code paths + GPIO + SPI framing + console, not
+analog behaviour. Delays must be software busy-loops to be observable. **DREQ (VS1003 ready)
+and the ADC completion bit are unmodeled** - any bounded busy-wait on them (`nab.play`,
+`nab.wheel`) spins to its cap in-sim and is hardware-only. QEMU isn't used (no ML67Q4051
+machine, memory map doesn't fit).
+
+**System Timer + IRQ (#102).** The sim models the 1 ms System Timer and *delivers its
+interrupt*: it runs the CPU in ~1 ms instruction slices (`INSNS_PER_MS`) and, between slices,
+performs a real ARM7 IRQ entry (SPSR←CPSR, switch to IRQ mode, vector to the flash-resident
+`0x18` handler) whenever the timer is enabled and interrupts are unmasked. The firmware's own
+dispatcher then runs `timer_handler` → `led_fade_tick` - the *actual* fade code - so
+`counter_timer` advances and LED **fades animate in the sim**, exactly as on hardware. Timing
+is still approximate (instruction-count clock, not cycle-accurate); `nab.delay`'s busy-loop is
+calibrated to roughly the same scale so fades and delays keep pace.
+
+**Live LED view (#102).** `--leds` (or `task lua:firmware:simulate:leddemo`) reconstructs the 14-byte
+dot-correction frame from the SPI1 byte stream (latched on the CS_LED rising edge), un-packs it
+to five RGB LEDs, and draws them as an ANSI truecolor strip - a live in-place animation on a
+TTY, or one line per distinct frame when piped. The run summary reports `timer IRQs` delivered
+and `LED frames` rendered. The script is compiled to `#LC` bytecode before it is fed (the
+firmware is parser-less, #128); the sim is paced to wall-clock time (`--speed`, default `1`)
+so the animation is watchable rather than a host-CPU blur - lower it (`SPEED=0.25`) for a
+close look.
+
+```sh
+task lua:firmware:simulate:leddemo                        # ../apps/led-demo.lua, real-time 5-LED view
+task lua:firmware:simulate:leddemo SPEED=0.5              # half speed for a closer look
+task lua:firmware:simulate:leddemo SCRIPT=path/to.lua N=200000000
+```
 
 ## Layout
 ```
@@ -222,6 +247,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | M9 | RFID - CRX14 over I2C | #117 | sim - flash `rfidprobe` to confirm before trusting `nab.rfid()` |
 | M10 | Ear motors - PWM + encoder | #118 | HW at full speed (see `nab.ear_*` caveats) |
 | M11 | WiFi - USB host + RT2501 | #119 | open epic. **M11a done, HW:** USB host stack ported, first live IRQ (1 ms tick), `usbprobe` enumerates the dongle (VID:PID `0db0:6877`, RT2501). Next: rt2501usb driver + 802.11 (prereq #125). |
+| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:firmware:simulate:leddemo`). |
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
 | - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
@@ -250,15 +276,51 @@ verified on `LLC2_4c` with the `ledmap` probe:
 | `LED_RGB_2` | belly bottom | | `LED_RGB_5` | **nose** |
 | `LED_RGB_3` | belly left | | | |
 
-`blink` drives `LED_RGB_5` (nose). `nab.led` uses this raw `set_led_rgb` map by name, so it
-doesn't depend on `led.c`'s `convled[]` logical remap (unverified, used only by the unused
-`set_led`).
+`blink` drives `LED_RGB_5` (nose). `nab.led` uses this raw `set_led_rgb` map by name. The gamma
+bindings (`nab.led8`/`nab.fade`) go through `led.c`'s `set_led`/`led_fade`, which apply the
+`convled[]` logical remap - so `nab_led_logical()` inverts `convled[]` to hit the same physical
+LEDs by name. All three land on the verified map above.
+
+## LED gamma + background fades (#102)
+`src/hal/led.c` was re-synced from `mtl/firmware` (PR #45): a **gamma-2.2** table with **no
+low-end dead zone** (the old table crushed inputs 0..51 to 0, so fades snapped to black over the
+bottom 20%), the generic `led_pack`/`led_flush` packer (verified **bit-identical** to the old
+per-LED mask code over 2M random writes), and a **background fade engine**
+(`led_fade`/`led_fade_tick`). The engine is advanced from the **1 ms System Timer tick**
+(`sys/src/tick.c`) that M11a (#143) already brought up for the USB stack: `tick_handler()` now
+also calls `led_fade_tick()`, and `init_hw()` in `src/app/lua.c` arms it with `init_irq()` ->
+peripherals -> `init_tick()`. `led_fade_tick()` runs in the timer ISR (no main loop during the
+REPL), so led.c's main-context writers mask that IRQ around their SPI flush
+(`irq_disable_save`/`irq_restore`).
+
+Wiring the fades up caught a **calibration bug** in the shared tick: it reloaded `TMRLR=0xF830`
+(1 ms @ 32 MHz, copied from `mtl/firmware`), but V2 never runs `init_pll()` and clocks off the
+**16 MHz ring oscillator**, so every tick - and thus every fade and `DelayMs` - ran ~2x slow on
+hardware. Corrected to `0xFC18` (1 ms @ 16 MHz). (The tick only fires because M11a already moved
+`main` to **System mode**, where `msr cpsr_c` can clear the I-bit that `__enable_interrupt()`
+needs - `mtl/firmware`'s `swi` path is avoided because a SWI collides with the semihosting
+console.)
+
+`../apps/led-demo.lua` showcases both: a smooth breathe (fade all five up and back, no dead
+zone) and a **pinball** ball that hops the belly ring leaving comet trails, with a red nose flash
+per lap. It animates in the sim too (the sim delivers the timer IRQ - see Simulate):
+
+```sh
+task lua:firmware:simulate:leddemo            # ../apps/led-demo.lua with the live 5-LED view (sim)
+task lua:firmware:flash APP=lua      # then run ../apps/led-demo.lua on real hardware
+```
+
+Sim is instruction-timed, not cycle-accurate, so a hardware pass to confirm the tick rate + a
+good-looking fade is the open item on #102.
 
 ## The `nab` module
 `APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in `src/app/lua.c`):
 
 ```lua
-nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127
+nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127 (raw, no gamma)
+nab.led8(name, r, g, b)       -- same LEDs, r/g/b 0..255 through the gamma-2.2 table (#102) - instant
+nab.fade(name, r, g, b, ms)   -- background fade to r/g/b (8-bit gamma) over ms; returns immediately (#102)
+nab.delay(ms)                 -- block ms (timed off the System Timer); paces animations while fades run
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
 nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255, ms ~duration
 nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
@@ -288,7 +350,11 @@ HW-verified (M5/M8): `nab.led` lights each named LED, `nab.button()` tracks the 
 button, `nab.beep()` is audible. Caveats:
 
 - **`nab.beep` bypasses `SCI_VOLUME`** (the sine test is a fixed-level diagnostic tone), so
-  `nab.volume` has no effect on it. `ms` is a rough CPU busy-loop (no timer yet).
+  `nab.volume` has no effect on it. `nab.beep`'s `ms` is a rough CPU busy-loop, but `nab.delay`
+  (#102) is timed off the 1 ms System Timer (`counter_timer`) - the same clock the LED fades use.
+  The timer is calibrated to the **16 MHz ring oscillator** (firmwareV2 never calls `init_pll()`),
+  so `TMRLR=0xFC18`, not `mtl/firmware`'s 32 MHz `0xF830`; the ring osc isn't crystal-accurate, so
+  `ms` is nominal.
 - **`nab.ear_*` HW-verified at full speed only.** Both motors drive and encoders count. The
   `speed` parameter is unverified (#179) - `earprobe` now sweeps 255->20 and reports encoder
   delta; run it to find where movement stops before trusting partial speed. A bug fixed during

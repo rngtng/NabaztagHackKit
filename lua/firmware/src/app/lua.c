@@ -574,6 +574,79 @@ static int nab_led(lua_State *L)
   return 0;
 }
 
+/* Map an LED name to led.c's *logical* index (the arg set_led/led_fade take).
+ * convled[] remaps logical->physical; these values invert it so a name lands on
+ * the same physical LED nab.led() lights by name (see inc/hal/led.h). */
+static int nab_led_logical(const char *name)
+{
+  if (strcmp(name, "belly")  == 0) return 2;
+  if (strcmp(name, "bottom") == 0) return 4;
+  if (strcmp(name, "left")   == 0) return 1;
+  if (strcmp(name, "right")  == 0) return 3;
+  if (strcmp(name, "nose")   == 0) return 0;
+  return -1;   /* nose|belly|left|right|bottom */
+}
+
+/* nab.led8(name, r, g, b): like nab.led but r/g/b are 8-bit (0..255) and pass
+ * through the gamma-2.2 table (#102 / #45) - so a value of 1 still lights (the
+ * old table's 0..51 dead zone is gone), giving smooth low-end fades. Instant. */
+static int nab_led8(lua_State *L)
+{
+  const char *name = luaL_checkstring(L, 1);
+  lua_Integer r = luaL_checkinteger(L, 2);
+  lua_Integer g = luaL_checkinteger(L, 3);
+  lua_Integer b = luaL_checkinteger(L, 4);
+  luaL_argcheck(L, r >= 0 && r <= 255, 2, "0..255");
+  luaL_argcheck(L, g >= 0 && g <= 255, 3, "0..255");
+  luaL_argcheck(L, b >= 0 && b <= 255, 4, "0..255");
+
+  int l = nab_led_logical(name);
+  if (l < 0) return luaL_error(L, "bad LED '%s'", name);
+  set_led((uint8_t)l, ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+  return 0;
+}
+
+/* nab.fade(name, r, g, b, ms): fade an LED from its current colour to r/g/b
+ * (8-bit, gamma) over ms, in the BACKGROUND - returns immediately. The 1 ms
+ * System Timer IRQ (#102) interpolates and reflushes the LED bus; start fades on
+ * all five and they run at once. A nab.led/nab.led8/nab.fade on the same LED
+ * replaces its fade. ms=0 sets the colour instantly. NB: the fade only advances
+ * once interrupts run on real hardware - the simulator models no timer, so there
+ * fades jump to their target on the next explicit write. */
+static int nab_fade(lua_State *L)
+{
+  const char *name = luaL_checkstring(L, 1);
+  lua_Integer r = luaL_checkinteger(L, 2);
+  lua_Integer g = luaL_checkinteger(L, 3);
+  lua_Integer b = luaL_checkinteger(L, 4);
+  lua_Integer ms = luaL_checkinteger(L, 5);
+  luaL_argcheck(L, r >= 0 && r <= 255, 2, "0..255");
+  luaL_argcheck(L, g >= 0 && g <= 255, 3, "0..255");
+  luaL_argcheck(L, b >= 0 && b <= 255, 4, "0..255");
+  luaL_argcheck(L, ms >= 0 && ms <= 60000, 5, "0..60000");
+
+  int l = nab_led_logical(name);
+  if (l < 0) return luaL_error(L, "bad LED '%s'", name);
+  led_fade((uint8_t)l, ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b,
+           (uint32_t)ms);
+  return 0;
+}
+
+/* nab.delay(ms): block for ms, timed off the 1 ms System Timer (counter_timer,
+ * #102) - the same clock the background fades use, so a Lua animation's frame
+ * pacing and its fades stay in step (a busy-loop drifts against them, and was
+ * ~2x off on the 16 MHz ring oscillator). The sim models the timer too, so this
+ * works there as well. Feeds the watchdog while it waits. */
+static int nab_delay(lua_State *L)
+{
+  lua_Integer ms = luaL_checkinteger(L, 1);
+  uint32_t t = counter_timer;
+  luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
+  while ((counter_timer - t) < (uint32_t)ms)
+    CLR_WDT;
+  return 0;
+}
+
 /* nab.button() -> boolean: true while the head button is held (polled). */
 static int nab_button(lua_State *L)
 {
@@ -976,6 +1049,9 @@ static const luaL_Reg nab_funcs[] = {
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
     {"config", nab_config},
+    {"led8", nab_led8},
+    {"fade", nab_fade},
+    {"delay", nab_delay},
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
@@ -1034,17 +1110,22 @@ static void report(lua_State *L)
   lua_pop(L, 1);
 }
 
-/* Resident boot chunk: the M5 nab-binding demo helpers + an idle LED state,
- * defined at startup so the interpreter proves out with no console input (sim)
- * and the demo is one `run()` away on hardware. It does NOT auto-call run()
- * (a while-true RFID loop that only returns on a head-button press - calling it
- * at boot would strand the REPL behind a physical button, #207).
+/* Resident boot chunk: the M5 nab-binding demo helpers, a short LED showcase
+ * (#102) that doubles as a timer/fade self-test, and an idle LED state, defined
+ * at startup so the interpreter proves out with no console input (sim) and both
+ * demos are one short line away on hardware. It does NOT auto-run anything long:
+ * run() is a while-true RFID loop that only returns on a head-button press, and
+ * ledshow() is a ~6 s animation - auto-calling either at boot would delay or
+ * strand the REPL (the boot chunk eats the instruction budget before the prompt,
+ * #207). Both bodies are resident, so `ledshow()` (breathe blue/magenta, then a
+ * ball round the ring) exercises the timer IRQ + fade engine with a 10-char
+ * feed, not a ~2 KB script.
  *
  * This image has no on-device parser (#128), so the chunk cannot be compiled
  * from source at boot. The build compiles src/app/boot.lua off-device
  * (tools/luac/embed.py) into gen/boot_lc.h - a `boot_lc[]` bytecode blob loaded
  * below via luaL_loadbuffer (sizeof boot_lc = chunk length). Edit boot.lua, not
- * this header. */
+ * this header. The fuller LED show is ../apps/led-demo.lua. */
 #include "boot_lc.h"
 
 #define REPL_LINE 256
@@ -1198,6 +1279,8 @@ static void repl(lua_State *L)
  * (the LLC2_4c LED-only subset of the firmware's init_io). */
 static void init_hw(void)
 {
+  init_irq();    /* #102: populate IRQ_HANDLER_TABLE before any source is armed */
+
   CS_LED_AS_OUTPUT;
   MODE_LED_AS_OUTPUT;
   CS_LED_SET;
@@ -1211,6 +1294,13 @@ static void init_hw(void)
   init_adc();    /* ADC ch.2 (PD2), for nab.wheel() */
   init_i2c();    /* I2C bus, for the CRX14 RFID coupler / nab.rfid() */
   init_ears();   /* FTM PWM + encoder timers, for nab.ear_* */
+
+  /* #102: arm the shared 1 ms System Timer tick last, once every peripheral is
+   * up. init_tick() (sys/src/tick.c) reprograms the timer to 1 ms, registers its
+   * ISR, and unmasks interrupts; its handler advances nab.fade's background fades
+   * (led_fade_tick) and counter_timer (nab.delay's clock). The simulator models
+   * the timer/IRQ too, so fades advance in the sim as well as on hardware. */
+  init_tick();
 }
 
 int main(void)

@@ -248,6 +248,37 @@ tasks:
           exit 1
         fi
 
+  simulate:leddemo:
+    desc: 'Run ../apps/led-demo.lua in the sim with a LIVE 5-LED ANSI view, paced to real time (#102). Usage: task lua:firmware:simulate:leddemo [SCRIPT=path.lua] [SPEED=1] [N=budget]'
+    dir: '{{.TASKFILE_DIR}}'
+    interactive: true
+    deps:
+      - task: luac:image   # host luac: compiles the script to device bytecode
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - task: build
+        vars:
+          APP: lua
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
+      - |
+        set -e
+        # Frame the script to #LC bytecode FIRST. The firmware is parser-less
+        # (#128) - raw source fed to the REPL is rejected line-by-line and the
+        # demo never runs (you'd see only the boot idle frame). Mirror the repl
+        # task. Keep the temp under REPO so colima's /Users-only share can
+        # bind-mount it (a /tmp path mounts as an empty dir).
+        fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
+        trap 'rm -f "$fr"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.SCRIPT | default "../apps/led-demo.lua"}}")" -o "$fr" 1>&2
+        # -it gives a TTY so the ANSI LED strip animates in place; the framed
+        # bytecode is fed from --input-file (not stdin), so stdout stays the live
+        # view. --speed paces to wall-clock time so the show is watchable, not a
+        # host-CPU blur (SPEED=1 real time; SPEED=0.25 quarter speed for a look).
+        docker run --rm -it -v "$(realpath bin):/mnt:ro" -v "$fr:/in.lua:ro" \
+          {{.SIM_IMAGE}} --leds --speed {{.SPEED | default "1"}} -n {{.N | default "500000000"}} \
+          --input-file /in.lua /mnt/lua.elf
+
   clean:
     desc: 'Remove firmware (V2) build artifacts (bin/, obj/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'

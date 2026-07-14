@@ -8,10 +8,16 @@
 #ifndef _IRQ_H_
 #define _IRQ_H_
 
+#include <stdint.h>
+
 typedef void IRQ_HANDLER(void);
 typedef IRQ_HANDLER *pIRQ_HANDLER;
 
 void init_irq(void);
+void __enable_interrupt(void);
+void __disable_interrupt(void);
+uint32_t irq_disable_save(void);
+void irq_restore(uint32_t prev);
 
 #define IRQSIZE 64
 

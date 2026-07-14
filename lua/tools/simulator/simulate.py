@@ -13,14 +13,18 @@ What it does:
     and logs writes to them (decoding the LED GPIO lines for readability);
   * models the UART0 console (TX/RX) so the Lua REPL runs with no hardware
     (#207); see the UART0 block below;
+  * delivers the 1 ms System Timer IRQ between instruction slices so the LED
+    fade engine advances, and can reconstruct + draw the five RGB LEDs (#102);
   * reports whether execution reached main() and exits non-zero if not.
 
-What it does NOT do: model timing, or any peripheral it does not stub beyond
-instant completion (audio, WiFi, real timers). It validates code paths + GPIO +
-SPI/I2C framing + console, not analog behaviour. See lua/firmware/README.md.
+What it does NOT do: model timing beyond the 1 ms tick, or any peripheral it
+does not stub beyond instant completion (audio, WiFi). It validates code paths +
+GPIO + SPI/I2C framing + console, not analog behaviour. See lua/firmware/README.md.
 """
 import argparse
+import signal
 import sys
+import time
 
 from unicorn import (
     Uc, UcError,
@@ -30,7 +34,10 @@ from unicorn import (
     UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
     UC_HOOK_MEM_FETCH_UNMAPPED,
 )
-from unicorn.arm_const import UC_ARM_REG_PC
+from unicorn.arm_const import (
+    UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_CPSR,
+    UC_ARM_REG_SPSR, UC_ARM_REG_R0, UC_ARM_REG_R1,
+)
 from elftools.elf.elffile import ELFFile
 
 PAGE = 0x1000
@@ -117,20 +124,85 @@ NAMED_REGS = {
 }
 
 
+# --- System Timer + IRQ delivery (issue #102) ---------------------------------
+# The real chip's OKI System Timer raises an IRQ every 1 ms; its handler bumps
+# counter_timer and ticks the LED fade engine (led_fade_tick). Unicorn does not
+# model timers or deliver interrupts, so we do it ourselves: run the CPU in ~1 ms
+# instruction slices and, between slices, perform a real ARM7 IRQ entry (vector
+# 0x18) when the timer is enabled and interrupts are unmasked. The firmware's own
+# reentrant dispatcher then runs timer_handler - the actual fade code, driving
+# the LED bus exactly as on hardware. Without this the fades never advance.
+TMEN_ADDR  = 0xB8001004   # System Timer enable (nonzero = running)
+IRN_ADDR   = 0x78000014   # interrupt-number register the dispatcher reads
+INT_SYSTEM_TIMER = 0      # its value for the System Timer (sys/inc/ml674061.h)
+# ARM IRQ vector. The core fetches exceptions from 0x18, but this chip aliases
+# flash there (reset boots from flash); the vector table + literal pool live in
+# the flash image at IntFlash base, so we vector to the flash-resident copy -
+# `ldr pc,=irq_handler`, whose PC-relative literal is right beside it in flash.
+IRQ_VECTOR = 0x08000000 + 0x18
+# Sim instructions taken to stand for 1 ms, and the emulation slice size. Tuned
+# so counter_timer advances at roughly the rate nab.delay()'s busy-loop treats
+# as 1 ms, keeping fades and delays on the same clock. Approximate by nature.
+INSNS_PER_MS = 30000
+
+# LED framing: the driver shifts its 14-byte dot-correction image out on SPI1
+# inside a single CS_LED-low window with MODE_LED in dot-correction (PO2 bit7=1);
+# we latch that frame on the CS_LED rising edge and un-pack it to five RGB LEDs.
+PO2_ADDR, PO4_ADDR = 0xB7A02000, 0xB7A04000
+MODE_LED_BIT = 0x80    # PO2 bit7
+CS_LED_BIT   = 0x20    # PO4 bit5
+SPDWR1_ADDR  = 0xB7B0300C
+# physical LED index 0..4 -> name (inc/hal/led.h, verified on LLC2_4c)
+LED_PHYS_NAME = ["belly", "bottom", "left", "right", "nose"]
+# order + rough geometry for the on-screen strip (a little rabbit face)
+LED_VIEW = [("nose", 4), ("belly", 0), ("left", 2), ("right", 3), ("bottom", 1)]
+
+
+# Pages the write hook actually acts on (SPI completion stub, UART console, LED
+# GPIO framing, timer enable). Scoping to these keeps a Python callback from
+# firing on *every* store - nab.delay's busy-loop hammers WDTCON (0xB7E0_0000)
+# millions of times a second, which otherwise makes long animated runs (the LED
+# demo) crawl.
+WRITE_HOOK_RANGES = [
+    (0xB7A00000, 0xB7A0FFFF),   # PCR GPIO ports: PO2 (MODE_LED), PO4 (CS_LED)
+    (0xB7B00000, 0xB7B0FFFF),   # UART0 console + SPI0/SPI1 data/status (LED bus)
+    (0xB8001000, 0xB8001FFF),   # System Timer control (TMEN)
+]
+
+
 def in_periph(addr):
     return any(lo <= addr < hi for lo, hi in PERIPH_WINDOWS)
 
 
+def unpack_dotcorr(buf):
+    """Un-pack a 14-byte TLC5922 dot-correction image to 5 x (r,g,b) 7-bit."""
+    out = []
+    for p in range(5):
+        ch = []
+        for k in range(3):
+            c = p * 3 + k
+            byte = (c * 7) >> 3
+            off = (c * 7) & 7
+            ch.append(((buf[byte] << 8 | buf[byte + 1]) >> (9 - off)) & 0x7F)
+        out.append(tuple(ch))
+    return out
+
+
 class Sim:
     def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False,
-                 console_only=False):
+                 console_only=False, show_leds=False, speed=None):
         self.budget = budget
         self.verbose = verbose
+        # Wall-clock pacing (see run()): None = as fast as possible; a float is a
+        # real-time multiplier (1.0 = real time, 0.25 = quarter speed). Without it
+        # an animation blows past in a host-CPU instant - too fast to watch (#102).
+        self.speed = speed
         self.console_only = console_only   # batch: stdout = raw transcript only
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
         self._periph_pages = set()
         self.periph_writes = 0
         self.reached_main = False
+        self.stopped = False         # set when a hook/signal asks emulation to stop
         self.console = bytearray()   # console output (UART THR)
         self.stdin = stdin           # bytes fed to the console (UART RBR)
         self.stdin_pos = 0
@@ -140,6 +212,20 @@ class Sim:
         self.getch_addr = None       # getch_uart entry, for the RX code hook
         self.rxrdy_addr = None       # rxrdy_uart entry, for the RX-peek code hook
         self.waiti2c_addr = None     # waiti2cmcf entry, for the I2C-done code hook
+        # System Timer / IRQ state (#102)
+        self.timer_enabled = False
+        self.timer_pending = 0       # ms ticks owed while interrupts were masked
+        self.timer_ticks = 0         # IRQs actually delivered
+        # LED frame reconstruction + view (#102)
+        self.show_leds = show_leds
+        self.leds_tty = show_leds and sys.stdout.isatty()
+        self.cs_led = True           # CS_LED idles high
+        self.mode_led_dc = False     # MODE_LED in dot-correction?
+        self.led_buf = bytearray()   # SPI1 bytes of the current frame
+        self.led_rgb = [(0, 0, 0)] * 5
+        self.led_frames = 0
+        self._led_last = None
+        self._leds_drawn = False
         # Interactive: read input live from the real terminal and echo the
         # console straight to stdout, so you can type at the REPL.
         self.interactive = interactive
@@ -188,8 +274,20 @@ class Sim:
         u = self.uc
         u.hook_add(UC_HOOK_MEM_READ_UNMAPPED | UC_HOOK_MEM_WRITE_UNMAPPED
                    | UC_HOOK_MEM_FETCH_UNMAPPED, self._on_unmapped)
-        u.hook_add(UC_HOOK_MEM_WRITE, self._on_write)
-        u.hook_add(UC_HOOK_MEM_READ, self._on_read)
+        # Verbose mode logs every MMIO write, so it needs the global hook;
+        # otherwise scope the write hook to the pages we act on (huge speedup -
+        # see WRITE_HOOK_RANGES) so busy-loop WDTCON stores don't call Python.
+        if self.verbose:
+            u.hook_add(UC_HOOK_MEM_WRITE, self._on_write)
+        else:
+            for lo, hi in WRITE_HOOK_RANGES:
+                u.hook_add(UC_HOOK_MEM_WRITE, self._on_write, begin=lo, end=hi)
+        # Scope the read hook to just the pages it fixes up - the I2CSR register
+        # and the UART0 LSR. Firing a Python callback on *every* memory read
+        # (operand loads included) is the sim's main slowdown, and restricting it
+        # keeps long animated runs (the #102 LED demo) watchable.
+        for base in (align_down(I2CSR_ADDR), align_down(UART0_LSR)):
+            u.hook_add(UC_HOOK_MEM_READ, self._on_read, begin=base, end=base + PAGE - 1)
         if self.main_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_main,
                        begin=self.main_addr, end=self.main_addr + 2)
@@ -240,6 +338,22 @@ class Sim:
         elif address == UART0_THR and not self.dlab:
             self._console_out(bytes([value & 0xFF]))
 
+        # System Timer enable + LED-bus framing (#102). Separate if-chain: a
+        # SPDWR1 write both completes the SPI byte (above) and feeds the LED frame.
+        if address == TMEN_ADDR:
+            self.timer_enabled = (value != 0)
+        elif address == PO2_ADDR:
+            self.mode_led_dc = bool(value & MODE_LED_BIT)
+        elif address == PO4_ADDR:
+            new_cs = bool(value & CS_LED_BIT)
+            if self.cs_led and not new_cs:          # falling edge: frame starts
+                self.led_buf = bytearray()
+            elif (not self.cs_led) and new_cs:      # rising edge: frame complete
+                self._latch_led_frame()
+            self.cs_led = new_cs
+        elif address == SPDWR1_ADDR and not self.cs_led:
+            self.led_buf.append(value & 0xFF)
+
     def _on_read(self, uc, _access, address, size, _value, _ud):
         # Instant I2C completion: force I2CSR to always read as "transfer done,
         # no error" (see the I2C_MCF comment above for why this is a read hook,
@@ -255,6 +369,62 @@ class Sim:
             cur = int.from_bytes(uc.mem_read(UART0_LSR, 4), "little")
             uc.mem_write(UART0_LSR, (cur | UART_LSR_TXRDY).to_bytes(4, "little"))
 
+    # -- LED view (#102) --------------------------------------------------------
+    def _latch_led_frame(self):
+        """A CS-framed SPI1 burst just finished; if it was a dot-correction
+        image, un-pack it to five RGB LEDs and (optionally) draw them."""
+        if not self.mode_led_dc or len(self.led_buf) < 14:
+            return
+        self.led_rgb = unpack_dotcorr(self.led_buf[-14:])
+        self.led_frames += 1
+        if self.show_leds:
+            self._render_leds()
+
+    def _render_leds(self):
+        def swatch(rgb):
+            r, g, b = (v * 255 // 127 for v in rgb)
+            return f"\x1b[38;2;{r};{g};{b}m●\x1b[0m"
+        cells = [f"{swatch(self.led_rgb[p])} {name}" for name, p in LED_VIEW]
+        line = "  ".join(cells)
+        if self.leds_tty:
+            # redraw the strip in place
+            if self._leds_drawn:
+                sys.stdout.write("\r\x1b[2K")
+            sys.stdout.write(" LEDs: " + line)
+            sys.stdout.flush()
+            self._leds_drawn = True
+        else:
+            # batch mode: one line per *distinct* frame, so a fade is a readable
+            # sequence instead of thousands of identical rows
+            key = tuple(self.led_rgb)
+            if key != self._led_last:
+                self._led_last = key
+                print(" LEDs: " + line, flush=True)
+
+    def _fire_timer_irq(self):
+        """Deliver one System Timer IRQ if interrupts are unmasked. Returns True
+        if the CPU was vectored into the handler (PC now at 0x18)."""
+        uc = self.uc
+        cpsr = uc.reg_read(UC_ARM_REG_CPSR)
+        if cpsr & 0x80:                 # I-bit set: IRQs masked, keep it pending
+            return False
+        pc = uc.reg_read(UC_ARM_REG_PC)
+        # the dispatcher reads IRN for the interrupt number
+        page = align_down(IRN_ADDR)
+        if page not in self._periph_pages:
+            uc.mem_map(page, PAGE)
+            self._periph_pages.add(page)
+        uc.mem_write(IRN_ADDR, INT_SYSTEM_TIMER.to_bytes(4, "little"))
+        # ARM7 IRQ entry: SPSR_irq = CPSR; switch to IRQ mode (ARM, I=1);
+        # LR_irq = return address + 4 (the handler does `sub lr,#4`).
+        new_cpsr = (cpsr & ~0x1F & ~0x20) | 0x12 | 0x80
+        uc.reg_write(UC_ARM_REG_CPSR, new_cpsr)
+        uc.reg_write(UC_ARM_REG_SPSR, cpsr)
+        uc.reg_write(UC_ARM_REG_LR, (pc + 4) & 0xFFFFFFFF)
+        uc.reg_write(UC_ARM_REG_PC, IRQ_VECTOR)
+        self.timer_ticks += 1
+        return True
+
     def _console_out(self, data):
         """Console write (UART THR): echo live if interactive, else
         buffer. Stop as soon as the firmware prints its done-marker so batch and
@@ -264,6 +434,7 @@ class Sim:
             sys.stdout.buffer.write(data)
             sys.stdout.flush()
         if self.console.endswith(b"<<FV_DONE>>\n"):
+            self.stopped = True
             self.uc.emu_stop()
 
     # -- UART0 RX (console input): the polled counterpart of _console_out --------
@@ -349,15 +520,74 @@ class Sim:
         print(f"entry = 0x{self.entry:08x}"
               + (f", main = 0x{self.main_addr:08x}" if self.main_addr else "")
               + f", budget = {self.budget} insns", file=log)
+        # Ctrl-C: stop the current slice and fall through to the summary, rather
+        # than letting Unicorn grind on or dumping a traceback. Docker runs this
+        # as PID 1, so install our own handler explicitly.
+        def _on_sigint(_sig, _frm):
+            self.stopped = True
+            try:
+                self.uc.emu_stop()
+            except Exception:
+                pass
         try:
-            u.emu_start(self.entry, 0xFFFFFFF0, count=self.budget)
+            prev_sigint = signal.signal(signal.SIGINT, _on_sigint)
+        except (ValueError, OSError):
+            prev_sigint = None   # not the main thread; skip
+        # Run in ~1 ms instruction slices; between slices deliver the System
+        # Timer IRQ (#102) so the LED fade engine advances. One tick is owed per
+        # slice; ticks accrue while interrupts are masked and drain once unmasked.
+        pc = self.entry
+        executed = 0
+        # Wall-clock pacing: one slice stands for ~1 ms of device time, so when a
+        # speed multiplier is set we hold each slice to that many real ms. Track a
+        # running deadline instead of sleeping a fixed amount, so render/IRQ time
+        # is absorbed rather than added; resync if we fall far behind.
+        pace_deadline = time.monotonic() if self.speed else None
+        try:
+            while executed < self.budget and not self.stopped:
+                slice_n = min(INSNS_PER_MS, self.budget - executed)
+                # Resume in the right ISA: emu_start decodes ARM unless bit0 of
+                # the start address is set, so carry the CPSR T-bit across slices
+                # (otherwise Thumb code mid-stream gets misdecoded as ARM).
+                thumb = u.reg_read(UC_ARM_REG_CPSR) & 0x20
+                try:
+                    u.emu_start(pc | 1 if thumb else pc, 0xFFFFFFF0, count=slice_n)
+                except UcError as e:
+                    print(f"  emulation stopped: {e}", file=log, flush=True)
+                    break
+                executed += slice_n
+                pc = u.reg_read(UC_ARM_REG_PC)
+                if self.stopped:
+                    break
+                if self.timer_enabled:
+                    self.timer_pending += 1
+                    if self._fire_timer_irq():         # vectored into the ISR
+                        self.timer_pending -= 1
+                        pc = u.reg_read(UC_ARM_REG_PC)  # now 0x18
+                if pace_deadline is not None:
+                    pace_deadline += (slice_n / INSNS_PER_MS) / (1000.0 * self.speed)
+                    lag = pace_deadline - time.monotonic()
+                    if lag > 0:
+                        time.sleep(lag)
+                    elif lag < -0.25:                  # fell far behind; resync
+                        pace_deadline = time.monotonic()
         except UcError as e:
             print(f"  emulation stopped: {e}", file=log, flush=True)
+        except KeyboardInterrupt:
+            self.stopped = True   # e.g. Ctrl-C landed between slices
+        finally:
+            if prev_sigint is not None:
+                signal.signal(signal.SIGINT, prev_sigint)
+        if self.leds_tty and self._leds_drawn:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
         pc = u.reg_read(UC_ARM_REG_PC)
         print("--- result ---", file=log)
         print(f"  final PC        = 0x{pc:08x}", file=log)
         print(f"  reached main    = {self.reached_main}", file=log)
         print(f"  peripheral wr   = {self.periph_writes}", file=log)
+        print(f"  timer IRQs      = {self.timer_ticks}", file=log)
+        print(f"  LED frames      = {self.led_frames}", file=log)
         # Interactive already streamed the console live; only dump it in batch mode.
         if self.console and not self.interactive:
             if self.console_only:
@@ -388,6 +618,13 @@ def main():
     ap.add_argument("--console-only", action="store_true",
                     help="batch: write ONLY the raw console transcript to stdout "
                          "(diagnostics to stderr) - for golden-output tests")
+    ap.add_argument("-L", "--leds", action="store_true",
+                    help="show the five RGB LEDs: a live ANSI strip on a TTY, "
+                         "else one line per distinct frame (#102)")
+    ap.add_argument("--speed", type=float, default=None,
+                    help="pace execution to wall-clock time at this multiplier "
+                         "(1.0 = real time, 0.25 = quarter speed for a close "
+                         "look at an animation); default: as fast as possible")
     args = ap.parse_args()
     if args.input_file:
         with open(args.input_file, "rb") as fh:
@@ -398,7 +635,7 @@ def main():
     # large budget; batch runs keep the small default unless overridden.
     budget = args.budget if args.budget is not None else (2_000_000_000 if args.interactive else 300_000)
     sys.exit(Sim(args.elf, budget, args.verbose, stdin, args.interactive,
-                 args.console_only).run())
+                 args.console_only, args.leds, args.speed).run())
 
 
 if __name__ == "__main__":
