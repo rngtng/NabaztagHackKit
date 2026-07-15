@@ -63,7 +63,12 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf`: ~41 KB free of 124 KB internal flash (~84,900 B used).** Lua's
+- **`lua.elf`: ~3.5 KB free of 124 KB internal flash (~123,400 B used) since the
+  `nab.wifi` binding landed (M11).** Referencing the join HAL pulls the whole
+  vendored USB + 802.11/WPA/crypto stack in (~38 KB, `--gc-sections` no longer
+  strips it). The budget is now **tight**: the next large feature needs a real
+  lever (move code off internal flash, or make the wifi stack a build-time
+  option) - not `-Os`/error-string shaving. Was ~41 KB free / ~84,900 B before wifi. Lua's
   number I/O + console are off newlib (`luai_*`/printf helpers in
   `lua/firmware/src/app/lua.c` + macro overrides in `lua/firmware/lua/luaconf.h`); the
   ~10 KB of newlib still linked (soft-float/memcpy/malloc) is essentially irreducible.
