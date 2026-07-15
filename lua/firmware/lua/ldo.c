@@ -998,8 +998,18 @@ static void f_parser (lua_State *L, void *ud) {
     cl = luaU_undump(L, p->z, p->name);
   }
   else {
+#ifdef LUA_NOPARSER
+    /* Bytecode-only firmware (#128): lparser/llex/lcode are not linked, so
+       source cannot be compiled on-device. Only precompiled luac chunks
+       (starting with LUA_SIGNATURE) load; reject everything else. */
+    luaO_pushfstring(L, "cannot load '%s': source parsing disabled "
+                        "(bytecode-only build)", p->name);
+    luaD_throw(L, LUA_ERRSYNTAX);
+    cl = NULL;  /* unreachable: luaD_throw is l_noret; silences -Wmaybe-uninit */
+#else
     checkmode(L, p->mode, "text");
     cl = luaY_parser(L, p->z, &p->buff, &p->dyd, p->name, c);
+#endif
   }
   lua_assert(cl->nupvalues == cl->p->sizeupvalues);
   luaF_initupvals(L, cl);

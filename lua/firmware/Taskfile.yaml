@@ -63,8 +63,21 @@ tasks:
     # DEBUG=1 (M11, #119) turns on the vendored usb/net stacks' UART
     # trace macros; artifact becomes bin/<APP>-dbg.elf (separate obj tree).
     dir: '{{.TASKFILE_DIR}}'
+    deps:
+      # Host luac for the APP=lua boot-chunk embed below; a cached no-op for
+      # other apps (they skip the embed step).
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
     cmds:
       - task: image
+      # Bytecode-only image (#128): the resident boot chunk has no on-device
+      # parser to compile it, so precompile src/app/boot.lua off-device into
+      # gen/boot_lc.h (lua.c #includes it). APP=lua only; other apps skip.
+      - |
+        if [ "{{.APP}}" = "lua" ]; then
+          mkdir -p gen
+          python3 '{{.REPO}}/tools/luac/embed.py' src/app/boot.lua -o gen/boot_lc.h
+        fi
       - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
 
   simulate:
@@ -222,6 +235,6 @@ tasks:
     desc: 'Remove firmware (V2) build artifacts (bin/, obj/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'
     cmds:
-      - rm -rf bin obj
+      - rm -rf bin obj gen
       - docker rmi {{.FV_IMAGE}} {{.SIM_IMAGE}} || true
       - task: luac:clean

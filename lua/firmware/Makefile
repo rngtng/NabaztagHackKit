@@ -45,8 +45,14 @@ AS_FILES = $(wildcard sys/asm/*.s)
 LUA_CORE = lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject \
            lopcodes lparser lstate lstring ltable ltm lundump lvm lzio
 LUA_LIB  = lauxlib lbaselib lstrlib ltablib
+# Bytecode-only image (#128): the on-device parser/lexer/codegen are NOT linked.
+# lcode+llex+lparser (~18.9 KB) exist only to compile source; the rabbit loads
+# only luac bytecode (see src/app/lua.c + tools/luac). The two remaining refs
+# into this trio - luaY_parser (ldo.c) and luaX_init (lstate.c) - are guarded
+# out by -DLUA_NOPARSER (below). lundump/lvm (bytecode load + run) stay.
+LUA_NOPARSE = lcode llex lparser
 ifeq ($(APP),lua)
-  C_FILES += $(patsubst %,lua/%.c,$(LUA_CORE) $(LUA_LIB))
+  C_FILES += $(patsubst %,lua/%.c,$(filter-out $(LUA_NOPARSE),$(LUA_CORE)) $(LUA_LIB))
 endif
 
 # Compiler options (ARM7TDMI, no FPU, Thumb/interwork - same set as src/firmware)
@@ -121,6 +127,8 @@ LIBS = -lc_nano -lm -lnosys
 # moves off internal flash (M6) or a lib is dropped to make room.
 ifeq ($(APP),lua)
   CFLAGS  += -Ilua
+  CFLAGS  += -DLUA_NOPARSER   # bytecode-only: no on-device source parsing (#128)
+  CFLAGS  += -Igen            # gen/boot_lc.h: resident boot chunk (tools/luac/embed.py)
 endif
 
 # Toolchain
