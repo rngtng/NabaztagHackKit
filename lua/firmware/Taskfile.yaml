@@ -152,13 +152,14 @@ tasks:
       - python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
 
   repl:hw:
-    desc: 'Flash a V2 app to real hardware and drive its Lua REPL over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). Omit SCRIPT for a live interactive prompt (luash.py); SCRIPT=file.lua|.lc feeds a scripted run and captures the transcript. All input is compiled off-device to luac bytecode (#128).'
-    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
+    desc: 'Flash an app to real hardware and drive it over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). PROBE=1 captures a print-only app''s transcript read-only until <<FV_DONE>> (e.g. wifiprobe - no stdin fed); SCRIPT=file.lua|.lc feeds a scripted REPL run and captures it; omit both for a live interactive prompt (luash.py). All input is compiled off-device to luac bytecode (#128).'
+    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [PROBE=1 | SCRIPT=path.lua] [RUN_TIMEOUT=300] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     interactive: true   # the live-prompt branch hands your terminal to luash.py
     vars:
       APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      RUN_TIMEOUT: '{{.RUN_TIMEOUT | default "120"}}'
     deps:
       - task: luac:image   # host luac: compiles the script (or every live line) to bytecode
         vars: {WORKDIR: '{{.REPO}}'}
@@ -168,14 +169,24 @@ tasks:
           APP: '{{.APP}}'
       - |
         set -e
-        if [ -n "{{.SCRIPT}}" ]; then
+        if [ -n "{{.PROBE}}" ]; then
+          # Read-only probe run: flash a print-only app (e.g. wifiprobe) that
+          # never reads UART RX, then just capture its transcript until the
+          # <<FV_DONE>> marker (or RUN_TIMEOUT). No stdin is fed - there is no
+          # REPL to feed, and framing a multi-line .lua through the per-line
+          # REPL compiler would fail.
+          python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
+            --run-timeout {{.RUN_TIMEOUT}}
+        elif [ -n "{{.SCRIPT}}" ]; then
           # Scripted run: compile off-device to a framed bytecode file, then
           # flash + feed it over UART (paced for flow control) and read the
           # transcript. replpipe.py auto-detects .lua (per-line) vs .lc.
           INPUT="$(mktemp)"
           python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$INPUT"
           python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
-            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf --input "$INPUT"
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
+            --input "$INPUT" --run-timeout {{.RUN_TIMEOUT}}
         else
           # Live REPL: flash over JTAG, then luash.py owns your terminal and
           # drives uart_repl.py --relay on the Pi (it paces bytes to /dev/serial0),

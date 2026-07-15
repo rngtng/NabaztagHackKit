@@ -10,8 +10,6 @@
 # no args to list everything.
 #
 # Root owns no toolchain includes and re-implements nothing: `verify`/`clean`
-# just chain the two tracks' own verbs. Decentralised per #63 — remaining
-# per-leaf duplication is intentional for now (DRY: #187).
 version: '3'
 
 vars:

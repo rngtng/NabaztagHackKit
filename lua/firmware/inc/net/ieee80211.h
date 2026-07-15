@@ -306,6 +306,9 @@ extern int32_t ieee80211_mode;
 
 extern int32_t ieee80211_state;
 extern uint32_t ieee80211_timeout;
+/* Last AP reject latched at a silent fall-back to IDLE (wifiprobe diagnostic).
+ * Packed (stage<<12)|code: stage 1=AUTH 2=ASSOC 3=DEAUTH; 0 = none. */
+extern volatile uint16_t ieee80211_reject;
 
 extern uint8_t ieee80211_assoc_mac[];
 extern uint8_t ieee80211_assoc_bssid[];
