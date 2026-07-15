@@ -23,6 +23,7 @@ Ctrl-D ends the session: it sends EOT (0x04), which the firmware treats as EOF -
 the REPL loop exits and prints <<FV_DONE>>. Python stdlib only.
 """
 import argparse
+import os
 import subprocess
 import sys
 import threading
@@ -30,6 +31,13 @@ import threading
 from replpipe import luac_compile  # same host luac image + invocation
 
 EOT = b"\x04"
+DEBUG = bool(os.environ.get("LUASH_DEBUG"))
+
+
+def dbg(msg):
+    if DEBUG:
+        sys.stderr.write(f"[luash] {msg}\n")
+        sys.stderr.flush()
 
 
 def compile_line(line: bytes, image: str):
@@ -54,14 +62,17 @@ def send_frame(w, chunk: bytes) -> None:
 
 def relay_output(child_stdout, done: threading.Event) -> None:
     """Pump the device console straight to our stdout until the child closes."""
+    n = 0
     try:
         while True:
             data = child_stdout.read(1)
             if not data:
                 break
+            n += 1
             sys.stdout.buffer.write(data)
             sys.stdout.buffer.flush()
     finally:
+        dbg(f"reader saw {n} bytes from the device console")
         done.set()
 
 
@@ -90,19 +101,23 @@ def main() -> int:
         # relayed by the reader thread, so we only feed input here.
         for line in sys.stdin:
             if done.is_set():
+                dbg("child closed before send; stopping")
                 break
             chunk, err = compile_line(line.encode(), args.image)
             if chunk is None:
                 # Compile error: nothing to run, so the device stays at its
                 # prompt (it emitted no new `> `). Show the error and re-prompt
                 # locally to keep one prompt per line.
+                dbg(f"compile error for {line.rstrip()!r}")
                 sys.stdout.write(err)
                 sys.stdout.write("> ")
                 sys.stdout.flush()
                 continue
             try:
+                dbg(f"sending frame ({len(chunk)} B) for {line.rstrip()!r}")
                 send_frame(child.stdin, chunk)
             except BrokenPipeError:
+                dbg("BrokenPipe writing frame; stopping")
                 break
     except KeyboardInterrupt:
         pass

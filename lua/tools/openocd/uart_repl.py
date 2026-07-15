@@ -7,10 +7,14 @@ JTAG flash. It optionally feeds an input file to the REPL, then reads the consol
 until the app prints the done-marker or a timeout elapses.
 
 Flow control: the link is 38400 8N1 with NO hardware flow control and the device
-polls a 16-byte RX FIFO, draining it only between REPL lines. A fast host burst
-overflows the FIFO during the compile/run/print gap and drops bytes (a `return`
-arrives as `retur`). So input is paced one byte at a time with a small delay -
-slow, but the REPL is a dev tool and correctness beats throughput here.
+polls a 16-byte RX FIFO, draining it only while it is reading a line/frame - NOT
+during the gaps where it does other work. Two such gaps drop bytes for #LC
+bytecode frames (#128): after the `#LC:<len>` header the device runs malloc(len)
+before the hex loop, and after a frame it runs the chunk + prints before reading
+the next header. A blind byte burst overflows the 16-byte FIFO in either gap. So
+input is paced one byte at a time, AND after every newline we pause (`line_gap`)
+to let the device finish that gap - slow, but the REPL is a dev tool and
+correctness beats throughput here.
 
 EOF: the firmware treats EOT (0x04, what Ctrl-D sends) as end-of-input - that is
 what ends the REPL loop and makes it print <<FV_DONE>>. So a fed script is
@@ -61,7 +65,7 @@ def drain(fd, out):
         pass
 
 
-def relay(fd, done, byte_delay, idle_timeout):
+def relay(fd, done, byte_delay, line_gap, idle_timeout):
     """Bidirectional pass-through for the live REPL (#128): our stdin -> serial
     (paced for flow control), serial -> our stdout. luash.py on the workstation
     drives us over ssh and does the compile-per-line; we only move bytes. It
@@ -92,6 +96,8 @@ def relay(fd, done, byte_delay, idle_timeout):
                 for byte in chunk:                # paced TX (16-byte RX FIFO)
                     os.write(fd, bytes([byte]))
                     time.sleep(byte_delay)
+                    if byte == 0x0A:              # newline: cover the device's
+                        time.sleep(line_gap)      # no-read gap (malloc / run+print)
         if not stdin_open:
             if done in seen or time.monotonic() - last_rx > idle_timeout:
                 break
@@ -109,6 +115,10 @@ def main():
                     help="max seconds to read after feeding input (default 30)")
     ap.add_argument("--byte-delay", type=float, default=0.003,
                     help="per-byte send delay for flow control (default 0.003s)")
+    ap.add_argument("--line-gap", type=float, default=0.08,
+                    help="extra pause after each newline so the device can finish "
+                         "its no-read gap (malloc after an #LC header, run+print "
+                         "after a frame) before more bytes arrive (default 0.08s)")
     ap.add_argument("--boot-wait", type=float, default=1.5,
                     help="seconds to let the app boot to its prompt before feeding")
     ap.add_argument("--relay", action="store_true",
@@ -122,7 +132,7 @@ def main():
     done = a.done.encode()
 
     if a.relay:
-        relay(fd, done, a.byte_delay, a.timeout)
+        relay(fd, done, a.byte_delay, a.line_gap, a.timeout)
         os.close(fd)
         sys.exit(0)
 
@@ -139,6 +149,9 @@ def main():
             os.write(fd, bytes([byte]))
             time.sleep(a.byte_delay)
             drain(fd, out)
+            if byte == 0x0A:                          # newline: let the device
+                time.sleep(a.line_gap)                # finish its no-read gap
+                drain(fd, out)                        # (malloc / run+print)
         os.write(fd, EOT)                             # EOT -> EOF -> REPL ends
 
     # Read the console until the done-marker or the timeout.
