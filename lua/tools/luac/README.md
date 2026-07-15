@@ -25,7 +25,7 @@ exact same `luaconf.h`** — the two can never drift. Container arch
 both little-endian.
 
 `-DLUA_HOST_LUAC` drops the device-only *Local config* block in `luaconf.h` (the
-semihosting console + compact number helpers in the ARM firmware, M7), so the
+UART console + compact number helpers in the ARM firmware, M7), so the
 host build falls back to the stock C library / libm. `LUA_32BITS` stays on for
 both, so the dump format is identical; the device build needs no new `-D`. The
 Docker image uses the **repo root** as context so its `Dockerfile` can `COPY`
@@ -33,7 +33,7 @@ the sibling `lua/` tree — the same trick `mtl/tools/testvm` uses.
 
 ## Framing protocol (`#LC`)
 
-Raw bytecode can't ride the line-oriented semihosting console (chunks contain
+Raw bytecode can't ride the line-oriented UART console (chunks contain
 `\n`/NUL; the device's `sh_gets` is line-based). Each chunk is framed as:
 
     #LC:<len>\n            header line; len = chunk size in bytes (decimal)

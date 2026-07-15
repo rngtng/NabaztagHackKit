@@ -2,11 +2,11 @@
 
 Runs a `lua/firmware` ELF on the host with no JTAG and no device: maps the
 real memory regions, starts from `Reset_Handler`, stubs peripheral pages, and
-implements the semihosting console. Driven through the firmware's tasks:
+models the UART0 console. Driven through the firmware's tasks:
 
 ```sh
 task lua:firmware:simulate [APP=…] [ARGS=…]   # run an app, report reaching main
-task lua:firmware:repl [SCRIPT=…]             # drive the Lua REPL via semihosting
+task lua:firmware:repl [SCRIPT=…]             # drive the Lua REPL over the modelled UART
 ```
 
 What it does and doesn't model (no timing/audio/WiFi/RFID; DREQ/ADC

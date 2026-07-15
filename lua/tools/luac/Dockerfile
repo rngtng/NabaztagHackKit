@@ -11,7 +11,7 @@
 # output (dump sizes are varint-encoded; host + ARM7 are both little-endian).
 #
 # -DLUA_HOST_LUAC drops the device-only Local-config block in luaconf.h (the
-# semihosting console + compact number helpers that live in the ARM firmware),
+# UART console + compact number helpers that live in the ARM firmware),
 # so host luac falls back to the stock C library / libm - no ARM toolchain here.
 #
 # NOTE: this image is built with the *lua layer root* as its context (see

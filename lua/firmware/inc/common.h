@@ -33,9 +33,9 @@ extern void __enable_interrupt(void);
 #define MAX_ADDR	  0x20000
 
 /* firmwareV2 adaptation: the original firmware pulled in "utils/debug.h" here,
- * which routes debug output over the UART. The V2 (eLua-successor) port has no
- * UART on this board revision (console comes via semihosting / bit-bang later),
- * so the debug/UART include is dropped. See PROVENANCE.md. */
+ * wiring debug output into common.h for every source. The V2 (eLua-successor)
+ * port keeps that include out of common.h; the console is UART0 (hal/uart.h,
+ * #203/#207), included only where needed. See PROVENANCE.md. */
 #define EOL "\r\n"
 
 //#define SINUS_TEST

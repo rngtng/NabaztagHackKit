@@ -7,31 +7,19 @@
  *        lines. A DREQ timeout keeps a missing/dead chip from hanging the probe.
  *
  * Audio is on SPI0 (WriteSPI/ReadSPI); the LEDs are on SPI1 - separate buses.
- * Output is ARM semihosting, so run it debugger-attached:
- *   task repl:firmwareV2:hw APP=audioprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0:
+ *   task lua:firmware:flash APP=audioprobe
+ *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"
 #include "common.h"
 
 #include "hal/spi.h"
-
-/* ---- semihosting console ------------------------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex16(uint16_t v)
@@ -94,6 +82,8 @@ static int wait_dreq(void)
 
 int main(void)
 {
+  init_uart();
+
   /* Pin directions: RST/CS_SCI/CS_SDI/AMP are outputs, DREQ is an input. */
   RST_AUDIO_AS_OUTPUT;
   CS_AUDIO_SCI_AS_OUTPUT;

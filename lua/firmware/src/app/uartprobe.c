@@ -2,7 +2,7 @@
  * @file uartprobe.c
  * @brief UART bring-up probe: spew a known banner on UART0 forever.
  *
- * firmwareV2 has no UART console (it uses JTAG semihosting). This app proves
+ * The minimal UART0 link check (predates the full console, #203/#207). Proves
  * the physical UART link off the board: it initialises UART0 (38400 8N1 on
  * OKI port PB0=TX / PB1=RX) and transmits a recognisable banner in a loop, so
  * a listener on the other end (e.g. a Raspberry Pi on /dev/serial0 @38400)

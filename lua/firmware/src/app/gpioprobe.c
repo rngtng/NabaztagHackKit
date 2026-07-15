@@ -5,9 +5,10 @@
  *        GPIO input port and reports which bytes changed, so turning the wheel
  *        to its click, or inserting/removing a jack, shows up as a diff.
  *
- * Run it debugger-attached and watch the transcript while operating the
- * rabbit by hand:
- *   task repl:firmwareV2:hw APP=gpioprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0; watch the
+ * transcript while operating the rabbit by hand:
+ *   task lua:firmware:flash APP=gpioprobe
+ *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  *
  * The back wheel's analog reading (ADC ch.2) is a separate, already-confirmed
  * register sequence (see hal/adc.c, nab.wheel() in app/lua.c) - this probe is
@@ -16,23 +17,11 @@
 #include "ml674061.h"
 #include "common.h"
 
-/* ---- semihosting console ------------------------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex8(uint8_t v)
@@ -69,6 +58,8 @@ int main(void)
   uint8_t prev[NUM_PORTS];
   uint8_t first = 1;
   int i;
+
+  init_uart();
 
   sh_puts("#123 GPIO scan probe - wiggle the wheel to its click and the audio "
           "jack now, watch for diffs\n");

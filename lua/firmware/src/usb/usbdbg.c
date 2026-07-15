@@ -3,10 +3,16 @@
  * @brief Debug console for the vendored usb/ sources.
  *
  * dbg_buffer is V1's shared sprintf target (referenced only from DBG_* paths;
- * --gc-sections drops it from non-debug images). dbg_puts routes to the JTAG
- * semihosting console via the SYS_WRITEC path.
+ * --gc-sections drops it from non-debug images). dbg_puts routes to UART0
+ * (hal/uart.c); the host reads the traces on the Pi's /dev/serial0. The app
+ * must have called init_uart() at boot (all apps do).
  */
 #include "utils/debug.h"
+
+#if defined(DEBUG_USB) || defined(DEBUG_WIFI)
+#include <stdint.h>
+#include "hal/uart.h"
+#endif
 
 char dbg_buffer[DBG_BUFFER_LENGTH];
 
@@ -20,25 +26,12 @@ void dump(uint8_t *src, int32_t len)
 
 #else
 
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
-
 void dbg_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
-/* V1 hal/uart.c's dump(), semihosting output: 16 hex bytes per line */
+/* V1 hal/uart.c's dump(), UART output: 16 hex bytes per line */
 void dump(uint8_t *src, int32_t len)
 {
   static const char hex[] = "0123456789abcdef";

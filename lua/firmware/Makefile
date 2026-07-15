@@ -76,8 +76,8 @@ CFLAGS += -mcpu=arm7tdmi -MMD
 CFLAGS += -Iinc/ -Isys/inc
 
 # M11a (#143): DEBUG_USB=1 / DEBUG_WIFI=1 route the vendored stack's DBG_*
-# traces to the semihosting console (debug/probe builds only - pulls in
-# newlib sprintf). Debug objects/artifacts live in obj/dbg + *-dbg.elf (above).
+# traces to the UART console (debug/probe builds only - pulls in newlib
+# sprintf). Debug objects/artifacts live in obj/dbg + *-dbg.elf (above).
 ifneq ($(DEBUG_USB),)
   CFLAGS += -DDEBUG_USB
 endif

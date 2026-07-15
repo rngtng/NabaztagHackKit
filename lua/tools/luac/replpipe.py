@@ -3,7 +3,7 @@
 
 The parser-less wifi image (M11, #119) only loads luac bytecode, so the REPL is
 fed compiled chunks instead of source. Raw bytecode can't ride the line-oriented
-semihosting console (chunks contain '\\n'/NUL), so each chunk is framed as:
+UART console (chunks contain '\\n'/NUL), so each chunk is framed as:
 
     #LC:<len>\\n            header line, len = chunk size in bytes (decimal)
     <2*len hex chars>      the chunk, wrapped at 64 cols (device skips whitespace)

@@ -17,7 +17,9 @@
  *       waiting; on enumeration our match-all driver's connect() prints the
  *       descriptor.
  *
- * Run: task repl:firmwareV2:hw APP=usbprobe
+ * Run: task lua:firmware:flash APP=usbprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * uartprobe.c for the flash+listen recipe).
  * Sim runs boot but sees no device (sim stubs the ML60842 region, emulates no
  * OHCI) - hardware-only verification.
  */
@@ -32,23 +34,11 @@
 #include "usb/usbh.h"
 #include "usb/usbctrl.h"
 
-/* ---- semihosting console ------------------------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex32(uint32_t v)
@@ -128,6 +118,8 @@ int main(void)
   volatile uint32_t spin;
   uint32_t t0, last_report;
   int8_t ret;
+
+  init_uart();
 
   sh_puts("#143 USB host bring-up probe\n");
 

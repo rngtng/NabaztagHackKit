@@ -37,13 +37,19 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Openocd / hardware flashing (lua track)
 JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
-**Console output now prefers the UART tap (#203): TX-only UART0 @38400 8N1, read on
-the Pi's `/dev/serial0` — no OpenOCD session, no CPU halts. Semihosting is only for
-REPL *input* (and what `print()` is still wired to).** The full workflow — flash/REPL
-tasks, UART read commands, peripheral-existence check, semihosting breakpoint gotcha,
+**The console is UART0 @38400 8N1, bidirectional (#203/#207): `print()`/prompt out,
+REPL input in, read/driven on the Pi's `/dev/serial0` — no OpenOCD session, no CPU
+halts. Drive it with `task lua:firmware:repl:hw` (flash.py --uart); input is paced
+for flow control (16-byte RX FIFO, no HW flow control) and ended with EOT (0x04).**
+The full workflow — flash/REPL tasks, UART read commands, peripheral-existence check,
 run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives in the
 **`hw-flash-repl` skill**. Invoke it for any JTAG/flash/console task; full recipe in
 `lua/tools/openocd/README.md`, teardown in `docs/hardware-dissection.md`.
+- **Before a hardware round-trip, trace the full runtime path (entry → app logic) to the
+  thing you're testing — not just the subsystem you changed.** #207 lost ~6-8 flashes
+  chasing "no REPL output" that was `DEMO`'s `run()` looping until a button press, plainly
+  readable in `main()`. Extends "read source before iterating" from the transport to the
+  whole path to what you're observing.
 
 ## Firmware design principles (lua track)
 - **Five binding design principles (#183) live in [`lua/firmware/README.md`](lua/firmware/README.md#design-principles):**
@@ -106,6 +112,11 @@ short `README.md`. Verify by actually running the task in Docker — not just "i
 ## Testing
 Harness architecture, stub-ordering rationale, and "how to add a test for a new
 lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/lib/_test.mtl`.
+- **Golden / round-trip tests must assert positive expected content**, not just that two
+  runs match. `test:luac` compared source-run vs bytecode-run stdout with `[ "$A" = "$B" ]`
+  and passed on `empty == empty` when the app hung before the REPL — a green test that
+  validated nothing (#207). Require a known marker in the output before comparing; an
+  all-empty run must fail.
 
 ## MTL language gotchas
 

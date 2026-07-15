@@ -8,30 +8,20 @@
  * Listen: first sound = WAV, second (after a pause) = MP3. HDAT1 is read right
  * after each feed (nonzero => the decoder recognised that format).
  *
- *   task repl:firmwareV2:hw APP=fmtprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0:
+ *   task lua:firmware:flash APP=fmtprobe
+ *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"
 #include "common.h"
 
 #include "hal/spi.h"
+#include "hal/uart.h"
 #include "tones.h"
-
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex16(const char *label, uint16_t v)
@@ -130,6 +120,8 @@ static void play(const unsigned char *data, unsigned int len, const char *tag)
 
 int main(void)
 {
+  init_uart();
+
   RST_AUDIO_AS_OUTPUT;
   CS_AUDIO_SCI_AS_OUTPUT;
   CS_AUDIO_SDI_AS_OUTPUT;

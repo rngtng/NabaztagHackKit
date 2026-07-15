@@ -18,7 +18,6 @@ scp/ssh/sudo) is a future `--local` path - the copy/start/stop steps are kept in
 their own functions so that seam is a branch, not a rewrite. See the README.
 """
 import argparse
-import select
 import subprocess
 import sys
 import time
@@ -32,8 +31,8 @@ REMOTE_LOG = "/tmp/nab-openocd.log"
 GDB_PORT = 3333
 
 # Early-exit sentinel: a firmware app prints this once it is done (the REPL after
-# input EOF, a probe before it idles), so --semihosting need not wait out the
-# full --run-timeout. Any app that does not print it just falls back to the cap.
+# input EOF, a probe before it idles), so --uart need not wait out the full
+# --run-timeout. Any app that does not print it just falls back to the cap.
 DONE_MARK = "<<FV_DONE>>"
 
 
@@ -119,74 +118,37 @@ def stop_openocd(a):
     ssh(a.host, "sudo pkill -x openocd || true", check=False)
 
 
-def semihosting_run(a):
-    """Flash + run over the ARM semihosting console (M3 #91 / M4 #92), capturing
-    the device's console output.
+def uart_run(a):
+    """Flash over JTAG, then drive the console over UART on the Pi (#207).
 
-    Unlike the gdb path, OpenOCD runs in the FOREGROUND here: the app's console
-    I/O flows through OpenOCD's own stdin/stdout (SYS_READC/SYS_WRITEC), so we
-    pipe --input (if any) to its stdin and read the device output from stdout.
-
-    The ML67's EmbeddedICE is v1 (no vector catch), so `arm semihosting enable`'s
-    auto soft-breakpoint at the SWI vector 0x8 fails (0x8 is read-only flash). We
-    replace it with a HARDWARE breakpoint at 0x8, set AFTER the final `reset halt`
-    (reset wipes the ICE watchpoint regs). See tools/openocd/README.md.
+    The console does not go through OpenOCD at all: we do the normal gdb load +
+    reset, tear OpenOCD down, then run uart_repl.py on the Pi (shipped with the
+    configs by copy_to_pi) against /dev/serial0. It feeds --input (paced, for
+    flow control) and reads until the app prints DONE_MARK.
     """
-    print(f"[flash+run] {a.elf.name} over semihosting "
-          f"(early-exit on '{DONE_MARK}', cap {a.run_timeout}s)")
-    remote = (
-        f"cd {a.remote_dir} && sudo timeout {a.run_timeout} {a.openocd} -f {a.cfg} "
-        f'-c init -c "reset halt" '
-        f'-c "flash write_image erase {a.elf.name}" '
-        f'-c "arm semihosting enable" '
-        f'-c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"'
-    )
-    # Stream OpenOCD's stdout live (so the console appears as it happens) and stop
-    # the moment the app prints DONE_MARK, instead of blocking on the full
-    # --run-timeout. The remote `timeout` is still the hard cap / backstop.
-    stdin_f = open(a.input, "r") if a.input else None
-    print(f"  $ ssh {a.host} '<openocd semihosting run>'", flush=True)
-    proc = subprocess.Popen(
-        ["ssh", a.host, remote],
-        stdin=(stdin_f or subprocess.DEVNULL),
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1)
-    if stdin_f:
-        stdin_f.close()  # the child holds its own copy
-    captured = []
-    early = False
-    deadline = time.monotonic() + a.run_timeout + 5  # +5: let the remote cap fire first
+    print(f"[flash+uart] {a.elf.name}: JTAG flash, then drive the REPL over UART")
+    start_openocd(a)
     try:
-        while time.monotonic() < deadline:
-            if select.select([proc.stdout], [], [], 1.0)[0]:
-                line = proc.stdout.readline()
-                if line == "":
-                    break  # EOF: OpenOCD exited (remote timeout, or done)
-                sys.stdout.write(line)
-                sys.stdout.flush()
-                captured.append(line)
-                if DONE_MARK in line:
-                    early = True
-                    break
-            elif proc.poll() is not None:
-                break
+        wait_for_chain(a)
+        gdb_flash(a)
     finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-    out = "".join(captured)
-    # Same make-or-break gate as the gdb path: no IDCODE => chain/wiring bad,
-    # and nothing after it (flash/console) can be trusted.
-    if f"tap/device found: {IDCODE}" not in out:
+        stop_openocd(a)   # release JTAG; the UART console needs no debugger
+
+    inflag = ""
+    if a.input:
+        sh(["scp", "-q", str(a.input), f"{a.host}:{a.remote_dir}/repl_in"], check=True)
+        inflag = " --input repl_in"
+    remote = (f"cd {a.remote_dir} && sudo python3 uart_repl.py "
+              f"--done '{DONE_MARK}' --timeout {a.run_timeout}{inflag}")
+    print(f"  $ ssh {a.host} '<uart_repl.py>'", flush=True)
+    r = ssh(a.host, remote, check=False, capture_output=True)
+    sys.stdout.write(r.stdout or "")
+    sys.stdout.flush()
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr or "")
         raise SystemExit(
-            "\nFAIL: JTAG chain not confirmed (IDCODE missing). Check wiring / "
-            "power. See tools/openocd/README.md.")
-    stop_openocd(a)  # kill the (possibly still-running) remote OpenOCD.
-    if early:
-        print(f"      (early exit: saw {DONE_MARK})")
+            f"\nFAIL: UART REPL run did not complete (no '{DONE_MARK}'?). "
+            "Check UART wiring / that input reached the prompt. See tools/openocd/README.md.")
 
 
 def parse_args():
@@ -207,16 +169,17 @@ def parse_args():
     p.add_argument("--gdb", default="gdb-multiarch", help="gdb binary on the Pi")
     p.add_argument("--timeout", type=int, default=20,
                    help="seconds to wait for the IDCODE before giving up (default: 20)")
-    p.add_argument("--semihosting", action="store_true",
-                   help="flash + run over the ARM semihosting console and capture "
-                        "the device output, instead of the gdb load+reset path "
-                        "(M3/M4; needed to read print()/REPL output on hardware)")
+    p.add_argument("--uart", action="store_true",
+                   help="flash over JTAG, then drive the console over UART0 on the "
+                        "Pi's /dev/serial0 (#207): reads print()/the REPL with no "
+                        "OpenOCD session and no CPU halts. Feeds --input paced for "
+                        "flow control. This is how you read the Lua REPL on hardware.")
     p.add_argument("--input", type=Path, default=None,
-                   help="[--semihosting] local file fed to the device's stdin "
+                   help="[--uart] local file fed to the device's stdin "
                         "(e.g. a .lua REPL script); omit to just capture boot output")
     p.add_argument("--run-timeout", type=int, default=120,
-                   help="[--semihosting] seconds to let the device run before "
-                        "OpenOCD is killed (default: 120; per-char console is slow)")
+                   help="[--uart] seconds to let the device run before "
+                        "the console read is capped (default: 120)")
     return p.parse_args()
 
 
@@ -227,10 +190,10 @@ def main():
     if a.input and not a.input.is_file():
         raise SystemExit(f"--input file not found: {a.input}")
 
-    if a.semihosting:
-        print(f"Flashing + running {a.elf} on {a.host} over semihosting\n")
+    if a.uart:
+        print(f"Flashing {a.elf} on {a.host}, then driving the REPL over UART\n")
         copy_to_pi(a)
-        semihosting_run(a)
+        uart_run(a)
         print(f"\nDone. Console output above; {a.elf.name} was flashed and run.")
         return
 
