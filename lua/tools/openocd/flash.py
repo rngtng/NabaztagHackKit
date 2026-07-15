@@ -189,6 +189,39 @@ def semihosting_run(a):
         print(f"      (early exit: saw {DONE_MARK})")
 
 
+def uart_run(a):
+    """Flash over JTAG, then drive the console over UART on the Pi (#207).
+
+    Unlike --semihosting, the console does not go through OpenOCD at all: we do
+    the normal gdb load + reset, tear OpenOCD down, then run uart_repl.py on the
+    Pi (shipped with the configs by copy_to_pi) against /dev/serial0. It feeds
+    --input (paced, for flow control) and reads until the app prints DONE_MARK.
+    """
+    print(f"[flash+uart] {a.elf.name}: JTAG flash, then drive the REPL over UART")
+    start_openocd(a)
+    try:
+        wait_for_chain(a)
+        gdb_flash(a)
+    finally:
+        stop_openocd(a)   # release JTAG; the UART console needs no debugger
+
+    inflag = ""
+    if a.input:
+        sh(["scp", "-q", str(a.input), f"{a.host}:{a.remote_dir}/repl_in"], check=True)
+        inflag = " --input repl_in"
+    remote = (f"cd {a.remote_dir} && sudo python3 uart_repl.py "
+              f"--done '{DONE_MARK}' --timeout {a.run_timeout}{inflag}")
+    print(f"  $ ssh {a.host} '<uart_repl.py>'", flush=True)
+    r = ssh(a.host, remote, check=False, capture_output=True)
+    sys.stdout.write(r.stdout or "")
+    sys.stdout.flush()
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr or "")
+        raise SystemExit(
+            f"\nFAIL: UART REPL run did not complete (no '{DONE_MARK}'?). "
+            "Check UART wiring / that input reached the prompt. See tools/openocd/README.md.")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -210,13 +243,17 @@ def parse_args():
     p.add_argument("--semihosting", action="store_true",
                    help="flash + run over the ARM semihosting console and capture "
                         "the device output, instead of the gdb load+reset path "
-                        "(M3/M4; needed to read print()/REPL output on hardware)")
+                        "(M3/M4; legacy - prefer --uart for the Lua REPL, #207)")
+    p.add_argument("--uart", action="store_true",
+                   help="flash over JTAG, then drive the console over UART0 on the "
+                        "Pi's /dev/serial0 (#207): no semihosting, no CPU halts. "
+                        "Feeds --input paced for flow control. Preferred REPL path.")
     p.add_argument("--input", type=Path, default=None,
-                   help="[--semihosting] local file fed to the device's stdin "
+                   help="[--semihosting/--uart] local file fed to the device's stdin "
                         "(e.g. a .lua REPL script); omit to just capture boot output")
     p.add_argument("--run-timeout", type=int, default=120,
-                   help="[--semihosting] seconds to let the device run before "
-                        "OpenOCD is killed (default: 120; per-char console is slow)")
+                   help="[--semihosting/--uart] seconds to let the device run before "
+                        "the console read is capped (default: 120)")
     return p.parse_args()
 
 
@@ -226,6 +263,13 @@ def main():
         raise SystemExit(f"ELF not found: {a.elf} (build it first: task lua:firmware:build / task mtl:firmware:build)")
     if a.input and not a.input.is_file():
         raise SystemExit(f"--input file not found: {a.input}")
+
+    if a.uart:
+        print(f"Flashing {a.elf} on {a.host}, then driving the REPL over UART\n")
+        copy_to_pi(a)
+        uart_run(a)
+        print(f"\nDone. Console output above; {a.elf.name} was flashed and run.")
+        return
 
     if a.semihosting:
         print(f"Flashing + running {a.elf} on {a.host} over semihosting\n")

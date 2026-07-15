@@ -170,13 +170,19 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
-## UART console (TX-only, 38400 8N1, #203) — preferred for output
+## UART console (bidirectional, 38400 8N1, #203/#207) — the console
 
-Since #203 the firmware has a real UART: a TX-only UART0 HAL
-(`lua/firmware/src/hal/uart.c`, OKI pins **PB0=TX / PB1=RX**, 38400 8N1, no
-flow control). Unlike semihosting it needs no OpenOCD session and never halts
-the CPU — **prefer it for console output**; semihosting remains only where you
-need *input* (the interactive REPL) until UART RX lands (#203).
+Since #203 the firmware has a real UART0 HAL (`lua/firmware/src/hal/uart.c`, OKI
+pins **PB0=TX / PB1=RX**, 38400 8N1, no flow control); #207 added polled RX
+(`getch_uart`) and moved the Lua REPL's stdin/stdout onto it. UART is now the
+console for **both directions** — it needs no OpenOCD session and never halts
+the CPU (semihosting cost one debugger trap per character). The REPL is driven
+by `task lua:firmware:repl:hw` (below); semihosting is legacy (being removed,
+#207).
+
+> No hardware flow control + a 16-byte RX FIFO the device drains only between
+> REPL lines, so a fast host burst drops bytes. `uart_repl.py` paces input one
+> byte at a time; feed the REPL through it (or `repl:hw`), not a raw `cat >`.
 
 > The baud is 38400, not 115200: the ML67Q4051 UART peripheral clock is a
 > **measured 8.00 MHz** (not the 33 MHz CPU clock), so 115200 is unreachable.
@@ -225,24 +231,29 @@ tweak:
   keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
   serviced identically.
 
-### One command: `task lua:firmware:repl:hw`
+### One command: `task lua:firmware:repl:hw` (over UART, #207)
 
-The single command to flash an app and read its console (`print()` / the REPL) on
+The single command to flash an app and drive its console (`print()` / the REPL) on
 the rabbit:
 
 ```sh
 task lua:firmware:repl:hw                                   # APP=lua, capture boot output
-task lua:firmware:repl:hw APP=console                       # the console probe
 task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
+task lua:firmware:repl:hw SCRIPT=path/to/chunk.lua LC=1     # feed off-device luac bytecode frames (#133)
 ```
 
-It builds the app, ships it, and drives the OpenOCD chain below
-(`flash.py --semihosting`: flash + `arm semihosting enable` + the HW-bp-at-`0x8`
-dance + `resume`), piping `SCRIPT` to the device's stdin and printing what comes
-back. The console is **streamed live**, and `flash.py` **early-exits** the moment
-the app prints the `<<FV_DONE>>` sentinel — so a scripted run finishes in seconds
-instead of waiting out `--run-timeout` (120 s, the backstop for apps that never
-print it). New probe apps should `sh_puts("<<FV_DONE>>\n")` before their idle loop.
+It builds the app, flashes it over JTAG (`flash.py --uart`: normal gdb load +
+reset, then OpenOCD is released), and drives the console over the Pi's
+`/dev/serial0` with `uart_repl.py` — **no semihosting, no CPU halts**. `SCRIPT`
+is fed to the REPL **paced byte-by-byte** (the link has no flow control), then a
+single **EOT (0x04)** ends input so the REPL prints `<<FV_DONE>>` and the read
+stops (backstop: `--run-timeout`, 120 s). `lua.elf` boots straight to the `> `
+prompt (the DEMO no longer auto-runs `run()`, #207); type `run()` for the RFID
+demo.
+
+The `svc 0xAB` **semihosting** path (`flash.py --semihosting`, the HW-bp-at-`0x8`
+dance documented above) is legacy and being removed (#207); the notes are kept
+only until then.
 
 Run it manually (`console.elf` built with `task lua:firmware:build APP=console`):
 

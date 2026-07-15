@@ -142,7 +142,7 @@ tasks:
       - python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
 
   repl:hw:
-    desc: 'Flash a V2 app to real hardware and capture its console over the JTAG semihosting bridge. Optional SCRIPT=file.lua feeds REPL input; omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
+    desc: 'Flash a V2 app to real hardware and drive its console over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no semihosting, no CPU halts). Optional SCRIPT=file.lua feeds REPL input (paced for flow control); omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
     summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
@@ -156,7 +156,7 @@ tasks:
         vars:
           APP: '{{.APP}}'
       # With LC=1 (or a .lc SCRIPT), convert to a framed bytecode file first; flash.py
-      # itself stays unchanged (and generic for V1) - it just feeds whatever file it gets.
+      # just feeds whatever file it gets (verbatim source or framed bytecode).
       - |
         set -e
         INPUT=""
@@ -166,7 +166,7 @@ tasks:
           INPUT="$(mktemp)"
           python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$INPUT"
         fi
-        python3 '{{.REPO}}/tools/openocd/flash.py' --semihosting --host {{.PI_HOST}} \
+        python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
           --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
           ${INPUT:+--input "$INPUT"}
 
