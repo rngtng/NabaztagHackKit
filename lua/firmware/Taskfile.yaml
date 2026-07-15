@@ -201,6 +201,15 @@ tasks:
         run() { docker run --rm -v "$BIN:/mnt:ro" -v "$1:/in:ro" "$SIM" \
                   -n 120000000 --input-file /in /mnt/lua.elf; }
         A="$(run "$SRC")"; B="$(run "$FR")"
+        # Guard against a false pass: if the REPL never reaches the prompt (e.g. a
+        # sim hang in init/DEMO), both runs emit no transcript and A==B trivially.
+        # Require the fixture's first print to actually appear before comparing.
+        case "$A" in
+          *"luac round-trip"*) : ;;
+          *) echo "luac round-trip: no REPL output - the sim never reached the prompt ✗"
+             echo "  source-run stdout was: $A"
+             exit 1 ;;
+        esac
         if [ "$A" = "$B" ]; then
           echo "luac round-trip: source == #LC bytecode, output identical ✓"
         else

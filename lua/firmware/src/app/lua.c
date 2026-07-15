@@ -2,10 +2,10 @@
  * @file lua.c
  * @brief Boot PUC-Rio Lua 5.4 and run a REPL - the first real language runtime
  *        on the ML67Q4051. Opens a trimmed stdlib, runs an embedded demo chunk,
- *        then drops into a REPL. Console = ARM semihosting; heap = 1 MB ExtRAM.
+ *        then drops into a REPL. Console = UART0 (#207); heap = 1 MB ExtRAM.
  *
  * Bare metal supplies neither, so this file also overrides the newlib syscalls
- * (_read/_write over semihosting, _sbrk into ExtRAM) and Lua's number/printf
+ * (_read/_write over the polled UART, _sbrk into ExtRAM) and Lua's number/printf
  * helpers to keep the buffered-FILE + libm layers out of the flash budget.
  */
 #include <errno.h>
@@ -31,42 +31,37 @@
 #include "hal/i2c.h"
 #include "hal/rfid.h"
 #include "hal/motor.h"   /* ear motors + encoders */
+#include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
 
-/* ---- ARM semihosting (the no-UART console) ------------------------------- */
-/* Thumb semihosting call: r0 = operation, r1 = parameter, result in r0. The
- * simulator (and OpenOCD/GDB on hardware) traps `svc 0xAB` and services it. */
-#define SYS_WRITEC 0x03   /* write the single char at *r1                     */
-#define SYS_READC  0x07   /* read one char, returned in r0 (0 = no input yet) */
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+/* ---- UART console (#207) ------------------------------------------------- */
+/* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 38400 8N1.
+ * This replaced ARM semihosting - one CPU-halting `svc 0xAB` debugger trap per
+ * character - once the RX path landed (#207). init_uart() runs at boot (main).
+ *
+ * EOF: getch_uart() is non-blocking (-1 = RX FIFO empty) and a raw UART has no
+ * native end-of-stream, so _read() blocks until a byte arrives and treats EOT
+ * (0x04, what Ctrl-D sends) as EOF - EOF is what ends the REPL loop and fires
+ * <<FV_DONE>>. The host feeder (replpipe/flash.py/simulator) appends EOT after
+ * the input it sends; hex #LC frames and source lines never contain 0x04. */
+#define CONSOLE_EOF 0x04   /* EOT / Ctrl-D: end of console input */
 
 /* Raw console write, independent of stdio buffering - used for prompts/errors. */
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  while (*s)
+    putch_uart((uint8_t)*s++);
 }
 
-/* ---- newlib syscalls: stdout/stdin over semihosting, heap in ExtRAM ------- */
+/* ---- newlib syscalls: stdout/stdin over UART, heap in ExtRAM ------------- */
 /* Our own definitions win over libnosys' stubs (object beats archive member). */
 
 int _write(int fd, const char *ptr, int len)
 {
   (void)fd;
-  for (int i = 0; i < len; i++) {
-    char c = ptr[i];
-    semihost(SYS_WRITEC, &c);
-  }
+  for (int i = 0; i < len; i++)
+    putch_uart((uint8_t)ptr[i]);
   return len;
 }
 
@@ -75,9 +70,11 @@ int _read(int fd, char *ptr, int len)
   (void)fd;
   if (len <= 0)
     return 0;
-  int c = semihost(SYS_READC, NULL);
-  if (c <= 0)
-    return 0;             /* no input (simulator) -> EOF, ends the REPL */
+  int c;
+  while ((c = getch_uart()) < 0)
+    ;                      /* block: no byte yet (UART has no native EOF) */
+  if (c == CONSOLE_EOF)
+    return 0;              /* EOT -> EOF, ends the REPL */
   ptr[0] = (char)c;
   return 1;               /* one char per call; sh_gets reassembles the line */
 }
@@ -892,6 +889,7 @@ static void init_hw(void)
 
 int main(void)
 {
+  init_uart();                      /* console up first (#207): _read/_write, sh_puts */
   init_hw();                        /* LEDs + button, for the nab bindings */
 
   lua_State *L = luaL_newstate();

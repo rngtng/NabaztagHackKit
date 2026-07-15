@@ -92,6 +92,21 @@ SPI_DATA_TO_STATUS = {0xB7B0200C: 0xB7B02008, 0xB7B0300C: 0xB7B03008}
 I2C_MCF = 0x0080
 I2CSR_ADDR = 0xB7800C08
 
+# UART0 console model (#207 step 5): the firmware's Lua REPL does polled TX/RX on
+# the 16550-style UART0 (hal/uart.c) instead of ARM semihosting. We model just
+# enough to carry the console: a THR write is a console-out byte, an RBR read
+# delivers the next input byte, and LSR reports TX-always-ready plus a data-ready
+# (DR) bit driven by the input buffer. DLAB (LCR bit 7) must be tracked because
+# THR/RBR and the baud divisor latch (DLL) share offset +0x00 - the divisor bytes
+# written during init_uart() must not be mistaken for console output.
+#   UCR_BASE = 0xB7B00000; RBR/THR/DLL = +0x00, LCR = +0x0C, LSR = +0x14.
+UART0_THR = 0xB7B00000   # RBR (read) / THR (write) / DLL (write, DLAB=1)
+UART0_LCR = 0xB7B0000C
+UART0_LSR = 0xB7B00014
+UART_DLAB = 0x80         # LCR: divisor-latch access
+UART_LSR_DR = 0x01       # LSR: RX data ready
+UART_LSR_TXRDY = 0x60    # LSR: THRE|TEMT - TX holding+shift empty (always, no timing)
+
 # Named registers worth decoding in the write log (esp. the LED lines).
 #   PCR_BASE0 = 0xB7A00000, stride 0x1000; PO<n> = base+0. PCB_RELEASE == LLC2_4c.
 PO2, PO4 = 0xB7A02000, 0xB7A04000
@@ -117,11 +132,16 @@ class Sim:
         self._periph_pages = set()
         self.periph_writes = 0
         self.reached_main = False
-        self.console = bytearray()   # semihosting output
-        self.stdin = stdin           # bytes fed to SYS_READC (console input)
+        self.console = bytearray()   # console output (UART THR, or legacy semihosting)
+        self.stdin = stdin           # bytes fed to the console (UART RBR / SYS_READC)
         self.stdin_pos = 0
-        # Interactive: read SYS_READC live from the real terminal and echo the
-        # semihosting console straight to stdout, so you can type at the REPL.
+        self.dlab = False            # UART LCR divisor-latch-access bit
+        self._rx = None              # interactive: one prefetched input byte
+        self._uart_eot_sent = False  # batch: EOT appended once input is exhausted
+        self.getch_addr = None       # getch_uart entry, for the RX code hook
+        self.waiti2c_addr = None     # waiti2cmcf entry, for the I2C-done code hook
+        # Interactive: read input live from the real terminal and echo the
+        # console straight to stdout, so you can type at the REPL.
         self.interactive = interactive
         self.entry = None
         self.main_addr = None
@@ -153,6 +173,12 @@ class Sim:
                 syms = symtab.get_symbol_by_name("main")
                 if syms:
                     self.main_addr = syms[0]["st_value"] & ~1   # strip Thumb bit
+                gu = symtab.get_symbol_by_name("getch_uart")
+                if gu:
+                    self.getch_addr = gu[0]["st_value"] & ~1    # strip Thumb bit
+                wi = symtab.get_symbol_by_name("waiti2cmcf")
+                if wi:
+                    self.waiti2c_addr = wi[0]["st_value"] & ~1  # strip Thumb bit
 
     # -- hooks ------------------------------------------------------------------
     def _hook(self):
@@ -165,6 +191,15 @@ class Sim:
         if self.main_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_main,
                        begin=self.main_addr, end=self.main_addr + 2)
+        if self.getch_addr is not None:
+            # end = begin: fire ONLY on the entry instruction. A wider range spans
+            # the next Thumb instruction too (the ldrb that reads LSR), firing the
+            # hook twice per call - the second fire clears DR before the read.
+            u.hook_add(UC_HOOK_CODE, self._on_getch,
+                       begin=self.getch_addr, end=self.getch_addr)
+        if self.waiti2c_addr is not None:
+            u.hook_add(UC_HOOK_CODE, self._on_waiti2c,
+                       begin=self.waiti2c_addr, end=self.waiti2c_addr)
 
     def _on_unmapped(self, uc, access, address, size, value, _ud):
         """Lazily map peripheral pages; a genuine bad access aborts the run."""
@@ -193,6 +228,12 @@ class Sim:
         if status is not None:
             cur = int.from_bytes(uc.mem_read(status, 4), "little")
             uc.mem_write(status, (cur | SPI_SPIF).to_bytes(4, "little"))
+        # UART0 console: track DLAB, and treat a THR write (DLAB clear) as one
+        # console-out byte. THR writes under DLAB are the baud divisor - skip them.
+        elif address == UART0_LCR:
+            self.dlab = bool(value & UART_DLAB)
+        elif address == UART0_THR and not self.dlab:
+            self._console_out(bytes([value & 0xFF]))
 
     def _on_read(self, uc, _access, address, size, _value, _ud):
         # Instant I2C completion: force I2CSR to always read as "transfer done,
@@ -200,6 +241,14 @@ class Sim:
         # not a write-triggered one like the SPI stub).
         if address == I2CSR_ADDR:
             uc.mem_write(I2CSR_ADDR, I2C_MCF.to_bytes(2, "little"))
+        # UART0 TX is always ready: OR the TX-ready bits into LSR for putch_uart's
+        # THRE poll. The RX data-ready (DR) bit and the RBR byte are owned by the
+        # getch_uart code hook (_on_getch), not serviced here - Unicorn does not
+        # reliably re-fire a MEM_READ hook for getch_uart's tight same-address
+        # polling loop, so the read-hook approach left it reading stale registers.
+        elif address == UART0_LSR:
+            cur = int.from_bytes(uc.mem_read(UART0_LSR, 4), "little")
+            uc.mem_write(UART0_LSR, (cur | UART_LSR_TXRDY).to_bytes(4, "little"))
 
     def _on_intr(self, uc, intno, _ud):
         """ARM semihosting on SWI. Exercised from M3; harmless before then."""
@@ -233,11 +282,66 @@ class Sim:
             uc.reg_write(UC_ARM_REG_R0, self._console_in())
 
     def _console_out(self, data):
-        """Semihosting console write: echo live in interactive mode, else buffer."""
+        """Console write (UART THR or semihosting): echo live if interactive, else
+        buffer. Stop as soon as the firmware prints its done-marker so batch and
+        interactive runs both end promptly instead of spinning to the budget."""
         self.console += data
         if self.interactive:
             sys.stdout.buffer.write(data)
             sys.stdout.flush()
+        if self.console.endswith(b"<<FV_DONE>>\n"):
+            self.uc.emu_stop()
+
+    # -- UART0 RX (console input): the polled counterpart of _console_out --------
+    def _uart_rx_ready(self):
+        """Whether getch_uart() should see a byte now (drives the LSR DR bit)."""
+        if self.interactive:
+            if self._rx is None:
+                self._rx = self._stdin_byte_blocking()
+            return True
+        # Batch: real input, then a single synthetic EOT so the REPL hits EOF.
+        return self.stdin_pos < len(self.stdin) or not self._uart_eot_sent
+
+    def _uart_rx_take(self):
+        """Consume and return one RX byte (an RBR read)."""
+        if self.interactive:
+            b = self._rx if self._rx is not None else self._stdin_byte_blocking()
+            self._rx = None
+            return b
+        if self.stdin_pos < len(self.stdin):
+            ch = self.stdin[self.stdin_pos]
+            self.stdin_pos += 1
+            return ch
+        self._uart_eot_sent = True
+        return 0x04   # EOT: batch input exhausted -> _read() returns EOF
+
+    def _stdin_byte_blocking(self):
+        """Block for one byte of live terminal input; EOF (Ctrl-D) -> EOT."""
+        b = sys.stdin.buffer.read(1)
+        return b[0] if b else 0x04
+
+    def _on_waiti2c(self, uc, address, size, _ud):
+        """Force I2CSR = "transfer complete" in memory before waiti2cmcf polls it.
+        The MEM_READ hook (_on_read) also does this, but Unicorn does not reliably
+        re-fire read hooks inside the tight MCF-poll loop that nab.rfid()'s CRX14
+        retries drive (init_i2c's spread-out waits are fine) - so seed it here at
+        the function entry, exactly like the getch_uart RX hook. waiti2cmcf exits
+        on the first read once MCF is set, so seeding once at entry is enough."""
+        uc.mem_write(I2CSR_ADDR, I2C_MCF.to_bytes(2, "little"))
+
+    def _on_getch(self, uc, address, size, _ud):
+        """Stage UART0 RX in memory right before getch_uart reads it. Runs as a
+        code hook (fires on every call) rather than a MEM_READ hook because
+        Unicorn does not reliably re-fire read hooks for getch_uart's tight
+        same-address LSR/RBR polling loop. Consumes one input byte iff one is
+        available, matching getch_uart's own DR-gated read (it reads RBR only
+        when the LSR DR bit is set)."""
+        cur = int.from_bytes(uc.mem_read(UART0_LSR, 4), "little") | UART_LSR_TXRDY
+        if self._uart_rx_ready():
+            uc.mem_write(UART0_LSR, (cur | UART_LSR_DR).to_bytes(4, "little"))
+            uc.mem_write(UART0_THR, bytes([self._uart_rx_take() & 0xFF, 0, 0, 0]))
+        else:
+            uc.mem_write(UART0_LSR, (cur & ~UART_LSR_DR & 0xFF).to_bytes(4, "little"))
 
     def _console_in(self):
         """One SYS_READC byte: live from the terminal (interactive) or from the
