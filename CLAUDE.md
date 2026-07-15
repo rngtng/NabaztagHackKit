@@ -45,6 +45,11 @@ The full workflow — flash/REPL tasks, UART read commands, peripheral-existence
 run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives in the
 **`hw-flash-repl` skill**. Invoke it for any JTAG/flash/console task; full recipe in
 `lua/tools/openocd/README.md`, teardown in `docs/hardware-dissection.md`.
+- **Before a hardware round-trip, trace the full runtime path (entry → app logic) to the
+  thing you're testing — not just the subsystem you changed.** #207 lost ~6-8 flashes
+  chasing "no REPL output" that was `DEMO`'s `run()` looping until a button press, plainly
+  readable in `main()`. Extends "read source before iterating" from the transport to the
+  whole path to what you're observing.
 
 ## Firmware design principles (lua track)
 - **Five binding design principles (#183) live in [`lua/firmware/README.md`](lua/firmware/README.md#design-principles):**
@@ -107,6 +112,11 @@ short `README.md`. Verify by actually running the task in Docker — not just "i
 ## Testing
 Harness architecture, stub-ordering rationale, and "how to add a test for a new
 lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/lib/_test.mtl`.
+- **Golden / round-trip tests must assert positive expected content**, not just that two
+  runs match. `test:luac` compared source-run vs bytecode-run stdout with `[ "$A" = "$B" ]`
+  and passed on `empty == empty` when the app hung before the REPL — a green test that
+  validated nothing (#207). Require a known marker in the output before comparing; an
+  all-empty run must fail.
 
 ## MTL language gotchas
 

@@ -1,13 +1,14 @@
 # Flashing the mtl C firmware over JTAG (OpenOCD)
 
 Flash (or debrick) a Nabaztag:tag (V2) with the mtl track's C VM firmware
-(`Nab.elf`). Everything here — configs, `flash.py`, wiring — is an identical
-copy of [`lua/tools/openocd/`](../../../lua/tools/openocd/) (per-leaf
-duplication, #187), and **the full guide lives there**:
-[`lua/tools/openocd/README.md`](../../../lua/tools/openocd/README.md) covers
-the one-time Raspberry Pi setup (patched OpenOCD 0.8.0 with RedoX's
+(`Nab.elf`). The configs and wiring here mirror
+[`lua/tools/openocd/`](../../../lua/tools/openocd/) (per-leaf duplication,
+#187); this `flash.py` is the flash-only subset (the mtl C firmware has no
+on-device REPL, so it carries no UART-console path). **The full guide lives
+there**: [`lua/tools/openocd/README.md`](../../../lua/tools/openocd/README.md)
+covers the one-time Raspberry Pi setup (patched OpenOCD 0.8.0 with RedoX's
 `ml67q40xx` flash driver), the JTAG wiring table, the manual debrick steps,
-the semihosting console, and troubleshooting.
+and troubleshooting.
 
 Configs in this dir:
 
