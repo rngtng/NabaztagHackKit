@@ -22,8 +22,8 @@ jobs:
       - name: Bootstrap toolchain (Docker + Task)
         run: ./scripts/claude-setup.sh
 
-      - name: Run verify Firmware + mtl V1
-        run: task verify
+      - name: Run verify Firmware + mtl
+        run: task mtl:verify
 
-      - name: Run verify Firmware + mtl V2
-        run: task verifyV2
+      - name: Run verify Firmware + lua
+        run: task lua:verify
