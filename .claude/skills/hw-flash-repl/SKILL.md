@@ -49,14 +49,19 @@ this, stop and debug the physical connection before anything else.
 
 ## Reading / driving the UART console (`repl:hw`)
 
-`task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1]` flashes the app
-over JTAG, then drives `/dev/serial0` on the Pi. Input is fed **paced,
-byte-by-byte** - the OKI UART0 has only a 16-byte RX FIFO and no HW flow
-control, so bursting a whole line drops bytes; the driver spaces each char.
-Input is terminated with **EOT (`0x04`)**. The app prints `<<FV_DONE>>` when
-the REPL hits EOF, and `repl:hw` stops on that marker instead of waiting out
-the read (backstop: `--run-timeout`, 120s default). `lua.elf` boots straight
-to the `> ` prompt - type `run()` for the RFID demo.
+`task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=…]` flashes the app
+over JTAG, then drives `/dev/serial0` on the Pi. The firmware is **parser-less**
+(#128) - it runs only `luac` bytecode - so all input is compiled off-device
+(`tools/luac`). **No SCRIPT** = a live interactive prompt: `luash.py` compiles each
+line you type and drives `uart_repl.py --relay`; Ctrl-D ends it. **SCRIPT=file** =
+a scripted run: `replpipe.py` frames the `.lua`/`.lc` file, `flash.py --uart` feeds
+it. (There is no `LC` flag any more; framing is implicit. Source typed at a bare
+`screen`/`cat` will NOT run.) Input is fed **paced, byte-by-byte** - the OKI UART0
+has only a 16-byte RX FIFO and no HW flow control, so bursting a whole line drops
+bytes; the driver spaces each char. A scripted run is terminated with **EOT
+(`0x04`)**; the app prints `<<FV_DONE>>` when the REPL hits EOF, and `repl:hw`
+stops on that marker (backstop: `--run-timeout`, 120s default). `lua.elf` boots
+straight to the `> ` prompt - type `run()` for the RFID demo.
 
 If you write a new probe app, call `init_uart()` first, print via `putst_uart`,
 and emit `<<FV_DONE>>` before it idles.

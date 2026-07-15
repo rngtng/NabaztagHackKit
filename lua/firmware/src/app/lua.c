@@ -804,8 +804,10 @@ static int load_lc_frame(lua_State *L, const char *line)
   }
   skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
 
-  /* "=stdin" chunkname matches the pipe's luaL_loadbuffer name; mode is the
-   * default "bt" so this same call still loads source in the parser-ful image. */
+  /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
+   * starts with LUA_SIGNATURE, so lua_load takes the lundump (bytecode) branch;
+   * a non-bytecode payload would hit the guarded f_parser text branch and error
+   * (there is no parser in this image, #128). */
   int status = luaL_loadbuffer(L, buf, (size_t)len, "=stdin");
   free(buf);
   return status;

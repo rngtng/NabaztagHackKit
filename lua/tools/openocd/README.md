@@ -201,18 +201,26 @@ The single command to flash an app and drive its console (`print()` / the REPL)
 on the rabbit:
 
 ```sh
-task lua:firmware:repl:hw                                   # APP=lua, capture boot output
-task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
-task lua:firmware:repl:hw SCRIPT=path/to/chunk.lua LC=1     # feed off-device luac bytecode frames (#133)
+task lua:firmware:repl:hw                                   # APP=lua, live interactive prompt
+task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed a script, capture the transcript
+task lua:firmware:repl:hw SCRIPT=path/to/chunk.lc           # feed prebuilt bytecode
 ```
 
-It builds the app, flashes it over JTAG (`flash.py --uart`: normal gdb load +
-reset, then OpenOCD is released), and drives the console over the Pi's
-`/dev/serial0` with `uart_repl.py`. `SCRIPT` is fed to the REPL **paced
-byte-by-byte** (the link has no flow control + a 16-byte RX FIFO), then a single
-**EOT (0x04)** ends input so the REPL prints `<<FV_DONE>>` and the read stops
+The firmware is **parser-less** (#128): it runs only `luac` bytecode, so all input
+is compiled off-device (`tools/luac`). Two modes:
+
+- **No SCRIPT** - a live interactive prompt. It flashes over JTAG (`flash.py`),
+  then `luash.py` on the workstation owns your terminal: it compiles each line you
+  type to bytecode and drives `uart_repl.py --relay` on the Pi (bidirectional
+  `/dev/serial0` pass-through). Ctrl-D ends the session (`<<FV_DONE>>`).
+- **SCRIPT=file** - a scripted run. It compiles the file to `#LC` frames
+  (`replpipe.py`, `.lua` per-line or `.lc` single-frame) and flashes + feeds them
+  over UART with `flash.py --uart`.
+
+Input is **paced byte-by-byte** (the link has no flow control + a 16-byte RX FIFO);
+a scripted run ends with a single **EOT (0x04)** so the REPL prints `<<FV_DONE>>`
 (backstop: `--run-timeout`, 120 s). `lua.elf` boots straight to the `> ` prompt;
-type `run()` for the RFID demo.
+type `run()` for the RFID demo (the helpers ship in the resident boot chunk).
 
 ### Reading the console by hand
 

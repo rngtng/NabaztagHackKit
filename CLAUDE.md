@@ -39,8 +39,11 @@ JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
 **The console is UART0 @38400 8N1, bidirectional (#203/#207): `print()`/prompt out,
 REPL input in, read/driven on the Pi's `/dev/serial0` — no OpenOCD session, no CPU
-halts. Drive it with `task lua:firmware:repl:hw` (flash.py --uart); input is paced
-for flow control (16-byte RX FIFO, no HW flow control) and ended with EOT (0x04).**
+halts. Drive it with `task lua:firmware:repl:hw`: omit SCRIPT for a live interactive
+prompt (`luash.py` compiles each typed line off-device + drives `uart_repl.py --relay`),
+or SCRIPT=file.lua|.lc for a scripted run. All input is luac bytecode - the firmware has
+no parser (#128); source typed at a bare terminal will not run. Input is paced for flow
+control (16-byte RX FIFO, no HW flow control) and ended with EOT (0x04).**
 The full workflow — flash/REPL tasks, UART read commands, peripheral-existence check,
 run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives in the
 **`hw-flash-repl` skill**. Invoke it for any JTAG/flash/console task; full recipe in
@@ -60,15 +63,18 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf` budget: ~24.6 KB free of 124 KB internal flash (101,800 B used).** Lua's
+- **`lua.elf`: ~41 KB free of 124 KB internal flash (~84,900 B used).** Lua's
   number I/O + console are off newlib (`luai_*`/printf helpers in
   `lua/firmware/src/app/lua.c` + macro overrides in `lua/firmware/lua/luaconf.h`); the
   ~10 KB of newlib still linked (soft-float/memcpy/malloc) is essentially irreducible.
   Float *printing* stays approximate (integer part + `.0`) pending a real dtoa.
-  **End-game decided in #128:** the final wifi image is **parser-less by design** - the
-  rabbit runs only `luac` bytecode; the REPL compiles each line off-device with a
-  `LUA_32BITS`-matched host `luac`. `-Os` and Lua 5.5 are NOT levers - pick a real lever
-  (see #128), not error-string shaving. `task lua:firmware:build APP=lua` fails loudly on overflow.
+  **The image is parser-less by design (#128, done): `lparser`/`llex`/`lcode` are dropped
+  (~18.9 KB) - the rabbit runs ONLY `luac` bytecode. There is no on-device compiler; all
+  Lua (REPL lines via `luash.py`, the resident boot chunk via `embed.py`) is compiled
+  off-device by a `LUA_32BITS`-matched host `luac`. This is now the single image - it
+  supersedes #128's dev/prod two-image split.** `-Os` and Lua 5.5 are NOT levers - pick a
+  real lever (see #128), not error-string shaving. `task lua:firmware:build APP=lua` fails
+  loudly on overflow; `task lua:verify` also runs the `test:luac` bytecode-pipeline golden.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
