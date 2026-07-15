@@ -93,34 +93,28 @@ tasks:
       - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} {{.ARGS}} /mnt/{{.APP}}.elf'
 
   repl:
-    desc: 'M4 Lua REPL in the simulator (#92): SCRIPT=file.lua runs a script, or omit it for a live interactive prompt. LC=1 (or a .lc SCRIPT) ships it as off-device luac bytecode instead of source (#133). Usage: task lua:firmware:repl [SCRIPT=path/to.lua] [LC=1] [N=budget]'
+    desc: 'M4 Lua REPL in the simulator (#92): omit SCRIPT for a live interactive prompt; SCRIPT=file.lua|.lc runs it. All input is compiled off-device to luac bytecode - the firmware has no parser (#128). Usage: task lua:firmware:repl [SCRIPT=path/to.lua] [N=budget]'
     dir: '{{.TASKFILE_DIR}}'
     interactive: true
     deps:
-      - task: luac:image   # only actually used when LC/.lc converts below; cheap when cached
+      - task: luac:image   # host luac: compiles the script (or every live line) to bytecode
         vars: {WORKDIR: '{{.REPO}}'}
     cmds:
-      # Resolve SCRIPT (repo-root-relative) to an absolute path here so the runner's
-      # bind mount works regardless of its own dir; empty when omitted, which the
-      # runner treats as "run the interactive prompt". With LC=1 (or a .lc SCRIPT)
-      # first run it through replpipe.py -> a framed temp file, so the REPL is fed
-      # bytecode frames exactly as the parser-less image will be.
+      # Resolve SCRIPT (repo-root-relative) and frame it to luac bytecode here -
+      # the firmware only loads bytecode (#128). replpipe.py auto-detects .lua
+      # (per-line) vs .lc (single frame); the runner bind-mounts the framed temp
+      # file. Empty SCRIPT -> the runner starts a live interactive prompt.
       - task: repl:run
         vars:
           SCRIPT:
             sh: |
               [ -n "{{.SCRIPT}}" ] || exit 0
-              case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
-              if [ -n "$lc" ]; then
-                # bind-mounted into the sim by repl:run, so keep it under a
-                # Docker-shared host path (colima shares only /Users, so a bare
-                # mktemp in /tmp or /var/folders would mount as an empty dir).
-                fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
-                python3 {{.REPO}}/tools/luac/replpipe.py "{{.REPO}}/{{.SCRIPT}}" -o "$fr" 1>&2
-                echo "$fr"
-              else
-                realpath "{{.REPO}}/{{.SCRIPT}}"
-              fi
+              # bind-mounted into the sim by repl:run, so keep it under a
+              # Docker-shared host path (colima shares only /Users, so a bare
+              # mktemp in /tmp or /var/folders would mount as an empty dir).
+              fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
+              python3 {{.REPO}}/tools/luac/replpipe.py "{{.REPO}}/{{.SCRIPT}}" -o "$fr" 1>&2
+              echo "$fr"
           N: '{{.N}}'
 
   repl:run:
@@ -133,13 +127,16 @@ tasks:
           APP: lua
       - task: simulator:image
         vars: {WORKDIR: '{{.REPO}}'}
-      # With SCRIPT: mount the built ELF + the input file (read-only) and feed it
-      # verbatim to the (modelled UART) console. Without SCRIPT: run interactively
-      # (-it) so the console reads/echoes your real terminal - a live REPL.
+      # With SCRIPT: mount the built ELF + the framed-bytecode input (read-only)
+      # and feed it to the modelled UART console. Without SCRIPT: luash.py owns
+      # your terminal, compiles each typed line off-device to bytecode, and pipes
+      # #LC frames into the sim's --interactive console - a live REPL with no
+      # on-device parser.
       - >-
         {{if .SCRIPT}}docker run --rm -v "$(realpath bin):/mnt:ro" -v "$(realpath {{.SCRIPT}}):/in.lua:ro"
-        {{.SIM_IMAGE}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}docker run
-        --rm -it -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} --interactive /mnt/lua.elf{{end}}
+        {{.SIM_IMAGE}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}python3
+        '{{.REPO}}/tools/luac/luash.py' -- docker run --rm -i -v "$(realpath bin):/mnt:ro"
+        {{.SIM_IMAGE}} --interactive /mnt/lua.elf{{end}}
 
   flash:
     desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
@@ -155,33 +152,39 @@ tasks:
       - python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
 
   repl:hw:
-    desc: 'Flash a V2 app to real hardware and drive its console over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). Optional SCRIPT=file.lua feeds REPL input (paced for flow control); omit for just the boot output. LC=1 (or a .lc SCRIPT) feeds off-device luac bytecode (#133).'
-    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [LC=1] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
+    desc: 'Flash a V2 app to real hardware and drive its Lua REPL over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). Omit SCRIPT for a live interactive prompt (luash.py); SCRIPT=file.lua|.lc feeds a scripted run and captures the transcript. All input is compiled off-device to luac bytecode (#128).'
+    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
+    interactive: true   # the live-prompt branch hands your terminal to luash.py
     vars:
       APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
     deps:
-      - task: luac:image   # host luac for the LC conversion below; cheap when cached
+      - task: luac:image   # host luac: compiles the script (or every live line) to bytecode
         vars: {WORKDIR: '{{.REPO}}'}
     cmds:
       - task: build
         vars:
           APP: '{{.APP}}'
-      # With LC=1 (or a .lc SCRIPT), convert to a framed bytecode file first; flash.py
-      # just feeds whatever file it gets (verbatim source or framed bytecode).
       - |
         set -e
-        INPUT=""
-        [ -n "{{.SCRIPT}}" ] && INPUT="{{.REPO}}/{{.SCRIPT}}"
-        case "{{.SCRIPT}}" in *.lc) lc=1;; *) lc="{{.LC}}";; esac
-        if [ -n "{{.SCRIPT}}" ] && [ -n "$lc" ]; then
+        if [ -n "{{.SCRIPT}}" ]; then
+          # Scripted run: compile off-device to a framed bytecode file, then
+          # flash + feed it over UART (paced for flow control) and read the
+          # transcript. replpipe.py auto-detects .lua (per-line) vs .lc.
           INPUT="$(mktemp)"
           python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$INPUT"
+          python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf --input "$INPUT"
+        else
+          # Live REPL: flash over JTAG, then luash.py owns your terminal and
+          # drives uart_repl.py --relay on the Pi (it paces bytes to /dev/serial0),
+          # compiling each line you type off-device to bytecode. Ctrl-D ends it.
+          python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
+          python3 '{{.REPO}}/tools/luac/luash.py' -- \
+            ssh {{.PI_HOST}} 'cd openocd && sudo python3 uart_repl.py --relay'
         fi
-        python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
-          --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
-          ${INPUT:+--input "$INPUT"}
 
   test:luac:
     desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'

@@ -18,6 +18,7 @@ followed by a single EOT byte.
 """
 import argparse
 import os
+import select
 import subprocess
 import sys
 import termios
@@ -60,6 +61,42 @@ def drain(fd, out):
         pass
 
 
+def relay(fd, done, byte_delay, idle_timeout):
+    """Bidirectional pass-through for the live REPL (#128): our stdin -> serial
+    (paced for flow control), serial -> our stdout. luash.py on the workstation
+    drives us over ssh and does the compile-per-line; we only move bytes. It
+    sends EOT then closes stdin to end; we drain the reply until the done-marker
+    or an idle gap, then exit."""
+    stdin_fd = sys.stdin.buffer.fileno()
+    stdin_open = True
+    seen = bytearray()
+    last_rx = time.monotonic()
+    while True:
+        watch = [fd] + ([stdin_fd] if stdin_open else [])
+        r, _, _ = select.select(watch, [], [], 0.1)
+        if fd in r:
+            try:
+                d = os.read(fd, 256)
+            except BlockingIOError:
+                d = b""
+            if d:
+                sys.stdout.buffer.write(d)
+                sys.stdout.buffer.flush()
+                seen += d
+                last_rx = time.monotonic()
+        if stdin_open and stdin_fd in r:
+            chunk = os.read(stdin_fd, 4096)
+            if not chunk:
+                stdin_open = False   # luash closed stdin (EOT already in-stream)
+            else:
+                for byte in chunk:                # paced TX (16-byte RX FIFO)
+                    os.write(fd, bytes([byte]))
+                    time.sleep(byte_delay)
+        if not stdin_open:
+            if done in seen or time.monotonic() - last_rx > idle_timeout:
+                break
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -74,12 +111,20 @@ def main():
                     help="per-byte send delay for flow control (default 0.003s)")
     ap.add_argument("--boot-wait", type=float, default=1.5,
                     help="seconds to let the app boot to its prompt before feeding")
+    ap.add_argument("--relay", action="store_true",
+                    help="live REPL: bidirectional stdin<->serial pass-through "
+                         "(paced), driven by luash.py over ssh. See tools/luac/luash.py")
     a = ap.parse_args()
 
     stop_getty()
     fd = open_port(a.dev)
     out = bytearray()
     done = a.done.encode()
+
+    if a.relay:
+        relay(fd, done, a.byte_delay, a.timeout)
+        os.close(fd)
+        sys.exit(0)
 
     # Let the app boot and reach its "> " prompt before feeding input.
     t = time.monotonic()
