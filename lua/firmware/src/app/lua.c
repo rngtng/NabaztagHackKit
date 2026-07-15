@@ -706,8 +706,11 @@ static void report(lua_State *L)
 }
 
 /* Embedded proof that the interpreter runs even with no console input (sim).
- * Also exercises the M5 nab bindings: lights the nose green and reads the
- * button - visible/reportable on hardware, harmless in the simulator. */
+ * Defines the M5 nab-binding demo helpers and sets an idle LED state, then
+ * drops straight to the REPL - it does NOT auto-call run(). run() is a
+ * while-true RFID loop that only returns on a head-button press, so calling it
+ * at boot would strand the REPL behind a physical button on hardware (#207).
+ * Start the interactive demo yourself from the prompt: `run()`. */
 static const char DEMO[] =
     "GREEN_UID = \"d0021a3506198b86\"\n"
     "YELLOW_UID = \"d0021a35038f3a2f\" \n"
@@ -720,9 +723,7 @@ static const char DEMO[] =
     "function blackmode() allled(0,0,0) nab.led('bottom',0,0,127) nab.ear_stop(LEFT_MOTOR) nab.ear_stop(RIGHT_MOTOR) end\n" //
     "function react(t) if t == GREEN_UID then greenmode() elseif t == YELLOW_UID then yellowmode() else blackmode() end end\n"
     "function run() while true do react(nab.rfid()) if nab.ear_pos(LEFT_MOTOR) == nab.ear_pos(RIGHT_MOTOR) then colormode() end if nab.button() then blackmode() return end end end\n"
-    "blackmode()\n"
-    "run()\n"
-    "nab.led('bottom',127,0,0)\n";
+    "blackmode()\n";   /* idle LED state; then the REPL. Type run() to start the demo. */
 
 #define REPL_LINE 256
 
