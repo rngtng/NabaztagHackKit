@@ -234,6 +234,8 @@ sudo stty -F /dev/serial0 38400 raw -echo
 sudo cat /dev/serial0                          # /dev/serial0 is root:tty 600
 ```
 
+`stop` (not `disable`) is deliberate, not an oversight: do this every session (#203).
+
 Pi-side gotchas: no pyserial on the rig (use stdlib `termios` from Python);
 to diagnose a dead line without a scope, `sudo pinctrl set <gpio> ip pd;
 pinctrl get <gpio>` — a driven line reads `hi` (the external source beats the
