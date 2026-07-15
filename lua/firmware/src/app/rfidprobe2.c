@@ -3,28 +3,21 @@
  * @brief M9 probe: dump raw CRX14 frame-buffer bytes at each anti-collision
  *        step so we can identify where the UID read returns zeros.
  *
- * Mirrors rfidprobe.c's semihosting console; run with:
- *   task repl:firmwareV2:hw APP=rfidprobe2
+ * Mirrors rfidprobe.c's UART0 console; run with:
+ *   task lua:firmware:flash APP=rfidprobe2
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * uartprobe.c for the flash+listen recipe).
  */
 #include "ml674061.h"
 #include "common.h"
 
 #include "hal/i2c.h"
 #include "hal/rfid.h"
-
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) { char c = *s++; semihost(SYS_WRITEC, &c); }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex8(uint8_t v)
@@ -69,6 +62,7 @@ int main(void)
   uint8_t buf[20];
   uint8_t cmd[4];
 
+  init_uart();
   init_i2c();
   sh_puts("M9 RFID raw-dump probe\n");
 

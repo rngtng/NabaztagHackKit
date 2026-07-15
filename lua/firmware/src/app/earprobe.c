@@ -5,11 +5,11 @@
  *        and check whether its FTM0/FTM1 pulse-capture counter
  *        (get_motor_position) actually moves.
  *
- *   task flash:firmwareV2 APP=earprobe
- *   task repl:firmwareV2:hw APP=earprobe
+ *   task lua:firmware:flash APP=earprobe
+ *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  *
- * Output is ARM semihosting. No timer subsystem exists, so "briefly" is a CPU
- * busy-loop, same caveat as nab.beep's ms.
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0. No timer
+ * subsystem exists, so "briefly" is a CPU busy-loop, same caveat as nab.beep's ms.
  *
  * probe_motor only ever runs at speed=255, so it never covered the `speed`
  * parameter itself (a user hitting nab.ear_move(n, 100, 'forward') got a motor
@@ -21,24 +21,11 @@
 #include "common.h"
 
 #include "hal/motor.h"
-
-/* ---- semihosting console ------------------------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex16(uint16_t v)
@@ -163,6 +150,8 @@ static void sweep_motor(uint8_t number)
 
 int main(void)
 {
+  init_uart();
+
   init_ears();
 
   sh_puts("M10 ear probe (FTM PWM + encoder)\n");

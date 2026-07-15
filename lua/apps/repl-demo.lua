@@ -1,7 +1,7 @@
 -- Sample Lua fed to the M4 firmwareV2 REPL in the simulator (#92):
 --   task repl:firmwareV2 SCRIPT=src/firmwareV2/examples/repl-demo.lua
 -- Each line is typed at the REPL prompt; output appears in the run summary's
--- `semihost output`. Stdlib is base + string + table (no math/io/os/coroutine).
+-- `console output`. Stdlib is base + string + table (no math/io/os/coroutine).
 -- NB: each line is its own chunk, so `local` does NOT persist across lines
 -- (same as the stock `lua` interactive prompt); use globals to carry state.
 print("hello from Lua " .. _VERSION)

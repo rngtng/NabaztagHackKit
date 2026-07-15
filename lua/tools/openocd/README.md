@@ -170,15 +170,13 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
-## UART console (bidirectional, 38400 8N1, #203/#207) — the console
+## UART console + Lua REPL (bidirectional, 38400 8N1, #203/#207) — the console
 
-Since #203 the firmware has a real UART0 HAL (`lua/firmware/src/hal/uart.c`, OKI
-pins **PB0=TX / PB1=RX**, 38400 8N1, no flow control); #207 added polled RX
-(`getch_uart`) and moved the Lua REPL's stdin/stdout onto it. UART is now the
-console for **both directions** — it needs no OpenOCD session and never halts
-the CPU (semihosting cost one debugger trap per character). The REPL is driven
-by `task lua:firmware:repl:hw` (below); semihosting is legacy (being removed,
-#207).
+The firmware has a real UART0 HAL (`lua/firmware/src/hal/uart.c`, OKI pins
+**PB0=TX / PB1=RX**, 38400 8N1, no flow control): #203 added TX, #207 added
+polled RX (`getch_uart`) and moved the Lua REPL's stdin/stdout onto it. UART is
+the console for **both directions** — it needs no OpenOCD session and never
+halts the CPU.
 
 > No hardware flow control + a 16-byte RX FIFO the device drains only between
 > REPL lines, so a fast host burst drops bytes. `uart_repl.py` paces input one
@@ -197,6 +195,27 @@ Wiring to the Pi rig **crosses over** (GND common):
 | PB0 (TX) | GPIO15 / RXD | 10 |
 | PB1 (RX) | GPIO14 / TXD | 8 |
 
+### One command: `task lua:firmware:repl:hw`
+
+The single command to flash an app and drive its console (`print()` / the REPL)
+on the rabbit:
+
+```sh
+task lua:firmware:repl:hw                                   # APP=lua, capture boot output
+task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
+task lua:firmware:repl:hw SCRIPT=path/to/chunk.lua LC=1     # feed off-device luac bytecode frames (#133)
+```
+
+It builds the app, flashes it over JTAG (`flash.py --uart`: normal gdb load +
+reset, then OpenOCD is released), and drives the console over the Pi's
+`/dev/serial0` with `uart_repl.py`. `SCRIPT` is fed to the REPL **paced
+byte-by-byte** (the link has no flow control + a 16-byte RX FIFO), then a single
+**EOT (0x04)** ends input so the REPL prints `<<FV_DONE>>` and the read stops
+(backstop: `--run-timeout`, 120 s). `lua.elf` boots straight to the `> ` prompt;
+type `run()` for the RFID demo.
+
+### Reading the console by hand
+
 Validate the link end-to-end with the banner probe, then read:
 
 ```sh
@@ -211,84 +230,6 @@ Pi-side gotchas: no pyserial on the rig (use stdlib `termios` from Python);
 to diagnose a dead line without a scope, `sudo pinctrl set <gpio> ip pd;
 pinctrl get <gpio>` — a driven line reads `hi` (the external source beats the
 pull-down), a floating one reads `lo` (this is how a TX/RX swap shows up).
-
-## Semihosting console + Lua REPL (#91)
-
-Before #203 the board had no UART, so all console I/O runs over **ARM
-semihosting** — the app issues Thumb `svc 0xAB` and OpenOCD services the
-`SYS_WRITEC`/`SYS_READC` syscalls. It is still the only *input* path (the
-interactive REPL's `SYS_READC`) and what newlib `_write`/Lua `print()` are
-wired to today. Proven on hardware with the `console` probe
-(`lua/firmware/src/app/console.c`), but the ML67's ARM7TDMI needs one non-obvious
-tweak:
-
-- Its **EmbeddedICE is version 1 → no vector catch**, so `arm semihosting enable`
-  falls back to a **software** breakpoint at the SWI vector `0x8`. `0x8` is
-  **flash-mapped read-only**, so the write fails (`Unable to set 32 bit software
-  breakpoint at address 00000008`) and nothing traps.
-- Fix: drop the dead soft breakpoint and set a **hardware** one (ARM7TDMI has 2
-  watchpoint units; a HW breakpoint needs no memory write). `arm_semihosting()`
-  keys only on CPU state (SVC mode, `PC==0x8`, insn `0xDFAB`), so a HW-bp trap is
-  serviced identically.
-
-### One command: `task lua:firmware:repl:hw` (over UART, #207)
-
-The single command to flash an app and drive its console (`print()` / the REPL) on
-the rabbit:
-
-```sh
-task lua:firmware:repl:hw                                   # APP=lua, capture boot output
-task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed REPL input, capture the transcript
-task lua:firmware:repl:hw SCRIPT=path/to/chunk.lua LC=1     # feed off-device luac bytecode frames (#133)
-```
-
-It builds the app, flashes it over JTAG (`flash.py --uart`: normal gdb load +
-reset, then OpenOCD is released), and drives the console over the Pi's
-`/dev/serial0` with `uart_repl.py` — **no semihosting, no CPU halts**. `SCRIPT`
-is fed to the REPL **paced byte-by-byte** (the link has no flow control), then a
-single **EOT (0x04)** ends input so the REPL prints `<<FV_DONE>>` and the read
-stops (backstop: `--run-timeout`, 120 s). `lua.elf` boots straight to the `> `
-prompt (the DEMO no longer auto-runs `run()`, #207); type `run()` for the RFID
-demo.
-
-The `svc 0xAB` **semihosting** path (`flash.py --semihosting`, the HW-bp-at-`0x8`
-dance documented above) is legacy and being removed (#207); the notes are kept
-only until then.
-
-Run it manually (`console.elf` built with `task lua:firmware:build APP=console`):
-
-```sh
-sudo /usr/local/bin/openocd -f nabaztag-pi.cfg \
-  -c init -c "reset halt" \
-  -c "flash write_image erase console.elf" \
-  -c "arm semihosting enable" \
-  -c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" \
-  -c "resume"
-```
-
-`SYS_WRITEC` output lands on **OpenOCD's stdout** (`putchar`); `SYS_READC` reads
-its stdin. Expected: `M3 WRITEC OK`, then the CPU idles in `main`.
-
-The **Lua REPL runs the same way** — flash `lua.elf` and pipe Lua into OpenOCD's
-stdin; results come back on stdout (per-char, so slow):
-
-```sh
-printf '1+1\n6*7\n10//3\nprint("lua on rabbit ok")\n' | sudo timeout 160 \
-  /usr/local/bin/openocd -f nabaztag-pi.cfg \
-  -c init -c "reset halt" -c "flash write_image erase lua.elf" \
-  -c "arm semihosting enable" \
-  -c "reset halt" -c "rbp 0x8" -c "bp 0x8 4 hw" -c "resume"
-```
-
-Prints the banner + `> 2 / 42 / 3 / lua on rabbit ok`. Integer math is exact;
-float *printing* is still stubbed (see the Lua firmware README) — stick to integer
-ops for clean output. `timeout` ends the otherwise-forever OpenOCD server loop.
-`SYS_WRITE0` (whole-string) is best avoided — OpenOCD 0.8.0's read loop runs away
-on it; per-char `SYS_WRITEC` (what newlib `_write`/Lua `print` use) is stable.
-
-> Deferred follow-up: patch OpenOCD's `arm7_9_setup_semihosting` to use
-> `BKPT_HARD` on cores without vector catch — then plain `arm semihosting enable`
-> works, no `rbp`/`bp` dance (needs an OpenOCD rebuild).
 
 ## Troubleshooting
 

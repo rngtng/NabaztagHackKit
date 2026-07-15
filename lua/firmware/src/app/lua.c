@@ -37,8 +37,7 @@
 
 /* ---- UART console (#207) ------------------------------------------------- */
 /* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 38400 8N1.
- * This replaced ARM semihosting - one CPU-halting `svc 0xAB` debugger trap per
- * character - once the RX path landed (#207). init_uart() runs at boot (main).
+ * init_uart() runs at boot (main); read/drive it on the Pi's /dev/serial0.
  *
  * EOF: getch_uart() is non-blocking (-1 = RX FIFO empty) and a raw UART has no
  * native end-of-stream, so _read() blocks until a byte arrives and treats EOT
@@ -103,8 +102,8 @@ static char *sh_gets(char *buf, int size)
 
 /* ---- Lua console output -------------------------------------------------- */
 /* luaconf.h routes lua_writestring/writeline/writestringerror here so print()
- * and the error/panic paths write straight to the semihosting _write syscall,
- * never linking newlib's buffered-FILE layer (~6 KB). */
+ * and the error/panic paths write straight to the UART _write syscall, never
+ * linking newlib's buffered-FILE layer (~6 KB). */
 void luai_writestring(const char *s, size_t l)
 {
   _write(1, s, (int)l);

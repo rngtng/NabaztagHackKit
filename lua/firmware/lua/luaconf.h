@@ -800,7 +800,7 @@
 
 /*
 ** firmwareV2: the block below is the on-device Local config - the luai_*
-** overrides that swap newlib/libm out for the semihosting console + compact
+** overrides that swap newlib/libm out for the UART console + compact
 ** number helpers in src/app/lua.c. They only make sense in
 ** the ARM firmware. A host build of luac (tools/luac) compiles this same tree
 ** with -DLUA_HOST_LUAC so these fall back to the stock C library (fwrite,
@@ -813,11 +813,11 @@
 #if !defined(LUA_HOST_LUAC)		/* { device-only overrides */
 
 /*
-** firmwareV2: route Lua's console output through ARM semihosting
+** firmwareV2: route Lua's console output through the UART (hal/uart.c)
 ** instead of the newlib stdio FILE layer. The stock lua_writestring/writeline/
 ** writestringerror (lauxlib.h) call fwrite/fprintf/fflush on stdout/stderr,
 ** which drags in the whole buffered-FILE machinery (~6 KB: findfp/fflush/
-** fvwrite/freopen/fread/setvbuf). Our console is per-char semihosting (see
+** fvwrite/freopen/fread/setvbuf). Our console is per-char UART (see
 ** src/app/lua.c), so that buffering is dead weight. Defining the macros here
 ** (before lauxlib.h's `#if !defined` guards) routes them to helpers that write
 ** straight to the _write syscall. Every lua_writestringerror call site uses a

@@ -56,7 +56,7 @@ maps these onto C subsystems. Two structural gaps:
 - External RAM `0xD0000000`, **1 MB** (Lua heap/data live here)
 - Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 38400 8N1 - the UART
   peripheral clock is a measured **8 MHz**, so 115200 is unreachable; #203).
-  UART is output-only today; input still runs over JTAG semihosting.
+  UART is bidirectional (input + output).
 - Board revision `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three tag sub-revisions
   (`LLC2_2`/`LLC2_3`/`LLC2_4c`), the one hardware-verified below. Pin diffs:
   [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release).
@@ -83,12 +83,12 @@ exempt (`-Wno-cast-align -Wno-error`) - not our code to fix; see the `Makefile`.
 [`PROVENANCE.md`](../../PROVENANCE.md)) into a REPL. Glue in [`src/app/lua.c`](src/app/lua.c).
 Two things bare metal lacks:
 
-- **Console:** newlib `_read`/`_write` route stdin/stdout through **ARM semihosting**
-  (`svc 0xAB`). `print()` and the prompt reach the GDB/OpenOCD console on hardware and
-  the simulator off it. A **TX-only UART0 HAL** (38400 8N1, `src/hal/uart.c`) landed in
-  #203 - the plan is to move console *output* there (no JTAG session, no CPU halts) and
-  keep semihosting only for REPL *input* until UART RX + a `nab.uart` binding land
-  (#203 TODOs). Read it on the Pi rig: see
+- **Console:** newlib `_read`/`_write` route stdin/stdout through **UART0**
+  (`src/hal/uart.c`, 38400 8N1). `print()` and the prompt go out `putch_uart`/`_write`;
+  REPL input comes in `getch_uart`/`_read` (EOF is EOT, `0x04`). Both directions run over
+  UART on hardware (no JTAG session, no CPU halts) and the simulator models the UART0
+  console. The old JTAG console path was fully removed in #207 (UART RX landed there too).
+  Read it on the Pi rig: see
   [`../tools/openocd/README.md`](../tools/openocd/README.md#uart-console-tx-only-38400-8n1-203--preferred-for-output).
 - **Heap:** `_sbrk` hands out the **1 MB ExtRAM** window (`0xD0000000`, set up by `init.s`);
   16 KB internal RAM is too small.
@@ -136,10 +136,10 @@ Unicorn Engine, #96) - no JTAG, no device:
 ```sh
 task lua:firmware:simulate                          # run bin/hello.elf, report reaching main
 task lua:firmware:simulate APP=blink ARGS=-v        # -v logs every peripheral (MMIO) write
-task lua:firmware:simulate APP=lua ARGS="-n 60000000"  # boots Lua, runs print(1+1) over semihost console
+task lua:firmware:simulate APP=lua ARGS="-n 60000000"  # boots Lua, runs print(1+1) over the modelled UART console
 ```
 
-To drive the **REPL**: `task lua:firmware:repl` (live prompt via semihosting `SYS_READC`,
+To drive the **REPL**: `task lua:firmware:repl` (live prompt over the modelled UART console,
 needs a TTY) or feed a file:
 
 ```sh
@@ -150,7 +150,7 @@ task lua:firmware:repl SCRIPT=apps/luac-roundtrip.lua LC=1  # feed as #LC byteco
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
 `lua`). The simulator maps the real memory regions, runs from `Reset_Handler`, stubs
 peripheral pages, models **instant SPI completion** (a data-register write sets `SPIF`), and
-implements semihosting. It has **no timing, audio, WiFi, RFID, or real timers**, so it
+models the **UART0 console**. It has **no timing, audio, WiFi, RFID, or real timers**, so it
 validates code paths + GPIO + SPI framing + console, not analog behaviour. Delays must be
 software busy-loops to be observable. **DREQ (VS1003 ready) and the ADC completion bit are
 unmodeled** - any bounded busy-wait on them (`nab.play`, `nab.wheel`) spins to its cap in-sim
@@ -196,7 +196,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | M0 | Scaffold build layer | #88 | HW (PC parks in `main`) |
 | M1 | Bare-metal LED blink | #89 | HW + sim |
 | M2 | JTAG flash workflow | #90 | done (`task lua:firmware:flash`) |
-| M3 | Semihosting console | #91 | HW (needs a HW breakpoint at the SWI vector; see openocd) |
+| M3 | UART console | #91 | HW (console became UART0 in #207) |
 | M4 | Lua 5.4 core + REPL | #92 | HW + sim |
 | M5 | Bindings: LEDs, button, ears | #93 | LEDs + button HW; ears -> M10 |
 | M6 | Binding: AT45 flash | #94 | **N/A** - no external flash on `LLC2_4c` (probed `id`/`status`=0). Reverted. |

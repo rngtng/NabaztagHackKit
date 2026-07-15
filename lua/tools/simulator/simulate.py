@@ -11,8 +11,8 @@ What it does:
   * starts execution at the ELF entry (Reset_Handler);
   * lazily maps peripheral pages as zero-filled RAM so MMIO accesses succeed,
     and logs writes to them (decoding the LED GPIO lines for readability);
-  * implements ARM semihosting (SYS_WRITE0/WRITEC/READC) on the SWI vector so a
-    future console/REPL (M3/M4) can run with no hardware;
+  * models the UART0 console (TX/RX) so the Lua REPL runs with no hardware
+    (#207); see the UART0 block below;
   * reports whether execution reached main() and exits non-zero if not.
 
 What it does NOT do: model timing, or any peripheral it does not stub beyond
@@ -25,15 +25,12 @@ import sys
 from unicorn import (
     Uc, UcError,
     UC_ARCH_ARM, UC_MODE_ARM,
-    UC_HOOK_CODE, UC_HOOK_INTR,
+    UC_HOOK_CODE,
     UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE,
     UC_HOOK_MEM_READ_UNMAPPED, UC_HOOK_MEM_WRITE_UNMAPPED,
     UC_HOOK_MEM_FETCH_UNMAPPED,
 )
-from unicorn.arm_const import (
-    UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_CPSR,
-    UC_ARM_REG_R0, UC_ARM_REG_R1,
-)
+from unicorn.arm_const import UC_ARM_REG_PC
 from elftools.elf.elffile import ELFFile
 
 PAGE = 0x1000
@@ -92,9 +89,9 @@ SPI_DATA_TO_STATUS = {0xB7B0200C: 0xB7B02008, 0xB7B0300C: 0xB7B03008}
 I2C_MCF = 0x0080
 I2CSR_ADDR = 0xB7800C08
 
-# UART0 console model (#207 step 5): the firmware's Lua REPL does polled TX/RX on
-# the 16550-style UART0 (hal/uart.c) instead of ARM semihosting. We model just
-# enough to carry the console: a THR write is a console-out byte, an RBR read
+# UART0 console model (#207): the firmware's Lua REPL does polled TX/RX on the
+# 16550-style UART0 (hal/uart.c) - it is the console. We model just enough to
+# carry it: a THR write is a console-out byte, an RBR read
 # delivers the next input byte, and LSR reports TX-always-ready plus a data-ready
 # (DR) bit driven by the input buffer. DLAB (LCR bit 7) must be tracked because
 # THR/RBR and the baud divisor latch (DLL) share offset +0x00 - the divisor bytes
@@ -132,8 +129,8 @@ class Sim:
         self._periph_pages = set()
         self.periph_writes = 0
         self.reached_main = False
-        self.console = bytearray()   # console output (UART THR, or legacy semihosting)
-        self.stdin = stdin           # bytes fed to the console (UART RBR / SYS_READC)
+        self.console = bytearray()   # console output (UART THR)
+        self.stdin = stdin           # bytes fed to the console (UART RBR)
         self.stdin_pos = 0
         self.dlab = False            # UART LCR divisor-latch-access bit
         self._rx = None              # interactive: one prefetched input byte
@@ -187,7 +184,6 @@ class Sim:
                    | UC_HOOK_MEM_FETCH_UNMAPPED, self._on_unmapped)
         u.hook_add(UC_HOOK_MEM_WRITE, self._on_write)
         u.hook_add(UC_HOOK_MEM_READ, self._on_read)
-        u.hook_add(UC_HOOK_INTR, self._on_intr)
         if self.main_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_main,
                        begin=self.main_addr, end=self.main_addr + 2)
@@ -250,39 +246,8 @@ class Sim:
             cur = int.from_bytes(uc.mem_read(UART0_LSR, 4), "little")
             uc.mem_write(UART0_LSR, (cur | UART_LSR_TXRDY).to_bytes(4, "little"))
 
-    def _on_intr(self, uc, intno, _ud):
-        """ARM semihosting on SWI. Exercised from M3; harmless before then."""
-        cpsr = uc.reg_read(UC_ARM_REG_CPSR)
-        thumb = bool(cpsr & 0x20)
-        pc = uc.reg_read(UC_ARM_REG_PC)
-        # Recover the SWI immediate to confirm it is a semihosting call.
-        if thumb:
-            instr = int.from_bytes(uc.mem_read(pc - 2, 2), "little")
-            swi = instr & 0xFF
-            is_semi = swi == 0xAB
-        else:
-            instr = int.from_bytes(uc.mem_read(pc - 4, 4), "little")
-            swi = instr & 0xFFFFFF
-            is_semi = swi == 0x123456
-        if not is_semi:
-            return   # not semihosting (e.g. the firmware's own SWI IRQ macros)
-        op = uc.reg_read(UC_ARM_REG_R0)
-        arg = uc.reg_read(UC_ARM_REG_R1)
-        if op == 0x03:                                   # SYS_WRITEC
-            self._console_out(uc.mem_read(arg, 1))
-        elif op == 0x04:                                 # SYS_WRITE0
-            s = bytearray()
-            while True:
-                b = uc.mem_read(arg + len(s), 1)
-                if b == b"\x00":
-                    break
-                s += b
-            self._console_out(bytes(s))
-        elif op == 0x07:                                 # SYS_READC
-            uc.reg_write(UC_ARM_REG_R0, self._console_in())
-
     def _console_out(self, data):
-        """Console write (UART THR or semihosting): echo live if interactive, else
+        """Console write (UART THR): echo live if interactive, else
         buffer. Stop as soon as the firmware prints its done-marker so batch and
         interactive runs both end promptly instead of spinning to the budget."""
         self.console += data
@@ -343,23 +308,6 @@ class Sim:
         else:
             uc.mem_write(UART0_LSR, (cur & ~UART_LSR_DR & 0xFF).to_bytes(4, "little"))
 
-    def _console_in(self):
-        """One SYS_READC byte: live from the terminal (interactive) or from the
-        pre-supplied --input/--input-file buffer; 0 on EOF (ends the REPL)."""
-        if self.interactive:
-            b = sys.stdin.buffer.read(1)
-            if b:
-                return b[0]
-            # Real EOF (Ctrl-D / closed pipe): stop now instead of letting the
-            # firmware's post-REPL `for(;;)` spin out the huge interactive budget.
-            self.uc.emu_stop()
-            return 0
-        if self.stdin_pos < len(self.stdin):
-            ch = self.stdin[self.stdin_pos]
-            self.stdin_pos += 1
-            return ch
-        return 0
-
     def _on_main(self, uc, address, size, _ud):
         if not self.reached_main:
             self.reached_main = True
@@ -386,7 +334,7 @@ class Sim:
         print(f"  peripheral wr   = {self.periph_writes}", file=log)
         # Interactive already streamed the console live; only dump it in batch mode.
         if self.console and not self.interactive:
-            print(f"  semihost output = {self.console.decode('latin1')!r}", file=log)
+            print(f"  console output = {self.console.decode('latin1')!r}", file=log)
         return 0 if self.reached_main else 1
 
 
@@ -399,13 +347,13 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="log every peripheral (MMIO) write")
     ap.add_argument("-i", "--input", default="",
-                    help=r"console input fed to SYS_READC (e.g. 'print(2+2)\n'); "
+                    help=r"console input fed to the UART (e.g. 'print(2+2)\n'); "
                          r"backslash escapes like \n and \t are interpreted")
     ap.add_argument("-f", "--input-file",
                     help="read console input from this file verbatim (real "
                          "newlines, no escaping) - overrides --input")
     ap.add_argument("-I", "--interactive", action="store_true",
-                    help="live REPL: read SYS_READC from this terminal and echo "
+                    help="live REPL: read UART input from this terminal and echo "
                          "the console to stdout (run the container with -it)")
     args = ap.parse_args()
     if args.input_file:

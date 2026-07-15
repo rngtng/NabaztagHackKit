@@ -34,7 +34,7 @@ void putst_uart(uint8_t *str)
 int getch_uart(void)
 {
   /* data-ready clears when the RX FIFO drains, so this is non-blocking:
-   * -1 means "nothing yet", the caller polls again (cf. SYS_READC). */
+   * -1 means "nothing yet", the caller polls again. */
   if ((get_value(UARTLSR0) & UARTLSR_DR) != UARTLSR_DR)
     return -1;
   return (int)(get_value(UARTRBR0) & 0xFF);

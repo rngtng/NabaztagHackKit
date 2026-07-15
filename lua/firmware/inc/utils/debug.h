@@ -2,10 +2,9 @@
  * @file debug.h
  * @brief Debug-output shim for the vendored usb/ (later net/) sources (M11a, #143).
  *
- * V2 counterpart of src/firmware's utils/debug.h. V1 routed DBG_* to the
- * UART; this board has no UART pins, so debug builds route to the JTAG
- * semihosting console instead (usb/usbdbg.c). Build with DEBUG_USB=1
- * (see Makefile) to enable.
+ * V2 counterpart of src/firmware's utils/debug.h. Like V1, debug builds route
+ * DBG_* to the UART console (UART0, usb/usbdbg.c) - read on the Pi's
+ * /dev/serial0. Build with DEBUG_USB=1 (see Makefile) to enable.
  *
  * The vendored sources call sprintf(dbg_buffer, ...) unconditionally before
  * each DBG_USB(dbg_buffer). In non-debug builds that would drag newlib's
@@ -22,12 +21,12 @@
 extern char dbg_buffer[DBG_BUFFER_LENGTH];
 
 /* V1's hal/uart.c hexdump (eapol.c calls it unconditionally on rx frames);
- * semihosting in DEBUG_* builds, empty stub otherwise (usb/usbdbg.c). */
+ * UART output in DEBUG_* builds, empty stub otherwise (usb/usbdbg.c). */
 void dump(uint8_t *src, int32_t len);
 
 #if defined(DEBUG_USB) || defined(DEBUG_WIFI)
 #include <stdio.h>
-void dbg_puts(const char *s); /* semihosting, usb/usbdbg.c */
+void dbg_puts(const char *s); /* UART0, usb/usbdbg.c */
 #else
 #define sprintf(...) ((void)0)
 #endif

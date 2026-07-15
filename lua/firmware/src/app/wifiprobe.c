@@ -16,7 +16,9 @@
  *       state machine leaves RT2501_S_SCAN.
  *   [6] (WIFI_SSID only) associate + 4-way handshake against the test AP.
  *
- * Run: task repl:firmwareV2:hw APP=wifiprobe
+ * Run: task lua:firmware:flash APP=wifiprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * uartprobe.c for the flash+listen recipe).
  * Hardware-only (the sim has no OHCI model).
  */
 #include <string.h>
@@ -36,24 +38,11 @@
 
 #include "hal/spi.h"
 #include "hal/led.h"
-
-/* ---- semihosting console (M3 #91 path) ---------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex8(uint8_t v)
@@ -91,11 +80,10 @@ static void sh_putmac(const uint8_t *m)
 
 /* ---- [5] scan callback --------------------------------------------------- */
 /* The callback fires from the USB rx IRQ path, once per received
- * beacon/probe-response. It must NOT print: each semihosting char is a
- * debugger trap that halts the whole CPU while OpenOCD services it - dozens
- * of halts per beacon starve the tick IRQ and the OHCI ISR, time out the
- * scan's own control transfers and can wedge the interrupt controller (the
- * in-service level is never cleared, so DelayMs never returns). So the
+ * beacon/probe-response. It must NOT print: putst_uart spins on THR-empty at
+ * 38400 baud, so dozens of blocking char writes per beacon stall the rx IRQ
+ * path - starving the tick IRQ and the OHCI ISR, timing out the scan's own
+ * control transfers and potentially wedging the interrupt controller. So the
  * callback only records deduped results; main prints them afterwards. */
 #define MAX_SEEN 32
 static struct rt2501_scan_result seen[MAX_SEEN];
@@ -198,6 +186,8 @@ int main(void)
   int8_t ret;
   int32_t state;
   int attempt;
+
+  init_uart();
 
   sh_puts("#119 RT2501 802.11 bring-up probe\n");
 
@@ -323,8 +313,8 @@ int main(void)
     sh_putdec(rt2501_state());
     sh_puts("\n");
   }
-  /* Full listing printed LAST (after [6]): ~30 lines of per-char semihosting
-   * take longer than the whole association - don't let the console cap eat
+  /* Full listing printed LAST (after [6]): ~30 lines at 38400 baud take
+   * longer than the whole association - don't let the console output eat
    * the verdict. */
 
 #ifdef WIFI_SSID

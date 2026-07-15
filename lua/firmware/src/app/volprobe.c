@@ -1,13 +1,15 @@
 /**
  * @file volprobe.c
  * @brief Volume-isolation probe: play the embedded MP3 at volume 0 (loudest)
- *        then 254 (near-silent), minimal init, NO semihosting during the SDI
+ *        then 254 (near-silent), minimal init, NO console I/O during the SDI
  *        feed (prints only between plays). If loudness clearly differs,
  *        SCI_VOLUME works on decoded audio and the lua app's "no volume" is a
- *        context problem (init_hw and/or semihosting interleaved with SPI0),
+ *        context problem (init_hw and/or console reads interleaved with SPI0),
  *        not the VS1003.
  *
- *   task repl:firmwareV2:hw APP=volprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * uartprobe.c for the flash+listen recipe):
+ *   task lua:firmware:flash APP=volprobe
  */
 #include "ml674061.h"
 #include "common.h"
@@ -18,24 +20,12 @@
 #include "hal/adc.h"
 #include "hal/i2c.h"
 #include "hal/motor.h"
+#include "hal/uart.h"
 #include "tone_mp3.h"
-
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex16(const char *label, uint16_t v)
@@ -115,7 +105,7 @@ static void flush_fill(void)
   CS_AUDIO_SDI_SET;
 }
 
-/* Play the embedded MP3 a few times at the current volume. No semihosting here. */
+/* Play the embedded MP3 a few times at the current volume. No console I/O here. */
 static void play_mp3(void)
 {
   int k;
@@ -129,6 +119,8 @@ static void play_mp3(void)
 
 int main(void)
 {
+  init_uart();
+
   RST_AUDIO_AS_OUTPUT;
   CS_AUDIO_SCI_AS_OUTPUT;
   CS_AUDIO_SDI_AS_OUTPUT;
@@ -169,14 +161,14 @@ int main(void)
   init_ears();
   sh_puthex16("CLOCKF(after all inits) ", sci_read(0x03));
 
-  /* Mimic the lua REPL: pull input through semihosting SYS_READC (0x07) the way
-   * reading a line does, then re-read SCI. If the readback goes garbage here,
-   * semihosting INPUT (the one thing the app does that no probe does) is what
+  /* Mimic the lua REPL: pull input through the UART RX poll (getch_uart) the
+   * way reading a line does, then re-read SCI. If the readback goes garbage
+   * here, console INPUT (the one thing the app does that no probe does) is what
    * corrupts SPI0 SCI. */
   {
     int i;
     for (i = 0; i < 40; i++)
-      (void)semihost(0x07, (void *)0);
+      (void)getch_uart();
   }
   sh_puthex16("CLOCKF(after READC burst) ", sci_read(0x03));
 
@@ -210,7 +202,7 @@ int main(void)
   sh_puts("--- playing at VOL 0 (LOUD) ---\n");
   play_mp3();
 
-  busy_delay(6000000);       /* audible gap, no semihosting */
+  busy_delay(6000000);       /* audible gap, no console I/O */
 
   /* --- volume 254 (near silent) --- */
   sci_write(0x0b, 0xfefe);

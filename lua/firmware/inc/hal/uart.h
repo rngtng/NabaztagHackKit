@@ -9,8 +9,8 @@
  * the IRQ table, so an enabled RX IRQ would fault on the first byte - RX is read
  * by polling the LSR data-ready bit instead (getch_uart), leaving IER at 0.
  *
- * RX is the prerequisite for moving the Lua REPL's input off JTAG semihosting
- * (SYS_READC) onto the wire - see lua/firmware/README.md.
+ * RX carries the Lua REPL's input on the wire (getch_uart); TX carries print()
+ * and the prompt - this UART is the console. See lua/firmware/README.md.
  *
  * Baud divisor: UARTDL = F_uart / (baud * 16). The UART peripheral clock was
  * MEASURED at 8.00 MHz (NOT the 33 MHz CPU clock, nor the 32 MHz the V1 header

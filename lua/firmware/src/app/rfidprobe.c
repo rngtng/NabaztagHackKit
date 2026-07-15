@@ -10,32 +10,20 @@
  * higher hal/rfid.c layer, so a failure localises to "no I2C ACK" vs "I2C fine,
  * CRX14 silent" instead of blaming the whole driver stack.
  *
- * Output is ARM semihosting, so run it debugger-attached:
- *   task repl:firmwareV2:hw APP=rfidprobe
+ * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * uartprobe.c for the flash+listen recipe):
+ *   task lua:firmware:flash APP=rfidprobe
  */
 #include "ml674061.h"
 #include "common.h"
 
 #include "hal/i2c.h"
 #include "hal/rfid.h"   /* CRX14_ADDR / CRX14_PARAMETER_REGISTER only */
-
-/* ---- semihosting console ------------------------------------------------- */
-#define SYS_WRITEC 0x03
-
-static inline int semihost(int op, void *arg)
-{
-  register int r0 asm("r0") = op;
-  register void *r1 asm("r1") = arg;
-  asm volatile("svc #0xAB" : "+r"(r0) : "r"(r1) : "memory");
-  return r0;
-}
+#include "hal/uart.h"
 
 static void sh_puts(const char *s)
 {
-  while (*s) {
-    char c = *s++;
-    semihost(SYS_WRITEC, &c);
-  }
+  putst_uart((uint8_t *)s);
 }
 
 static void sh_puthex8(uint8_t v)
@@ -51,6 +39,7 @@ static void sh_puthex8(uint8_t v)
 
 int main(void)
 {
+  init_uart();
   init_i2c();
 
   sh_puts("M9 RFID probe (CRX14 on I2C 0xA0)\n");
@@ -59,7 +48,7 @@ int main(void)
    * CRX14 ACKs both phases and echoes 0x10; a missing/dead chip NAKs the
    * write_i2c/read_i2c retry loop (3 attempts - enough to rule out a transient
    * bus glitch; each failed attempt spins waiti2cmbb/waiti2cmcf for up to 1M
-   * iterations so more retries quickly overflow the 120s semihosting cap). */
+   * iterations so more retries quickly overflow the 120s flash-run cap). */
   uint8_t cmd[2] = {CRX14_PARAMETER_REGISTER, 0x10};
   uint8_t tries = 3;
   uint8_t wrote = 0;
