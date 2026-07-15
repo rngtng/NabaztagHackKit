@@ -1,32 +1,26 @@
 # Nabaztag HackKit
 
 An SDK and dockerized toolchain for the Nabaztag:tag - the WiFi rabbit. Build,
-simulate, test and flash firmware for its ARM7TDMI without installing a toolchain:
-the only host requirements are [Docker](https://www.docker.com/) and
-[Task](https://taskfile.dev). Everything builds in containers.
+simulate, test and flash firmware for the Nabaztag:tag without installing extended toolchain:
+the only host requirements are [Docker](https://www.docker.com/) and [Task](https://taskfile.dev). Everything builds in containers.
 
 ![](http://github.com/rngtng/NabaztagHackKit.png)
 
-## Two tracks
+## Two tracks: Lua and MTL
 
-The repo holds two independent firmware tracks. They share the hardware, not an
-architecture.
+The repo holds two independent firmware tracks. They share the hardware, not an architecture.
 
 | Track | Dir | What | Language stack |
 |-------|-----|------|----------------|
 | **mtl** | [`mtl/`](mtl/) | The classic stack, cleaned up and rebuilt: a C bytecode VM firmware running MTL apps, with a Forth interpreter on top. | C/ARM → MTL → Forth |
 | **lua** | [`lua/`](lua/) | A re-architecture: bare-metal PUC-Rio Lua 5.4 on the stock board, replacing the VM. | C/ARM → Lua |
 
-Board revision (`LLC2_2` / `LLC2_3` / `LLC2_4c`) is a separate axis inside the
-**mtl** track - not the same thing as the track split.
-
 ## Getting started
 
 ```
 task              # list every target
-task verify       # build + test both tracks (definition of done)
-task mtl:verify   # mtl track only
-task lua:verify   # lua track only
+task mtl:verify   # mtl track only (definition of done)
+task lua:verify   # lua track only (definition of done)
 ```
 
 Targets read as `<track>:<layer>:<verb>`, e.g. `task mtl:app-piper:build`,
@@ -53,6 +47,11 @@ lua/             Track B - bare-metal Lua
   apps/            Example Lua scripts
   tools/           luac, Unicorn simulator, openocd
 ```
+
+## Design rationale
+
+Working conventions in [CLAUDE.md](CLAUDE.md); Roadmap in
+[GitHub Issues](https://github.com/rngtng/NabaztagHackKit/issues).
 
 ## The mtl stack
 
@@ -92,5 +91,4 @@ thin `nab.*` HAL. JTAG-flashed, no MTL. Design principles and current state:
 - [RedoXyde/nabgcc](https://github.com/RedoXyde/nabgcc) - GCC firmware port (mtl Layer 0 origin)
 - [andreax79/ServerlessNabaztag](https://github.com/andreax79/ServerlessNabaztag) - MTL toolchain + Forth layer origin
 
-Source origins and pinned commits: [`PROVENANCE.md`](PROVENANCE.md). Design
-rationale: [`NABAZTAG_SDK.md`](NABAZTAG_SDK.md).
+Source origins and pinned commits: [`PROVENANCE.md`](PROVENANCE.md).

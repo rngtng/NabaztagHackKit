@@ -1,9 +1,4 @@
-# NabaztagSDK — design rationale
-
-Why this repo is shaped the way it is. For **what** it does and how to build see the
-[README](README.md); source origins in [PROVENANCE.md](PROVENANCE.md); working
-conventions in [CLAUDE.md](CLAUDE.md); roadmap in
-[GitHub Issues](https://github.com/rngtng/NabaztagHackKit/issues).
+# NabaztagSDK — MTL - design rationale
 
 This documents the **mtl** track (C-VM + MTL + Forth). The **lua** track is a separate
 re-architecture with its own rationale in [`lua/firmware/README.md`](lua/firmware/README.md).

@@ -24,17 +24,6 @@ includes:
     taskfile: ./lua/Taskfile.yaml
 
 tasks:
-  verify:
-    desc: 'Definition of done: run before every commit. Builds/tests both layers (MTL V1 + Lua V2).'
-    cmds:
-      - task: mtl:verify
-      - task: lua:verify
-
-  verifyV2:
-    desc: 'Definition of done for the Lua (V2) layer only.'
-    cmds:
-      - task: lua:verify
-
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:
