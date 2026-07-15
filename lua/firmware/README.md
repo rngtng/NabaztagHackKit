@@ -21,7 +21,7 @@ stated reason.** `(established)` = already in the code; `(target)` = being built
    `lua_pcall`. Today's runtime polls (REPL + `run()` demo loops); the hard rule already
    holds - no interrupt handler ever calls into Lua.
 3. **Explicit memory + error budget.** *(partly established)* Flash is tracked to the byte
-   (124 KB budget, `-Werror`, parser-less prod image #128). Every chunk runs under
+   (124 KB budget, `-Werror`, parser-less bytecode-only image #128). Every chunk runs under
    `lua_pcall`, so a script fault returns to the prompt instead of crashing the rabbit.
    *Target:* a fixed Lua-heap cap and error paths hardened so a broken remote script can't
    wedge core functions.
@@ -31,8 +31,10 @@ stated reason.** `(established)` = already in the code; `(target)` = being built
 5. **Sandbox from the start.** *(partly established)* Remote scripts reach only the `nab`
    API. Stdlib is trimmed to `base + string + table` - no `os`/`io`/`package`/`debug`/
    `loadlib`, `dofile`/`loadfile` removed - so no `os.execute`, no raw memory/filesystem
-   access by construction. Every new binding is a bounded `nab.*` call; don't re-add a
-   general-purpose library without a security review.
+   access by construction. The parser-less image (#128) hardens this further: with no
+   on-device compiler the rabbit cannot `eval` arbitrary source, only run bytecode it is
+   handed. Every new binding is a bounded `nab.*` call; don't re-add a general-purpose
+   library without a security review.
 
 The driver-buildout sub-issue [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)
 maps these onto C subsystems. Two structural gaps:
@@ -106,28 +108,31 @@ no FPU/`double`):
   (fractional `^`→NaN), in-tree `snprintf`/`vsnprintf` - so number formatting doesn't pull
   newlib's FILE layer.
 
-`bin/lua.elf` uses ~101,800 B of 124 KB (**~24 KB free**). The remaining spend - wifi C
-(~26 KB) - only fits as a **parser-less prod image** (decided in
-[#128](https://github.com/rngtng/NabaztagHackKit/issues/128)): the rabbit runs only `luac`
-bytecode (`lundump` resident; `lparser`/`llex`/`lcode` are dev-image only), and the REPL
-compiles each line *off-device* with a `LUA_32BITS`-matched host `luac`. Today's `APP=lua`
-stays the dev image with the on-device parser.
+`bin/lua.elf` uses ~84,900 B of 124 KB (**~41 KB free**). This is the **only** image and it
+is **parser-less by design** (decided in
+[#128](https://github.com/rngtng/NabaztagHackKit/issues/128)): `lparser`/`llex`/`lcode` are
+dropped (~18.9 KB), so the rabbit runs *only* `luac` bytecode (`lundump` resident). There is
+no on-device compiler - all Lua, including every REPL line and the resident boot chunk, is
+compiled *off-device* by a `LUA_32BITS`-matched host `luac`. The freed budget is what lets
+wifi C (~26 KB) fit.
 
 ### Off-device `luac` pipe
-The host half exists now in [`../tools/luac/`](../tools/luac/): a `luac` built from *this*
-`lua/` tree + `luaconf.h`, so its bytecode matches what the rabbit's `lundump.c` accepts
-(4-byte int/float/instruction). Building from the vendored tree - not a distro `luac` - is
-what keeps the header sizes aligned; full rule in [`../tools/luac/README.md`](../tools/luac/README.md).
+The host half lives in [`../tools/luac/`](../tools/luac/): a `luac` built from *this* `lua/`
+tree + `luaconf.h`, so its bytecode matches what the rabbit's `lundump.c` accepts (4-byte
+int/float/instruction). Building from the vendored tree - not a distro `luac` - is what keeps
+the header sizes aligned; full rule in [`../tools/luac/README.md`](../tools/luac/README.md).
 
 ```sh
 task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc   # compile to stripped device bytecode
-task lua:firmware:test:luac                        # sim round-trip: source vs bytecode must match
+task lua:firmware:test:luac                        # golden-transcript test of the bytecode pipeline
 ```
 
 Since bytecode contains `\n`/NUL and the console is line-oriented, the REPL accepts a
 **frame**: a `#LC:<len>` header line + `2*len` hex chars. `load_lc_frame` (`src/app/lua.c`)
-decodes and runs it - the same path the future parser-less image is fed. `replpipe.py` is
-the sender.
+decodes and runs it; a non-frame line is rejected (there is no parser). The host tools:
+`replpipe.py` frames a `.lua`/`.lc` file, `embed.py` bakes the boot chunk into
+`gen/boot_lc.h`, and `luash.py` is the live-REPL client (compiles each typed line
+off-device). A source line typed at a bare terminal will not run.
 
 ## Simulate (no hardware)
 Run the ELF in an instruction-level simulator ([`../tools/simulator/`](../tools/simulator/),
@@ -139,12 +144,12 @@ task lua:firmware:simulate APP=blink ARGS=-v        # -v logs every peripheral (
 task lua:firmware:simulate APP=lua ARGS="-n 60000000"  # boots Lua, runs print(1+1) over the modelled UART console
 ```
 
-To drive the **REPL**: `task lua:firmware:repl` (live prompt over the modelled UART console,
-needs a TTY) or feed a file:
+To drive the **REPL**: `task lua:firmware:repl` (live prompt - `luash.py` compiles each line
+you type off-device to bytecode, then pipes it to the modelled UART console) or feed a file:
 
 ```sh
-task lua:firmware:repl SCRIPT=apps/repl-demo.lua        # feed a .lua file, print transcript
-task lua:firmware:repl SCRIPT=apps/luac-roundtrip.lua LC=1  # feed as #LC bytecode frames
+task lua:firmware:repl SCRIPT=apps/repl-demo.lua        # compile + feed a .lua file, print transcript
+task lua:firmware:repl SCRIPT=apps/foo.lc               # feed prebuilt .lc bytecode
 ```
 
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock

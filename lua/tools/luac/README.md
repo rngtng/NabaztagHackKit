@@ -1,14 +1,20 @@
-# lua/tools/luac — host Lua→bytecode compiler (#133)
+# lua/tools/luac — host Lua→bytecode compiler (#128, #133)
 
-The Lua firmware end-game (M11, #119) is a **parser-less** wifi image: it drops
-`lparser`/`llex`/`lcode` (−19 KB) and keeps only `lundump`, so the rabbit loads
-`luac` bytecode but can no longer compile source. Every path that feeds Lua
-*source* to the device needs a host-side compile step — this tool, plus the
-tethered REPL pipe (`replpipe.py`).
+The Lua firmware is **parser-less** (#128): it drops `lparser`/`llex`/`lcode`
+(−18.9 KB) and keeps only `lundump`, so the rabbit loads `luac` bytecode but
+cannot compile source at all. Every path that gets Lua onto the device therefore
+compiles it here, off-device:
 
-Self-contained (own `Dockerfile` + `Taskfile.yaml`). Exercised against the
-current parser-ful `APP=lua` dev image, which accepts bytecode *and* source —
-which is what makes the pipe verifiable (round-trip test).
+- **`luac`** (this image) — Lua source → stripped 32-bit device bytecode.
+- **`replpipe.py`** — frames a `.lua`/`.lc` file into the `#LC` console stream
+  (scripted REPL runs, and the `test:luac` golden test).
+- **`embed.py`** — bakes the resident boot chunk (`src/app/boot.lua`) into
+  `gen/boot_lc.h` for the firmware build (there is no on-device parser to compile
+  it at startup).
+- **`luash.py`** — the live interactive REPL client: compiles each line you type
+  and pipes it to the device console (sim or, over ssh, the Pi's UART relay).
+
+Self-contained (own `Dockerfile` + `Taskfile.yaml`).
 
 ## The header-compatibility rule (why a distro `luac` won't do)
 
@@ -41,8 +47,8 @@ Raw bytecode can't ride the line-oriented UART console (chunks contain
 
 The device (`lua/firmware/src/app/lua.c`, `load_lc_frame`) mallocs `len` bytes
 off the external-RAM heap (with a sanity cap), hex-decodes the payload, then
-`luaL_loadbuffer(..., "=stdin")` and runs it through the same pcall+echo path as
-a source line. `replpipe.py` is the sender.
+`luaL_loadbuffer(..., "=stdin")` and runs it through pcall+echo. A non-`#LC` line
+is rejected — the device has no parser. `replpipe.py`/`luash.py` are the senders.
 
 ## Tasks
 
@@ -50,17 +56,18 @@ a source line. `replpipe.py` is the sender.
 # Compile a Lua source file to stripped 32-bit device bytecode.
 task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc
 
-# Round-trip test (sim): SCRIPT fed as source vs. as #LC frames must match.
-task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua]
+# Golden-transcript test (sim): frames run and match apps/*.expected. REGEN=1 to refresh.
+task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua] [REGEN=1]
 
-# Drive the sim / hardware REPL with bytecode instead of source:
-task lua:firmware:repl SCRIPT=foo.lua LC=1        # (or a .lc SCRIPT)
-task lua:firmware:repl:hw SCRIPT=foo.lua LC=1
+# REPL - all input is compiled off-device to bytecode:
+task lua:firmware:repl                     # live interactive prompt (luash.py)
+task lua:firmware:repl SCRIPT=foo.lua      # feed a script (or a prebuilt .lc)
+task lua:firmware:repl:hw                  # same, on real hardware over the Pi UART relay
 ```
 
-`replpipe.py` (stdlib-only) converts REPL input to the frame stream: a `.lua`
-file becomes one frame per line, compiled with the same expression-first
-fallback the device uses (`return <line>`, then the line verbatim), so bare
-expressions still echo and the prompt count matches feeding the source. A `.lc`
-file is shipped as a single frame. It shells out to the `luac` image, so a line
-can be compiled off-device with no host toolchain beyond Docker.
+`replpipe.py` (stdlib-only) converts a REPL script to the frame stream: a `.lua`
+file becomes one frame per line, compiled with an expression-first fallback
+(`return <line>`, then the line verbatim), so bare expressions echo; a `.lc` file
+is shipped as a single frame. `luash.py` applies the same fallback per typed line
+for the live prompt. All shell out to the `luac` image, so nothing beyond Docker
+is needed on the host.

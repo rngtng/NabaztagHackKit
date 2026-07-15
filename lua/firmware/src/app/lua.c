@@ -704,54 +704,33 @@ static void report(lua_State *L)
   lua_pop(L, 1);
 }
 
-/* Embedded proof that the interpreter runs even with no console input (sim).
- * Defines the M5 nab-binding demo helpers and sets an idle LED state, then
- * drops straight to the REPL - it does NOT auto-call run(). run() is a
- * while-true RFID loop that only returns on a head-button press, so calling it
- * at boot would strand the REPL behind a physical button on hardware (#207).
- * Start the interactive demo yourself from the prompt: `run()`. */
-static const char DEMO[] =
-    "GREEN_UID = \"d0021a3506198b86\"\n"
-    "YELLOW_UID = \"d0021a35038f3a2f\" \n"
-    "LEFT_MOTOR = 1\n"
-    "RIGHT_MOTOR = 2\n"
-    "function allled(r,g,b) nab.led('nose',r,g,b) nab.led('belly',r,g,b) nab.led('left',r,g,b) nab.led('right',r,g,b) nab.led('bottom',r,g,b) end\n"
-    "function greenmode() allled(0,127,0) nab.ear_move(LEFT_MOTOR,255,'forward') end\n"
-    "function yellowmode() allled(127,127,0) nab.ear_move(RIGHT_MOTOR,255,'forward') end\n"
-    "function colormode() nab.led('nose',127,0,0) nab.led('belly',127,127,0) nab.led('left',0,127,0) nab.led('right',0,0,127) nab.led('bottom',127,0,127) end\n"
-    "function blackmode() allled(0,0,0) nab.led('bottom',0,0,127) nab.ear_stop(LEFT_MOTOR) nab.ear_stop(RIGHT_MOTOR) end\n" //
-    "function react(t) if t == GREEN_UID then greenmode() elseif t == YELLOW_UID then yellowmode() else blackmode() end end\n"
-    "function run() while true do react(nab.rfid()) if nab.ear_pos(LEFT_MOTOR) == nab.ear_pos(RIGHT_MOTOR) then colormode() end if nab.button() then blackmode() return end end end\n"
-    "blackmode()\n";   /* idle LED state; then the REPL. Type run() to start the demo. */
+/* Resident boot chunk: the M5 nab-binding demo helpers + an idle LED state,
+ * defined at startup so the interpreter proves out with no console input (sim)
+ * and the demo is one `run()` away on hardware. It does NOT auto-call run()
+ * (a while-true RFID loop that only returns on a head-button press - calling it
+ * at boot would strand the REPL behind a physical button, #207).
+ *
+ * This image has no on-device parser (#128), so the chunk cannot be compiled
+ * from source at boot. The build compiles src/app/boot.lua off-device
+ * (tools/luac/embed.py) into gen/boot_lc.h - a `boot_lc[]` bytecode blob loaded
+ * below via luaL_loadbuffer (sizeof boot_lc = chunk length). Edit boot.lua, not
+ * this header. */
+#include "boot_lc.h"
 
 #define REPL_LINE 256
 
-/* Compile a REPL line, trying expression form ("return <line>") first - so a
- * bare expression like `2+3` evaluates and echoes - then falling back to
- * statement form (`x = 5`, `for ...`). Mirrors the stock `lua` prompt. Leaves the
- * compiled chunk on the stack on success, or an error message on failure. */
-static int load_line(lua_State *L, const char *line)
-{
-  char expr[REPL_LINE + 8];
-  snprintf(expr, sizeof expr, "return %s", line);
-  if (luaL_loadstring(L, expr) == LUA_OK)
-    return LUA_OK;
-  lua_pop(L, 1); /* drop the "return ..." compile error, try as a statement */
-  return luaL_loadstring(L, line);
-}
-
 /* ---- off-device luac bytecode frames ------------------------------------- */
-/* The parser-less wifi image drops lparser/llex/lcode to reclaim ~19 KB, so it
- * can only load bytecode. Host-side luac (tools/luac) compiles each REPL line
- * off-device and ships the chunk here as a framed hex payload:
+/* This image drops lparser/llex/lcode (~18.9 KB, #128), so it can ONLY load
+ * bytecode - it cannot compile source on-device. Host-side luac (tools/luac)
+ * compiles every REPL line off-device and ships the chunk here as a framed hex
+ * payload:
  *
  *     #LC:<len>\n            header line (len = chunk size in bytes, decimal)
  *     <2*len hex chars>      the chunk, whitespace/newlines ignored (wrapped 64c)
  *
  * Raw bytecode can't ride this line-oriented console directly (chunks contain
- * '\n'/NUL and sh_gets is line-based), hence the hex framing. This dev image
- * still has the parser, so it accepts frames *alongside* source lines: the same
- * line fed as source and as a frame must produce identical output. */
+ * '\n'/NUL and sh_gets is line-based), hence the hex framing. #LC frames are the
+ * only executable input the REPL accepts; anything else is rejected (see repl). */
 #define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
 
 /* Read the next hex digit off the console, skipping the whitespace the sender
@@ -825,8 +804,10 @@ static int load_lc_frame(lua_State *L, const char *line)
   }
   skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
 
-  /* "=stdin" chunkname matches the pipe's luaL_loadbuffer name; mode is the
-   * default "bt" so this same call still loads source in the parser-ful image. */
+  /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
+   * starts with LUA_SIGNATURE, so lua_load takes the lundump (bytecode) branch;
+   * a non-bytecode payload would hit the guarded f_parser text branch and error
+   * (there is no parser in this image, #128). */
   int status = luaL_loadbuffer(L, buf, (size_t)len, "=stdin");
   free(buf);
   return status;
@@ -857,15 +838,18 @@ static void repl(lua_State *L)
   char line[REPL_LINE];
   sh_puts("> ");
   while (sh_gets(line, sizeof line) != NULL) {
-    int status;
-    if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':')
-      status = load_lc_frame(L, line); /* off-device luac bytecode */
-    else
-      status = load_line(L, line); /* Lua source (parser-ful dev image) */
-    if (status != LUA_OK)
-      report(L); /* compile / frame error */
-    else
-      run_chunk(L);
+    if (line[0] == '\n' || line[0] == '\0') {
+      /* blank line: no-op, just re-prompt (matches the stock lua prompt) */
+    } else if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':') {
+      if (load_lc_frame(L, line) != LUA_OK) /* off-device luac bytecode */
+        report(L);                          /* frame error */
+      else
+        run_chunk(L);
+    } else {
+      /* Bytecode-only build (#128): no on-device parser. Source is compiled
+       * off-device (tools/luac) and sent as an #LC frame - see luash.py. */
+      sh_puts("bytecode-only build: send #LC frames (see tools/luac)\n");
+    }
     sh_puts("> ");
   }
 }
@@ -900,7 +884,9 @@ int main(void)
   }
   open_trimmed_libs(L);
 
-  if (luaL_dostring(L, DEMO) != LUA_OK)
+  /* Load + run the resident boot chunk (precompiled bytecode; see boot_lc.h). */
+  if (luaL_loadbuffer(L, (const char *)boot_lc, sizeof boot_lc, "=boot") != LUA_OK
+      || lua_pcall(L, 0, 0, 0) != LUA_OK)
     report(L);
 
   repl(L);

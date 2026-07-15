@@ -235,7 +235,9 @@ static void f_luaopen (lua_State *L, void *ud) {
   init_registry(L, g);
   luaS_init(L);
   luaT_init(L);
-  luaX_init(L);
+#ifndef LUA_NOPARSER
+  luaX_init(L);  /* interns reserved words + _ENV; parser-only (see lparser.c) */
+#endif
   g->gcstp = 0;  /* allow gc */
   setnilvalue(&g->nilvalue);  /* now state is complete */
   luai_userstateopen(L);

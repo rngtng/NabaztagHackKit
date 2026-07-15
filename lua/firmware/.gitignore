@@ -1,5 +1,7 @@
 # build artifacts - rebuilt in Docker
 /bin/
 /obj/
+# generated boot bytecode header (tools/luac/embed.py, #128) - rebuilt each build
+/gen/
 # JTAG flash backups (M2, #90) - never commit device dumps
 /backups/

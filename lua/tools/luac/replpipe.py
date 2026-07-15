@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Convert Lua REPL input into the lua-firmware #LC bytecode-frame stream (#133).
 
-The parser-less wifi image (M11, #119) only loads luac bytecode, so the REPL is
-fed compiled chunks instead of source. Raw bytecode can't ride the line-oriented
+The parser-less firmware (#128) only loads luac bytecode, so the REPL is fed
+compiled chunks instead of source. Raw bytecode can't ride the line-oriented
 UART console (chunks contain '\\n'/NUL), so each chunk is framed as:
 
     #LC:<len>\\n            header line, len = chunk size in bytes (decimal)
@@ -10,10 +10,9 @@ UART console (chunks contain '\\n'/NUL), so each chunk is framed as:
 
 Two input modes, chosen by extension (override with --lua/--lc):
 
-  *.lua : one frame per source line, compiled with the same expression-first
-          fallback the device's load_line uses ("return <line>", then the line
-          verbatim) - so a bare expression echoes its value and the prompt count
-          matches feeding the source directly. A line that fails both ways is
+  *.lua : one frame per source line, compiled expression-first ("return <line>",
+          then the line verbatim) - so a bare expression echoes its value and the
+          prompt count matches one chunk per line. A line that fails both ways is
           reported on stderr and emitted as nothing (mirrors nothing the device
           could round-trip; keep round-trip scripts error-free).
 

@@ -122,9 +122,11 @@ def in_periph(addr):
 
 
 class Sim:
-    def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False):
+    def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False,
+                 console_only=False):
         self.budget = budget
         self.verbose = verbose
+        self.console_only = console_only   # batch: stdout = raw transcript only
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
         self._periph_pages = set()
         self.periph_writes = 0
@@ -311,15 +313,17 @@ class Sim:
     def _on_main(self, uc, address, size, _ud):
         if not self.reached_main:
             self.reached_main = True
-            # stderr in interactive mode so it stays out of the live REPL stream.
-            log = sys.stderr if self.interactive else sys.stdout
+            # stderr when the stream must stay a pure transcript (live REPL or
+            # --console-only golden test), stdout otherwise.
+            log = sys.stderr if (self.interactive or self.console_only) else sys.stdout
             print(f"  -> reached main() @ 0x{address:08x}", file=log, flush=True)
 
     # -- run --------------------------------------------------------------------
     def run(self):
         u = self.uc
-        # In interactive mode keep stdout pure REPL; diagnostics go to stderr.
-        log = sys.stderr if self.interactive else sys.stdout
+        # Keep stdout a pure transcript when interactive (live) or --console-only
+        # (batch golden test); route diagnostics to stderr in both.
+        log = sys.stderr if (self.interactive or self.console_only) else sys.stdout
         print(f"entry = 0x{self.entry:08x}"
               + (f", main = 0x{self.main_addr:08x}" if self.main_addr else "")
               + f", budget = {self.budget} insns", file=log)
@@ -334,7 +338,11 @@ class Sim:
         print(f"  peripheral wr   = {self.periph_writes}", file=log)
         # Interactive already streamed the console live; only dump it in batch mode.
         if self.console and not self.interactive:
-            print(f"  console output = {self.console.decode('latin1')!r}", file=log)
+            if self.console_only:
+                sys.stdout.buffer.write(self.console)   # raw transcript, no repr
+                sys.stdout.buffer.flush()
+            else:
+                print(f"  console output = {self.console.decode('latin1')!r}", file=log)
         return 0 if self.reached_main else 1
 
 
@@ -355,6 +363,9 @@ def main():
     ap.add_argument("-I", "--interactive", action="store_true",
                     help="live REPL: read UART input from this terminal and echo "
                          "the console to stdout (run the container with -it)")
+    ap.add_argument("--console-only", action="store_true",
+                    help="batch: write ONLY the raw console transcript to stdout "
+                         "(diagnostics to stderr) - for golden-output tests")
     args = ap.parse_args()
     if args.input_file:
         with open(args.input_file, "rb") as fh:
@@ -364,7 +375,8 @@ def main():
     # Interactive sessions run open-ended (stop on Ctrl-D/EOF), so default to a
     # large budget; batch runs keep the small default unless overridden.
     budget = args.budget if args.budget is not None else (2_000_000_000 if args.interactive else 300_000)
-    sys.exit(Sim(args.elf, budget, args.verbose, stdin, args.interactive).run())
+    sys.exit(Sim(args.elf, budget, args.verbose, stdin, args.interactive,
+                 args.console_only).run())
 
 
 if __name__ == "__main__":
