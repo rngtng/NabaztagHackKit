@@ -22,9 +22,10 @@ includes:
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: the firmware image builds (fails loudly on flash overflow).'
+    desc: 'Definition of done for the Lua (V2) layer: the firmware image builds (fails loudly on flash overflow) and the bytecode pipeline round-trips (test:luac golden transcript).'
     cmds:
       - task: firmware:build
+      - task: firmware:test:luac
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'

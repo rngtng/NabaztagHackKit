@@ -1,15 +1,15 @@
--- Round-trip fixture for the off-device luac pipe (#133).
+-- Golden-transcript fixture for the bytecode pipeline (#128).
 --
--- Fed to the REPL two ways - as source, and as #LC bytecode frames produced by
--- tools/luac/replpipe.py - it must produce byte-identical console output (see
--- `task test:firmwareV2:luac`). Keep it print-only and error-free: an error
--- would name its chunk ("=stdin" for a frame vs. [string "..."] for a parsed
--- line), and the differing chunknames would break that identity. Each line also
--- stands alone - the REPL compiles one chunk per line, so a `local` would not
--- survive to the next line; cross-line state uses globals.
+-- Compiled off-device to #LC frames (tools/luac/replpipe.py) and run on the
+-- parser-less sim, this must reproduce luac-roundtrip.expected byte-for-byte
+-- (`task lua:firmware:test:luac`). Regenerate the golden after editing:
+--   task lua:firmware:test:luac REGEN=1
 --
--- Mixes bare expressions (which the REPL echoes via print) with statements, to
--- exercise both the "return <line>" and verbatim compile paths.
+-- Keep it print-only and error-free. The REPL compiles one chunk per line, so a
+-- `local` would not survive to the next line - cross-line state uses globals.
+-- Comment/blank lines compile to empty chunks (each echoes a bare "> " prompt,
+-- proving they run cleanly). Mixes bare expressions (echoed via print) with
+-- statements, exercising replpipe's "return <line>" and verbatim compile paths.
 print("luac round-trip")
 1 + 2
 "nabaztag" .. "-" .. "tag"

@@ -187,11 +187,12 @@ tasks:
         fi
 
   test:luac:
-    desc: 'Round-trip test the off-device luac pipe (#133): a Lua script fed as source vs. as #LC bytecode frames must produce identical simulator output.'
-    summary: 'Usage: task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua]'
+    desc: 'Golden-transcript test for the bytecode pipeline (#128): compile a Lua script off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden. This exercises luac -> frame -> lundump -> run -> print end to end. REGEN=1 rewrites the golden.'
+    summary: 'Usage: task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua] [EXPECT=apps/luac-roundtrip.expected] [REGEN=1]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
       SCRIPT: '{{.SCRIPT | default "apps/luac-roundtrip.lua"}}'
+      EXPECT: '{{.EXPECT | default "apps/luac-roundtrip.expected"}}'
     deps:
       - task: build
         vars: {APP: lua}
@@ -200,37 +201,39 @@ tasks:
       - task: luac:image            # host luac, used by replpipe.py below
         vars: {WORKDIR: '{{.REPO}}'}
     cmds:
-      # Feed SCRIPT to the sim two ways - verbatim source and replpipe-framed
-      # bytecode - and require byte-identical console output. Same elf + budget,
-      # so the only variable is the input encoding. Real nonzero exit on drift.
       - |
         set -e
         SIM={{.SIM_IMAGE}}
         BIN="$(realpath bin)"
-        SRC="$(realpath '{{.REPO}}/{{.SCRIPT}}')"
+        EXP="{{.REPO}}/{{.EXPECT}}"
         # The framed file is bind-mounted into the sim, so it must live under a
         # Docker-shared host path. colima shares only the home tree (/Users), not
         # /tmp or /var/folders, so a bare mktemp would mount as an empty dir. Put
         # it under the repo (REPO is under /Users) and clean it up.
         FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
         python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$FR"
-        run() { docker run --rm -v "$BIN:/mnt:ro" -v "$1:/in:ro" "$SIM" \
-                  -n 120000000 --input-file /in /mnt/lua.elf; }
-        A="$(run "$SRC")"; B="$(run "$FR")"
-        # Guard against a false pass: if the REPL never reaches the prompt (e.g. a
-        # sim hang in init/DEMO), both runs emit no transcript and A==B trivially.
-        # Require the fixture's first print to actually appear before comparing.
-        case "$A" in
+        # Run the frames on the parser-less sim; --console-only keeps stdout a
+        # pure transcript (emulator stats go to stderr).
+        GOT="$(docker run --rm -v "$BIN:/mnt:ro" -v "$FR:/in:ro" "$SIM" \
+                 --console-only -n 120000000 --input-file /in /mnt/lua.elf)"
+        # Guard a false pass: an init/boot hang yields an empty transcript that
+        # would match an empty golden. Require the fixture's first print.
+        case "$GOT" in
           *"luac round-trip"*) : ;;
-          *) echo "luac round-trip: no REPL output - the sim never reached the prompt ✗"
-             echo "  source-run stdout was: $A"
-             exit 1 ;;
+          *) echo "test:luac: no REPL output - the sim never reached the prompt ✗"
+             printf '%s\n' "$GOT"; exit 1 ;;
         esac
-        if [ "$A" = "$B" ]; then
-          echo "luac round-trip: source == #LC bytecode, output identical ✓"
+        if [ -n "{{.REGEN}}" ]; then
+          printf '%s\n' "$GOT" > "$EXP"
+          echo "test:luac: regenerated golden $EXP ✓"
+          exit 0
+        fi
+        if [ "$GOT" = "$(cat "$EXP")" ]; then
+          echo "test:luac: bytecode transcript matches the golden ✓"
         else
-          echo "luac round-trip MISMATCH (source vs bytecode):"
-          diff <(printf '%s\n' "$A") <(printf '%s\n' "$B") || true
+          echo "test:luac MISMATCH (golden $EXP vs bytecode run):"
+          diff <(cat "$EXP") <(printf '%s\n' "$GOT") || true
+          echo "If the change is intended: task lua:firmware:test:luac REGEN=1"
           exit 1
         fi
 
