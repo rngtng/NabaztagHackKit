@@ -32,6 +32,9 @@
 #include "hal/rfid.h"
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
+#include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
+#include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
+#include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
 
@@ -649,8 +652,28 @@ static int nab_sciw(lua_State *L)
   return 0;
 }
 
+/* nab.wifi(ssid [, psk]) -> true on connect, or (nil, message). Blocking:
+ * brings up the USB RT2501 dongle (cold-boot + firmware upload + radio settle),
+ * scans for ssid, then runs the WPA/WPA2 join (auth + assoc + 4-way handshake),
+ * pumping until connected or ~30 s. psk is required for an encrypted AP; omit
+ * (or "") for an open one. The whole USB + 802.11 stack is pulled into the
+ * image only because this binding references it (see hal/wifi.c). */
+static int nab_wifi(lua_State *L)
+{
+  const char *ssid = luaL_checkstring(L, 1);
+  const char *psk = luaL_optstring(L, 2, "");
+  if (wifi_connect(ssid, psk, 30000) != 0) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "wifi: could not connect to '%s'", ssid);
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
+    {"wifi", nab_wifi},
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
@@ -864,6 +887,8 @@ static void init_hw(void)
   MODE_LED_CLEAR;
   init_spi();
   init_led_rgb_driver();
+  init_irq();    /* interrupt controller + the 1 ms tick (init_tick): */
+  init_tick();   /* counter_timer, the clock the wifi stack runs on */
   init_button();
   init_vlsi();   /* VS1003 audio codec on SPI0, for nab.beep/volume */
   init_adc();    /* ADC ch.2 (PD2), for nab.wheel() */
