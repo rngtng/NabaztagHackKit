@@ -46,12 +46,6 @@ const uint8_t ieee80211_null_address[IEEE80211_ADDR_LEN] =
 const uint8_t ieee80211_multicast_address[IEEE80211_ADDR_LEN] =
 { 0x01, 0x00, 0x5e, 0xff, 0xff, 0xff };
 
-static const uint8_t ieee80211_vendor_wpa_id[] =
-{ 0x00, 0x50, 0xf2, 0x01, 0x01, 0x00 };
-
-static const uint8_t ieee80211_wpa_oui[IEEE80211_OUI_LEN] =
-{ 0x00, 0x50, 0xf2, 0x00 };
-
 static const uint8_t ieee80211_wpa2_oui[IEEE80211_OUI_LEN] =
 { 0x00, 0x0f, 0xac, 0x00 };
 
@@ -213,35 +207,13 @@ static uint16_t ieee80211_mask_to_rt2501mask(unsigned short ieee80211mask)
 
 static uint8_t ieee80211_crypt_to_rt2501cipher(uint8_t crypt)
 {
-	switch(crypt&0xF0) 
+	/* WPA2-CCMP only (#124): WEP and TKIP are no longer mapped. */
+	switch(crypt&0xF0)
 	{
-		case IEEE80211_CRYPT_WEP:
-      switch(crypt)
-      {
-        case IEEE80211_CRYPT_WEP64:
-          return RT2501_CIPHER_WEP64;
-        case IEEE80211_CRYPT_WEP128:
-          return RT2501_CIPHER_WEP128;
-        default:
-					DBG_WIFI("Unknown WEP Crypt");
-          break;
-      };
-      /* No break here would fall through into the WPA case below and
-       * mis-parse crypt&0x0F (a WEP key-length subtype) as a WPA cipher.
-       * Unknown WEP → the safe RT2501_CIPHER_NONE default at the bottom. */
-      break;
-    case IEEE80211_CRYPT_WPA:
     case IEEE80211_CRYPT_WPA2:
-      switch(crypt&0x0F)
-      {
-        case IEEE80211_CIPHER_TKIP:
-          return RT2501_CIPHER_TKIP;
-        case IEEE80211_CIPHER_CCMP:
-          return RT2501_CIPHER_AES;
-        default:
-					DBG_WIFI("Unknown WPA Crypt");
-          break;
-      };
+      if((crypt&0x0F) == IEEE80211_CIPHER_CCMP)
+        return RT2501_CIPHER_AES;
+      DBG_WIFI("Unknown WPA Crypt");
       break;
     case IEEE80211_CRYPT_NONE:
 			return RT2501_CIPHER_NONE;
@@ -688,51 +660,9 @@ static void O1_FN ieee80211_associate(void)
 
   switch(ieee80211_encryption&0xF0)
   {
-    case IEEE80211_CRYPT_WPA:
-      *(write_ptr++) = IEEE80211_ELEMID_VENDOR;
-      *(write_ptr++) = 0x16;//+4;
-      for(i=0;i<sizeof(ieee80211_vendor_wpa_id);i++)
-        *(write_ptr++) = ieee80211_vendor_wpa_id[i];
-      /* Multicast cipher suite: TKIP */
-      for(i=0;i<IEEE80211_OUI_LEN-1;i++)
-        *(write_ptr++) = ieee80211_wpa_oui[i];
-      *(write_ptr++) = IEEE80211_CIPHER_TKIP;
-      /* 1 unicast cipher suite */
-      *(write_ptr++) = 0x01;
-      *(write_ptr++) = 0x00;
-      /* Unicast cipher suites: TKIP or CCMP */
-      for(i=0;i<IEEE80211_OUI_LEN-1;i++)
-        *(write_ptr++) = ieee80211_wpa_oui[i];
-      *(write_ptr++) = IEEE80211_CIPHER_TKIP;
-      //for(i=0;i<IEEE80211_OUI_LEN;i++)
-      //  *(write_ptr++) = ieee80211_wpa_oui[i];
-      //*(write_ptr-1) = IEEE80211_CIPHER_TKIP;
-      /* 1 auth key management suite */
-      *(write_ptr++) = 0x01;
-      *(write_ptr++) = 0x00;
-      /* Auth key management suites: PSK */
-      for(i=0;i<IEEE80211_OUI_LEN;i++)
-        *(write_ptr++) = ieee80211_wpa_oui[i];
-      *(write_ptr-1) = IEEE80211_AUTH_PSK;
-      break;
     case IEEE80211_CRYPT_WPA2:
-      /* Okay, so... Both TKIP and CCMP are available, pick CCMP
-       * Note: This "hack" is quite fragile since it relies on hardcoded bit values
-       *       that "magically" become IEEE80211 compatible cipher values.
-       *       It also works because we only support two ciphers: TKIP and CCMP) as
-       *       it uses all four available low bits in ieee80211_encryption
-       *
-       * There's one more line for the hack just before the "break"
-       */
-      if(ieee80211_encryption&0x08)       /* 0x08 = 0b1000 */     /* Group cipher */
-        ieee80211_encryption &= ~(0x04);  /* 0x04 = 0b0100 */
-      if(ieee80211_encryption&0x02)       /* 0x02 = 0b0010 */     /* Pairwise cipher */
-        ieee80211_encryption &= ~0x01;    /* 0x01 = 0b0001 */
-#ifdef DEBUG_WIFI
-      sprintf(dbg_buffer,"ieee80211_assoc Encryption: 0x%02X"EOL,ieee80211_encryption);
-      DBG_WIFI(dbg_buffer);
-#endif
-
+      /* WPA2-CCMP only (#124): rt2501_auth guarantees group+pairwise CCMP
+       * here, so the RSN IE is fixed - no cipher negotiation bits left. */
       *(write_ptr++) = 0x30;   // RSN IE
       *(write_ptr++) = 0x14;//+4; // Length
       *(write_ptr++) = 0x01;   // Version
@@ -740,14 +670,14 @@ static void O1_FN ieee80211_associate(void)
       /* Group cipher: AES */
       for(i=0;i<IEEE80211_OUI_LEN-1;i++)
         *(write_ptr++) = ieee80211_wpa2_oui[i];
-      *(write_ptr++) = (ieee80211_encryption&0x0C)>>1; /* 0x0C = 0b1100 */
+      *(write_ptr++) = IEEE80211_CIPHER_CCMP;
       /* 1 pairwise */
       *(write_ptr++) = 0x01;
       *(write_ptr++) = 0x00;
-      /* Unicast cipher: TKIP or AES */
+      /* Unicast cipher: AES */
       for(i=0;i<IEEE80211_OUI_LEN-1;i++)
         *(write_ptr++) = ieee80211_wpa2_oui[i];
-      *(write_ptr++) = (ieee80211_encryption&0x03)<<1; /* 0x03 = 0b0011 */
+      *(write_ptr++) = IEEE80211_CIPHER_CCMP;
       /* 1 auth key management */
       *(write_ptr++) = 0x01;
       *(write_ptr++) = 0x00;
@@ -758,8 +688,7 @@ static void O1_FN ieee80211_associate(void)
           /* RSN Capability */
       *(write_ptr++) = 0x00;
       *(write_ptr++) = 0x00;
-      /* Final line for this hack, reset "normal" cipher using pairwise cipher 0x03 = 0b0011 */
-      ieee80211_encryption = (ieee80211_encryption&0xF0)|((ieee80211_encryption&0x03)<<1);
+      ieee80211_encryption = IEEE80211_CRYPT_WPA2|IEEE80211_CIPHER_CCMP;
       break;
     default:
 #ifdef DEBUG_WIFI
@@ -1127,6 +1056,9 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 					scan_result.channel = 0;
 					scan_result.rssi = rssi;
 					scan_result.rateset = 0;
+					/* CCMP only (#124): the WPA1 vendor-IE parse is gone, so any
+					 * encrypted AP without a WPA2/CCMP RSN IE keeps this WEP label
+					 * (= legacy/unsupported) and is rejected by rt2501_auth. */
 					if(capinfo & IEEE80211_CAPINFO_PRIVACY)
 						scan_result.encryption = IEEE80211_CRYPT_WEP;
 					else
@@ -1167,6 +1099,8 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 //frame_current += frame_current[1];
 
                 current = &frame_current[2];
+                /* CCMP only (#124): a TKIP group or pairwise suite no longer
+                 * counts as supported - the join path can't key it. */
                 /* Element 1: Group cipher suites (OUIs) */
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
@@ -1175,13 +1109,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 for(i=0;i<count;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
-                    {
-                      found = 1;
-                      scan_result.encryption |= IEEE80211_CIPHER_TKIP<<1;
-                      DBG_WIFI("GROUP TKIP supported"EOL);
-                    }
-                    else if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
+                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
                     {
                       found = 1;
                       scan_result.encryption |= IEEE80211_CIPHER_CCMP<<1;
@@ -1201,13 +1129,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 for(i=0;i<count;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
-                    {
-                      found = 1;
-                      scan_result.encryption |= IEEE80211_CIPHER_TKIP>>1;
-                      DBG_WIFI("Pairwise TKIP supported"EOL);
-                    }
-                    else if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
+                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
                     {
                       found = 1;
                       scan_result.encryption |= IEEE80211_CIPHER_CCMP>>1;
@@ -1242,76 +1164,6 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 frame_current += frame_current[1];
                 break;
               }
-							case IEEE80211_ELEMID_VENDOR:
-              {
-								/* Check for WPA */
-								uint8_t *current;
-								uint16_t count;
-								int32_t found;
-
-								/* Minimal size of a WPA element */
-								if(frame_current[1] < 22) break;
-
-                if(scan_result.encryption == IEEE80211_CRYPT_WPA2)
-                  break;
-
-								/* Check RSN IE */
-								current = &frame_current[2];
-								if(memcmp(current, ieee80211_vendor_wpa_id, sizeof(ieee80211_vendor_wpa_id)) != 0) break;
-								current += sizeof(ieee80211_vendor_wpa_id);
-								DBG_WIFI("WPA supported"EOL);
-
-								/* Element 1: Multicast cipher suite (OUI) */
-								if(memcmp(current, ieee80211_wpa_oui, IEEE80211_OUI_LEN-1) != 0) {
-									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
-									break;
-								}
-								current += IEEE80211_OUI_LEN;
-
-								/* Element 2: Number of unicast cipher suites, 2 bytes */
-								count = (current[0] << 0)|(current[1] << 8);
-								current += 2;
-
-								/* Element 3: Unicast cipher suites (OUIs) */
-								found = 0;
-								for(i=0;i<count;i++) {
-                  if(memcmp(current, ieee80211_wpa_oui,  IEEE80211_OUI_LEN-1) == 0)
-                  {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP ||
-                        *(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
-                      found = 1;
-                  }
-                  current += IEEE80211_OUI_LEN;
-								}
-								if(!found) {
-									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
-									break;
-								}
-
-								/* Element 4: Number of auth key management suites, 2 bytes */
-								count = (current[0] << 0)|(current[1] << 8);
-								current += 2;
-
-								/* Element 5: Auth key management suites (OUIs) */
-								found = 0;
-								for(i=0;i<count;i++) {
-                  if(memcmp(current, ieee80211_wpa_oui,  IEEE80211_OUI_LEN-1) == 0)
-                  {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP ||
-                        *(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
-                      found = 1;
-                  }
-                  current += IEEE80211_OUI_LEN;
-								}
-								if(!found) {
-									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
-									DBG_WIFI("Unsupported encryption"EOL);
-									break;
-								}
-
-								scan_result.encryption = IEEE80211_CRYPT_WPA;
-								break;
-							}
 							default:
 								break;
 						}
@@ -1444,8 +1296,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 				ieee80211_rssi_sample_index = 0;
 				ieee80211_rssi_average = -100;
 				/* ieee80211_txrate was filled at auth */
-				if((ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA ||
-           (ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA2) {
+				if((ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA2) {
 					ieee80211_state = IEEE80211_S_EAPOL;
 					ieee80211_timeout = IEEE80211_EAPOL_TIMEOUT;
 				} else {
@@ -1920,30 +1771,22 @@ void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 			ieee80211_authmode = IEEE80211_AUTH_OPEN;
 			rt2501_set_key(0, NULL, NULL, NULL, RT2501_CIPHER_NONE);
 			break;
-		case IEEE80211_CRYPT_WEP:
-      ieee80211_authmode = authmode;
-      if(strlen((char*)&key) > 8)
-      {
-        ieee80211_encryption = IEEE80211_CRYPT_WEP128;
-        memcpy(ieee80211_key, key, IEEE80211_WEP128_KEYLEN);
-        rt2501_set_key(0, ieee80211_key, NULL, NULL, RT2501_CIPHER_WEP128);
-      }
-      else
-      {
-        ieee80211_encryption = IEEE80211_CRYPT_WEP64;
-        memcpy(ieee80211_key, key, IEEE80211_WEP64_KEYLEN);
-        rt2501_set_key(0, ieee80211_key, NULL, NULL, RT2501_CIPHER_WEP64);
-      }
-			break;
-		case IEEE80211_CRYPT_WPA:
     case IEEE80211_CRYPT_WPA2:
+      /* CCMP only (#124): scan encodes group CCMP as 0x08 and pairwise CCMP
+       * as 0x02 (IEEE80211_CIPHER_CCMP shifted); require both - a TKIP-only
+       * or mixed-group network can't be joined without the dropped TKIP
+       * key paths. WEP and WPA1 fall through to the reject below. */
+      if((ieee80211_encryption & 0x0A) != 0x0A) {
+        DBG_WIFI("Non-CCMP WPA2 network, reject (CCMP-only build)"EOL);
+        return;
+      }
 			ieee80211_authmode = IEEE80211_AUTH_OPEN;
 			memcpy(ieee80211_key, key, IEEE80211_MAX_KEYLEN);
 			rt2501_set_key(0, NULL, NULL, NULL, RT2501_CIPHER_NONE);
 			eapol_init();
 			break;
 		default:
-      sprintf(dbg_buffer,"Unknown encryption specified: %d"EOL,ieee80211_encryption);
+      sprintf(dbg_buffer,"Unsupported encryption specified (CCMP-only build): %d"EOL,ieee80211_encryption);
 			DBG_WIFI(dbg_buffer);
 			return;
 	}
@@ -2067,9 +1910,7 @@ int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_m
 		encryption = IEEE80211_CRYPT_NONE;
 	} else {
 		fr->header.i_fc[0] |= IEEE80211_FC0_SUBTYPE_DATA;
-		if(((ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA ||
-        (ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA2
-       ) &&
+		if((ieee80211_encryption&0xF0) == IEEE80211_CRYPT_WPA2 &&
        (eapol_state == EAPOL_S_MSG1 || eapol_state == EAPOL_S_MSG3)
       )
       encryption = IEEE80211_CRYPT_NONE;
@@ -2086,29 +1927,11 @@ int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_m
 		fr->header.i_fc[1] |= IEEE80211_FC1_PROTECTED;
 
 	switch(encryption&0xF0) {
-		case IEEE80211_CRYPT_NONE:
-			encryption_overhead = 0;
-			break;
-		case IEEE80211_CRYPT_WEP:
-			encryption_overhead = 8; /* IV[4] + ICV [4] */
-			break;
-		case IEEE80211_CRYPT_WPA:
     case IEEE80211_CRYPT_WPA2:
-      {
-        switch(encryption&0x0F)
-        {
-          case IEEE80211_CIPHER_TKIP:
-            encryption_overhead = 20; /* (TKIP) IV[8] + MIC[8] + ICV[4] */
-            break;
-          case IEEE80211_CIPHER_CCMP:
-            encryption_overhead = 16; /* (AES/CCMP) header[8] + MIC[8]; TKIP's 20 above does not apply */
-            break;
-          default:
-            break;
-        };
-        break;
-      }
-    default:
+      encryption_overhead = 16; /* (AES/CCMP) header[8] + MIC[8] */
+      break;
+    default: /* IEEE80211_CRYPT_NONE - nothing else survives rt2501_auth */
+      encryption_overhead = 0;
       break;
 	};
 
@@ -2156,42 +1979,9 @@ int32_t rt2501_send(const uint8_t *frame, uint32_t length, const uint8_t *dest_m
 	);
 	switch(encryption&0xF0)
   {
-      case IEEE80211_CRYPT_WEP:
-        fr->txd.Iv = rand() & 0x00ffffff;
-        fr->txd.IvOffset = sizeof(struct ieee80211_frame);
-        break;
-      case IEEE80211_CRYPT_WPA:
       case IEEE80211_CRYPT_WPA2:
         switch(encryption & 0x0F)
         {
-          case IEEE80211_CIPHER_TKIP:
-            {
-              struct ieee80211_tkip_iv iv;
-              uint32_t i;
-
-              iv.iv16.field.rc0 = ptk_tsc[1];
-              iv.iv16.field.rc1 = (iv.iv16.field.rc0 | 0x20) & 0x7f;
-              iv.iv16.field.rc2 = ptk_tsc[0];
-              iv.iv16.field.control.field.reserved = 0;
-              iv.iv16.field.control.field.ext_iv = 1;
-              iv.iv16.field.control.field.key_id = 0;
-          //		iv.iv32 = *((uint32_t *)&ptk_tsc[2]);
-                          iv.iv32 = ptk_tsc[2] | (ptk_tsc[3] << 8) | (ptk_tsc[4] << 16) | (ptk_tsc[5] << 24);
-
-              fr->txd.Iv = iv.iv16.word;
-              fr->txd.Eiv = iv.iv32;
-              fr->txd.IvOffset = sizeof(struct ieee80211_frame);
-
-              i = 0;
-              while(++ptk_tsc[i] == 0) {													\
-                i++;
-                if(i == EAPOL_TSC_LENGTH) {
-                  DBG_WIFI("TSC cycle !!!"EOL);
-                  break;
-                }
-              }
-            }
-            break;
           case IEEE80211_CIPHER_CCMP:
             {
               struct ieee80211_ccmp_iv iv;

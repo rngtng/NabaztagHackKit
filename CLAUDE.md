@@ -63,12 +63,14 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf`: ~14.6 KB free of 124 KB internal flash (112,052 B used): the
-  raw-frame/AP `nab.wifi_*` bindings (#216, ~0.8 KB) + `nab.config` (#214,
-  836 B measured) on top of the #212 rand/assert shim + #213
-  double-soft-float/ldump scavenges.** The
-  `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA/crypto stack
-  (~27 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
+- **`lua.elf`: ~18.4 KB free of 124 KB internal flash (108,156 B used): the #124
+  WPA2-CCMP-only scavenge (WEP/WPA1/TKIP dropped - HMAC-MD5, RC4, the WPA1
+  IE/scan-parse and every TKIP branch, 3,896 B) on top of the raw-frame/AP
+  `nab.wifi_*` bindings (#216, ~0.8 KB) + `nab.config` (#214, 836 B) + the #212
+  rand/assert shim + #213 double-soft-float/ldump scavenges. `nab.wifi` joins
+  open or WPA2-PSK(AES) networks only; anything else is rejected at scan/auth.** The
+  `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA2/crypto stack
+  (~23 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
   re-linked newlib's stdio FILE layer via `rand → assert → fiprintf` (~9 KB, the
   M7.5/#106 win undone). `lua/firmware/src/libc_shim.c` (local `rand`/`srand`/
   `__assert_func`) reclaims that; a new libc call that grows the image needs the
