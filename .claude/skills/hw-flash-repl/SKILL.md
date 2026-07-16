@@ -25,7 +25,8 @@ halts the CPU - use it for the REPL, probe output, and anything timing-sensitive
 (USB/WiFi). Read/driven via `task lua:firmware:repl:hw`.
 
 Raw manual read on the Pi (when you want the stream without the REPL driver):
-`sudo systemctl stop serial-getty@ttyAMA0` (re-enables on reboot), then
+`sudo systemctl stop serial-getty@ttyAMA0` (deliberately not `disable`d - do
+this every session, re-enables on reboot; #203), then
 `sudo stty -F /dev/serial0 38400 raw -echo; sudo cat /dev/serial0`. Link sanity
 check: `task lua:firmware:flash APP=uartprobe` -> a repeating
 `NAB-UART-PROBE alive @38400 8N1` banner. Dead line without a scope:

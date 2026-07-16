@@ -45,11 +45,13 @@ SECTIONS
 
   /* NOTE: the ALIGN(4) above lives INSIDE each flash section (not after it) so
    * the padding bytes are actually emitted, making every section's SIZE a
-   * multiple of 4. The ml67q40xx OpenOCD flash driver's block-write path
-   * programs `count/4` words and silently DROPS a trailing partial word, so a
-   * loadable image whose byte length is not a multiple of 4 loses its last
-   * 1-3 bytes on flash (compare-sections then reports MIS-MATCHED). Word-
-   * padding the sections sidesteps that driver bug without an OpenOCD rebuild. */
+   * multiple of 4. This is now defensive: the ml67q40xx OpenOCD flash driver's
+   * block-write path used to program `count/4` words and silently DROP a
+   * trailing partial word, so a loadable image whose byte length was not a
+   * multiple of 4 lost its last 1-3 bytes on flash (compare-sections then
+   * reported MIS-MATCHED). Fixed at the driver in the patched OpenOCD on the Pi
+   * (lua/tools/openocd/patches/ml67q40xx-tail-drop.patch, #203); word-padding
+   * here keeps images safe against an unpatched/older OpenOCD too. */
   PROVIDE (etext = .);
 
   /* .data section which is used for initialized data */
