@@ -33,6 +33,7 @@
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
+#include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
 #include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
 
@@ -795,12 +796,67 @@ static int nab_wifi_recv(lua_State *L)
   return 2;
 }
 
+/* Copy string field `k` of the table at index 1 into dst (missing/nil -> "").
+ * Errors out on a non-string value or one that overflows the field - the
+ * binding owns the sector layout, so bounds are enforced here, not in Lua. */
+static void cfg_field(lua_State *L, const char *k, char *dst, size_t cap)
+{
+  lua_getfield(L, 1, k);
+  size_t len = 0;
+  const char *s = "";
+  if (!lua_isnil(L, -1))
+    s = lua_tolstring(L, -1, &len);
+  if (s == NULL || len >= cap)
+    luaL_error(L, "config: bad %s", k);
+  memcpy(dst, s, len);
+  dst[len] = '\0';
+  lua_pop(L, 1);
+}
+
+/* nab.config() -> {ssid=,psk=,url=} or nil: the record persisted in the
+ * internal-flash config sector (last 4 KB - survives power cycles; nil until
+ * first written). nab.config{ssid=..., psk=..., url=...} -> boolean: persist
+ * the record (missing keys become ""); ssid <= 32, psk <= 64, url <= 64
+ * chars. The sector is erase-cycled per write, so a record identical to what
+ * flash already holds is skipped and returns false; true means erased,
+ * programmed and verified by read-back (~63 ms with interrupts masked - see
+ * hal/config.h). Only the struct crosses the seam: no address or length is
+ * ever taken from Lua (sandbox principle 5). */
+static int nab_config(lua_State *L)
+{
+  nab_config_t cfg;
+  if (lua_isnoneornil(L, 1)) {
+    if (config_load(&cfg) != 0) {
+      lua_pushnil(L);
+      return 1;
+    }
+    lua_createtable(L, 0, 3);
+    lua_pushstring(L, cfg.ssid);
+    lua_setfield(L, -2, "ssid");
+    lua_pushstring(L, cfg.psk);
+    lua_setfield(L, -2, "psk");
+    lua_pushstring(L, cfg.url);
+    lua_setfield(L, -2, "url");
+    return 1;
+  }
+  luaL_checktype(L, 1, LUA_TTABLE);
+  cfg_field(L, "ssid", cfg.ssid, sizeof cfg.ssid);
+  cfg_field(L, "psk", cfg.psk, sizeof cfg.psk);
+  cfg_field(L, "url", cfg.url, sizeof cfg.url);
+  int8_t rc = config_save(&cfg);
+  if (rc < 0)
+    return luaL_error(L, "config: write failed");
+  lua_pushboolean(L, rc == 0);
+  return 1;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"wifi", nab_wifi},
     {"wifi_ap", nab_wifi_ap},
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
+    {"config", nab_config},
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
