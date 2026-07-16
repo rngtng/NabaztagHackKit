@@ -108,8 +108,12 @@ no FPU/`double`):
   (fractional `^`→NaN), in-tree `snprintf`/`vsnprintf` - so number formatting doesn't pull
   newlib's FILE layer.
 
-`bin/lua.elf` uses ~84,900 B of 124 KB (**~41 KB free**). This is the **only** image and it
-is **parser-less by design** (decided in
+`bin/lua.elf` uses ~114,300 B of 124 KB (**~12.3 KB free**; ~27 KB of that growth is
+the M11 USB + 802.11/WPA wifi stack). Newlib's stdio FILE layer stays out only
+because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
+`__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
+vfprintf/FILE machinery back in via newlib's asserting archive members. This is the
+**only** image and it is **parser-less by design** (decided in
 [#128](https://github.com/rngtng/NabaztagHackKit/issues/128)): `lparser`/`llex`/`lcode` are
 dropped (~18.9 KB), so the rabbit runs *only* `luac` bytecode (`lundump` resident). There is
 no on-device compiler - all Lua, including every REPL line and the resident boot chunk, is
