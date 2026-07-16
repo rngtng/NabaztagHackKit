@@ -274,11 +274,24 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
         break;
       case 'f': case 'F': case 'e': case 'E':
       case 'g': case 'G': case 'a': case 'A': {
-        double dv = va_arg(ap, double);
-        long iv = (long)dv;
-        if (iv < 0 || (dv < 0 && iv == 0)) sign = '-';
+        /* Varargs promoted the float to a double (C default argument
+         * promotion, unavoidable through '...'), so take the IEEE-754 bits
+         * apart instead of doing double arithmetic - a single (long)dv or
+         * dv < 0 would link libgcc's double soft-float (~2.4 KB, #213).
+         * Output is the same integer part + ".0" as before. */
+        union { double d; uint64_t u; } fv;
+        fv.d = va_arg(ap, double);
+        int fexp = (int)((fv.u >> 52) & 0x7FF) - 1023;
+        uint64_t mant = (fv.u & 0xFFFFFFFFFFFFFULL) | (1ULL << 52);
+        unsigned long uv;
+        if (fexp < 0)
+          uv = 0;                                  /* |x| < 1, subnormals, 0 */
+        else if (fexp <= 52)
+          uv = (unsigned long)(mant >> (52 - fexp));
+        else                                       /* huge/inf/nan: low bits */
+          uv = (fexp - 52 < 64) ? (unsigned long)(mant << (fexp - 52)) : 0;
+        if (fv.u >> 63) sign = '-';
         else sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0;
-        unsigned long uv = (iv < 0) ? (unsigned long)(-(iv + 1)) + 1 : (unsigned long)iv;
         blen = pf_utoa(tmp, uv, 10, 0);
         tmp[blen++] = '.';
         tmp[blen++] = '0';
@@ -330,6 +343,47 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
   int r = vsnprintf(buf, size, fmt, ap);
   va_end(ap);
   return r;
+}
+
+/* ---- float -> string for Lua's number printing (#213) --------------------- */
+/* luaconf.h routes lua_number2str/lua_number2strx (lobject.c's tostringbuff,
+ * string.format's %a and %q-on-floats) here. Non-variadic on purpose: a float
+ * passed through '...' is promoted to double by the caller (C default argument
+ * promotion), which links libgcc's double soft-float (~2.4 KB). Same
+ * integer-part + ".0" output as the vsnprintf float stub (a real dtoa is still
+ * future work), with the integer part taken from the float's own bits so no
+ * double ever exists. snprintf contract: truncate to sz, NUL-terminate,
+ * return the untruncated length. */
+int luai_num2str(char *s, size_t sz, float n)
+{
+  union { float f; uint32_t u; } fv;
+  fv.f = n;
+  int fexp = (int)((fv.u >> 23) & 0xFF) - 127;
+  uint32_t mant = (fv.u & 0x7FFFFF) | (1UL << 23);
+  unsigned long uv;
+  if (fexp < 0)
+    uv = 0;                                      /* |x| < 1, subnormals, 0 */
+  else if (fexp <= 23)
+    uv = mant >> (23 - fexp);
+  else                                           /* huge/inf/nan: low bits */
+    uv = (fexp - 23 < 32) ? (unsigned long)mant << (fexp - 23) : 0;
+
+  char body[16];                                 /* -,10 digits,.,0 = 13 max */
+  int blen = 0;
+  if (fv.u >> 31)
+    body[blen++] = '-';
+  blen += pf_utoa(body + blen, uv, 10, 0);
+  body[blen++] = '.';
+  body[blen++] = '0';
+
+  size_t copy = (sz > 0) ? (size_t)blen : 0;
+  if (copy > 0 && copy > sz - 1)
+    copy = sz - 1;
+  for (size_t i = 0; i < copy; i++)
+    s[i] = body[i];
+  if (sz > 0)
+    s[copy] = '\0';
+  return blen;
 }
 
 /* ---- decimal string -> Lua number ---------------------------------------- */
@@ -443,7 +497,13 @@ LUA_NUMBER luai_fmod(LUA_NUMBER a, LUA_NUMBER b)
   if (b == 0)
     return LUAI_NAN;
   LUA_NUMBER q = a / b;
-  LUA_NUMBER n = (LUA_NUMBER)(long long)q;   /* truncate toward zero (C fmod) */
+  /* Truncate toward zero (C fmod). At |q| >= 2^24 every float is already
+   * integral, so only the small range needs the int round-trip - and (long)
+   * stays within single-float helpers. The former (long long) cast pulled
+   * __aeabi_f2lz, whose libgcc __fixunssfdi converts VIA DOUBLE, dragging in
+   * the double soft-float (~740 B: muldf3 + fixunsdfsi, #213). */
+  LUA_NUMBER n = (q >= 16777216.0f || q <= -16777216.0f)
+                     ? q : (LUA_NUMBER)(long)q;
   LUA_NUMBER m = a - n * b;                  /* remainder, sign of a */
   if (m != 0 && ((m < 0) != (b < 0)))        /* sign differs from b -> floor */
     m += b;

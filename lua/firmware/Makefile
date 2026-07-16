@@ -50,7 +50,10 @@ LUA_LIB  = lauxlib lbaselib lstrlib ltablib
 # only luac bytecode (see src/app/lua.c + tools/luac). The two remaining refs
 # into this trio - luaY_parser (ldo.c) and luaX_init (lstate.c) - are guarded
 # out by -DLUA_NOPARSER (below). lundump/lvm (bytecode load + run) stay.
-LUA_NOPARSE = lcode llex lparser
+# ldump (#213) is the same story on the way out: the device only *loads*
+# bytecode, never serialises it, so ldump.c and its refs (string.dump in
+# lstrlib.c, lua_dump in lapi.c) are dropped behind the same define.
+LUA_NOPARSE = lcode llex lparser ldump
 ifeq ($(APP),lua)
   C_FILES += $(patsubst %,lua/%.c,$(filter-out $(LUA_NOPARSE),$(LUA_CORE)) $(LUA_LIB))
 endif

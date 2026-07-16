@@ -63,7 +63,9 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf`: ~12.3 KB free of 124 KB internal flash (~114,300 B used).** The
+- **`lua.elf`: ~16.5 KB free of 124 KB internal flash (~110,100 B used) since the
+  #213 scavenge (double soft-float + ldump/string.dump dropped, ~4.2 KB on top of
+  #212's rand/assert shim).** The
   `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA/crypto stack
   (~27 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
   re-linked newlib's stdio FILE layer via `rand → assert → fiprintf` (~9 KB, the
@@ -71,12 +73,13 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `__assert_func`) reclaims that; a new libc call that grows the image needs the
   same treatment — check the map's "Archive member" section, don't trust
   gc-sections alone. Next large feature still needs a real lever - not
-  `-Os`/error-string shaving. Lua's number I/O + console are off newlib
+  `-Os`/error-string shaving. **No float crosses varargs on the device** (#213):
+  every float passed through `...` is promoted to double (C default argument
+  promotion) and links libgcc's double soft-float back in - print floats via the
+  non-variadic `luai_num2str` instead. Lua's number I/O + console are off newlib
   (`luai_*`/printf helpers in `lua/firmware/src/app/lua.c` + macro overrides in
-  `lua/firmware/lua/luaconf.h`); the ~10 KB of newlib+libgcc still linked
-  (soft-float/memcpy/malloc) is near-irreducible, except ~2.4 KB of *double*
-  soft-float pulled only by float→double varargs promotion in the `%f`/number-
-  printing path (fixable with a non-variadic float formatter).
+  `lua/firmware/lua/luaconf.h`); the newlib+libgcc still linked
+  (single-float/memcpy/malloc) is near-irreducible.
   Float *printing* stays approximate (integer part + `.0`) pending a real dtoa.
   **The image is parser-less by design (#128, done): `lparser`/`llex`/`lcode` are dropped
   (~18.9 KB) - the rabbit runs ONLY `luac` bytecode. There is no on-device compiler; all

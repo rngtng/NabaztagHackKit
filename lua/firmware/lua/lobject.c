@@ -508,12 +508,19 @@ const char *luaO_pushvfstring (lua_State *L, const char *fmt, va_list argp) {
         addnum2buff(&buff, &num);
         break;
       }
+#if !defined(LUA_NOPARSER)
+      /* firmwareV2 (#213): compiled out - the image has no '%f' callers left
+         (luaL_tolstring pushes the number instead), and reading the promoted
+         double back to float would link __aeabi_d2f (libgcc double
+         soft-float). A future '%f' caller lands on the 'invalid option'
+         default below. */
       case 'f': {  /* a 'lua_Number' */
         TValue num;
         setfltvalue(&num, cast_num(va_arg(argp, l_uacNumber)));
         addnum2buff(&buff, &num);
         break;
       }
+#endif
       case 'p': {  /* a pointer */
         const int sz = 3 * sizeof(void*) + 8; /* enough space for '%p' */
         char *bf = getbuff(&buff, sz);

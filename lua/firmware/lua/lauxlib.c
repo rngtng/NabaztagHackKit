@@ -904,10 +904,20 @@ LUALIB_API const char *luaL_tolstring (lua_State *L, int idx, size_t *len) {
   else {
     switch (lua_type(L, idx)) {
       case LUA_TNUMBER: {
+#if defined(LUA_NOPARSER)
+        /* firmwareV2 (#213): push a copy and let the final lua_tolstring
+           below convert it in place (luaO_tostring -> tostringbuff, the same
+           code the %I/%f formats run). Keeps lua_Number out of the variadic
+           lua_pushfstring, whose float->double argument promotion links
+           libgcc's double soft-float. Only the pushed copy is converted;
+           the value at 'idx' is untouched. */
+        lua_pushvalue(L, idx);
+#else
         if (lua_isinteger(L, idx))
           lua_pushfstring(L, "%I", (LUAI_UACINT)lua_tointeger(L, idx));
         else
           lua_pushfstring(L, "%f", (LUAI_UACNUMBER)lua_tonumber(L, idx));
+#endif
         break;
       }
       case LUA_TSTRING:
@@ -1120,7 +1130,16 @@ LUALIB_API void luaL_checkversion_ (lua_State *L, lua_Number ver, size_t sz) {
   if (sz != LUAL_NUMSIZES)  /* check numeric types */
     luaL_error(L, "core and library have incompatible numeric types");
   else if (v != ver)
+#if defined(LUA_NOPARSER)
+    /* firmwareV2 (#213): versions are small integral floats (e.g. 504) -
+       print them as ints. The (LUAI_UACNUMBER) casts promote float->double
+       at this call site, linking libgcc's double soft-float; this function
+       is always live via luaL_newlib's luaL_checkversion. */
+    luaL_error(L, "version mismatch: app. needs %d, Lua core provides %d",
+                  (int)ver, (int)v);
+#else
     luaL_error(L, "version mismatch: app. needs %f, Lua core provides %f",
                   (LUAI_UACNUMBER)ver, (LUAI_UACNUMBER)v);
+#endif
 }
 

@@ -207,6 +207,10 @@ static int str_char (lua_State *L) {
 }
 
 
+#if !defined(LUA_NOPARSER)  /* firmwareV2 (#213): the bytecode-only image only
+                               *loads* bytecode (lundump); it never serialises,
+                               so string.dump goes the way of the parser and
+                               ldump.c is not linked (Makefile LUA_NOPARSE). */
 /*
 ** Buffer to store the result of 'string.dump'. It must be initialized
 ** after the call to 'lua_dump', to ensure that the function is on the
@@ -241,6 +245,7 @@ static int str_dump (lua_State *L) {
   luaL_pushresult(&state.B);
   return 1;
 }
+#endif  /* !LUA_NOPARSER */
 
 
 
@@ -1326,8 +1331,17 @@ static int str_format (lua_State *L) {
         case 'e': case 'E': case 'g': case 'G': {
           lua_Number n = luaL_checknumber(L, arg);
           checkformat(L, form, L_FMTFLAGSF, 1);
+#if defined(LUA_NOPARSER)
+          /* firmwareV2 (#213): non-variadic float print (see luaconf.h) -
+             passing (LUAI_UACNUMBER)n through l_sprintf's '...' promotes
+             float->double at this call site (__aeabi_f2d, libgcc double
+             soft-float). Same integer-part + ".0" output as the vsnprintf
+             stub gave; width/flags in 'form' are ignored now. */
+          nb = luai_num2str(buff, (size_t)maxitem, n);
+#else
           addlenmod(form, LUA_NUMBER_FRMLEN);
           nb = l_sprintf(buff, maxitem, form, (LUAI_UACNUMBER)n);
+#endif
           break;
         }
         case 'p': {
@@ -1502,7 +1516,13 @@ static KOption getoption (Header *h, const char **fmt, int *size) {
     case 'T': *size = sizeof(size_t); return Kuint;
     case 'f': *size = sizeof(float); return Kfloat;
     case 'n': *size = sizeof(lua_Number); return Knumber;
+#if !defined(LUA_NOPARSER)
+    /* firmwareV2 (#213): no C-double codec on the device - converting
+       to/from double links libgcc's double soft-float (__aeabi_f2d/d2f).
+       'd' falls through to "invalid format option"; 'f'/'n' (both 32-bit
+       floats here) still cover binary float interchange. */
     case 'd': *size = sizeof(double); return Kdouble;
+#endif
     case 'i': *size = getnumlimit(h, fmt, sizeof(int)); return Kint;
     case 'I': *size = getnumlimit(h, fmt, sizeof(int)); return Kuint;
     case 's': *size = getnumlimit(h, fmt, sizeof(size_t)); return Kstring;
@@ -1649,12 +1669,16 @@ static int str_pack (lua_State *L) {
         break;
       }
       case Kdouble: {  /* C double */
+#if defined(LUA_NOPARSER)
+        break;  /* firmwareV2 (#213): unreachable - 'd' rejected in getoption */
+#else
         double f = (double)luaL_checknumber(L, arg);  /* get argument */
         char *buff = luaL_prepbuffsize(&b, sizeof(f));
         /* move 'f' to final result, correcting endianness if needed */
         copywithendian(buff, (char *)&f, sizeof(f), h.islittle);
         luaL_addsize(&b, size);
         break;
+#endif
       }
       case Kchar: {  /* fixed-size string */
         size_t len;
@@ -1790,10 +1814,14 @@ static int str_unpack (lua_State *L) {
         break;
       }
       case Kdouble: {
+#if defined(LUA_NOPARSER)
+        break;  /* firmwareV2 (#213): unreachable - 'd' rejected in getoption */
+#else
         double f;
         copywithendian((char *)&f, data + pos, sizeof(f), h.islittle);
         lua_pushnumber(L, (lua_Number)f);
         break;
+#endif
       }
       case Kchar: {
         lua_pushlstring(L, data + pos, size);
@@ -1830,7 +1858,9 @@ static int str_unpack (lua_State *L) {
 static const luaL_Reg strlib[] = {
   {"byte", str_byte},
   {"char", str_char},
+#if !defined(LUA_NOPARSER)  /* firmwareV2 (#213): no serialisation on-device */
   {"dump", str_dump},
+#endif
   {"find", str_find},
   {"format", str_format},
   {"gmatch", gmatch},

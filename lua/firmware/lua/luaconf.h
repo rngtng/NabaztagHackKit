@@ -858,6 +858,32 @@ extern LUA_NUMBER luai_fmod (LUA_NUMBER a, LUA_NUMBER b);
 #define luai_numpow(L,a,b)         ((void)(L), luai_pow((a), (b)))
 #define luai_nummod(L,a,b,m)       ((void)(L), (m) = luai_fmod((a), (b)))
 
+/*
+** firmwareV2 (#213): float -> string without double soft-float. The stock
+** lua_number2str/lua_number2strx macros pass (LUAI_UACNUMBER)(n) (= double)
+** through variadic l_sprintf; even with a float cast, C default argument
+** promotion turns every float crossing '...' into a double at the CALL SITE,
+** linking libgcc's double helpers (__aeabi_f2d & friends, ~2.4 KB).
+** luai_num2str (src/app/lua.c) is non-variadic - a float parameter, so no
+** promotion - and prints the same integer-part + ".0" approximation the
+** vsnprintf float stub produced. The hex-float route (lua_number2strx:
+** string.format("%a"), %q on floats) already fell through to that same stub,
+** so routing it here too is output-neutral; its format arg (width/flags) was
+** honoured before and is ignored now - an accepted edge until a real dtoa.
+*/
+extern int luai_num2str (char *s, size_t sz, LUA_NUMBER n);
+#undef lua_number2str
+#define lua_number2str(s,sz,n)      luai_num2str((s), (sz), (n))
+#undef lua_number2strx
+#define lua_number2strx(L,b,sz,f,n) ((void)(L), (void)(f), luai_num2str((b), (sz), (n)))
+
+/*
+** firmwareV2 (#213): bare metal has no locales - the radix point is '.'.
+** Drops newlib's localeconv + locale objects from the image.
+*/
+#undef lua_getlocaledecpoint
+#define lua_getlocaledecpoint()     '.'
+
 #endif					/* } !LUA_HOST_LUAC */
 
 
