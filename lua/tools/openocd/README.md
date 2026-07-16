@@ -95,8 +95,14 @@ wget http://wk.redox.ws/_media/dev/nab/v2/jtag/openocd-0.8.0.tar.gz
 wget http://wk.redox.ws/_media/dev/nab/v2/jtag/openocd_0.8.0_oki.patch.gz
 gzip -d openocd_0.8.0_oki.patch.gz
 tar xzf openocd-0.8.0.tar.gz
+# Our fix on top of the RedoX patch (copy it from the repo first). The ml67q40xx
+# block-write path programs count/4 words and silently drops a trailing partial
+# word, so any image whose byte length is not a multiple of 4 loses its last 1-3
+# bytes on flash (compare-sections then reports MIS-MATCHED). NabaztagHackKit #203.
+scp <dev-host>:.../lua/tools/openocd/patches/ml67q40xx-tail-drop.patch ~/
 cd openocd-0.8.0
 patch -p1 < ../openocd_0.8.0_oki.patch        # adds src/flash/nor/ml67q40xx.c
+patch -p1 < ../ml67q40xx-tail-drop.patch      # fixes the tail-drop (#203)
 autoreconf -fi
 
 # bcm2835gpio = Pi as adapter. --disable-werror turns off OpenOCD's own -Werror.

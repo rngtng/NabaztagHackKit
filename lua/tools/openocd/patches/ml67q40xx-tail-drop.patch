@@ -1,0 +1,55 @@
+--- a/src/flash/nor/ml67q40xx.c
++++ b/src/flash/nor/ml67q40xx.c
+@@ -393,14 +393,23 @@
+     const uint8_t *buffer, uint32_t offset, uint32_t count)
+ {
+   int retval;
++  /* The block-write algorithm programs whole 32-bit words only (it is handed
++   * count/4 words and its inner loop always stores 4 bytes). A count that is
++   * not a multiple of 4 therefore silently dropped its trailing 1-3 bytes on
++   * flash (NabaztagHackKit #203). Split the write: the word-aligned prefix goes
++   * through the fast block path, the 1-3 byte remainder through the slow
++   * single-access path, which pads to a word with 0xFF and writes it correctly. */
++  uint32_t block_count = count & ~3u;   /* word-aligned prefix */
++  uint32_t tail        = count &  3u;   /* trailing 1-3 bytes */
+ 
+-  /* try using a block write */
+-  if ((retval = ml67q40xx_write_block(bank, buffer, offset, count)) != ERROR_OK)
++  /* try using a block write for the word-aligned prefix */
++  if (block_count)
+   {
++    retval = ml67q40xx_write_block(bank, buffer, offset, block_count);
+     if (retval == ERROR_TARGET_RESOURCE_NOT_AVAILABLE)
+     {
+       /* if block write failed (no sufficient working area),
+-      * use normal (slow) JTAG method */
++      * use normal (slow) JTAG method for the whole write - it pads correctly */
+       LOG_WARNING("ml67q40xx: couldn't use block writes,"\
+                   "falling back to single memory accesses");
+ 
+@@ -410,10 +419,24 @@
+         LOG_ERROR("ml67q40xx: slow write failed");
+         return ERROR_FLASH_OPERATION_FAILED;
+       }
++      return retval;
+     }
++    if (retval != ERROR_OK)
++      return retval;
+   }
+ 
+-  return retval;
++  /* finish the sub-word tail with the padding-aware single-access path */
++  if (tail)
++  {
++    if ((retval = ml67q40xx_write_single(bank, buffer + block_count,
++                                         offset + block_count, tail)) != ERROR_OK)
++    {
++      LOG_ERROR("ml67q40xx: tail write failed");
++      return ERROR_FLASH_OPERATION_FAILED;
++    }
++  }
++
++  return ERROR_OK;
+ }
+ 
+ static int ml67q40xx_probe(struct flash_bank *bank)
