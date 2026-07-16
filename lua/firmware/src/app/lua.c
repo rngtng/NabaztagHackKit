@@ -731,9 +731,76 @@ static int nab_wifi(lua_State *L)
   return 1;
 }
 
+/* nab.wifi_ap(ssid [, channel]) -> true | nil, message. Switch the radio to
+ * master (AP) mode: beacon `ssid` on `channel` (default 1) as an OPEN network
+ * - the driver path Violet's original setup mode used, setup-mode only (#216).
+ * Brings up the USB dongle first when needed (~10 s cold boot); an
+ * already-joined STA switches without the cold boot. Frames stations send us
+ * arrive via nab.wifi_recv(). */
+static int nab_wifi_ap(lua_State *L)
+{
+  const char *ssid = luaL_checkstring(L, 1);
+  lua_Integer ch = luaL_optinteger(L, 2, 1);
+  luaL_argcheck(L, ch >= 1 && ch <= 14, 2, "1..14");
+  if (wifi_ap(ssid, (uint8_t)ch) != 0) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "wifi_ap: bad SSID or radio bring-up failed");
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
+/* nab.wifi_send(dst_mac, payload) -> true | nil, message. One raw data frame
+ * at the 802.3 payload boundary: payload (a byte string, starts at LLC) goes
+ * to dst_mac, a 6-byte binary string ("\xFF\xFF\xFF\xFF\xFF\xFF" = broadcast;
+ * nab.wifi_recv's src_mac can be passed straight back to reply). Needs an
+ * association (nab.wifi) or AP mode (nab.wifi_ap) first. */
+static int nab_wifi_send(lua_State *L)
+{
+  size_t maclen, len;
+  const char *mac = luaL_checklstring(L, 1, &maclen);
+  const char *payload = luaL_checklstring(L, 2, &len);
+  luaL_argcheck(L, maclen == 6, 1, "6-byte MAC");
+  luaL_argcheck(L, len >= 1 && len <= WIFI_SEND_MAX, 2, "1..1500 bytes");
+  if (wifi_send((const uint8_t *)mac, (const uint8_t *)payload,
+                (uint32_t)len) != 0) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "wifi_send: not connected or TX failed");
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
+/* nab.wifi_recv([timeout_ms]) -> src_mac, payload | nil. Pop the oldest
+ * buffered RX data frame, pumping the driver up to timeout_ms (default 0 =
+ * single poll) for one to arrive. src_mac is the sender as a 6-byte binary
+ * string, payload the 802.3 payload bytes (from LLC). Frames are captured
+ * from the main-loop pump - never in the IRQ path - once nab.wifi_ap() or the
+ * first nab.wifi_recv() call enables capture; only a bounded few are buffered,
+ * so poll faster than the peer sends. */
+static int nab_wifi_recv(lua_State *L)
+{
+  lua_Integer ms = luaL_optinteger(L, 1, 0);
+  luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
+  struct rt2501buffer *r = wifi_recv_frame((uint32_t)ms);
+  if (r == NULL) {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_pushlstring(L, (const char *)r->source_mac, 6);
+  lua_pushlstring(L, (const char *)r->data, r->length);
+  wifi_frame_free(r);
+  return 2;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"wifi", nab_wifi},
+    {"wifi_ap", nab_wifi_ap},
+    {"wifi_send", nab_wifi_send},
+    {"wifi_recv", nab_wifi_recv},
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},

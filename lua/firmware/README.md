@@ -113,8 +113,8 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/lua.elf` uses ~110,100 B of 124 KB (**~16.5 KB free**; ~27 KB of that growth is
-the M11 USB + 802.11/WPA wifi stack). Newlib's stdio FILE layer stays out only
+`bin/lua.elf` uses ~110,900 B of 124 KB (**~15.7 KB free**; ~27 KB of that growth is
+the M11 USB + 802.11/WPA wifi stack, ~0.8 KB the #216 raw-frame/AP bindings). Newlib's stdio FILE layer stays out only
 because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
 `__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
 vfprintf/FILE machinery back in via newlib's asserting archive members. This is the
@@ -264,6 +264,10 @@ nab.rfid()                    -- -> lowercase hex UID string, or nil if no tag
 nab.ear_move(n, speed, dir)   -- n: 1|2 (1 = left ear); speed 0..255; dir "forward"|"reverse"
 nab.ear_stop(n)               -- n: 1|2
 nab.ear_pos(n)                -- n: 1|2 -> raw wrapping 16-bit encoder pulse count
+nab.wifi(ssid [, psk])        -- join an AP (WPA/WPA2 or open) -> true | nil, msg (M11)
+nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
+nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
+nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
 ```
 
 HW-verified (M5/M8): `nab.led` lights each named LED, `nab.button()` tracks the physical

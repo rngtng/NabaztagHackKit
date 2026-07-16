@@ -63,9 +63,9 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf`: ~16.5 KB free of 124 KB internal flash (~110,100 B used) since the
-  #213 scavenge (double soft-float + ldump/string.dump dropped, ~4.2 KB on top of
-  #212's rand/assert shim).** The
+- **`lua.elf`: ~15.7 KB free of 124 KB internal flash (~110,900 B used) since the
+  raw-frame/AP `nab.wifi_*` bindings landed (#216, ~0.8 KB on top of the #212
+  rand/assert shim + #213 double-soft-float/ldump scavenges).** The
   `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA/crypto stack
   (~27 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
   re-linked newlib's stdio FILE layer via `rand → assert → fiprintf` (~9 KB, the

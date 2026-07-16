@@ -90,25 +90,53 @@ static void scan_cb(struct rt2501_scan_result *r, void *userparam)
  * call, or the driver timer never fires at all. */
 static uint32_t pump_last_timer;
 
-void wifi_pump(uint32_t ms)
+/* RX capture (#216): drained data frames are freed by default (the join path
+ * only needs EAPOL, which rt2501_receive consumes internally). Once capture is
+ * on - wifi_ap() / first wifi_recv_frame() - the pump queues up to RX_QUEUE_MAX
+ * frames for the app instead, dropping the newest on overflow so a non-polling
+ * app can't exhaust the hcd pool. Main-loop only (like every rt2501_receive
+ * caller); the queue links through the buffer's `next` field, which is ours
+ * once rt2501_receive hands the buffer over. */
+#define RX_QUEUE_MAX 8
+static struct rt2501buffer *rx_head, *rx_tail;
+static int32_t rx_count;
+static int8_t rx_capture;
+
+/* One pump iteration: usb events + rx drain (capture or free) + driver timer. */
+static void pump_slice(void)
 {
-  uint32_t t0 = counter_timer;
   struct rt2501buffer *r;
 
-  while (counter_timer - t0 < ms) {
-    usbhost_events();
-    while ((r = rt2501_receive()) != NULL) {
-      /* EAPOL frames are consumed (and freed) inside rt2501_receive; anything
-       * returned is a data frame the caller owns - V1 main.c hcd_frees it. */
+  usbhost_events();
+  while ((r = rt2501_receive()) != NULL) {
+    /* EAPOL frames are consumed (and freed) inside rt2501_receive; anything
+     * returned is a data frame the caller owns - V1 main.c hcd_frees it. */
+    if (rx_capture && rx_count < RX_QUEUE_MAX) {
+      r->next = NULL;
+      if (rx_tail)
+        rx_tail->next = r;
+      else
+        rx_head = r;
+      rx_tail = r;
+      rx_count++;
+    } else {
       disable_ohci_irq();
       hcd_free(r);
       enable_ohci_irq();
     }
-    if (counter_timer - pump_last_timer >= 200) {
-      pump_last_timer = counter_timer;
-      rt2501_timer();
-    }
   }
+  if (counter_timer - pump_last_timer >= 200) {
+    pump_last_timer = counter_timer;
+    rt2501_timer();
+  }
+}
+
+void wifi_pump(uint32_t ms)
+{
+  uint32_t t0 = counter_timer;
+
+  while (counter_timer - t0 < ms)
+    pump_slice();
 }
 
 /* ---- bring-up ------------------------------------------------------------ */
@@ -263,4 +291,56 @@ int8_t wifi_connect(const char *ssid, const char *psk, uint32_t timeout_ms)
 int32_t wifi_state(void)
 {
   return rt2501_state();
+}
+
+/* ---- master (AP) mode + raw frame TX/RX (#216) ---------------------------- */
+int8_t wifi_ap(const char *ssid, uint8_t channel)
+{
+  if (strlen(ssid) > IEEE80211_SSID_MAXLEN)
+    return -1;
+  /* Skip the cold boot when the dongle is already up (e.g. STA -> AP switch);
+   * rt2501_setmode itself flushes the driver's RX queue on the mode change. */
+  if (rt2501_state() == RT2501_S_BROKEN && wifi_up() != 0)
+    return -1;
+  rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)ssid, channel);
+  rx_capture = 1;
+  return 0;
+}
+
+int8_t wifi_send(const uint8_t *dst_mac, const uint8_t *payload,
+                 uint32_t length)
+{
+  if (length > WIFI_SEND_MAX)
+    return -1;
+  /* lowrate=1: 1 Mbps, the most robust rate (and all AP mode supports);
+   * mayblock=1 retries the frame alloc, like V1's bytecode send path. Returns
+   * 0 immediately when not RUN/EAPOL, so "not connected" fails cleanly. */
+  return rt2501_send(payload, length, dst_mac, 1, 1) == 1 ? 0 : -1;
+}
+
+struct rt2501buffer *wifi_recv_frame(uint32_t timeout_ms)
+{
+  uint32_t t0 = counter_timer;
+
+  rx_capture = 1;
+  for (;;) {
+    pump_slice();
+    if (rx_head != NULL) {
+      struct rt2501buffer *r = rx_head;
+      rx_head = r->next;
+      if (rx_head == NULL)
+        rx_tail = NULL;
+      rx_count--;
+      return r;
+    }
+    if (counter_timer - t0 >= timeout_ms)
+      return NULL;
+  }
+}
+
+void wifi_frame_free(struct rt2501buffer *r)
+{
+  disable_ohci_irq();
+  hcd_free(r);
+  enable_ohci_irq();
 }
