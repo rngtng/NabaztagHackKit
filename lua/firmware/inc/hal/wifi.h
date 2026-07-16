@@ -75,4 +75,36 @@ int8_t wifi_connect(const char *ssid, const char *psk, uint32_t timeout_ms);
 /* rt2501_state() passthrough (RT2501_S_*). */
 int32_t wifi_state(void);
 
+/* ---- master (AP) mode + raw frame TX/RX (#216) ---------------------------- */
+
+/* Largest wifi_send payload (the 802.3 payload after the MAC header; an
+ * Ethernet-MTU-sized bound well under the driver's 2048-byte frame cap). */
+#define WIFI_SEND_MAX 1500
+
+/* Switch the radio to master (AP) mode: beacon `ssid` (<= 32 chars) on
+ * `channel` as an OPEN network (setup-mode only, like Violet's original).
+ * Runs wifi_up() first only if the dongle isn't up yet, so switching an
+ * already-joined STA doesn't cold-boot the radio. Also enables RX capture
+ * (see wifi_recv_frame). Returns 0, <0 on bad ssid / bring-up failure. */
+int8_t wifi_ap(const char *ssid, uint8_t channel);
+
+/* Send one data frame carrying `length` payload bytes to `dst_mac` (6 bytes) -
+ * the same 802.3-payload seam rt2501_send speaks (payload starts at LLC; no
+ * 802.11 details cross here). Works associated (STA, encrypted with the
+ * session keys by the driver) or in AP mode. Returns 0, <0 when not in a
+ * TX-capable state or the driver rejected the frame. */
+int8_t wifi_send(const uint8_t *dst_mac, const uint8_t *payload,
+                 uint32_t length);
+
+/* Pop the oldest captured RX data frame, pumping until one arrives or
+ * `timeout_ms` elapses (0 = single poll). The first call enables capture:
+ * from then on the pump queues drained data frames (bounded; overflow drops)
+ * instead of freeing them. Caller owns the returned buffer and must release
+ * it with wifi_frame_free(). NULL when nothing arrived. */
+struct rt2501buffer *wifi_recv_frame(uint32_t timeout_ms);
+
+/* Release a frame returned by wifi_recv_frame (hcd_free under the OHCI IRQ
+ * guard - the ownership rule every drained RX buffer follows). */
+void wifi_frame_free(struct rt2501buffer *r);
+
 #endif /* _HAL_WIFI_H_ */
