@@ -113,8 +113,9 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/lua.elf` uses ~110,900 B of 124 KB (**~15.7 KB free**; ~27 KB of that growth is
-the M11 USB + 802.11/WPA wifi stack, ~0.8 KB the #216 raw-frame/AP bindings). Newlib's stdio FILE layer stays out only
+`bin/lua.elf` uses ~112,050 B of 124 KB (**~14.6 KB free**; ~27 KB of that growth is
+the M11 USB + 802.11/WPA wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
+the #214 config-sector writer + binding). Newlib's stdio FILE layer stays out only
 because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
 `__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
 vfprintf/FILE machinery back in via newlib's asserting archive members. This is the
@@ -222,6 +223,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
 | - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
+| - | `nab.config` - persist wifi creds in the config sector | #214 | built - HW verify pending (sim models flash reads only; write creds, power-cycle, read back) |
 
 ## Flashing
 ```sh
@@ -268,6 +270,9 @@ nab.wifi(ssid [, psk])        -- join an AP (WPA/WPA2 or open) -> true | nil, ms
 nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
 nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
 nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
+nab.config()                  -- -> {ssid=,psk=,url=} persisted in the config sector, or nil
+nab.config{ssid=,psk=,url=}   -- persist (survives power cycles); true = written+verified,
+                              --   false = flash already held this record (write skipped)
 ```
 
 HW-verified (M5/M8): `nab.led` lights each named LED, `nab.button()` tracks the physical
@@ -286,6 +291,13 @@ button, `nab.beep()` is audible. Caveats:
   (DREQ/ADC unmodeled). `nab.play` streams over SDI so `nab.volume` actually attenuates (VS1003B
   decodes MP3/WAV per the teardown); the SDI mechanism itself is M8-proven. `nab.wheel` ports
   `mtl/firmware`'s ADC ch.2 sequence. Flash + listen/probe to confirm.
+- **`nab.config` (#214) built, not HW-confirmed** - the simulator models flash *reads* only,
+  so the write path (V1's `write_uc_flash_sec` port in `hal/config.c`, erase+program of the
+  last 4 KB internal-flash sector from a `.ramfunc`) needs the rig: write creds from the
+  REPL, power-cycle, read them back. The writer takes no address - the sector base is a
+  compile-time constant, so it cannot touch the firmware below `0x1F000` - but the
+  full-backup rule above still applies before the first live write. A write masks IRQs for
+  ~63 ms (flash supplies no code/data while programming itself), so expect a wifi/tick hiccup.
 - **`nab.rfid()` (#117) built + sim-verified, not HW-confirmed.** A documented chip isn't a
   *responding* chip until probed (see the M6 AT45 lesson) - run `rfidprobe` first. Reliability
   fix (#180): `hal/rfid.c` now tracks field state and drops/raises the RF field once instead of
