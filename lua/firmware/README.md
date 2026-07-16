@@ -107,8 +107,13 @@ no FPU/`double`):
 - **Number I/O is newlib-free (#106):** compact decimal parser vs `strtof`, libm-free `^`/`%`
   (fractional `^`→NaN), in-tree `snprintf`/`vsnprintf` - so number formatting doesn't pull
   newlib's FILE layer.
+- **Double-free (#213):** no float crosses a variadic call on the device - C default argument
+  promotion would turn it into a `double` and link libgcc's double soft-float (~2.4 KB). Floats
+  print via the non-variadic `luai_num2str`; `string.pack`'s C-`double` `'d'` code and
+  `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
+  `-DLUA_NOPARSER`.
 
-`bin/lua.elf` uses ~114,300 B of 124 KB (**~12.3 KB free**; ~27 KB of that growth is
+`bin/lua.elf` uses ~110,100 B of 124 KB (**~16.5 KB free**; ~27 KB of that growth is
 the M11 USB + 802.11/WPA wifi stack). Newlib's stdio FILE layer stays out only
 because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
 `__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
