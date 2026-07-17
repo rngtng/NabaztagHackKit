@@ -17,4 +17,9 @@ string.format("%d/%s", 42, "ok")
 print(#"hello", 10 % 3)
 t = {10, 20, 30}
 print(t[1] + t[2] + t[3])
+-- float printing (#222): float -> integer part + ".0" (approximate, no dtoa);
+-- integers stay bare. Guards the non-variadic luai_num2str path from regressing.
+3.14
+print(2^20, 1/2)
+print(10 // 3, 3 == 3.0)
 for i = 1, 3 do print("i=" .. i) end
