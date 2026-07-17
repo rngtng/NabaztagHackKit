@@ -26,12 +26,12 @@ end
 
 function greenmode()
   allled(0, 127, 0)
-  nab.ear_move(LEFT_MOTOR, 255, 'forward')
+  nab.ear_move(LEFT_MOTOR, 'forward')
 end
 
 function yellowmode()
   allled(127, 127, 0)
-  nab.ear_move(RIGHT_MOTOR, 255, 'forward')
+  nab.ear_move(RIGHT_MOTOR, 'forward')
 end
 
 function colormode()
