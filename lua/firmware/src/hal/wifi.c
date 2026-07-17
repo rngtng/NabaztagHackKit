@@ -318,6 +318,11 @@ int8_t wifi_send(const uint8_t *dst_mac, const uint8_t *payload,
   return rt2501_send(payload, length, dst_mac, 1, 1) == 1 ? 0 : -1;
 }
 
+const uint8_t *wifi_mac(void)
+{
+  return rt2501_mac;
+}
+
 struct rt2501buffer *wifi_recv_frame(uint32_t timeout_ms)
 {
   uint32_t t0 = counter_timer;
