@@ -475,6 +475,8 @@ static void eapol_input_msg1(uint8_t *frame, uint32_t length)
  * @param [in]  frame   Frame buffer
  * @param [in]  length  Frame length
  */
+static int8_t eapol_install_gtk(struct eapol_frame *fr_in);
+
 static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 {
   // FIXME Check length before cast ?
@@ -598,9 +600,94 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 
   //DBG_WIFI("Response sent"EOL);
 
-  eapol_state = EAPOL_S_GROUP;
+  /* WPA2/RSN delivers the GTK inside msg3's (AES-wrapped) key data; no
+   * separate group handshake follows at join, only at rekey. Without this
+   * install the supplicant sat in EAPOL_S_GROUP forever and every group-
+   * addressed frame (broadcast ARP, broadcast DHCP) stayed ciphertext
+   * (#228). A WPA1-style AP that really does send a group message next is
+   * still handled: stay in EAPOL_S_GROUP when msg3 carried no GTK. */
+  if(eapol_install_gtk(fr_in))
+    eapol_state = EAPOL_S_RUN;
+  else
+    eapol_state = EAPOL_S_GROUP;
   ieee80211_state = IEEE80211_S_RUN;
   ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
+}
+
+/**
+ * @brief Unwrap the AES-Key-Wrapped key data and install the GTK KDE (#228).
+ *
+ * Shared by the 4-way msg3 handler (WPA2/RSN carries the GTK inside msg3's
+ * key_data - there is no separate group handshake at join, only at rekey)
+ * and the group-key message handler (WPA1-style join / WPA2 rekey). CCMP
+ * only - the RC4-encrypted TKIP GTK went with WEP/WPA1/TKIP support (#124).
+ *
+ * The key data is a KDE/IE sequence: msg3's starts with the RSN IE (0x30)
+ * before the GTK KDE, so non-vendor elements are skipped, not treated as
+ * terminators. Sized for msg3: RSN IE + GTK KDE + optional extra KDEs +
+ * RFC 3394 padding (observed ~56-88 bytes wrapped on consumer APs).
+ *
+ * @return 1 when a GTK was installed, 0 otherwise.
+ */
+static int8_t eapol_install_gtk(struct eapol_frame *fr_in)
+{
+  uint16_t kdlen = (fr_in->key_frame.key_data_length[0] << 8)
+                   | fr_in->key_frame.key_data_length[1];
+  uint8_t unwrapped[104];
+  uint8_t *gtk_kde = 0;
+  uint16_t p, plen;
+
+  if((ieee80211_encryption&0x0F) != IEEE80211_CIPHER_CCMP)
+    return 0;
+
+  /* key_data holds AES-Key-Wrapped KDEs: (n+1) 8-byte blocks, so >= 16
+   * bytes; bound it to our scratch buffer. */
+  if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8) {
+    DBG_WIFI("GTK key data length invalid"EOL);
+    return 0;
+  }
+  /* Unwrap with the KEK; a failed integrity check means a tampered or
+   * mis-keyed frame - drop rather than install garbage (the old stub
+   * installed uninitialised memory here). */
+  if(!aes128_unwrap(ptk.s.kek, fr_in->key_frame.key_data, kdlen, unwrapped)) {
+    DBG_WIFI("GTK unwrap integrity FAIL - drop"EOL);
+    return 0;
+  }
+  plen = kdlen - 8;
+
+  /* Locate the GTK KDE (0xDD, OUI 00-0F-AC, data type 1), skipping other
+   * elements (msg3 leads with the RSN IE). A zero-length vendor element is
+   * the RFC 3394 pad marker - stop there. For WPA2 the GTK's KeyID is
+   * carried in the KDE, not in key_info.key_index (which is 0), so the
+   * old `key_index != 0` guard would have skipped install entirely. */
+  for(p = 0; (uint16_t)(p + 2) <= plen; ) {
+    uint8_t t = unwrapped[p], l = unwrapped[p + 1];
+    if(t == 0xdd && l == 0) break; /* pad */
+    if((uint16_t)(p + 2 + l) > plen) break;
+    if(t == 0xdd && l >= 6
+       && unwrapped[p + 2] == 0x00 && unwrapped[p + 3] == 0x0f
+       && unwrapped[p + 4] == 0xac && unwrapped[p + 5] == 0x01) {
+      gtk_kde = &unwrapped[p];
+      break;
+    }
+    p = (uint16_t)(p + 2 + l);
+  }
+  if(gtk_kde == 0 || gtk_kde[1] < 6 + EAPOL_EK_LENGTH) {
+    DBG_WIFI("No usable GTK KDE"EOL);
+    return 0;
+  }
+
+  /* GTK KDE: [0]=0xDD [1]=len [2..4]=OUI [5]=type [6]=KeyID/Tx
+   * [7]=reserved [8..]=GTK. Install the 16-byte GTK at its KeyID. */
+  memset(&gtk, 0, sizeof(gtk));
+  memcpy(gtk.s.ek, &gtk_kde[8], EAPOL_EK_LENGTH);
+  #ifdef DEBUG_WIFI
+  DBG_WIFI("GTK is ");
+  dump(gtk.s.ek, EAPOL_EK_LENGTH);
+  #endif
+  rt2501_set_key(gtk_kde[6] & 0x03,
+                 gtk.s.ek, gtk.s.mick.tx, gtk.s.mick.rx, RT2501_CIPHER_AES);
+  return 1;
 }
 
 /**
@@ -715,66 +802,7 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
 
   /* Decipher and install GTK (CCMP only - the RC4-encrypted TKIP GTK went
    * with WEP/WPA1/TKIP support, #124) */
-  switch(ieee80211_encryption&0x0F)
-  {
-    case IEEE80211_CIPHER_CCMP: // Unwrap the GTK (RFC 3394 AES Key Unwrap)
-      {
-        uint16_t kdlen = (fr_in->key_frame.key_data_length[0] << 8)
-                         | fr_in->key_frame.key_data_length[1];
-        uint8_t unwrapped[48];
-        uint8_t *gtk_kde = 0;
-        uint16_t p, plen;
-
-        /* key_data holds the AES-Key-Wrapped GTK KDE: (n+1) 8-byte blocks,
-         * so >= 16 bytes; bound it to our scratch buffer. */
-        if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8) {
-          DBG_WIFI("GTK key data length invalid"EOL);
-          break;
-        }
-        /* Unwrap with the KEK; a failed integrity check means a tampered or
-         * mis-keyed frame - drop rather than install garbage (the old stub
-         * installed uninitialised memory here). */
-        if(!aes128_unwrap(ptk.s.kek, fr_in->key_frame.key_data, kdlen, unwrapped)) {
-          DBG_WIFI("GTK unwrap integrity FAIL - drop"EOL);
-          break;
-        }
-        plen = kdlen - 8;
-
-        /* The unwrapped key data is a sequence of KDEs; locate the GTK KDE
-         * (type 0xDD, OUI 00-0F-AC, data type 1). For WPA2 the GTK's KeyID is
-         * carried in the KDE, not in key_info.key_index (which is 0), so the
-         * old `key_index != 0` guard would have skipped install entirely. */
-        for(p = 0; (uint16_t)(p + 2) <= plen; ) {
-          uint8_t l = unwrapped[p + 1];
-          if(unwrapped[p] != 0xdd || l == 0) break; /* end / pad */
-          if(l >= 6 && (uint16_t)(p + 2 + l) <= plen
-             && unwrapped[p + 2] == 0x00 && unwrapped[p + 3] == 0x0f
-             && unwrapped[p + 4] == 0xac && unwrapped[p + 5] == 0x01) {
-            gtk_kde = &unwrapped[p];
-            break;
-          }
-          p = (uint16_t)(p + 2 + l);
-        }
-        if(gtk_kde == 0 || gtk_kde[1] < 6 + EAPOL_EK_LENGTH) {
-          DBG_WIFI("No usable GTK KDE"EOL);
-          break;
-        }
-
-        /* GTK KDE: [0]=0xDD [1]=len [2..4]=OUI [5]=type [6]=KeyID/Tx
-         * [7]=reserved [8..]=GTK. Install the 16-byte GTK at its KeyID. */
-        memset(&gtk, 0, sizeof(gtk));
-        memcpy(gtk.s.ek, &gtk_kde[8], EAPOL_EK_LENGTH);
-        #ifdef DEBUG_WIFI
-        DBG_WIFI("GTK is ");
-        dump(gtk.s.ek, EAPOL_EK_LENGTH);
-        #endif
-        rt2501_set_key(gtk_kde[6] & 0x03,
-                       gtk.s.ek, gtk.s.mick.tx, gtk.s.mick.rx, RT2501_CIPHER_AES);
-      }
-      break;
-    default:
-      break;
-  };
+  eapol_install_gtk(fr_in);
   eapol_state = EAPOL_S_RUN;
   ieee80211_state = IEEE80211_S_RUN;
   ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
