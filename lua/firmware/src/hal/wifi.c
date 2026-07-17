@@ -119,9 +119,7 @@ static void pump_slice(void)
         rx_head = r;
       rx_tail = r;
       rx_count++;
-      rt2501_rxdbg[RXDBG_P_CAP]++;
     } else {
-      rt2501_rxdbg[RXDBG_P_FREE]++;
       disable_ohci_irq();
       hcd_free(r);
       enable_ohci_irq();
@@ -338,7 +336,6 @@ struct rt2501buffer *wifi_recv_frame(uint32_t timeout_ms)
       if (rx_head == NULL)
         rx_tail = NULL;
       rx_count--;
-      rt2501_rxdbg[RXDBG_W_POP]++;
       return r;
     }
     if (counter_timer - t0 >= timeout_ms)

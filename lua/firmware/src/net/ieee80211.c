@@ -1365,12 +1365,8 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 
 /*        DBG_WIFI("ieee80211_input_data"EOL); */
 
-	rt2501_rxdbg[RXDBG_IN_DATA]++;
 	if((ieee80211_state != IEEE80211_S_EAPOL)
-	   && (ieee80211_state != IEEE80211_S_RUN)) {
-		rt2501_rxdbg[RXDBG_D_STATE]++;
-		return;
-	}
+	   && (ieee80211_state != IEEE80211_S_RUN)) return;
 	if(length < sizeof(struct ieee80211_frame)) return;
 	fr = (void *)frame;
 
@@ -1381,16 +1377,10 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 		if((memcmp(fr->header.i_addr1, rt2501_mac, IEEE80211_ADDR_LEN) != 0)
 				  && (memcmp(fr->header.i_addr1, ieee80211_broadcast_address, IEEE80211_ADDR_LEN) != 0)
 				  && (memcmp(fr->header.i_addr1, ieee80211_multicast_address, IEEE80211_ADDR_LEN/2) != 0)
-	          ) {
-			rt2501_rxdbg[RXDBG_D_DST]++;
-			return;
-		}
+	          ) return;
 		dest_mac = fr->header.i_addr1;
 		/* BSSID */
-		if(memcmp(fr->header.i_addr2, ieee80211_assoc_bssid, IEEE80211_ADDR_LEN) != 0) {
-			rt2501_rxdbg[RXDBG_D_BSS]++;
-			return;
-		}
+		if(memcmp(fr->header.i_addr2, ieee80211_assoc_bssid, IEEE80211_ADDR_LEN) != 0) return;
 		/* Source address (i_addr3) can be anything */
 		source_mac = fr->header.i_addr3;
 		ieee80211_new_rssi_sample(rssi);
@@ -1426,10 +1416,7 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 				 && (memcmp(fr->header.i_addr3, ieee80211_multicast_address, IEEE80211_ADDR_LEN/2) != 0)
 			  ) return;
 			dest_mac = fr->header.i_addr3;
-		} else {
-			rt2501_rxdbg[RXDBG_D_DIR]++;
-			return; /* Drop other frames */
-		}
+		} else return; /* Drop other frames */
 	}
 
 	switch(fr->header.i_fc[0] & IEEE80211_FC0_SUBTYPE_MASK) {
@@ -1438,11 +1425,8 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 			length-sizeof(struct ieee80211_frame),
 			source_mac, dest_mac))
     {
-				rt2501_rxdbg[RXDBG_Q_FAIL]++;
 				DBG_WIFI("Unable to queue up received data frame"EOL);
     }
-		else
-			rt2501_rxdbg[RXDBG_Q_OK]++;
 		break;
 	case IEEE80211_FC0_SUBTYPE_NODATA:
 		if((ieee80211_mode == IEEE80211_M_MANAGED)
@@ -1452,7 +1436,6 @@ static void ieee80211_input_data(uint8_t *frame, uint32_t length, int16_t rssi)
 		}
 		break;
 	default:
-      rt2501_rxdbg[RXDBG_D_SUB]++;
       DBG_WIFI("Unhandled frame in ieee80211_input_data"EOL);
 	    break;
 	}
@@ -1466,10 +1449,7 @@ void ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
 //#endif
 	struct ieee80211_frame_min *frame_min;
 
-	if(ieee80211_state == IEEE80211_S_IDLE) {
-		rt2501_rxdbg[RXDBG_IN_IDLE]++;
-		return;
-	}
+	if(ieee80211_state == IEEE80211_S_IDLE) return;
 
 	if(length < sizeof(struct ieee80211_frame_min)) return;
 	frame_min = (struct ieee80211_frame_min *)frame;
