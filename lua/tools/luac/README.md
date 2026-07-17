@@ -54,7 +54,7 @@ is rejected — the device has no parser. `replpipe.py`/`luash.py` are the sende
 
 ```sh
 # Compile a Lua source file to stripped 32-bit device bytecode.
-task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc
+task lua:compile SOURCE=foo.lua [OUT=foo.lc]
 
 # Golden-transcript test (sim): frames run and match apps/*.expected. REGEN=1 to refresh.
 task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua] [REGEN=1]

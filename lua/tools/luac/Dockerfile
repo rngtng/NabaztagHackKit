@@ -33,10 +33,15 @@ COPY firmware/lua/ /opt/lua/
 
 # Build luac: every .c except lua.c (the interpreter's main() would clash with
 # luac.c's). -DLUA_HOST_LUAC selects the stock-libc fallbacks in luaconf.h.
+# Also build the stock interpreter from the same tree: it runs lua/lib/net's
+# host-side unit tests (#217) with the exact device semantics that matter
+# (LUA_32BITS: 32-bit integers + wrap arithmetic, 4-byte string.pack I4).
 RUN cd /opt/lua \
     && gcc -O2 -DLUA_HOST_LUAC -I. -o /usr/local/bin/luac \
         $(ls *.c | grep -vx 'lua.c') -lm \
-    && luac -v
+    && gcc -O2 -DLUA_HOST_LUAC -I. -o /usr/local/bin/lua \
+        $(ls *.c | grep -vx 'luac.c') -lm \
+    && luac -v && lua -v   # verify BOTH built - a luac-only image fails lib:test late and cryptically
 
 WORKDIR /work
 ENTRYPOINT ["luac"]

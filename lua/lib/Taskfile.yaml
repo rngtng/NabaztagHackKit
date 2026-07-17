@@ -1,0 +1,73 @@
+# lua/lib - the Lua standard libraries for the lua track. Each lib is a
+# subfolder of pure-Lua modules compiled off-device (tools/luac, LUA_32BITS)
+# and shipped as #LC bytecode frames over the REPL - nothing here costs flash
+# until #219 picks a boot subset to freeze. Mirrors mtl/lib/: one leaf owns the
+# whole lib tree and its host test harness, so a new lib is just a new subfolder
+# (its own modules + test/run.lua) - it is auto-discovered here, with no edits
+# to this file and no root-include churn.
+#
+# net/ is the first lib (#217): ARP/IPv4/UDP/DHCP/TCP/HTTP over the raw-frame
+# nab.wifi_* bindings (#216).
+#
+# Tests run host-side under the tools/luac image's `lua` - built from the same
+# vendored tree + LUA_32BITS luaconf.h as the device, so integer width and
+# string.pack semantics match the rabbit exactly.
+version: '3'
+
+vars:
+  LUAC_IMAGE: nabaztag-sdk-luac
+  # Lua layer root, walk-up formula identical to the sibling leaves (see
+  # firmware/Taskfile.yaml for why it must be depth-independent).
+  REPO:
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+
+includes:
+  luac: # host luac/lua image (built with the lua layer root as Docker context)
+    taskfile: ../tools/luac/Taskfile.yaml
+    internal: true
+    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
+
+tasks:
+  test:
+    desc: 'Host-side unit tests for every lua lib: each <lib>/test/run.lua drives independently-generated fixtures through the modules and lints that no module leaves the device stdlib (base+table+string). Auto-discovers libs - drop a new <lib>/test/run.lua and it runs, no edits here.'
+    summary: 'Usage: task lua:lib:test'
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - |
+        ran=0
+        for d in */; do
+          [ -f "${d}test/run.lua" ] || continue
+          echo "== ${d%/} =="
+          # Mount to /mnt, NOT /lib: /lib is the container's glibc loader dir,
+          # and shadowing it breaks exec of every dynamically-linked binary.
+          docker run --rm -v "$(realpath .):/mnt:ro" --entrypoint lua {{.LUAC_IMAGE}} "/mnt/${d}test/run.lua"
+          ran=$((ran+1))
+        done
+        [ "$ran" -gt 0 ] || { echo "lib:test: no <lib>/test/run.lua found"; exit 1; }
+
+  size:
+    desc: 'Stripped device-bytecode size of every lua-lib module, grouped by lib (+ grand total) - the measured number #219 budgets against.'
+    summary: 'Usage: task lua:lib:size'
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - |
+        grand=0
+        for d in */; do
+          sub=0; any=0
+          for f in "$d"*.lua; do
+            [ -f "$f" ] || continue
+            any=1
+            n=$(docker run --rm -i {{.LUAC_IMAGE}} -s -o /dev/stdout - < "$f" | wc -c)
+            n=$((n))  # strip BSD wc's leading pad so the %d below isn't "invalid number" -> 0
+            sub=$((sub+n)); grand=$((grand+n))
+            printf '%16s %6d B\n' "${f%.lua}" "$n"
+          done
+          [ "$any" -eq 1 ] && printf '%16s %6d B  (%s subtotal)\n' '' "$sub" "${d%/}"
+        done
+        printf '%16s %6d B  (stripped .lc, all libs)\n' TOTAL "$grand"

@@ -96,6 +96,11 @@ int8_t wifi_ap(const char *ssid, uint8_t channel);
 int8_t wifi_send(const uint8_t *dst_mac, const uint8_t *payload,
                  uint32_t length);
 
+/* Our station MAC (6 bytes) - the identity the Lua net bootstrap puts into
+ * ARP/DHCP (#217). Read from the dongle EEPROM during wifi_up, so it is
+ * all-zero until the radio has been brought up once. */
+const uint8_t *wifi_mac(void);
+
 /* Pop the oldest captured RX data frame, pumping until one arrives or
  * `timeout_ms` elapses (0 = single poll). The first call enables capture:
  * from then on the pump queues drained data frames (bounded; overflow drops)

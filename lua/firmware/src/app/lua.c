@@ -988,6 +988,15 @@ static int nab_wifi_recv(lua_State *L)
   return 2;
 }
 
+/* nab.wifi_mac() -> our 6-byte station MAC: the identity lua/lib/net's ARP/DHCP
+ * put on the wire (#217). All-zero until nab.wifi()/nab.wifi_ap() has brought
+ * the dongle up once (it is read from the EEPROM during bring-up). */
+static int nab_wifi_mac(lua_State *L)
+{
+  lua_pushlstring(L, (const char *)wifi_mac(), 6);
+  return 1;
+}
+
 /* Copy string field `k` of the table at index 1 into dst (missing/nil -> "").
  * Errors out on a non-string value or one that overflows the field - the
  * binding owns the sector layout, so bounds are enforced here, not in Lua. */
@@ -1048,6 +1057,7 @@ static const luaL_Reg nab_funcs[] = {
     {"wifi_ap", nab_wifi_ap},
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
+    {"wifi_mac", nab_wifi_mac},
     {"config", nab_config},
     {"led8", nab_led8},
     {"fade", nab_fade},
