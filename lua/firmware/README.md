@@ -16,10 +16,11 @@ stated reason.** `(established)` = already in the code; `(target)` = being built
    motors, LED PWM, sound DMA stay in C (`src/hal/`); Lua sees only high-level primitives -
    the [`nab` module](#the-nab-module). New hardware gets a C driver + a thin `nab.*`
    binding, never a register poke or timing loop in Lua.
-2. **Minimal, event-driven core - cooperative, never Lua in an ISR.** *(target)* End state:
-   a single C `while(1)` draining an event queue (RFID/timer/button) and calling Lua via
-   `lua_pcall`. Today's runtime polls (REPL + `run()` demo loops); the hard rule already
-   holds - no interrupt handler ever calls into Lua.
+2. **Minimal, event-driven core - cooperative, never Lua in an ISR.** *(established, #195)*
+   `src/event.c`: C pollers (debounced button, ~750 ms RFID scan) post edge events into a
+   small fixed-size queue; the Lua layer drains it via `lua_pcall`'d callbacks
+   (`nab.on`), from the REPL's idle loop or `nab.wait()`. The hard rule holds - no
+   interrupt handler ever calls into Lua (the 1 ms tick ISR only counts).
 3. **Explicit memory + error budget.** *(partly established)* Flash is tracked to the byte
    (124 KB budget, `-Werror`, parser-less bytecode-only image #128). Every chunk runs under
    `lua_pcall`, so a script fault returns to the prompt instead of crashing the rabbit.
@@ -37,11 +38,8 @@ stated reason.** `(established)` = already in the code; `(target)` = being built
    library without a security review.
 
 The driver-buildout sub-issue [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)
-maps these onto C subsystems. Two structural gaps:
+maps these onto C subsystems. Remaining structural gap:
 
-- **Timer/scheduler is the missing substrate for principle 2.** No timer subsystem yet
-  (every `ms` delay is a busy-loop). System ticks + a cooperative scheduler are the
-  prerequisite for turning polling scripts into `lua_pcall` callbacks.
 - **Script slots need versioning + rollback (principles 3-4)** with no storage on
   `LLC2_4c`: there is **no external flash** (#94, `CS_FLASH` unpopulated), so a slot region
   must be carved from the ~24 KB free internal flash or the volatile 1 MB ExtRAM.
@@ -113,9 +111,10 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/lua.elf` uses 108,156 B of 124 KB (**~18.4 KB free**; ~23 KB of that growth is
+`bin/lua.elf` uses 109,648 B of 124 KB (**~16.9 KB free**; ~23 KB of that growth is
 the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
-the #214 config-sector writer + binding). The stack is **WPA2-CCMP only** (#124,
+the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
+`nab.on`/`nab.wait`/`nab.time` bindings). The stack is **WPA2-CCMP only** (#124,
 3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
 joins open or WPA2-PSK(AES) networks and rejects anything else at scan/auth. Newlib's stdio FILE layer stays out only
 because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
@@ -180,9 +179,10 @@ sys/                ARM7TDMI startup, linker, OKI register defs (copied from mtl
   asm/init.s        reset vector, clock + EMC init, per-mode stacks, .data/.bss -> main()
   asm/*.s           SWI + reentrant IRQ/FIQ handlers
   src/irq.c         IRQ handler table + init
-  src/tick.c        1 ms system tick - the first live IRQ; drives DelayMs for the USB stack
+  src/tick.c        1 ms system tick - the first live IRQ; counter_timer + DelayMs
   inc/*.h           ml674061.h (GPIO/SPI/IRQ regs), irq.h
 inc/common.h        GPIO/register macros (UART include stripped - no UART here)
+src/event.c         cooperative event core (#195) - fixed queue + button/RFID pollers
 inc/hal/*.h         HAL headers (copied from mtl/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access
 src/hal/led.c       TLC594x RGB LED driver over SPI
@@ -192,7 +192,7 @@ src/hal/adc.c       ADC ch.2 read (the back wheel)
 src/hal/i2c.c       I2C bus - OKI bring-up + polled master read/write
 src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
 src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture position, no IRQ
-src/hal/uart.c      TX-only UART0 @38400 8N1 (#203) - polled putch/putst, no RX yet
+src/hal/uart.c      polled UART0 @38400 8N1 (#203/#207) - TX putch/putst + RX getch/rxrdy
 src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
 src/app/*.c         one app per binary (see APP=); *probe.c are hardware bring-up probes
 lua/                vendored PUC-Rio Lua 5.4 core; build compiles a subset (Makefile LUA_CORE/LUA_LIB)
@@ -226,6 +226,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
 | - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
 | - | `nab.config` - persist wifi creds in the config sector | #214 | built - HW verify pending (sim models flash reads only; write creds, power-cycle, read back) |
+| - | Cooperative event core - `nab.on`/`nab.wait`/`nab.time` | #195 | built - HW verify pending (sim has no timer/RFID model; register `watch()` on the rig, place/remove a tag, press the button) |
 
 ## Flashing
 ```sh
@@ -264,7 +265,13 @@ nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
 nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
 nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square), for nab.play
 nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
-nab.rfid()                    -- -> lowercase hex UID string, or nil if no tag
+nab.rfid()                    -- -> lowercase hex UID string, or nil if no tag (one live scan)
+nab.on(name, fn|nil)          -- register/clear an event callback (#195): "button" -> fn(pressed)
+                              --   on debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
+                              --   (registering starts the background ~750ms scan). Callbacks
+                              --   fire while the REPL prompt idles or inside nab.wait().
+nab.wait(ms)                  -- sleep ~ms on the 1 ms tick, running the event pump meanwhile
+nab.time()                    -- -> ms since boot (wrapping 32-bit tick; 0 in the simulator)
 nab.ear_move(n, speed, dir)   -- n: 1|2 (1 = left ear); speed 0..255; dir "forward"|"reverse"
 nab.ear_stop(n)               -- n: 1|2
 nab.ear_pos(n)                -- n: 1|2 -> raw wrapping 16-bit encoder pulse count
@@ -303,8 +310,16 @@ button, `nab.beep()` is audible. Caveats:
 - **`nab.rfid()` (#117) built + sim-verified, not HW-confirmed.** A documented chip isn't a
   *responding* chip until probed (see the M6 AT45 lesson) - run `rfidprobe` first. Reliability
   fix (#180): `hal/rfid.c` now tracks field state and drops/raises the RF field once instead of
-  per-poll (passive tags were power-cycled every call); the settle-delay tuning + an
-  event-shaped `nab.rfid()` are tracked in #195.
+  per-poll (passive tags were power-cycled every call). #195 closed the two follow-ups: the
+  settle delay is the tick-calibrated `DelayMs(1)` (V1's value), and the event-shaped path is
+  `nab.on('rfid', fn)` - C scans every ~750 ms and calls back only on UID transitions (tag
+  arrive/change -> `fn(uid)`, two consecutive empty scans -> `fn(nil)`).
+- **`nab.on`/`nab.wait` (#195) built, not HW-confirmed** (the sim models neither timer nor
+  RFID, so callbacks can't fire there). Events dispatch only from the cooperative pump: the
+  REPL's between-lines idle loop (RFID scans additionally gated on ~500 ms of console quiet,
+  protecting the 16-byte RX FIFO from a mid-#LC-frame scan stall) and `nab.wait`. A callback
+  error prints and returns to the loop (`lua_pcall`, principle 3). The boot chunk's `watch()`
+  is the demo: `run()`'s tag reactions, event-shaped, with the prompt still usable.
 
 ### SPI0 RX-FIFO + DREQ gotcha
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of SCI writes

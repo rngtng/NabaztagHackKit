@@ -59,6 +59,21 @@ function react(t)
   end
 end
 
+-- Event-driven variant of run() (#195): register callbacks and return to the
+-- REPL. react() then fires from the cooperative pump (REPL idle / nab.wait)
+-- when a tag lands or leaves the coupler; a button press stops watching and
+-- goes dark. No busy loop, and the prompt stays usable while it watches.
+function watch()
+  nab.on('rfid', react)
+  nab.on('button', function(pressed)
+    if pressed then
+      nab.on('rfid', nil)
+      nab.on('button', nil)
+      blackmode()
+    end
+  end)
+end
+
 function run()
   while true do
     react(nab.rfid())

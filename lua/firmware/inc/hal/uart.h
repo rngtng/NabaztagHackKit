@@ -35,5 +35,7 @@ void putch_uart(uint8_t c);
 void putst_uart(uint8_t *str);
 /** @brief Non-blocking read of one byte: 0-255 if RX FIFO had data, else -1. */
 int getch_uart(void);
+/** @brief Non-consuming peek: 1 if a byte waits in the RX FIFO, else 0. */
+uint8_t rxrdy_uart(void);
 
 #endif

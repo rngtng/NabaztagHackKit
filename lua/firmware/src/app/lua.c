@@ -32,6 +32,8 @@
 #include "hal/rfid.h"
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
+#include "event.h"       /* cooperative event core (#195): queue + pollers */
+#include "utils/delay.h" /* 1 ms tick: counter_timer + DelayMs */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
@@ -68,6 +70,11 @@ int _write(int fd, const char *ptr, int len)
   return len;
 }
 
+/* Tick timestamp of the last console RX byte: the REPL's idle pump gates the
+ * ~5 ms RFID coupler scan on the console having been quiet a while, so a scan
+ * can't stall RX mid-transfer and overflow the 16-byte FIFO (see repl). */
+static uint32_t console_last_ms;
+
 int _read(int fd, char *ptr, int len)
 {
   (void)fd;
@@ -76,6 +83,7 @@ int _read(int fd, char *ptr, int len)
   int c;
   while ((c = getch_uart()) < 0)
     ;                      /* block: no byte yet (UART has no native EOF) */
+  console_last_ms = counter_timer;
   if (c == CONSOLE_EOF)
     return 0;              /* EOT -> EOF, ends the REPL */
   ptr[0] = (char)c;
@@ -634,9 +642,20 @@ static int nab_wheel(lua_State *L)
   return 1;
 }
 
+/* uid -> "a1b2c3d4e5f60708" (lowercase hex) on the Lua stack; shared by
+ * nab.rfid and the event dispatcher. */
+static void push_uid_hex(lua_State *L, const uint8_t uid[8])
+{
+  char hex[17];
+  for (int i = 0; i < 8; i++)
+    snprintf(hex + i * 2, 3, "%02x", uid[i]);
+  lua_pushstring(L, hex);
+}
+
 /* nab.rfid() -> UID as a lowercase hex string (e.g. "a1b2c3d4e5f60708"), or
  * nil if no tag is on the coupler. Scans the CRX14 (I2C 0xA0) each call - no
- * caching, so placing/removing a tag is reflected on the next poll. */
+ * caching, so placing/removing a tag is reflected on the next poll. For
+ * scripts that would call this in a loop, prefer nab.on('rfid', fn) (#195). */
 static int nab_rfid(lua_State *L)
 {
   uint8_t uid[8];
@@ -645,10 +664,105 @@ static int nab_rfid(lua_State *L)
     lua_pushnil(L);
     return 1;
   }
-  char hex[17];
-  for (int i = 0; i < 8; i++)
-    snprintf(hex + i * 2, 3, "%02x", uid[i]);
-  lua_pushstring(L, hex);
+  push_uid_hex(L, uid);
+  return 1;
+}
+
+/* ---- cooperative events (#195): nab.on / nab.wait / nab.time -------------- */
+/* Principle 2 lands here: event.c polls the hardware from the cooperative
+ * pump (never an ISR) and queues edge events; this block delivers them to Lua
+ * callbacks under lua_pcall. Dispatch runs while the REPL prompt sits idle
+ * and inside nab.wait() - Lua code never runs behind the script's back. */
+
+#define EVENTS_TABLE "nab.events"  /* registry key: {button=fn, rfid=fn} */
+#define CONSOLE_IDLE_MS 500        /* RX quiet this long before a coupler scan */
+
+static const char *const event_names[] = {"button", "rfid", NULL};
+
+static void report(lua_State *L);  /* defined with the REPL below */
+
+/* Pump the pollers and deliver queued events to the registered callbacks,
+ * each under lua_pcall (principle 3: a callback error prints and dispatch
+ * continues; it never takes the runtime down). Not reentrant: a callback
+ * that ends up back here (e.g. via nab.wait) must not dispatch recursively,
+ * so nested calls no-op and the outer loop delivers anything new. */
+static void dispatch_events(lua_State *L, uint8_t allow_rfid)
+{
+  static uint8_t busy;
+  if (busy)
+    return;
+  busy = 1;
+  event_pump(allow_rfid);
+  event_t e;
+  while (event_next(&e)) {
+    lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
+    lua_getfield(L, -1,
+                 (e.type == EV_RFID_TAG || e.type == EV_RFID_GONE) ? "rfid"
+                                                                   : "button");
+    lua_remove(L, -2);
+    if (!lua_isfunction(L, -1)) {
+      lua_pop(L, 1); /* callback cleared after the event was queued */
+      continue;
+    }
+    switch (e.type) {
+      case EV_BUTTON_DOWN: lua_pushboolean(L, 1); break;
+      case EV_BUTTON_UP:   lua_pushboolean(L, 0); break;
+      case EV_RFID_TAG:    push_uid_hex(L, e.uid); break;
+      default:             lua_pushnil(L); break; /* EV_RFID_GONE */
+    }
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK)
+      report(L);
+  }
+  busy = 0;
+}
+
+/* nab.on(name, fn|nil): register (or clear) the callback for an event source.
+ * name "button": fn(pressed) on debounced press/release edges. name "rfid":
+ * fn(uid) when a new tag lands on the coupler, fn(nil) when it leaves;
+ * registering starts the background ~750 ms scan cycle, clearing stops it.
+ * Callbacks fire from the cooperative pump - while the REPL prompt is idle or
+ * inside nab.wait() - never from an interrupt (principle 2). */
+static int nab_on(lua_State *L)
+{
+  int which = luaL_checkoption(L, 1, NULL, event_names);
+  int has_fn = !lua_isnoneornil(L, 2);
+  if (has_fn)
+    luaL_checktype(L, 2, LUA_TFUNCTION);
+  lua_settop(L, 2); /* materialize an absent arg 2 as nil */
+  lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
+  lua_pushvalue(L, 2);
+  lua_setfield(L, -2, event_names[which]);
+  if (which == 1) /* "rfid" */
+    event_rfid_enable((uint8_t)has_fn);
+  return 0;
+}
+
+/* nab.wait(ms): sleep ~ms on the 1 ms tick while running the event pump, so
+ * nab.on callbacks fire during the wait - the idiomatic script main loop is
+ * `while true do nab.wait(100) end`. In the simulator (no timer model) the
+ * wait degrades to DelayMs' bounded busy fallback instead of hanging. */
+static int nab_wait(lua_State *L)
+{
+  lua_Integer ms = luaL_checkinteger(L, 1);
+  luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
+  uint32_t start = counter_timer;
+  lua_Integer fallback = ms; /* counts DelayMs slices while the tick is frozen */
+  dispatch_events(L, 1);
+  while ((counter_timer - start) < (uint32_t)ms && fallback > 0) {
+    DelayMs(1);
+    if (counter_timer == start)
+      fallback--;
+    dispatch_events(L, 1);
+  }
+  return 0;
+}
+
+/* nab.time() -> milliseconds since boot: the raw 1 ms tick (counter_timer),
+ * a wrapping 32-bit count - subtract two readings, don't compare absolutes.
+ * Frozen at 0 in the simulator (no timer model). */
+static int nab_time(lua_State *L)
+{
+  lua_pushinteger(L, (lua_Integer)counter_timer);
   return 1;
 }
 
@@ -864,6 +978,9 @@ static const luaL_Reg nab_funcs[] = {
     {"tone", nab_tone},
     {"wheel", nab_wheel},
     {"rfid", nab_rfid},
+    {"on", nab_on},
+    {"wait", nab_wait},
+    {"time", nab_time},
     {"ear_move", nab_ear_move},
     {"ear_stop", nab_ear_stop},
     {"ear_pos", nab_ear_pos},
@@ -874,6 +991,8 @@ static const luaL_Reg nab_funcs[] = {
 
 static int luaopen_nab(lua_State *L)
 {
+  lua_newtable(L); /* callback table for nab.on / dispatch_events (#195) */
+  lua_setfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
   luaL_newlib(L, nab_funcs);
   return 1;
 }
@@ -1043,7 +1162,17 @@ static void repl(lua_State *L)
 {
   char line[REPL_LINE];
   sh_puts("> ");
-  while (sh_gets(line, sizeof line) != NULL) {
+  for (;;) {
+    /* Idle between lines: run the cooperative pump (#195) so nab.on callbacks
+     * fire while the prompt waits. The ~5 ms RFID coupler scan could overflow
+     * the 16-byte RX FIFO if bytes arrived mid-scan, so it is gated on the
+     * console having been quiet for CONSOLE_IDLE_MS; the (cheap) button poll
+     * always runs. Once a byte is pending we fall through to the blocking
+     * line read - no pumping mid-line or mid-#LC-frame. */
+    while (!rxrdy_uart())
+      dispatch_events(L, (counter_timer - console_last_ms) > CONSOLE_IDLE_MS);
+    if (sh_gets(line, sizeof line) == NULL)
+      break;
     if (line[0] == '\n' || line[0] == '\0') {
       /* blank line: no-op, just re-prompt (matches the stock lua prompt) */
     } else if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':') {

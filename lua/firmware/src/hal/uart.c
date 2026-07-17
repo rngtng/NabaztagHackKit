@@ -31,6 +31,13 @@ void putst_uart(uint8_t *str)
     putch_uart(*str++);
 }
 
+uint8_t rxrdy_uart(void)
+{
+  /* non-consuming: lets the REPL run the cooperative event pump (#195)
+   * only while no console byte is waiting. */
+  return (get_value(UARTLSR0) & UARTLSR_DR) == UARTLSR_DR;
+}
+
 int getch_uart(void)
 {
   /* data-ready clears when the RX FIFO drains, so this is non-blocking:

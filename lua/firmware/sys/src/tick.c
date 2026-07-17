@@ -45,9 +45,20 @@ void init_tick(void)
   __enable_interrupt();
 }
 
+/* The Unicorn simulator models no timer, so counter_timer stays frozen there
+ * and a pure tick-wait would hang. The spins bound turns that into a rough
+ * busy-wait: it only bites while the counter has not moved off its starting
+ * value, and 30000 spins take several ms on the real 33 MHz part - long past
+ * the first 1 ms tick edge - so hardware timing is untouched. */
+#define DELAY_SPINS_PER_MS 30000UL
+
 void DelayMs(uint16_t cmpt_ms)
 {
   uint32_t t = counter_timer;
-  while (cmpt_ms > (counter_timer - t))
+  unsigned long spins = (unsigned long)cmpt_ms * DELAY_SPINS_PER_MS;
+  while (cmpt_ms > (counter_timer - t)) {
     CLR_WDT;
+    if (counter_timer == t && spins-- == 0)
+      break; /* tick frozen (simulator): bounded fallback elapsed */
+  }
 }

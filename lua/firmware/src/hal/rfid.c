@@ -10,6 +10,7 @@
 
 #include "hal/i2c.h"
 #include "hal/rfid.h"
+#include "utils/delay.h"
 
 static uint8_t i2c_ok;
 
@@ -21,15 +22,14 @@ static uint8_t i2c_ok;
  * before a fresh anti-collision round, not drop the field. */
 static uint8_t field_on;
 
-/* No timer/DelayMs subsystem in firmwareV2 yet (see hal/audio.c's audio_delay).
- * The CRX14 needs a short settle after each I2C stop before the next command
- * gets an answer (per the original driver's comments); sized the same order of
- * magnitude as audio.c's ~1 ms reset window. */
+/* The CRX14 needs a short settle after each I2C stop before the next command
+ * gets an answer (per the original driver's comments). V1 used DelayMs(1);
+ * with the 1 ms tick live (sys/src/tick.c) we do the same - calibrated
+ * against the real clock, replacing the uncalibrated ~200k-spin busy loop
+ * (#180's open settle-tuning risk, resolved per #195). */
 static void rfid_delay_1ms(void)
 {
-  volatile unsigned long n = 200000;
-  while (n--)
-    CLR_WDT;
+  DelayMs(1);
 }
 
 static uint16_t writecheck(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
