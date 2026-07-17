@@ -81,7 +81,11 @@ CFLAGS += -Wcast-align   # early signal for the uint8_t*->wider-pointer casts ab
 CFLAGS += -Werror
 CFLAGS += -fdata-sections -ffunction-sections
 CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
-CFLAGS += -mcpu=arm7tdmi -MMD
+# -MP: emit a phony target for every prerequisite header so a header deleted
+# after a prior build (obj/ is host-mounted and persists) does not wedge the
+# next incremental build with "No rule to make target 'inc/net/rc4.h'" - the
+# #124 WPA2-CCMP scavenge dropped rc4.h and stale .d files still listed it.
+CFLAGS += -mcpu=arm7tdmi -MMD -MP
 CFLAGS += -Iinc/ -Isys/inc
 
 # M11a (#143): DEBUG_USB=1 / DEBUG_WIFI=1 route the vendored stack's DBG_*
