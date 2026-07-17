@@ -915,6 +915,7 @@ static void rt2501_rx_callback(PURB urb)
     sprintf(dbg_buffer, "USB BULK RX ERROR, status=%d, result=%ld"EOL,
       urb->status, urb->result);
     DBG_WIFI(dbg_buffer);
+    rt2501_rxdbg[RXDBG_RXKILL]++;
     rt2501_connected = 0;
     hcd_free(urb);
     return;
@@ -969,6 +970,7 @@ static void rt2501_rx_callback(PURB urb)
     if((rt2501_frame_position+64) >= RT2501_MAX_FRAME_SIZE) {
       /* this shouldn't happen (see MAC_CSR6) */
       DBG_WIFI("RX Buffer overrun"EOL);
+      rt2501_rxdbg[RXDBG_RXKILL]++;
       rt2501_connected = 0;
       return;
     }
@@ -987,7 +989,10 @@ static void rt2501_submit_rx(void)
   disable_ohci_irq();
   urb = hcd_malloc(sizeof(*urb), EXTRAM,17);
   enable_ohci_irq();
-  if(urb == NULL) return;
+  if(urb == NULL) {
+    rt2501_rxdbg[RXDBG_RXKILL]++;
+    return;
+  }
 
   urb->buffer = rt2501_rxbuf;
   urb->length = RT2501_USB_PACKET_SIZE;

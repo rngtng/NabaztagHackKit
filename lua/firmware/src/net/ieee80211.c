@@ -1466,7 +1466,10 @@ void ieee80211_input(uint8_t *frame, uint32_t length, int16_t rssi)
 //#endif
 	struct ieee80211_frame_min *frame_min;
 
-	if(ieee80211_state == IEEE80211_S_IDLE) return;
+	if(ieee80211_state == IEEE80211_S_IDLE) {
+		rt2501_rxdbg[RXDBG_IN_IDLE]++;
+		return;
+	}
 
 	if(length < sizeof(struct ieee80211_frame_min)) return;
 	frame_min = (struct ieee80211_frame_min *)frame;

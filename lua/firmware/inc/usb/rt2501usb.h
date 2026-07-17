@@ -116,6 +116,7 @@ enum {
   RXDBG_CIPHER,    /* dropped: CipherErr != 0 */
   RXDBG_REPLAY,    /* dropped: CCMP replay check */
   RXDBG_INPUT,     /* delivered to ieee80211_input */
+  RXDBG_IN_IDLE,   /* ieee80211_input drop: state fell back to IDLE */
   RXDBG_IN_DATA,   /* data-type frames reaching ieee80211_input_data */
   RXDBG_D_STATE,   /* input_data drop: state not EAPOL/RUN */
   RXDBG_D_DIR,     /* input_data drop: direction/mode mismatch */
@@ -124,6 +125,8 @@ enum {
   RXDBG_D_SUB,     /* input_data: non-DATA subtype */
   RXDBG_Q_OK,      /* rt2501buffer_new queued */
   RXDBG_Q_FAIL,    /* rt2501buffer_new failed */
+  RXDBG_RXKILL,    /* RX URB chain died (error status / overrun / alloc fail) */
+  RXDBG_STATE,     /* written at read time: ieee80211|eapol<<8|rt2501<<16 */
   RXDBG_CAP_N,     /* captured data-frame records so far */
   RXDBG_CAP0,      /* RXDBG_CAP_MAX records x RXDBG_CAP_WORDS words */
   RXDBG_CAP_MAX = 3,

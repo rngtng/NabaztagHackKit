@@ -35,6 +35,8 @@
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: counter_timer + DelayMs */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
+#include "net/ieee80211.h" /* ieee80211_state - nab.wifi_rxdbg (#228 diag) */
+#include "net/eapol.h"     /* eapol_state - nab.wifi_rxdbg (#228 diag) */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
 #include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
@@ -997,12 +999,23 @@ static int nab_wifi_mac(lua_State *L)
   return 1;
 }
 
-/* nab.wifi_rxdbg() -> array of the #228 RX drop-point counters + captured
- * descriptor words (index map: RXDBG_* in usb/rt2501usb.h). Diagnostic
- * scaffolding for the STA-mode RX investigation - remove with the fix. */
+/* nab.wifi_rxdbg([reset]) -> array of the #228 RX drop-point counters +
+ * captured descriptor words (index map: RXDBG_* in usb/rt2501usb.h), or, with
+ * reset=true, zero them all (scopes counters/captures to a test window, e.g.
+ * post-join only). RXDBG_STATE is stamped at read time with the live driver
+ * states. Diagnostic scaffolding for the STA-mode RX investigation - remove
+ * with the fix. */
 static int nab_wifi_rxdbg(lua_State *L)
 {
   int i;
+  if (lua_toboolean(L, 1)) {
+    for (i = 0; i < RXDBG_WORDS; i++)
+      rt2501_rxdbg[i] = 0;
+    return 0;
+  }
+  rt2501_rxdbg[RXDBG_STATE] = (uint32_t)ieee80211_state
+                            | ((uint32_t)eapol_state << 8)
+                            | ((uint32_t)wifi_state() << 16);
   lua_createtable(L, RXDBG_WORDS, 0);
   for (i = 0; i < RXDBG_WORDS; i++) {
     lua_pushinteger(L, (lua_Integer)rt2501_rxdbg[i]);
