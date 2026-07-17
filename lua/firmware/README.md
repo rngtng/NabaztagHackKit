@@ -272,7 +272,7 @@ nab.on(name, fn|nil)          -- register/clear an event callback (#195): "butto
                               --   fire while the REPL prompt idles or inside nab.wait().
 nab.wait(ms)                  -- sleep ~ms on the 1 ms tick, running the event pump meanwhile
 nab.time()                    -- -> ms since boot (wrapping 32-bit tick; 0 in the simulator)
-nab.ear_move(n, speed, dir)   -- n: 1|2 (1 = left ear); speed 0..255; dir "forward"|"reverse"
+nab.ear_move(n, dir)          -- n: 1|2 (1 = left ear); dir "forward"|"reverse" (full speed; see #179)
 nab.ear_stop(n)               -- n: 1|2
 nab.ear_pos(n)                -- n: 1|2 -> raw wrapping 16-bit encoder pulse count
 nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open; #124) -> true | nil, msg (M11)

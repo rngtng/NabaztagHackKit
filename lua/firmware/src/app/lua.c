@@ -766,24 +766,29 @@ static int nab_time(lua_State *L)
   return 1;
 }
 
-/* nab.ear_move(n, speed, dir): drive ear motor n (1 or 2) at speed (0..255)
- * in dir ("forward"|"reverse"). Runs until nab.ear_stop() or another
- * nab.ear_move() call - there is no closed-loop position control here (see
- * hal/motor.h: the encoder is a raw hole counter, not a homed position). */
+/* nab.ear_move(n, dir): drive ear motor n (1 or 2) in dir ("forward"|"reverse")
+ * until nab.ear_stop() or another nab.ear_move() call. There is no closed-loop
+ * position control here (see hal/motor.h: the encoder is a raw hole counter,
+ * not a homed position).
+ *
+ * Single speed by design (#179): these gearmotors have a hard torque floor
+ * (~120/255, ~43% PWM duty) below which they only hum without turning, and
+ * above it the rotation rate barely changes (HW-measured: ~7-9 encoder
+ * counts/700ms flat from 115 to 200, ~11 at 255). So "speed" was effectively
+ * stall-or-go; the old speed argument was dropped and the ear always runs at
+ * full duty. */
 static int nab_ear_move(lua_State *L)
 {
   lua_Integer n = luaL_checkinteger(L, 1);
-  lua_Integer speed = luaL_checkinteger(L, 2);
-  const char *dir = luaL_checkstring(L, 3);
+  const char *dir = luaL_checkstring(L, 2);
   luaL_argcheck(L, n == 1 || n == 2, 1, "1 or 2");
-  luaL_argcheck(L, speed >= 0 && speed <= 255, 2, "0..255");
 
   uint8_t rotation;
   if      (strcmp(dir, "forward") == 0) rotation = FORWARD;
   else if (strcmp(dir, "reverse") == 0) rotation = REVERSE;
   else return luaL_error(L, "bad direction '%s' (forward|reverse)", dir);
 
-  run_motor((uint8_t)n, (uint8_t)speed, rotation);
+  run_motor((uint8_t)n, 255, rotation);
   return 0;
 }
 
