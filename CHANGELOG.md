@@ -1,5 +1,29 @@
 # Changes
 
+## v2.0.0-alpha13 - 14-07-2026
+
+  * [#102](https://github.com/rngtng/NabaztagHackKit/issues/102): lua firmware LED
+    driver re-sync (from `mtl/firmware` PR #45) + a background LED fade engine.
+    `lua/firmware/src/hal/led.c` gains the gamma-2.2 intensity table (no low-end
+    dead zone - fades no longer snap to black), the generic `led_pack`/`led_flush`
+    packer (verified bit-identical to the old per-LED mask code over 2M random
+    writes), and a background fade engine (`led_fade`/`led_fade_tick`). It runs
+    off the M11a 1 ms System Timer tick (`lua/firmware/sys/src/tick.c`):
+    `tick_handler()` now also calls `led_fade_tick()`. New Lua bindings `nab.led8`
+    (8-bit gamma), `nab.fade` (background fade), `nab.delay`, and a showcase
+    `examples/led-demo.lua` (smooth breathe + pinball with comet trails), all
+    exercised by an opening LED self-test in the boot demo. Fixed a **calibration
+    bug** in the shared tick surfaced while wiring the fades up: it reloaded
+    `TMRLR=0xF830` (1 ms @ 32 MHz, from `mtl/firmware`), but V2 never runs
+    `init_pll()` and clocks off the 16 MHz ring oscillator, so every tick - hence
+    every fade and `DelayMs` - ran ~2x slow on hardware; corrected to `0xFC18`.
+    The simulator (`lua/tools/simulator/simulate.py`) gained a System Timer +
+    IRQ-delivery model, so **fades now animate in the sim**: `--leds` /
+    `task lua:firmware:leddemo` draws the five LEDs as a live ANSI strip (e.g. a
+    fade probe reports `timer IRQs = 1120`, `LED frames = 65`). Builds clean; the
+    sim is instruction-timed (not cycle-accurate), so a hardware pass to confirm
+    the look is still the open item.
+
 ## v2.0.0-alpha12 - 12-07-2026
 
 * Huge Restructure - Split sources in mtl (V1) and lua(V2).

@@ -1,6 +1,10 @@
 # OS noise
 .DS_Store
 
+# Python bytecode cache (e.g. from running lua/tools/simulator/simulate.py on the host)
+__pycache__/
+*.pyc
+
 # Makefiles are project source — override a global `makefile` ignore some setups have
 !Makefile
 
@@ -20,4 +24,3 @@ build
 /mtl/tools/testvm/testvm
 /mtl/tools/testvm/bugrepro
 /mtl/tools/testvm/bc.c
-__pycache__/

@@ -55,6 +55,38 @@ void __enable_interrupt(void)
 }
 
 /**
+ * @brief Disable IRQ, returning the previous mask state (save/restore pair).
+ *
+ * Unlike the unconditional __enable/__disable above, this lets a critical
+ * section nest without wrongly re-enabling interrupts that a caller had already
+ * disabled. Used by the LED driver (#102) to fence its shadow-register writes
+ * and SPI flush against the 1 ms timer IRQ that ticks the fade engine. Returns
+ * the old CPSR I-bit (0 = interrupts were enabled); pass it to irq_restore.
+ */
+__attribute__((target("arm")))
+uint32_t irq_disable_save(void)
+{
+  uint32_t cpsr;
+  asm volatile(
+    "mrs %0, cpsr\n\t"
+    "orr r3, %0, #0x80\n\t"
+    "msr cpsr_c, r3"
+    : "=r"(cpsr) : : "r3", "memory");
+  return cpsr & 0x80;
+}
+
+/**
+ * @brief Restore the mask state captured by irq_disable_save().
+ * @param [in] prev The value irq_disable_save() returned (old I-bit).
+ */
+__attribute__((target("arm")))
+void irq_restore(uint32_t prev)
+{
+  if (!prev)
+    __enable_interrupt();
+}
+
+/**
  * @brief Initialize interrupt control registers (IRQ interrupt)
  */
 void init_irq(void)
