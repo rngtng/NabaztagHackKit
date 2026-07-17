@@ -24,3 +24,5 @@ build
 /mtl/tools/testvm/testvm
 /mtl/tools/testvm/bugrepro
 /mtl/tools/testvm/bc.c
+*.local.lua
+*.local.lc
