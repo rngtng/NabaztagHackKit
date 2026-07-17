@@ -134,7 +134,7 @@ int/float/instruction). Building from the vendored tree - not a distro `luac` - 
 the header sizes aligned; full rule in [`../tools/luac/README.md`](../tools/luac/README.md).
 
 ```sh
-task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc   # compile to stripped device bytecode
+task lua:compile SOURCE=foo.lua [OUT=foo.lc]       # compile to stripped device bytecode (layer-wide verb)
 task lua:firmware:test:luac                        # golden-transcript test of the bytecode pipeline
 ```
 

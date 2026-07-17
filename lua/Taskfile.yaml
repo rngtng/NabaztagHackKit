@@ -13,14 +13,14 @@
 # per-leaf duplication is intentional for now (DRY: #187).
 version: '3'
 
-vars:
-  OUT: build
-
 includes:
   firmware: # Lua-successor firmware (Lua 5.4)
     taskfile: ./firmware/Taskfile.yaml
   lib: # pure-Lua standard libraries (auto-discovered); net/ is the first (#217)
     taskfile: ./lib/Taskfile.yaml
+  compile: # host Lua->device-bytecode compiler; layer-wide (firmware embed, lib tests, REPL all use it)
+    taskfile: ./tools/luac/Taskfile.yaml
+    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
 tasks:
   verify:
@@ -34,4 +34,4 @@ tasks:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:
       - task: firmware:clean
-      - rm -rf '{{.OUT}}'
+      - rm -rf build

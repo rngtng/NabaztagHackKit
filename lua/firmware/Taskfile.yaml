@@ -8,8 +8,8 @@
 #   task lua:firmware:repl             -> Lua REPL in the simulator (#92)
 #   task lua:firmware:flash            -> flash over JTAG via the Pi bridge (#90)
 #   task lua:firmware:repl:hw          -> flash + drive the REPL over UART (#207)
-#   task lua:firmware:luac             -> compile SOURCE= to device bytecode OUT=
 #   task lua:firmware:test:luac        -> source vs #LC bytecode round-trip
+# (compiling a .lua to device bytecode is layer-wide: `task lua:compile SOURCE=…`)
 #
 # Relocatable: every target works both from the repo root (`task
 # lua:firmware:simulate`) and from inside the folder (`cd lua/firmware && task
@@ -44,6 +44,7 @@ vars:
 includes:
   luac: # host Lua->bytecode compiler (built with the lua layer root as Docker context)
     taskfile: ../tools/luac/Taskfile.yaml
+    internal: true   # image/embed dep only; the user-facing compile verb is lua:compile (root)
     vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
   simulator: # Unicorn simulator (built with the lua layer root as Docker context)

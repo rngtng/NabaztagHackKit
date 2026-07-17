@@ -5,7 +5,7 @@
 # for the header-compatibility rationale). Every target runs in Docker; the only
 # host requirement is Docker + Task.
 #
-#   task lua:firmware:luac SOURCE=foo.lua OUT=foo.lc   -> stripped .lc bytecode
+#   task lua:compile SOURCE=foo.lua [OUT=foo.lc]   -> stripped .lc bytecode
 #
 # The image is built with the *lua layer root* as its Docker context (not this
 # folder) so its Dockerfile can COPY the sibling firmware/lua/ tree - hence the
@@ -30,11 +30,13 @@ tasks:
       - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
 
   default:
-    desc: 'Compile a Lua source file to stripped 32-bit bytecode. Usage: task lua:firmware:luac SOURCE=in.lua OUT=out.lc'
+    desc: 'Compile a Lua source file to stripped 32-bit device bytecode. Usage: task lua:compile SOURCE=in.lua [OUT=in.lc]'
     deps: [image]
     dir: '{{.USER_WORKING_DIR}}'
+    vars:
+      OUT: '{{.OUT | default (printf "%s.lc" (trimSuffix ".lua" .SOURCE))}}'
     requires:
-      vars: [SOURCE, OUT]
+      vars: [SOURCE]
     cmds:
       # ENTRYPOINT is luac; -s strips debug info (the bulk of chunk size), - reads
       # stdin, -o /dev/stdout writes the chunk to stdout -> redirected to OUT. No
