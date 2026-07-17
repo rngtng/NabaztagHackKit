@@ -138,6 +138,7 @@ class Sim:
         self._rx = None              # interactive: one prefetched input byte
         self._uart_eot_sent = False  # batch: EOT appended once input is exhausted
         self.getch_addr = None       # getch_uart entry, for the RX code hook
+        self.rxrdy_addr = None       # rxrdy_uart entry, for the RX-peek code hook
         self.waiti2c_addr = None     # waiti2cmcf entry, for the I2C-done code hook
         # Interactive: read input live from the real terminal and echo the
         # console straight to stdout, so you can type at the REPL.
@@ -175,6 +176,9 @@ class Sim:
                 gu = symtab.get_symbol_by_name("getch_uart")
                 if gu:
                     self.getch_addr = gu[0]["st_value"] & ~1    # strip Thumb bit
+                ru = symtab.get_symbol_by_name("rxrdy_uart")
+                if ru:
+                    self.rxrdy_addr = ru[0]["st_value"] & ~1    # strip Thumb bit
                 wi = symtab.get_symbol_by_name("waiti2cmcf")
                 if wi:
                     self.waiti2c_addr = wi[0]["st_value"] & ~1  # strip Thumb bit
@@ -195,6 +199,9 @@ class Sim:
             # hook twice per call - the second fire clears DR before the read.
             u.hook_add(UC_HOOK_CODE, self._on_getch,
                        begin=self.getch_addr, end=self.getch_addr)
+        if self.rxrdy_addr is not None:
+            u.hook_add(UC_HOOK_CODE, self._on_rxrdy,
+                       begin=self.rxrdy_addr, end=self.rxrdy_addr)
         if self.waiti2c_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_waiti2c,
                        begin=self.waiti2c_addr, end=self.waiti2c_addr)
@@ -295,6 +302,21 @@ class Sim:
         the function entry, exactly like the getch_uart RX hook. waiti2cmcf exits
         on the first read once MCF is set, so seeding once at entry is enough."""
         uc.mem_write(I2CSR_ADDR, I2C_MCF.to_bytes(2, "little"))
+
+    def _on_rxrdy(self, uc, address, size, _ud):
+        """Stage the LSR DR bit before rxrdy_uart reads it - the non-consuming
+        peek the REPL's idle event pump (#195) polls between lines. Same
+        code-hook-at-entry pattern as _on_getch, but touches only DR: the RBR
+        byte itself is staged (and input consumed) by the getch_uart hook when
+        the firmware goes on to actually read. Interactive note: _uart_rx_ready
+        blocks prefetching one live byte, so an interactive sim parks here just
+        as it used to park inside getch_uart - no event pump runs in-sim, which
+        matches the sim's no-timer/no-RFID model (nothing could fire anyway)."""
+        cur = int.from_bytes(uc.mem_read(UART0_LSR, 4), "little") | UART_LSR_TXRDY
+        if self._uart_rx_ready():
+            uc.mem_write(UART0_LSR, (cur | UART_LSR_DR).to_bytes(4, "little"))
+        else:
+            uc.mem_write(UART0_LSR, (cur & ~UART_LSR_DR & 0xFF).to_bytes(4, "little"))
 
     def _on_getch(self, uc, address, size, _ud):
         """Stage UART0 RX in memory right before getch_uart reads it. Runs as a
