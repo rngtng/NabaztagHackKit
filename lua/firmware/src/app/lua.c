@@ -910,7 +910,7 @@ static int nab_wifi_recv(lua_State *L)
   return 2;
 }
 
-/* nab.wifi_mac() -> our 6-byte station MAC: the identity lua/net's ARP/DHCP
+/* nab.wifi_mac() -> our 6-byte station MAC: the identity lua/lib/net's ARP/DHCP
  * put on the wire (#217). All-zero until nab.wifi()/nab.wifi_ap() has brought
  * the dongle up once (it is read from the EEPROM during bring-up). */
 static int nab_wifi_mac(lua_State *L)

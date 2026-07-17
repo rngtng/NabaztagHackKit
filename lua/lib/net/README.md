@@ -1,4 +1,4 @@
-# lua/net — the Lua network bootstrap (#217)
+# lua/lib/net - the Lua network bootstrap (#217)
 
 ARP, IPv4 (+ICMP echo), UDP, DHCP (client + single-lease server), TCP and
 HTTP as pure-Lua modules over the raw-frame `nab.wifi_*` bindings (#216) —
@@ -10,7 +10,7 @@ above the LLC/SNAP header lives here.
 **Nothing in this folder costs flash.** Modules are compiled off-device
 (`tools/luac`, `LUA_32BITS`) and shipped as `#LC` frames over the REPL
 (`task lua:firmware:repl:hw`) into RAM. Freezing a boot subset into the
-resident chunk is #219's decision, fed by `task lua:net:size`.
+resident chunk is #219's decision, fed by `task lua:lib:size`.
 
 ## Layout / layering
 
@@ -48,7 +48,7 @@ as `ifc.ip` is set — the first thing to try against fresh hardware.
 
 ## Tests
 
-`task lua:net:test` (in `lua:verify`) runs `test/run.lua` under the
+`task lua:lib:test` (in `lua:verify`) runs `test/run.lua` under the
 `tools/luac` image's host `lua` — built from the same vendored tree +
 `LUA_32BITS` `luaconf.h` as the firmware, so integer width, wrap arithmetic
 (TCP seq compare depends on it) and `string.pack` match the device
@@ -60,7 +60,7 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:net:size` — stripped `.lc` bytes per module. As of #217 landing:
+`task lua:lib:size` - stripped `.lc` bytes per module. As of #217 landing:
 link 1103, arp 1004, ipv4 1385, udp 788, dhcp 3420, tcp 4857, http 1881,
 iface 3782 — **18,220 B total**. The boot-critical subset (join path:
 link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is what #219 must fit (compressed)
