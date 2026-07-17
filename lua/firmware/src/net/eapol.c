@@ -98,20 +98,29 @@ void F(const uint8_t *password, uint16_t passwordlength,
 }
 
 /**
- * @brief FIXME
- * Output must be 40 bytes long, only the first 32 bytes are useful
+ * @brief Derive the 32-byte PMK (PBKDF2-SHA1, 4096 iterations).
+ *
+ * F() emits two whole 20-byte SHA1 blocks, so derivation runs in a local
+ * 40-byte scratch and only EAPOL_MASTER_KEY_LENGTH bytes are copied out.
+ * The previous version wrote all 40 bytes through `pmk`, overflowing every
+ * caller's 32-byte buffer by 8 - in V2 that deterministically smashed
+ * hal/wifi.c's adjacent rx_capture/rx_count statics and killed STA-mode
+ * frame RX after every WPA join (#228).
  *
  * @param [in]  password    Buffer for the password
  * @param [in]  ssid        Buffer of the SSID
  * @param [in]  ssidlength  Length of the SSID
- * @param [out] pmk         Ouput buffer for PMK
+ * @param [out] pmk         Output buffer for PMK (EAPOL_MASTER_KEY_LENGTH)
  */
 static void password_to_pmk(const uint8_t *password,
                             uint8_t *ssid, uint16_t ssidlength,
                             uint8_t *pmk)
 {
-  F(password, strlen((char*)password), ssid, ssidlength, 4096, 1, pmk);
-  F(password, strlen((char*)password), ssid, ssidlength, 4096, 2, pmk+20);
+  uint8_t out[40];
+
+  F(password, strlen((char*)password), ssid, ssidlength, 4096, 1, out);
+  F(password, strlen((char*)password), ssid, ssidlength, 4096, 2, out+20);
+  memcpy(pmk, out, EAPOL_MASTER_KEY_LENGTH);
 }
 
 /**
