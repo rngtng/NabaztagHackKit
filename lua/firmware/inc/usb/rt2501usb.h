@@ -102,7 +102,35 @@ uint16_t rt2501_txtime(uint32_t len, uint8_t rate);
 
 extern uint8_t rt2501_mac[IEEE80211_ADDR_LEN];
 
-
+/* #228 diagnostic: STA-mode RX drop-point counters, incremented along the whole
+ * RX chain (USB completion -> ieee80211_input_data -> app queue) and read from
+ * the main loop via nab.wifi_rxdbg(). The RXDBG_CAP records hold the raw RX
+ * descriptor words (w0, w1, Iv, Eiv) + first 802.11 header word of the first
+ * RXDBG_CAP_MAX *data-type* frames, so a single hardware run shows where
+ * frames die and what the hardware actually reported. Temporary scaffolding -
+ * remove once #228 is fixed. */
+enum {
+  RXDBG_URB = 0,   /* completed RX frames (descriptor parsed) */
+  RXDBG_ENC,       /* frames with CipherAlg != NONE */
+  RXDBG_CRC,       /* dropped: CRC error */
+  RXDBG_CIPHER,    /* dropped: CipherErr != 0 */
+  RXDBG_REPLAY,    /* dropped: CCMP replay check */
+  RXDBG_INPUT,     /* delivered to ieee80211_input */
+  RXDBG_IN_DATA,   /* data-type frames reaching ieee80211_input_data */
+  RXDBG_D_STATE,   /* input_data drop: state not EAPOL/RUN */
+  RXDBG_D_DIR,     /* input_data drop: direction/mode mismatch */
+  RXDBG_D_DST,     /* input_data drop: dest not me/bcast/mcast */
+  RXDBG_D_BSS,     /* input_data drop: BSSID mismatch */
+  RXDBG_D_SUB,     /* input_data: non-DATA subtype */
+  RXDBG_Q_OK,      /* rt2501buffer_new queued */
+  RXDBG_Q_FAIL,    /* rt2501buffer_new failed */
+  RXDBG_CAP_N,     /* captured data-frame records so far */
+  RXDBG_CAP0,      /* RXDBG_CAP_MAX records x RXDBG_CAP_WORDS words */
+  RXDBG_CAP_MAX = 3,
+  RXDBG_CAP_WORDS = 5,
+  RXDBG_WORDS = RXDBG_CAP0 + RXDBG_CAP_MAX * RXDBG_CAP_WORDS
+};
+extern volatile uint32_t rt2501_rxdbg[RXDBG_WORDS];
 
 int32_t rt2501_driver_install(void);
 int32_t rt2501_state(void);

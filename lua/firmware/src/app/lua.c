@@ -997,6 +997,20 @@ static int nab_wifi_mac(lua_State *L)
   return 1;
 }
 
+/* nab.wifi_rxdbg() -> array of the #228 RX drop-point counters + captured
+ * descriptor words (index map: RXDBG_* in usb/rt2501usb.h). Diagnostic
+ * scaffolding for the STA-mode RX investigation - remove with the fix. */
+static int nab_wifi_rxdbg(lua_State *L)
+{
+  int i;
+  lua_createtable(L, RXDBG_WORDS, 0);
+  for (i = 0; i < RXDBG_WORDS; i++) {
+    lua_pushinteger(L, (lua_Integer)rt2501_rxdbg[i]);
+    lua_rawseti(L, -2, i + 1);
+  }
+  return 1;
+}
+
 /* Copy string field `k` of the table at index 1 into dst (missing/nil -> "").
  * Errors out on a non-string value or one that overflows the field - the
  * binding owns the sector layout, so bounds are enforced here, not in Lua. */
@@ -1058,6 +1072,7 @@ static const luaL_Reg nab_funcs[] = {
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
     {"wifi_mac", nab_wifi_mac},
+    {"wifi_rxdbg", nab_wifi_rxdbg},
     {"config", nab_config},
     {"led8", nab_led8},
     {"fade", nab_fade},

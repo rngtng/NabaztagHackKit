@@ -903,6 +903,10 @@ static uint8_t rt2501_rx_replay_ok(PRXD_STRUC rxd)
   return 1;
 }
 
+/* #228: RX drop-point counters (see rt2501usb.h). ISR-written, main-loop read;
+ * pure stores, no printing (polled UART in an ISR wedges timing, #119). */
+volatile uint32_t rt2501_rxdbg[RXDBG_WORDS];
+
 static void rt2501_rx_callback(PURB urb)
 {
   PRXD_STRUC rxd;
@@ -930,8 +934,31 @@ static void rt2501_rx_callback(PURB urb)
         rxd->Eiv);
       DBG_WIFI(dbg_buffer);
 #endif
-    if(!rxd->Crc && ((rxd->CipherAlg == RT2501_CIPHER_NONE) || (rxd->CipherErr == 0))
-       && rt2501_rx_replay_ok(rxd)) {
+    rt2501_rxdbg[RXDBG_URB]++;
+    if(rxd->CipherAlg != RT2501_CIPHER_NONE)
+      rt2501_rxdbg[RXDBG_ENC]++;
+    /* Capture the first few data-type frames' descriptor words raw (fc0 type
+     * bits == 0x08), whatever their fate below. */
+    if((rt2501_rxdbg[RXDBG_CAP_N] < RXDBG_CAP_MAX)
+       && ((rt2501_frame[sizeof(RXD_STRUC)] & 0x0C) == 0x08)) {
+      volatile uint32_t *cap =
+        &rt2501_rxdbg[RXDBG_CAP0 + rt2501_rxdbg[RXDBG_CAP_N]*RXDBG_CAP_WORDS];
+      const uint32_t *w = (const uint32_t *)(const void *)rt2501_frame;
+      cap[0] = w[0];                       /* Crc/CipherErr/KeyIndex/CipherAlg */
+      cap[1] = w[1];                       /* PlcpSignal/Rssi/FrameOffset */
+      cap[2] = w[2];                       /* Iv */
+      cap[3] = w[3];                       /* Eiv */
+      cap[4] = w[sizeof(RXD_STRUC)/4];     /* 802.11 fc0 fc1 dur */
+      rt2501_rxdbg[RXDBG_CAP_N]++;
+    }
+    if(rxd->Crc)
+      rt2501_rxdbg[RXDBG_CRC]++;
+    else if((rxd->CipherAlg != RT2501_CIPHER_NONE) && (rxd->CipherErr != 0))
+      rt2501_rxdbg[RXDBG_CIPHER]++;
+    else if(!rt2501_rx_replay_ok(rxd))
+      rt2501_rxdbg[RXDBG_REPLAY]++;
+    else {
+      rt2501_rxdbg[RXDBG_INPUT]++;
       ieee80211_input(rt2501_frame+sizeof(RXD_STRUC),
           rxd->DataByteCnt,
           rt2501_agc_to_rssi(rxd->PlcpRssi));
