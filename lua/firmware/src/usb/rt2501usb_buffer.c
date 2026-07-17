@@ -120,11 +120,14 @@ struct rt2501buffer *rt2501_receive(void)
     DBG_WIFI(dbg_buffer);
 */
     if((r->length < LLC_LENGTH)
-       || (memcmp(r->data, eapol_llc, LLC_LENGTH) != 0))
+       || (memcmp(r->data, eapol_llc, LLC_LENGTH) != 0)) {
       /* Not an EAPOL frame. Return it to the application. */
+      rt2501_rxdbg[RXDBG_RCV_RET]++;
       return r;
+    }
 
     /* EAPOL frame, process it. */
+    rt2501_rxdbg[RXDBG_RCV_EAPOL]++;
     eapol_input(r->data, r->length);
     disable_ohci_irq();
     hcd_free(r);

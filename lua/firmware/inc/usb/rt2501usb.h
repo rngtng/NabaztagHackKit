@@ -126,6 +126,11 @@ enum {
   RXDBG_Q_OK,      /* rt2501buffer_new queued */
   RXDBG_Q_FAIL,    /* rt2501buffer_new failed */
   RXDBG_RXKILL,    /* RX URB chain died (error status / overrun / alloc fail) */
+  RXDBG_RCV_RET,   /* rt2501_receive returned a data frame to its caller */
+  RXDBG_RCV_EAPOL, /* rt2501_receive consumed an EAPOL frame internally */
+  RXDBG_P_CAP,     /* hal/wifi pump captured a frame into the app rx queue */
+  RXDBG_P_FREE,    /* hal/wifi pump freed a frame (capture off or queue full) */
+  RXDBG_W_POP,     /* wifi_recv_frame popped a frame for the binding */
   RXDBG_STATE,     /* written at read time: ieee80211|eapol<<8|rt2501<<16 */
   RXDBG_CAP_N,     /* captured data-frame records so far */
   RXDBG_CAP0,      /* RXDBG_CAP_MAX records x RXDBG_CAP_WORDS words */
