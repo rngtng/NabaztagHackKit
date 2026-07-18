@@ -170,7 +170,9 @@ models the **UART0 console**. Beyond the 1 ms System Timer (below), it has **no 
 WiFi, RFID, or analog model**, so it validates code paths + GPIO + SPI framing + console, not
 analog behaviour. Delays must be software busy-loops to be observable. **DREQ (VS1003 ready)
 and the ADC completion bit are unmodeled** - any bounded busy-wait on them (`nab.play`,
-`nab.wheel`) spins to its cap in-sim and is hardware-only. QEMU isn't used (no ML67Q4051
+`nab.wheel`) spins to its cap in-sim and is hardware-only. `nab.record` is the exception:
+its wait guard is one-shot (first block only), so in-sim it returns a header-only WAV
+instead of burning the budget (see `nab.record` below). QEMU isn't used (no ML67Q4051
 machine, memory map doesn't fit).
 
 **System Timer + IRQ (#102).** The sim models the 1 ms System Timer and *delivers its
@@ -212,7 +214,7 @@ inc/hal/*.h         HAL headers (copied from mtl/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access
 src/hal/led.c       TLC594x RGB LED driver over SPI
 src/hal/button.c    head-button read (polled active-low GPIO on P3.1)
-src/hal/audio.c     VS1003 codec over SPI0 - SCI r/w, volume, amp, sine test, SDI playback
+src/hal/audio.c     VS1003 codec over SPI0 - SCI r/w, volume, amp, sine test, SDI playback, ADPCM mic record
 src/hal/adc.c       ADC ch.2 read (the back wheel)
 src/hal/i2c.c       I2C bus - OKI bring-up + polled master read/write
 src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
@@ -326,6 +328,11 @@ nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255, ms 
 nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
 nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
 nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square), for nab.play
+nab.record(ms [, gain])       -- -> ~ms of microphone audio as a WAV string (8 kHz IMA ADPCM); blocking
+nab.rec_start([gain])         -- open a cooperative record session (codec encodes, CPU free)
+nab.rec_read()                -- -> a chunk of whole 256-byte ADPCM blocks, or nil; returns immediately
+nab.rec_stop()                -- close the session (codec back to decode mode)
+nab.rec_wav(data)             -- -> concatenated rec_read chunks wrapped as a WAV string
 nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
 nab.rfid()                    -- -> lowercase hex UID string, or nil if no tag (one live scan)
 nab.on(name, fn|nil)          -- register/clear an event callback (#195): "button" -> fn(pressed)
@@ -366,6 +373,8 @@ button, `nab.beep()` is audible. Caveats:
   (DREQ/ADC unmodeled). `nab.play` streams over SDI so `nab.volume` actually attenuates (VS1003B
   decodes MP3/WAV per the teardown); the SDI mechanism itself is M8-proven. `nab.wheel` ports
   `mtl/firmware`'s ADC ch.2 sequence. Flash + listen/probe to confirm.
+- **`nab.record` (#116 mic half) built, sim returns a header-only WAV; unverified on
+  hardware** - see its section below.
 - **`nab.config` (#214) built, not HW-confirmed** - the simulator models flash *reads* only,
   so the write path (V1's `write_uc_flash_sec` port in `hal/config.c`, erase+program of the
   last 4 KB internal-flash sector from a `.ramfunc`) needs the rig: write creds from the
@@ -386,6 +395,60 @@ button, `nab.beep()` is audible. Caveats:
   protecting the 16-byte RX FIFO from a mid-#LC-frame scan stall) and `nab.wait`. A callback
   error prints and returns to the loop (`lua_pcall`, principle 3). The boot chunk's `watch()`
   is the demo: `run()`'s tag reactions, event-shaped, with the prompt still usable.
+
+### `nab.record` - the microphone (#116 mic half)
+M8's issue scoped "speaker + mic" but shipped speaker-only. `nab.record(ms [,
+gain])` closes the mic half: it ports `mtl/firmware`'s ADPCM record path
+(`init_adpcm_encode`/`rec_check`/`stop_adpcm_encode` →
+`vlsi_rec_start`/`vlsi_rec_read`/`vlsi_rec_stop` in `src/hal/audio.c`). The
+VS1003 encodes the microphone into 256-byte IMA-ADPCM blocks (505 samples,
+~63 ms each at 8 kHz) that are drained over SCI (`HDAT1` fill level, `HDAT0`
+data), and the binding wraps them in a RIFF header **byte-identical to the V1
+stack's** (`mtl/lib/hw/reclib.mtl`'s `_reclib_mkriff`) - so the returned string is
+a complete WAV file, the same format V1 uploads to its server. `gain`: 1024 =
+1x, 512 = 0.5x, ...; default 0 = automatic gain control (V1's setting).
+Duration needs no timer - it is counted in encoded blocks, so it is
+sample-clock accurate. Blocking; the amplifier is off while recording
+(feedback), and `nab.volume`/playback state is restored by the exit soft-reset.
+
+```lua
+s = nab.record(2000)   -- ~2 s from the mic, AGC
+print(#s)              -- 60-byte WAV header + n*256 bytes of ADPCM
+nab.play(s)            -- the VS1003 also *decodes* IMA ADPCM WAV (datasheet)
+```
+
+`nab.record` is **blocking** - nothing else Lua runs until it returns
+(hardware side-effects continue: a running `nab.ear_move` keeps turning, lit
+LEDs stay lit). For recording *while* doing other work there is the
+cooperative V1-style (`rec_start`/`rec_check`/`rec_stop`) session API: the
+codec encodes into its own ~2 KB FIFO (~half a second at 8 kHz) and the
+script drains it between other duties - `nab.rec_read()` returns immediately,
+with whole 256-byte blocks or `nil`. Overflowing the FIFO drops audio but
+never crashes. The chunks concatenate into exactly the data section of
+`nab.record`'s WAV; `nab.rec_wav` adds the header:
+
+```lua
+chunks = {}
+nab.rec_start()
+while nab.button() do                       -- record while held
+  local c = nab.rec_read()
+  if c then chunks[#chunks + 1] = c end
+  nab.led('nose', 127, 0, 0)                -- ... LEDs/ears/net between polls
+end
+nab.rec_stop()
+nab.play(nab.rec_wav(table.concat(chunks)))
+```
+
+**Unverified on hardware**, same caveat as `nab.play` above: the SCI read/write
+mechanics are M8-proven, what's unconfirmed is the ADPCM mode entry + `HDAT0/1`
+drain on the real chip - and whether the VS1003B accepts its own recording for
+playback (`nab.play(s)`). In the simulator `nab.record` completes (unlike
+`nab.play`): `HDAT1` reads 0 there, so the bounded first-block wait expires and
+it returns a header-only 60-byte WAV with `data` length 0 (sim-verified). On
+hardware the read loop is bounded per block (~20x the ~63 ms block time), so a
+wedged codec ends the recording short rather than hanging - the header always
+says how much real data follows. Flash cost: ~1.1 KB measured (blocking path +
+the cooperative `rec_*` session API).
 
 ### SPI0 RX-FIFO + DREQ gotcha
 `WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of SCI writes
