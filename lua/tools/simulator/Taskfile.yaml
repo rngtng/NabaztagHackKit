@@ -6,17 +6,34 @@
 version: '3'
 
 vars:
-  IMAGE: '{{.IMAGE | default "nabaztag-sdk-simulator"}}'
-  DIR: '{{.DIR | default "./tools/simulator/"}}'
+  # Unique name (not a generic IMAGE) so co-including this tool alongside the luac
+  # tool can't collide/clobber under Task's var-bleed. Owned here; no includer
+  # passes it. Callers that must run the image inline read SIM_IMAGE.
+  SIM_IMAGE: '{{.SIM_IMAGE | default "nabaztag-sdk-simulator"}}'
 
 tasks:
   image:
     internal: true   # rebuilt on demand; the COPYed simulate.py cache-busts it when the sim changes
     dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
     cmds:
-      - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
+      - docker build -t {{.SIM_IMAGE}} -f tools/simulator/Dockerfile .
+
+  run:
+    # The sim invocation lives here (this leaf owns "how to run the sim"); callers
+    # delegate so the docker-run isn't duplicated. BIN = host dir holding the ELFs
+    # (mounted /mnt), ELF = its filename. Optional: ARGS (sim flags), N (instruction
+    # budget), INPUT (a framed-bytecode host file -> /in.lua, fed via --input-file),
+    # TTY (=1 for a live in-place view). Caller must have built the image (deps).
+    internal: true
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    requires:
+      vars: [BIN, ELF]
+    cmds:
+      - >-
+        docker run --rm {{if .TTY}}-it {{end}}-v "{{.BIN}}:/mnt:ro"{{if .INPUT}} -v "{{.INPUT}}:/in.lua:ro"{{end}}
+        {{.SIM_IMAGE}} {{.ARGS}}{{if .N}} -n {{.N}}{{end}}{{if .INPUT}} --input-file /in.lua{{end}} /mnt/{{.ELF}}
 
   clean:
     desc: 'Remove the tools/simulator Docker image'
     cmds:
-      - docker rmi {{.IMAGE}} || true
+      - docker rmi {{.SIM_IMAGE}} || true

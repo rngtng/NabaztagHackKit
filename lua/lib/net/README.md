@@ -9,7 +9,7 @@ above the LLC/SNAP header lives here.
 
 **Nothing in this folder costs flash.** Modules are compiled off-device
 (`tools/luac`, `LUA_32BITS`) and shipped as `#LC` frames over the REPL
-(`task lua:firmware:repl:hw`) into RAM. Freezing a boot subset into the
+(`task lua:firmware:flash:repl`) into RAM. Freezing a boot subset into the
 resident chunk is #219's decision, fed by `task lua:lib:size`.
 
 ## Layout / layering

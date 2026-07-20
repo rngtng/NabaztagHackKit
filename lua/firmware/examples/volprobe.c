@@ -9,7 +9,7 @@
  *
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe):
- *   task lua:firmware:flash APP=volprobe
+ *   task lua:firmware:flash EXAMPLE=volprobe
  */
 #include "ml674061.h"
 #include "common.h"

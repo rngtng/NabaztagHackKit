@@ -4,7 +4,7 @@
  *        step so we can identify where the UID read returns zeros.
  *
  * Mirrors rfidprobe.c's UART0 console; run with:
- *   task lua:firmware:flash APP=rfidprobe2
+ *   task lua:firmware:flash EXAMPLE=rfidprobe2
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe).
  */

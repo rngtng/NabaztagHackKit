@@ -4,7 +4,7 @@
  *
  * Design principle 2 (README.md): an event-driven core - C polls the
  * hardware, posts edge events into a small fixed-size queue, and the Lua
- * layer drains it via lua_pcall'd callbacks (src/app/lua.c's nab.on).
+ * layer drains it via lua_pcall'd callbacks (src/main.c's nab.on).
  * Strictly single-context: event_pump()/event_post()/event_next() all run
  * from the cooperative main loop (REPL idle, nab.wait) and never from an
  * ISR, so the queue needs no IRQ masking. The day an ISR wants to post,

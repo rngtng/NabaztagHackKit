@@ -17,7 +17,7 @@ stated reason.** `(established)` = already in the code; `(target)` = being built
    the [`nab` module](#the-nab-module). New hardware gets a C driver + a thin `nab.*`
    binding, never a register poke or timing loop in Lua.
 2. **Minimal, event-driven core - cooperative, never Lua in an ISR.** *(established, #195)*
-   `src/event.c`: C pollers (debounced button, ~750 ms RFID scan) post edge events into a
+   `src/utils/event.c`: C pollers (debounced button, ~750 ms RFID scan) post edge events into a
    small fixed-size queue; the Lua layer drains it via `lua_pcall`'d callbacks
    (`nab.on`), from the REPL's idle loop or `nab.wait()`. The hard rule holds - no
    interrupt handler ever calls into Lua (the 1 ms tick ISR only counts).
@@ -62,13 +62,15 @@ maps these onto C subsystems. Remaining structural gap:
   [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release).
 
 ## Build
-Host needs only Docker + Task; the ARM toolchain lives in the Docker image. One app from
-`src/app/` at a time (`APP=`).
+Host needs only Docker + Task; the ARM toolchain lives in the Docker image. Two kinds of
+target: the **product firmware** (`src/main.c`, the Lua host - the default build) and
+standalone **examples** (`examples/<name>.c`, one-peripheral bring-up progs, own `main()`,
+no Lua, selected with `EXAMPLE=`).
 
 ```sh
-task lua:firmware:build            # -> bin/hello.{elf,hex,bin}  (toolchain check)
-task lua:firmware:build APP=blink  # -> LED blink
-task lua:firmware:build APP=lua    # -> Lua 5.4 REPL
+task lua:firmware:build                # -> bin/firmware.{elf,hex,bin}  (the Lua 5.4 product)
+task lua:firmware:build EXAMPLE=blink   # -> bin/blink.{elf,hex,bin}   (LED blink bring-up prog)
+task lua:firmware:build EXAMPLE=hello   # -> bin/hello.{elf,hex,bin}   (toolchain check)
 ```
 
 `arm-none-eabi-gcc` + newlib-nano, `-mcpu=arm7tdmi -mthumb -mthumb-interwork`, linked
@@ -79,8 +81,8 @@ unaligned 32-bit load rotates silently instead of faulting). The vendored Lua co
 exempt (`-Wno-cast-align -Wno-error`) - not our code to fix; see the `Makefile`.
 
 ## Lua runtime
-`APP=lua` boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
-[`PROVENANCE.md`](../../PROVENANCE.md)) into a REPL. Glue in [`src/app/lua.c`](src/app/lua.c).
+The product firmware boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
+[`PROVENANCE.md`](../../PROVENANCE.md)) into a REPL. Glue in [`src/main.c`](src/main.c).
 Two things bare metal lacks:
 
 - **Console:** newlib `_read`/`_write` route stdin/stdout through **UART0**
@@ -111,13 +113,13 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/lua.elf` uses 109,648 B of 124 KB (**~16.9 KB free**; ~23 KB of that growth is
+`bin/firmware.elf` uses 109,648 B of 124 KB (**~16.9 KB free**; ~23 KB of that growth is
 the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
 the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
 `nab.on`/`nab.wait`/`nab.time` bindings). The stack is **WPA2-CCMP only** (#124,
 3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
 joins open or WPA2-PSK(AES) networks and rejects anything else at scan/auth. Newlib's stdio FILE layer stays out only
-because [`src/libc_shim.c`](src/libc_shim.c) provides local `rand`/`srand`/
+because [`src/utils/libc_shim.c`](src/utils/libc_shim.c) provides local `rand`/`srand`/
 `__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
 vfprintf/FILE machinery back in via newlib's asserting archive members. This is the
 **only** image and it is **parser-less by design** (decided in
@@ -134,12 +136,12 @@ int/float/instruction). Building from the vendored tree - not a distro `luac` - 
 the header sizes aligned; full rule in [`../tools/luac/README.md`](../tools/luac/README.md).
 
 ```sh
-task lua:compile SOURCE=foo.lua [OUT=foo.lc]       # compile to stripped device bytecode (layer-wide verb)
-task lua:firmware:test:luac                        # golden-transcript test of the bytecode pipeline
+task lua:apps:compile APP=apps/foo.lua [OUT=apps/foo.lc]   # compile to stripped device bytecode
+task lua:firmware:test                             # golden-transcript test of the bytecode pipeline
 ```
 
 Since bytecode contains `\n`/NUL and the console is line-oriented, the REPL accepts a
-**frame**: a `#LC:<len>` header line + `2*len` hex chars. `load_lc_frame` (`src/app/lua.c`)
+**frame**: a `#LC:<len>` header line + `2*len` hex chars. `load_lc_frame` (`src/main.c`)
 decodes and runs it; a non-frame line is rejected (there is no parser). The host tools:
 `replpipe.py` frames a `.lua`/`.lc` file, `embed.py` bakes the boot chunk into
 `gen/boot_lc.h`, and `luash.py` is the live-REPL client (compiles each typed line
@@ -150,17 +152,18 @@ Run the ELF in an instruction-level simulator ([`../tools/simulator/`](../tools/
 Unicorn Engine, #96) - no JTAG, no device:
 
 ```sh
-task lua:firmware:simulate                          # run bin/hello.elf, report reaching main
-task lua:firmware:simulate APP=blink ARGS=-v        # -v logs every peripheral (MMIO) write
-task lua:firmware:simulate APP=lua ARGS="-n 60000000"  # boots Lua, runs print(1+1) over the modelled UART console
+task lua:firmware:simulate                            # run bin/firmware.elf (the Lua product), report reaching main
+task lua:firmware:simulate EXAMPLE=blink ARGS=-v      # run an example; -v logs every peripheral (MMIO) write
+task lua:apps:simulate APP=apps/repl-demo.lua         # boot the product, feed a Lua app over the modelled UART console
 ```
 
-To drive the **REPL**: `task lua:firmware:repl` (live prompt - `luash.py` compiles each line
-you type off-device to bytecode, then pipes it to the modelled UART console) or feed a file:
+To drive the **REPL**: `task lua:firmware:simulate:repl` (live prompt - `luash.py` compiles each line you
+type off-device to bytecode, then pipes it to the modelled UART console) or feed a file with
+`apps:simulate APP=…`:
 
 ```sh
-task lua:firmware:repl SCRIPT=apps/repl-demo.lua        # compile + feed a .lua file, print transcript
-task lua:firmware:repl SCRIPT=apps/foo.lc               # feed prebuilt .lc bytecode
+task lua:apps:simulate APP=apps/repl-demo.lua          # compile + feed a .lua file, print transcript
+task lua:apps:simulate APP=apps/foo.lc                 # feed prebuilt .lc bytecode
 ```
 
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
@@ -182,7 +185,7 @@ dispatcher then runs `timer_handler` → `led_fade_tick` - the *actual* fade cod
 is still approximate (instruction-count clock, not cycle-accurate); `nab.delay`'s busy-loop is
 calibrated to roughly the same scale so fades and delays keep pace.
 
-**Live LED view (#102).** `--leds` (or `task lua:firmware:simulate:leddemo`) reconstructs the 14-byte
+**Live LED view (#102).** `--leds` (passed via `ARGS=--leds` to `apps:simulate`) reconstructs the 14-byte
 dot-correction frame from the SPI1 byte stream (latched on the CS_LED rising edge), un-packs it
 to five RGB LEDs, and draws them as an ANSI truecolor strip - a live in-place animation on a
 TTY, or one line per distinct frame when piped. The run summary reports `timer IRQs` delivered
@@ -192,9 +195,9 @@ so the animation is watchable rather than a host-CPU blur - lower it (`SPEED=0.2
 close look.
 
 ```sh
-task lua:firmware:simulate:leddemo                        # ../apps/led-demo.lua, real-time 5-LED view
-task lua:firmware:simulate:leddemo SPEED=0.5              # half speed for a closer look
-task lua:firmware:simulate:leddemo SCRIPT=path/to.lua N=200000000
+task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds                 # real-time 5-LED view
+task lua:apps:simulate APP=apps/led-demo.lua ARGS="--leds --speed 0.5"   # half speed for a closer look
+task lua:apps:simulate APP=path/to.lua ARGS=--leds N=200000000
 ```
 
 ## Layout
@@ -207,7 +210,7 @@ sys/                ARM7TDMI startup, linker, OKI register defs (copied from mtl
   src/tick.c        1 ms system tick - the first live IRQ; counter_timer + DelayMs
   inc/*.h           ml674061.h (GPIO/SPI/IRQ regs), irq.h
 inc/common.h        GPIO/register macros (UART include stripped - no UART here)
-src/event.c         cooperative event core (#195) - fixed queue + button/RFID pollers
+src/utils/*.c       cooperative event core (#195, fixed queue + button/RFID pollers) + libc_shim (local rand/assert, keeps newlib stdio out)
 inc/hal/*.h         HAL headers (copied from mtl/firmware)
 src/hal/spi.c       SPI0/SPI1 low-level access
 src/hal/led.c       TLC594x RGB LED driver over SPI
@@ -219,7 +222,9 @@ src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
 src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture position, no IRQ
 src/hal/uart.c      polled UART0 @38400 8N1 (#203/#207) - TX putch/putst + RX getch/rxrdy
 src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
-src/app/*.c         one app per binary (see APP=); *probe.c are hardware bring-up probes
+src/main.c          product firmware entry - boots Lua 5.4 into a bytecode REPL (the default build)
+examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c exercise one peripheral
+gen/boot_lc.h       generated: lua/boot/boot.lua baked to bytecode (tools/luac/embed.py) for the product
 lua/                vendored PUC-Rio Lua 5.4 core; build compiles a subset (Makefile LUA_CORE/LUA_LIB)
 ../tools/simulator/ Unicorn instruction-level simulator (#96)
 ../tools/luac/      host luac matching the device's bytecode format (#133)
@@ -247,7 +252,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | M9 | RFID - CRX14 over I2C | #117 | sim - flash `rfidprobe` to confirm before trusting `nab.rfid()` |
 | M10 | Ear motors - PWM + encoder | #118 | HW at full speed (see `nab.ear_*` caveats) |
 | M11 | WiFi - USB host + RT2501 | #119 | open epic. **M11a done, HW:** USB host stack ported, first live IRQ (1 ms tick), `usbprobe` enumerates the dongle (VID:PID `0db0:6877`, RT2501). Next: rt2501usb driver + 802.11 (prereq #125). |
-| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:firmware:simulate:leddemo`). |
+| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds`). |
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
 | - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
@@ -256,8 +261,8 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 
 ## Flashing
 ```sh
-task lua:firmware:flash            # APP defaults to lua
-task lua:firmware:flash APP=blink  # visible LED blink
+task lua:firmware:flash                # the product Lua host (default)
+task lua:firmware:flash EXAMPLE=blink  # visible LED blink (bring-up prog)
 ```
 Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge: builds, ships configs + ELF
 to the Pi, drives OpenOCD + gdb, verifies. Setup + wiring:
@@ -288,7 +293,7 @@ bottom 20%), the generic `led_pack`/`led_flush` packer (verified **bit-identical
 per-LED mask code over 2M random writes), and a **background fade engine**
 (`led_fade`/`led_fade_tick`). The engine is advanced from the **1 ms System Timer tick**
 (`sys/src/tick.c`) that M11a (#143) already brought up for the USB stack: `tick_handler()` now
-also calls `led_fade_tick()`, and `init_hw()` in `src/app/lua.c` arms it with `init_irq()` ->
+also calls `led_fade_tick()`, and `init_hw()` in `src/main.c` arms it with `init_irq()` ->
 peripherals -> `init_tick()`. `led_fade_tick()` runs in the timer ISR (no main loop during the
 REPL), so led.c's main-context writers mask that IRQ around their SPI flush
 (`irq_disable_save`/`irq_restore`).
@@ -306,15 +311,16 @@ zone) and a **pinball** ball that hops the belly ring leaving comet trails, with
 per lap. It animates in the sim too (the sim delivers the timer IRQ - see Simulate):
 
 ```sh
-task lua:firmware:simulate:leddemo            # ../apps/led-demo.lua with the live 5-LED view (sim)
-task lua:firmware:flash APP=lua      # then run ../apps/led-demo.lua on real hardware
+task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds     # live 5-LED view (sim)
+task lua:firmware:flash                                       # flash the product, then...
+task lua:firmware:flash:repl SCRIPT=apps/led-demo.lua        # ...feed apps/led-demo.lua over the HW REPL
 ```
 
 Sim is instruction-timed, not cycle-accurate, so a hardware pass to confirm the tick rate + a
 good-looking fade is the open item on #102.
 
 ## The `nab` module
-`APP=lua` exposes hardware to Lua via a built-in `nab` module (registered in `src/app/lua.c`):
+The product firmware exposes hardware to Lua via a built-in `nab` module (registered in `src/main.c`):
 
 ```lua
 nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127 (raw, no gamma)

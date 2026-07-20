@@ -1,0 +1,34 @@
+# lua/boot - the resident boot chunk baked into the product firmware image.
+#
+# Unlike mtl/boot (a standalone bootloader firmware), this is Lua *source*
+# compiled off-device and embedded into the single firmware image (#128
+# parser-less): the rabbit runs only luac bytecode, so the resident chunk ships
+# precompiled. This leaf owns producing that embeddable artifact (the boot_lc.h
+# C header); firmware:build delegates the embed here.
+version: '3'
+
+vars:
+  # REPO = the lua layer root, depth-independent walk-up (identical formula to the
+  # other leaves - see firmware/Taskfile.yaml for why it must be so).
+  REPO:
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+
+includes:
+  luac: # host Lua->bytecode compiler (built with the lua layer root as Docker context)
+    taskfile: ../tools/luac/Taskfile.yaml
+    internal: true
+
+tasks:
+  compile:
+    desc: 'Compile the resident boot chunk (boot.lua) to the embeddable C header the product firmware bakes (parallels apps:compile). Standalone this doubles as a compile/lint check. Usage: task lua:boot:compile [OUT=boot_lc.h]'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      # Same OUT guard the compile verb uses: the repo-root Taskfile's OUT=build
+      # bleeds in ahead of the default, so treat empty OR "build" as boot_lc.h.
+      # firmware:build passes an absolute OUT (its gen/ dir), which wins.
+      OUT: '{{if or (not .OUT) (eq .OUT "build")}}boot_lc.h{{else}}{{.OUT}}{{end}}'
+    cmds:
+      # Delegate to the luac tool (it owns compile+embed and its image); we don't
+      # reach into embed.py by path or name its image here.
+      - task: luac:embed
+        vars: {APP: '{{.TASKFILE_DIR}}/boot.lua', OUT: '{{.OUT}}', WORKDIR: '{{.REPO}}'}

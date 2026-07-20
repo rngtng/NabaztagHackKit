@@ -5,7 +5,12 @@
 # for the header-compatibility rationale). Every target runs in Docker; the only
 # host requirement is Docker + Task.
 #
-#   task lua:compile SOURCE=foo.lua [OUT=foo.lc]   -> stripped .lc bytecode
+# Tool leaf: owns the image *build*, its teardown, and the `compile` verb. The
+# apps leaf re-exposes `compile` as `task lua:apps:compile` (it delegates here),
+# and the apps/firmware leaves also use the image for REPL framing + the boot
+# embed.
+#
+#   task lua:apps:compile APP=apps/foo.lua [OUT=apps/foo.lc]   -> stripped .lc bytecode
 #
 # The image is built with the *lua layer root* as its Docker context (not this
 # folder) so its Dockerfile can COPY the sibling firmware/lua/ tree - hence the
@@ -14,36 +19,51 @@
 version: '3'
 
 vars:
-  IMAGE: '{{.IMAGE | default "nabaztag-sdk-luac"}}'
-  DIR: '{{.DIR | default "./tools/luac/"}}'
-  # OUT passthrough: without it the root Taskfile's OUT=build leaks in ahead of
-  # a CLI-supplied OUT (same pattern as the other leaves).
-  OUT: '{{.OUT}}'
+  # Unique name (not a generic IMAGE) so co-including this tool alongside the
+  # simulator tool can't collide/clobber under Task's var-bleed. Owned here; no
+  # includer passes it. Callers that must run the image inline read LUAC_IMAGE.
+  LUAC_IMAGE: '{{.LUAC_IMAGE | default "nabaztag-sdk-luac"}}'
 
 tasks:
   image:
     internal: true   # rebuilt on demand; the COPYed lua/ tree cache-busts it when Lua changes
-    # Docker context = the lua layer root (two dirs up from this leaf), so the
-    # Dockerfile can COPY the sibling firmware/lua/ tree.
+    # Docker context = the lua layer root (WORKDIR, two dirs up) so the Dockerfile
+    # can COPY the sibling firmware/lua/ tree; -f is this tool's own fixed path.
     dir: '{{.WORKDIR | default (printf "%s/../.." .TASKFILE_DIR)}}'
     cmds:
-      - docker build -t {{.IMAGE}} -f {{.DIR}}/Dockerfile .
+      - docker build -t {{.LUAC_IMAGE}} -f tools/luac/Dockerfile .
 
-  default:
-    desc: 'Compile a Lua source file to stripped 32-bit device bytecode. Usage: task lua:compile SOURCE=in.lua [OUT=in.lc]'
+  compile:
+    desc: 'Compile a Lua app source to stripped 32-bit device bytecode. Usually run as `task lua:apps:compile` (the apps leaf delegates here). Usage: task lua:apps:compile APP=apps/in.lua [OUT=apps/in.lc]'
     deps: [image]
     dir: '{{.USER_WORKING_DIR}}'
     vars:
-      OUT: '{{.OUT | default (printf "%s.lc" (trimSuffix ".lua" .SOURCE))}}'
+      # The repo-root Taskfile sets OUT=build (its artifact dir); that bleeds in
+      # here ahead of a per-file default, so treat empty OR the "build" sentinel
+      # as "derive <APP>.lc". An explicit CLI OUT=foo.lc still wins.
+      OUT: '{{if or (not .OUT) (eq .OUT "build")}}{{printf "%s.lc" (trimSuffix ".lua" .APP)}}{{else}}{{.OUT}}{{end}}'
     requires:
-      vars: [SOURCE]
+      vars: [APP]
     cmds:
       # ENTRYPOINT is luac; -s strips debug info (the bulk of chunk size), - reads
       # stdin, -o /dev/stdout writes the chunk to stdout -> redirected to OUT. No
       # bind mount: source rides stdin, bytecode rides stdout, so paths stay host-side.
-      - 'docker run --rm -i {{.IMAGE}} -s -o /dev/stdout - < "{{.SOURCE}}" > "{{.OUT}}"'
+      - 'docker run --rm -i {{.LUAC_IMAGE}} -s -o /dev/stdout - < "{{.APP}}" > "{{.OUT}}"'
+
+  embed:
+    internal: true   # used by firmware:build (via lua:boot:compile) to bake the resident chunk
+    desc: 'Compile a Lua source and emit it as a C byte-array header for embedding into the firmware image (compile via this leaf''s luac image + wrap). Usage: APP=in.lua OUT=out.h [NAME=boot_lc]'
+    deps: [image]
+    dir: '{{.USER_WORKING_DIR}}'
+    requires:
+      vars: [APP, OUT]
+    cmds:
+      # embed.py shells to this leaf's luac image for the compile, then wraps the
+      # chunk as a C array - the one host-glue script this tool exposes as a task.
+      # The image name is this tool's own var (not threaded through includers).
+      - 'python3 {{.TASKFILE_DIR}}/embed.py "{{.APP}}" -o "{{.OUT}}" --image {{.LUAC_IMAGE}}{{if .NAME}} --name {{.NAME}}{{end}}'
 
   clean:
     desc: 'Remove the tools/luac Docker image'
     cmds:
-      - docker rmi {{.IMAGE}} || true
+      - docker rmi {{.LUAC_IMAGE}} || true

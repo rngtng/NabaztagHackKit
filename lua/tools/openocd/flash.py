@@ -44,7 +44,7 @@ def sh(cmd, **kw):
     # would crash the whole flash on a stray byte (seen on Python 3.14).
     kw.setdefault("errors", "replace")
     # No flash command needs our stdin; ssh/gdb would otherwise swallow it. In the
-    # live-REPL path (repl:hw, no SCRIPT) that stdin belongs to luash.py, which
+    # live-REPL path (repl, no SCRIPT) that stdin belongs to luash.py, which
     # runs right after us - let it through by not consuming it here.
     kw.setdefault("stdin", subprocess.DEVNULL)
     return subprocess.run(cmd, text=True, **kw)

@@ -801,7 +801,7 @@
 /*
 ** firmwareV2: the block below is the on-device Local config - the luai_*
 ** overrides that swap newlib/libm out for the UART console + compact
-** number helpers in src/app/lua.c. They only make sense in
+** number helpers in src/main.c. They only make sense in
 ** the ARM firmware. A host build of luac (tools/luac) compiles this same tree
 ** with -DLUA_HOST_LUAC so these fall back to the stock C library (fwrite,
 ** strtof, pow/fmod); LUA_32BITS stays defined for both, so the bytecode the
@@ -818,7 +818,7 @@
 ** writestringerror (lauxlib.h) call fwrite/fprintf/fflush on stdout/stderr,
 ** which drags in the whole buffered-FILE machinery (~6 KB: findfp/fflush/
 ** fvwrite/freopen/fread/setvbuf). Our console is per-char UART (see
-** src/app/lua.c), so that buffering is dead weight. Defining the macros here
+** src/main.c), so that buffering is dead weight. Defining the macros here
 ** (before lauxlib.h's `#if !defined` guards) routes them to helpers that write
 ** straight to the _write syscall. Every lua_writestringerror call site uses a
 ** single "%s"-style format with a const char* argument, so the helper takes one.
@@ -831,7 +831,7 @@ extern void luai_writestringerror (const char *fmt, const char *arg);
 
 /*
 ** firmwareV2: replace strtof for decimal string->number with a compact parser
-** (luai_str2number in src/app/lua.c). strtof pulls newlib's double strtod +
+** (luai_str2number in src/main.c). strtof pulls newlib's double strtod +
 ** gdtoa multi-precision path (~14 KB: strtod/mprec/gethex/hexnan). Integer
 ** literals never reach here - luaO_str2num tries l_str2int first; only decimal
 ** float literals/coercions do. The target is integer-first with float
@@ -864,7 +864,7 @@ extern LUA_NUMBER luai_fmod (LUA_NUMBER a, LUA_NUMBER b);
 ** through variadic l_sprintf; even with a float cast, C default argument
 ** promotion turns every float crossing '...' into a double at the CALL SITE,
 ** linking libgcc's double helpers (__aeabi_f2d & friends, ~2.4 KB).
-** luai_num2str (src/app/lua.c) is non-variadic - a float parameter, so no
+** luai_num2str (src/main.c) is non-variadic - a float parameter, so no
 ** promotion - and prints the same integer-part + ".0" approximation the
 ** vsnprintf float stub produced. The hex-float route (lua_number2strx:
 ** string.format("%a"), %q on floats) already fell through to that same stub,

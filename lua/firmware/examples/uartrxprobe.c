@@ -15,7 +15,7 @@
  * listener on the Pi (/dev/serial0 @38400) can read the verdict without JTAG.
  *
  * Flash + listen:
- *   task lua:firmware:flash APP=uartrxprobe
+ *   task lua:firmware:flash EXAMPLE=uartrxprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  * Expect "NAB-UART-RX LOOPBACK PASS" repeating; FAIL prints exp/got hex.
  */

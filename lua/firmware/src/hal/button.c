@@ -5,7 +5,7 @@
  * The Nabaztag:tag head button is a single active-low GPIO on P3.1 (the
  * INT_SWITCH line). src/firmware wires an EXINT3 interrupt for it but leaves it
  * disabled and polls instead; we do the same - a plain polled read, no IRQ.
- * The Lua binding that exposes it lives in src/app/lua.c.
+ * The Lua binding that exposes it lives in src/main.c.
  */
 #include "ml674061.h"
 #include "common.h"

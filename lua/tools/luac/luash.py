@@ -12,7 +12,7 @@ straight back to your terminal, so it reads like a normal prompt.
 Transport-abstract: the "device console" is just a child process whose stdin is
 the console input and whose stdout is the console output. The Taskfile wires it:
 
-  * simulator:  docker run -i <sim-image> --interactive /mnt/lua.elf
+  * simulator:  docker run -i <sim-image> --interactive /mnt/firmware.elf
   * hardware:   ssh <pi> sudo python3 uart_repl.py --relay   (paces to /dev/serial0)
 
 so this file needs to know nothing about Docker vs. UART. Usage:

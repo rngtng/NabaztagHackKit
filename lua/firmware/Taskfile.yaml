@@ -1,31 +1,36 @@
-# firmware (Lua V2) - self-contained build/simulate/flash/repl for the
+# firmware (Lua V2) - self-contained build/flash/repl/test for the
 # eLua-successor (Lua 5.4) port to the Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI).
 # The `lua` layer `includes:` this under the `firmware` namespace, so targets are
 # (from the repo root; `lua:` prefix drops when run inside the layer):
-#   task lua:firmware:build            -> bin/hello.{elf,hex,bin}  (M0)
-#   task lua:firmware:build APP=blink  -> bin/blink.{elf,hex,bin}
-#   task lua:firmware:simulate         -> run in the Unicorn simulator (#96)
-#   task lua:firmware:repl             -> Lua REPL in the simulator (#92)
-#   task lua:firmware:flash            -> flash over JTAG via the Pi bridge (#90)
-#   task lua:firmware:repl:hw          -> flash + drive the REPL over UART (#207)
-#   task lua:firmware:test:luac        -> source vs #LC bytecode round-trip
-# (compiling a .lua to device bytecode is layer-wide: `task lua:compile SOURCE=…`)
+#   task lua:firmware:build               -> bin/firmware.{elf,hex,bin}  (the Lua product)
+#   task lua:firmware:build EXAMPLE=blink -> bin/blink.{elf,hex,bin}     (a bring-up prog)
+#   task lua:firmware:simulate            -> run a firmware image in the Unicorn sim (#96)
+#   task lua:firmware:simulate:repl       -> run the product in the sim + drive its REPL (#92)
+#   task lua:firmware:flash               -> flash the product over JTAG via the Pi (#90)
+#   task lua:firmware:flash:repl          -> flash + drive the Lua REPL over UART on HW (#207)
+#   task lua:firmware:test                -> #128 bytecode round-trip golden (in the sim)
+# This leaf owns BUILD + simulate/flash of firmware images + driving the REPL
+# (interactively over sim or HW). Running a Lua *app* in the sim is
+# `task lua:apps:simulate`; compiling a .lua is `task lua:apps:compile APP=…`.
+#
+# Two kinds of build target (see Makefile): the product firmware (src/main.c, the
+# Lua host - the default, bakes lua/boot/boot.lua) and standalone examples
+# (examples/<name>.c, own main(), no Lua) picked with EXAMPLE=<name>.
 #
 # Relocatable: every target works both from the repo root (`task
-# lua:firmware:simulate`) and from inside the folder (`cd lua/firmware && task
-# simulate`). Two rules make that work around Task quirks:
+# lua:firmware:build`) and from inside the folder (`cd lua/firmware && task
+# build`). Two rules make that work around Task quirks:
 #   * `dir:` is ALWAYS `{{.TASKFILE_DIR}}` (this leaf's own dir, lua/firmware).
 #     Task doubles an absolute `dir` that comes from any other var.
 #   * REPO (the lua layer root, via sh) is used only as a *path value* — a prefix
-#     on layer-level files (tools/openocd, tools/luac, user SCRIPT paths) and as
-#     WORKDIR handed to the nested luac/simulator tools (their Docker build
-#     context). Bin/ELFs live here (bin/…), so they stay bare. SCRIPT/SOURCE args
-#     are layer-root-relative.
+#     on layer-level files (tools/openocd, tools/luac, apps/, user SCRIPT paths)
+#     and as WORKDIR handed to the nested luac/simulator tools (their Docker build
+#     context). Bin/ELFs live here (bin/…), so they stay bare.
 # FV_IMAGE / SIM_IMAGE are the leaf's own defaults (NOT passed from root): Task
 # bleeds a child include's vars up into the parent's task scope, so a generic
 # IMAGE would be clobbered by the nested luac/simulator includes. Unique names
 # sidestep that. The shared simulator image is built by the tool include but run
-# from here (where bin/ lives).
+# from here (test) / the simulate leaf.
 version: '3'
 
 vars:
@@ -39,18 +44,17 @@ vars:
   # copy still resolves the correct layer root.
   REPO:
     sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
-  APP: '{{.APP | default "lua"}}'
 
 includes:
   luac: # host Lua->bytecode compiler (built with the lua layer root as Docker context)
     taskfile: ../tools/luac/Taskfile.yaml
-    internal: true   # image/embed dep only; the user-facing compile verb is lua:compile (root)
-    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
-
+    internal: true   # image + REPL framing; the user-facing compile verb is lua:apps:compile (root)
   simulator: # Unicorn simulator (built with the lua layer root as Docker context)
     taskfile: ../tools/simulator/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-simulator, DIR: tools/simulator}
+  boot: # the resident boot chunk; build delegates its embed here (lua:boot:compile)
+    taskfile: ../boot/Taskfile.yaml
+    internal: true
 
 tasks:
   image:
@@ -60,105 +64,86 @@ tasks:
       - docker build -t {{.FV_IMAGE}} .
 
   build:
-    desc: 'Compile a bring-up app -> bin/<APP>.{elf,hex,bin}. Usage: task lua:firmware:build [APP=hello] [DEBUG=1]'
-    # DEBUG=1 (M11, #119) turns on the vendored usb/net stacks' UART
-    # trace macros; artifact becomes bin/<APP>-dbg.elf (separate obj tree).
+    desc: 'Build the firmware. Default: the product Lua image -> bin/firmware.{elf,hex,bin}. EXAMPLE=<name> builds a standalone bring-up prog examples/<name>.c -> bin/<name>.{elf,hex,bin}. Usage: task lua:firmware:build [EXAMPLE=blink] [DEBUG=1]'
+    # DEBUG=1 (M11, #119) turns on the vendored usb/net stacks' UART trace macros;
+    # the artifact becomes bin/<name>-dbg.elf (separate obj tree).
     dir: '{{.TASKFILE_DIR}}'
-    deps:
-      # Host luac for the APP=lua boot-chunk embed below; a cached no-op for
-      # other apps (they skip the embed step).
-      - task: luac:image
-        vars: {WORKDIR: '{{.REPO}}'}
     cmds:
       - task: image
-      # Bytecode-only image (#128): the resident boot chunk has no on-device
-      # parser to compile it, so precompile src/app/boot.lua off-device into
-      # gen/boot_lc.h (lua.c #includes it). APP=lua only; other apps skip.
-      - |
-        if [ "{{.APP}}" = "lua" ]; then
-          mkdir -p gen
-          python3 '{{.REPO}}/tools/luac/embed.py' src/app/boot.lua -o gen/boot_lc.h
-        fi
-      - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make APP={{.APP}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
+      # Bytecode-only product image (#128): the resident boot chunk has no
+      # on-device parser, so it ships precompiled. Delegate that embed to the boot
+      # leaf -> gen/boot_lc.h (main.c #includes it). Runs for every build; example
+      # images don't -Igen (Makefile) so they just ignore the generated header.
+      - mkdir -p gen
+      - task: boot:compile
+        vars: {OUT: '{{.TASKFILE_DIR}}/gen/boot_lc.h'}
+      - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make{{if .EXAMPLE}} EXAMPLE={{.EXAMPLE}}{{end}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
 
   simulate:
-    desc: 'Run a bring-up app in the Unicorn simulator, no hardware (#96). Usage: task lua:firmware:simulate [APP=hello] [ARGS=-v]'
+    desc: 'Run a firmware image in the Unicorn simulator, no hardware (#96). Default: the product image; EXAMPLE=<name> runs a bring-up example headless. (To run a Lua app in the sim, use lua:apps:simulate.) Usage: task lua:firmware:simulate [EXAMPLE=blink] [ARGS=-v]'
     dir: '{{.TASKFILE_DIR}}'
-    cmds:
-      - task: build
-        vars:
-          APP: '{{.APP}}'
-      - task: simulator:image
-        vars: {WORKDIR: '{{.REPO}}'}
-      # run from here (dir = this leaf) so bin/ is the freshly built ELF tree
-      - 'docker run --rm -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} {{.ARGS}} /mnt/{{.APP}}.elf'
-
-  repl:
-    desc: 'M4 Lua REPL in the simulator (#92): omit SCRIPT for a live interactive prompt; SCRIPT=file.lua|.lc runs it. All input is compiled off-device to luac bytecode - the firmware has no parser (#128). Usage: task lua:firmware:repl [SCRIPT=path/to.lua] [N=budget]'
-    dir: '{{.TASKFILE_DIR}}'
-    interactive: true
     deps:
-      - task: luac:image   # host luac: compiles the script (or every live line) to bytecode
+      - task: simulator:image       # shared Unicorn sim image = nabaztag-sdk-simulator
         vars: {WORKDIR: '{{.REPO}}'}
-    cmds:
-      # Resolve SCRIPT (repo-root-relative) and frame it to luac bytecode here -
-      # the firmware only loads bytecode (#128). replpipe.py auto-detects .lua
-      # (per-line) vs .lc (single frame); the runner bind-mounts the framed temp
-      # file. Empty SCRIPT -> the runner starts a live interactive prompt.
-      - task: repl:run
-        vars:
-          SCRIPT:
-            sh: |
-              [ -n "{{.SCRIPT}}" ] || exit 0
-              # bind-mounted into the sim by repl:run, so keep it under a
-              # Docker-shared host path (colima shares only /Users, so a bare
-              # mktemp in /tmp or /var/folders would mount as an empty dir).
-              fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
-              python3 {{.REPO}}/tools/luac/replpipe.py "{{.REPO}}/{{.SCRIPT}}" -o "$fr" 1>&2
-              echo "$fr"
-          N: '{{.N}}'
-
-  repl:run:
-    internal: true   # inner runner: SCRIPT is already an absolute path (or empty)
-    dir: '{{.TASKFILE_DIR}}'
-    interactive: true
     cmds:
       - task: build
+        vars: {EXAMPLE: '{{.EXAMPLE}}'}
+      # delegate the run to the simulator leaf (it owns the sim invocation)
+      - task: simulator:run
         vars:
-          APP: lua
+          BIN: '{{.REPO}}/firmware/bin'
+          ELF: '{{.EXAMPLE | default "firmware"}}.elf'
+          ARGS: '{{.ARGS}}'
+
+  simulate:repl:
+    desc: 'Run the product firmware in the simulator and drive its Lua REPL interactively, no hardware (#92): luash.py compiles each typed line off-device to bytecode and pipes #LC frames to the sim''s --interactive console. Ctrl-D ends it. (The on-hardware REPL is lua:firmware:flash:repl; to feed a scripted app use lua:apps:simulate.) Usage: task lua:firmware:simulate:repl'
+    dir: '{{.TASKFILE_DIR}}'
+    interactive: true   # luash.py owns your terminal
+    deps:
+      - task: luac:image          # host luac: compiles each typed line
+        vars: {WORKDIR: '{{.REPO}}'}
       - task: simulator:image
         vars: {WORKDIR: '{{.REPO}}'}
-      # With SCRIPT: mount the built ELF + the framed-bytecode input (read-only)
-      # and feed it to the modelled UART console. Without SCRIPT: luash.py owns
-      # your terminal, compiles each typed line off-device to bytecode, and pipes
-      # #LC frames into the sim's --interactive console - a live REPL with no
-      # on-device parser.
-      - >-
-        {{if .SCRIPT}}docker run --rm -v "$(realpath bin):/mnt:ro" -v "$(realpath {{.SCRIPT}}):/in.lua:ro"
-        {{.SIM_IMAGE}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/lua.elf{{else}}python3
-        '{{.REPO}}/tools/luac/luash.py' -- docker run --rm -i -v "$(realpath bin):/mnt:ro"
-        {{.SIM_IMAGE}} --interactive /mnt/lua.elf{{end}}
+    cmds:
+      - task: build
+      # luash.py owns the terminal, compiles each typed line off-device to bytecode,
+      # and pipes #LC frames to the sim's --interactive console - a live REPL with
+      # no on-device parser (#128). Inline: luash wraps the docker argv directly.
+      - python3 '{{.REPO}}/tools/luac/luash.py' -- docker run --rm -i -v "$(realpath bin):/mnt:ro" {{.SIM_IMAGE}} --interactive /mnt/firmware.elf
 
   flash:
-    desc: 'Flash a V2 app to real hardware over JTAG, via a Raspberry Pi bridge.'
-    summary: 'Usage: task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
+    desc: 'Flash the firmware to real hardware over JTAG, via a Raspberry Pi bridge. Default: the product image; EXAMPLE=<name> flashes that bring-up prog. CAPTURE=1 then streams the flashed program''s UART transcript read-only (no stdin) until the <<FV_DONE>> marker or RUN_TIMEOUT - for print-only examples like wifiprobe/usbprobe.'
+    summary: 'Usage: task lua:firmware:flash [EXAMPLE=wifiprobe] [CAPTURE=1] [RUN_TIMEOUT=120] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      # product -> bin/firmware.elf; EXAMPLE=<name> -> bin/<name>.elf
+      TARGET: '{{.EXAMPLE | default "firmware"}}'
+      RUN_TIMEOUT: '{{.RUN_TIMEOUT | default "120"}}'
     cmds:
       - task: build
-        vars:
-          APP: '{{.APP}}'
-      - python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
+        vars: {EXAMPLE: '{{.EXAMPLE}}'}
+      - |
+        set -e
+        if [ -n "{{.CAPTURE}}" ]; then
+          # Print-only bring-up example: flash over JTAG, then stream its UART
+          # transcript read-only (no stdin fed - it has no REPL to drive) until
+          # the <<FV_DONE>> marker or RUN_TIMEOUT. Same flash.py --uart path the
+          # scripted REPL uses, minus --input.
+          python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.TARGET}}.elf \
+            --run-timeout {{.RUN_TIMEOUT}}
+        else
+          python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.TARGET}}.elf
+        fi
 
-  repl:hw:
-    desc: 'Flash an app to real hardware and drive it over the UART bridge (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). PROBE=1 captures a print-only app''s transcript read-only until <<FV_DONE>> (e.g. wifiprobe - no stdin fed); SCRIPT=file.lua|.lc feeds a scripted REPL run and captures it; omit both for a live interactive prompt (luash.py). All input is compiled off-device to luac bytecode (#128).'
-    summary: 'Usage: task lua:firmware:repl:hw [APP=lua] [PROBE=1 | SCRIPT=path.lua] [RUN_TIMEOUT=300] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
+  flash:repl:
+    desc: 'Flash the product firmware and drive its Lua REPL over the UART bridge on real hardware (#207): JTAG flash, then read/write /dev/serial0 on the Pi (no OpenOCD session, no CPU halts). SCRIPT=file.lua|.lc feeds a scripted run and captures it; omit for a live interactive prompt (luash.py). All input is compiled off-device to luac bytecode (#128).'
+    summary: 'Usage: task lua:firmware:flash:repl [SCRIPT=path.lua] [RUN_TIMEOUT=120] [PI_HOST=tobi@jtag.local]. See lua/tools/openocd/README.md.'
     dir: '{{.TASKFILE_DIR}}'
     interactive: true   # the live-prompt branch hands your terminal to luash.py
     vars:
-      APP: '{{.APP | default "lua"}}'
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
       RUN_TIMEOUT: '{{.RUN_TIMEOUT | default "120"}}'
     deps:
@@ -166,48 +151,37 @@ tasks:
         vars: {WORKDIR: '{{.REPO}}'}
     cmds:
       - task: build
-        vars:
-          APP: '{{.APP}}'
       - |
         set -e
-        if [ -n "{{.PROBE}}" ]; then
-          # Read-only probe run: flash a print-only app (e.g. wifiprobe) that
-          # never reads UART RX, then just capture its transcript until the
-          # <<FV_DONE>> marker (or RUN_TIMEOUT). No stdin is fed - there is no
-          # REPL to feed, and framing a multi-line .lua through the per-line
-          # REPL compiler would fail.
-          python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
-            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
-            --run-timeout {{.RUN_TIMEOUT}}
-        elif [ -n "{{.SCRIPT}}" ]; then
+        if [ -n "{{.SCRIPT}}" ]; then
           # Scripted run: compile off-device to a framed bytecode file, then
           # flash + feed it over UART (paced for flow control) and read the
           # transcript. replpipe.py auto-detects .lua (per-line) vs .lc.
           INPUT="$(mktemp)"
           python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$INPUT"
           python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
-            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf \
+            --configs '{{.REPO}}/tools/openocd' --elf bin/firmware.elf \
             --input "$INPUT" --run-timeout {{.RUN_TIMEOUT}}
         else
           # Live REPL: flash over JTAG, then luash.py owns your terminal and
           # drives uart_repl.py --relay on the Pi (it paces bytes to /dev/serial0),
           # compiling each line you type off-device to bytecode. Ctrl-D ends it.
           python3 '{{.REPO}}/tools/openocd/flash.py' --host {{.PI_HOST}} \
-            --configs '{{.REPO}}/tools/openocd' --elf bin/{{.APP}}.elf
+            --configs '{{.REPO}}/tools/openocd' --elf bin/firmware.elf
           python3 '{{.REPO}}/tools/luac/luash.py' -- \
             ssh {{.PI_HOST}} 'cd openocd && sudo python3 uart_repl.py --relay'
         fi
 
-  test:luac:
-    desc: 'Golden-transcript test for the bytecode pipeline (#128): compile a Lua script off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden. This exercises luac -> frame -> lundump -> run -> print end to end. REGEN=1 rewrites the golden.'
-    summary: 'Usage: task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua] [EXPECT=apps/luac-roundtrip.expected] [REGEN=1]'
+  test:
+    desc: 'Firmware tests. Today: the #128 bytecode-pipeline golden - compile a Lua app off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden (exercises luac -> frame -> lundump -> run -> print end to end). REGEN=1 rewrites the golden.'
+    summary: 'Usage: task lua:firmware:test [APP=test/luac-roundtrip.lua] [EXPECT=test/luac-roundtrip.expected] [REGEN=1]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
-      SCRIPT: '{{.SCRIPT | default "apps/luac-roundtrip.lua"}}'
-      EXPECT: '{{.EXPECT | default "apps/luac-roundtrip.expected"}}'
+      # firmware-owned fixtures (test/), APP/EXPECT are relative to this leaf
+      APP: '{{.APP | default "test/luac-roundtrip.lua"}}'
+      EXPECT: '{{.EXPECT | default "test/luac-roundtrip.expected"}}'
     deps:
-      - task: build
-        vars: {APP: lua}
+      - task: build                 # the product firmware -> bin/firmware.elf
       - task: simulator:image       # shared Unicorn sim image = nabaztag-sdk-simulator
         vars: {WORKDIR: '{{.REPO}}'}
       - task: luac:image            # host luac, used by replpipe.py below
@@ -217,71 +191,41 @@ tasks:
         set -e
         SIM={{.SIM_IMAGE}}
         BIN="$(realpath bin)"
-        EXP="{{.REPO}}/{{.EXPECT}}"
+        EXP="{{.TASKFILE_DIR}}/{{.EXPECT}}"
         # The framed file is bind-mounted into the sim, so it must live under a
         # Docker-shared host path. colima shares only the home tree (/Users), not
         # /tmp or /var/folders, so a bare mktemp would mount as an empty dir. Put
         # it under the repo (REPO is under /Users) and clean it up.
         FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
-        python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.REPO}}/{{.SCRIPT}}" -o "$FR"
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.TASKFILE_DIR}}/{{.APP}}" -o "$FR"
         # Run the frames on the parser-less sim; --console-only keeps stdout a
-        # pure transcript (emulator stats go to stderr).
+        # pure transcript (emulator stats go to stderr). Invoked inline (not via
+        # simulator:run) because we must capture stdout into $GOT to diff the golden.
         GOT="$(docker run --rm -v "$BIN:/mnt:ro" -v "$FR:/in:ro" "$SIM" \
-                 --console-only -n 120000000 --input-file /in /mnt/lua.elf)"
+                 --console-only -n 120000000 --input-file /in /mnt/firmware.elf)"
         # Guard a false pass: an init/boot hang yields an empty transcript that
         # would match an empty golden. Require the fixture's first print.
         case "$GOT" in
           *"luac round-trip"*) : ;;
-          *) echo "test:luac: no REPL output - the sim never reached the prompt ✗"
+          *) echo "test: no REPL output - the sim never reached the prompt ✗"
              printf '%s\n' "$GOT"; exit 1 ;;
         esac
         if [ -n "{{.REGEN}}" ]; then
           printf '%s\n' "$GOT" > "$EXP"
-          echo "test:luac: regenerated golden $EXP ✓"
+          echo "test: regenerated golden $EXP ✓"
           exit 0
         fi
         if [ "$GOT" = "$(cat "$EXP")" ]; then
-          echo "test:luac: bytecode transcript matches the golden ✓"
+          echo "test: bytecode transcript matches the golden ✓"
         else
-          echo "test:luac MISMATCH (golden $EXP vs bytecode run):"
+          echo "test MISMATCH (golden $EXP vs bytecode run):"
           diff <(cat "$EXP") <(printf '%s\n' "$GOT") || true
-          echo "If the change is intended: task lua:firmware:test:luac REGEN=1"
+          echo "If the change is intended: task lua:firmware:test REGEN=1"
           exit 1
         fi
 
-  simulate:leddemo:
-    desc: 'Run ../apps/led-demo.lua in the sim with a LIVE 5-LED ANSI view, paced to real time (#102). Usage: task lua:firmware:simulate:leddemo [SCRIPT=path.lua] [SPEED=1] [N=budget]'
-    dir: '{{.TASKFILE_DIR}}'
-    interactive: true
-    deps:
-      - task: luac:image   # host luac: compiles the script to device bytecode
-        vars: {WORKDIR: '{{.REPO}}'}
-    cmds:
-      - task: build
-        vars:
-          APP: lua
-      - task: simulator:image
-        vars: {WORKDIR: '{{.REPO}}'}
-      - |
-        set -e
-        # Frame the script to #LC bytecode FIRST. The firmware is parser-less
-        # (#128) - raw source fed to the REPL is rejected line-by-line and the
-        # demo never runs (you'd see only the boot idle frame). Mirror the repl
-        # task. Keep the temp under REPO so colima's /Users-only share can
-        # bind-mount it (a /tmp path mounts as an empty dir).
-        fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"
-        trap 'rm -f "$fr"' EXIT
-        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.SCRIPT | default "../apps/led-demo.lua"}}")" -o "$fr" 1>&2
-        # -it gives a TTY so the ANSI LED strip animates in place; the framed
-        # bytecode is fed from --input-file (not stdin), so stdout stays the live
-        # view. --speed paces to wall-clock time so the show is watchable, not a
-        # host-CPU blur (SPEED=1 real time; SPEED=0.25 quarter speed for a look).
-        docker run --rm -it -v "$(realpath bin):/mnt:ro" -v "$fr:/in.lua:ro" \
-          {{.SIM_IMAGE}} --leds --speed {{.SPEED | default "1"}} -n {{.N | default "500000000"}} \
-          --input-file /in.lua /mnt/lua.elf
-
   clean:
-    desc: 'Remove firmware (V2) build artifacts (bin/, obj/) and the Docker images (incl. host luac + simulator)'
+    desc: 'Remove firmware (V2) build artifacts (bin/, obj/, gen/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'
     cmds:
       - rm -rf bin obj gen

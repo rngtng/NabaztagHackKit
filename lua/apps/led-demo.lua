@@ -1,8 +1,8 @@
 -- LED showcase for firmwareV2 (issues #102 / #45): gamma fades with no low-end
 -- dead zone + the background fade engine, shown off with a handful of effects.
 --
---   Simulator: task lua:firmware:simulate:leddemo   (live 5-LED view; stops itself at the end)
---   Hardware:  the boot chunk (src/app/boot.lua) has a short resident showcase -
+--   Simulator: task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds   (live 5-LED view; stops itself at the end)
+--   Hardware:  the boot chunk (lua/boot/boot.lua) has a short resident showcase -
 --              type `ledshow()` at the REPL (breathe + ring), a 10-char feed. It
 --              is NOT auto-run at boot (that would delay the prompt, #207).
 --              Feeding this whole file over the console is instead one-char-per-
