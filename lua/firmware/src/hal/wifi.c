@@ -276,16 +276,34 @@ int8_t wifi_join(const struct rt2501_scan_result *target, const char *psk,
 }
 
 /* ---- one-shot ------------------------------------------------------------ */
-int8_t wifi_connect(const char *ssid, const char *psk, uint32_t timeout_ms)
+int8_t wifi_connect_ex(const char *ssid, const char *psk, uint32_t timeout_ms,
+                       wifi_fail_t *why)
 {
   struct rt2501_scan_result target;
 
-  if (wifi_up() != 0)
+  if (why)
+    *why = WIFI_OK;
+  if (wifi_up() != 0) {
+    if (why) *why = WIFI_FAIL_RADIO;
     return -1;
+  }
   wifi_scan(ssid);
-  if (!wifi_target(&target))
+  if (!wifi_target(&target)) {
+    if (why) *why = WIFI_FAIL_NOTFOUND;
     return -1;
-  return wifi_join(&target, psk, timeout_ms, NULL, NULL);
+  }
+  if (wifi_join(&target, psk, timeout_ms, NULL, NULL) != 0) {
+    if (why)
+      *why = ((target.encryption & 0xF0) != IEEE80211_CRYPT_NONE)
+             ? WIFI_FAIL_AUTH : WIFI_FAIL_TIMEOUT;
+    return -1;
+  }
+  return 0;
+}
+
+int8_t wifi_connect(const char *ssid, const char *psk, uint32_t timeout_ms)
+{
+  return wifi_connect_ex(ssid, psk, timeout_ms, NULL);
 }
 
 int32_t wifi_state(void)

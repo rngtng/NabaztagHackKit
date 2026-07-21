@@ -72,6 +72,24 @@ int8_t wifi_join(const struct rt2501_scan_result *target, const char *psk,
  * join failed. */
 int8_t wifi_connect(const char *ssid, const char *psk, uint32_t timeout_ms);
 
+/* Why a wifi_connect_ex attempt ended - lets the provisioning boot flow (#234)
+ * tell "wrong password" apart from "AP gone" so it can drive the right LED and
+ * message. WIFI_FAIL_AUTH is a best-effort hint: an encrypted target that never
+ * reached RUN is most likely a bad PSK, but a weak/vanishing AP can look the
+ * same, so treat it as advisory, not proof. */
+typedef enum {
+  WIFI_OK = 0,
+  WIFI_FAIL_RADIO,      /* USB/RT2501 bring-up failed */
+  WIFI_FAIL_NOTFOUND,   /* SSID not seen in the scan */
+  WIFI_FAIL_AUTH,       /* encrypted AP found, join never completed (bad PSK?) */
+  WIFI_FAIL_TIMEOUT     /* open AP found, join timed out */
+} wifi_fail_t;
+
+/* wifi_connect with a classified outcome: same steps, but *why (may be NULL)
+ * receives a wifi_fail_t. Returns 0 connected, <0 otherwise (see *why). */
+int8_t wifi_connect_ex(const char *ssid, const char *psk, uint32_t timeout_ms,
+                       wifi_fail_t *why);
+
 /* rt2501_state() passthrough (RT2501_S_*). */
 int32_t wifi_state(void);
 

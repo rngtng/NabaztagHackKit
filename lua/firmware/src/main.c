@@ -905,20 +905,35 @@ static int nab_sciw(lua_State *L)
   return 0;
 }
 
-/* nab.wifi(ssid [, psk]) -> true on connect, or (nil, message). Blocking:
- * brings up the USB RT2501 dongle (cold-boot + firmware upload + radio settle),
- * scans for ssid, then runs the WPA/WPA2 join (auth + assoc + 4-way handshake),
- * pumping until connected or ~30 s. psk is required for an encrypted AP; omit
- * (or "") for an open one. The whole USB + 802.11 stack is pulled into the
- * image only because this binding references it (see hal/wifi.c). */
+/* nab.wifi(ssid [, psk]) -> true on connect, or (nil, message, reason).
+ * Blocking: brings up the USB RT2501 dongle (cold-boot + firmware upload +
+ * radio settle), scans for ssid, then runs the WPA/WPA2 join (auth + assoc +
+ * 4-way handshake), pumping until connected or ~30 s. psk is required for an
+ * encrypted AP; omit (or "") for an open one. On failure `reason` is a stable
+ * tag - "radio" (bring-up), "notfound" (SSID not seen), "auth" (encrypted AP,
+ * join never completed - a bad-PSK hint, advisory) or "timeout" - that the
+ * provisioning flow (#234) branches on to pick an LED/message. The whole USB +
+ * 802.11 stack is pulled into the image only because this binding references
+ * it (see hal/wifi.c). */
 static int nab_wifi(lua_State *L)
 {
   const char *ssid = luaL_checkstring(L, 1);
   const char *psk = luaL_optstring(L, 2, "");
-  if (wifi_connect(ssid, psk, 30000) != 0) {
+  wifi_fail_t why = WIFI_OK;
+  if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
+    /* (nil, message, reason): reason is a stable machine-readable tag the
+     * provisioning flow (#234) branches on; message is for humans. */
+    const char *reason = "timeout";
+    switch (why) {
+    case WIFI_FAIL_RADIO:    reason = "radio"; break;
+    case WIFI_FAIL_NOTFOUND: reason = "notfound"; break;
+    case WIFI_FAIL_AUTH:     reason = "auth"; break;
+    default:                 reason = "timeout"; break;
+    }
     lua_pushnil(L);
-    lua_pushfstring(L, "wifi: could not connect to '%s'", ssid);
-    return 2;
+    lua_pushfstring(L, "wifi: could not connect to '%s' (%s)", ssid, reason);
+    lua_pushstring(L, reason);
+    return 3;
   }
   lua_pushboolean(L, 1);
   return 1;
@@ -1014,15 +1029,17 @@ static void cfg_field(lua_State *L, const char *k, char *dst, size_t cap)
   lua_pop(L, 1);
 }
 
-/* nab.config() -> {ssid=,psk=,url=} or nil: the record persisted in the
+/* nab.config() -> {ssid=,psk=,url=,fails=} or nil: the record persisted in the
  * internal-flash config sector (last 4 KB - survives power cycles; nil until
- * first written). nab.config{ssid=..., psk=..., url=...} -> boolean: persist
- * the record (missing keys become ""); ssid <= 32, psk <= 64, url <= 64
- * chars. The sector is erase-cycled per write, so a record identical to what
- * flash already holds is skipped and returns false; true means erased,
- * programmed and verified by read-back (~63 ms with interrupts masked - see
- * hal/config.h). Only the struct crosses the seam: no address or length is
- * ever taken from Lua (sandbox principle 5). */
+ * first written). nab.config{ssid=..., psk=..., url=..., fails=...} -> boolean:
+ * persist the record (missing string keys become "", fails becomes 0); ssid <=
+ * 32, psk <= 64, url <= 64 chars, fails 0..255. `fails` is the consecutive-
+ * join-failure counter the provisioning flow (#234) read-modify-writes. The
+ * sector is erase-cycled per write, so a record identical to what flash already
+ * holds is skipped and returns false; true means erased, programmed and
+ * verified by read-back (~63 ms with interrupts masked - see hal/config.h).
+ * Only the struct crosses the seam: no address or length is ever taken from Lua
+ * (sandbox principle 5). */
 static int nab_config(lua_State *L)
 {
   nab_config_t cfg;
@@ -1031,19 +1048,26 @@ static int nab_config(lua_State *L)
       lua_pushnil(L);
       return 1;
     }
-    lua_createtable(L, 0, 3);
+    lua_createtable(L, 0, 4);
     lua_pushstring(L, cfg.ssid);
     lua_setfield(L, -2, "ssid");
     lua_pushstring(L, cfg.psk);
     lua_setfield(L, -2, "psk");
     lua_pushstring(L, cfg.url);
     lua_setfield(L, -2, "url");
+    lua_pushinteger(L, cfg.fails);
+    lua_setfield(L, -2, "fails");
     return 1;
   }
   luaL_checktype(L, 1, LUA_TTABLE);
   cfg_field(L, "ssid", cfg.ssid, sizeof cfg.ssid);
   cfg_field(L, "psk", cfg.psk, sizeof cfg.psk);
   cfg_field(L, "url", cfg.url, sizeof cfg.url);
+  lua_getfield(L, 1, "fails");
+  lua_Integer f = luaL_optinteger(L, -1, 0);
+  luaL_argcheck(L, f >= 0 && f <= 255, 1, "fails 0..255");
+  cfg.fails = (uint8_t)f;
+  lua_pop(L, 1);
   int8_t rc = config_save(&cfg);
   if (rc < 0)
     return luaL_error(L, "config: write failed");

@@ -28,6 +28,7 @@ table (the device has no `require`; load order is bottom-up):
 | `http.lua` | HTTP/1.0 GET builder, incremental response/request parsers, query decoding. No chunked encoding — the boot URL points at a plain file |
 | `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, and the blocking flows below |
 | `setup.lua` | AP setup-mode provisioning portal (#233): the one-page SSID/PSK/URL form, POST validation, and the `run()` boot flow that beacons the open AP, hands out a lease and saves creds to `nab.config` |
+| `provision.lua` | the provisioning boot decision (#234): setup-vs-join, the LED vocabulary, and the persisted strike counter that guarantees a wrong-PSK / dead-AP rabbit falls back to setup instead of boot-looping |
 
 State machines are pull-style: methods return arrays of ready-to-send
 packets, the caller owns the clock (`nab.time`) — that is what makes them
@@ -73,6 +74,47 @@ rather than spoofed (#233 scope). Pre-filling the SSID field from a scan is a
 nice-to-have that lights up automatically once a `nab.wifi_scan`/`wifi_seen`
 binding is exposed to Lua; today the datalist is simply omitted.
 
+### Provisioning failure UX / boot fallback (#234, M11e-2)
+
+`provision.lua` is the robustness half — it decides, on every boot, between a
+join attempt and setup mode, and guarantees the rabbit can never wedge in a
+boot loop:
+
+```lua
+local r = net.provision.run()   -- "joined" | "retry" | "setup-*"
+```
+
+`provision.boot(hooks)` is the pure decision (the `run()` wrapper wires the real
+`nab.*` + `net.setup`):
+
+1. **Head-button held at boot** → setup mode (the recovery hatch), before
+   anything else.
+2. **No / empty creds** → setup mode.
+3. **`fails` counter already at `MAX_FAILS`** (default 3) → setup mode, no join.
+4. Otherwise **join** (`nab.wifi`): success clears the strike counter (a no-op
+   write when it was already 0) and returns `"joined"`; failure bumps the
+   counter and returns `"retry"` — the caller reboots and `boot()` runs again,
+   entering setup once the counter reaches `MAX_FAILS`. Bounded by construction,
+   so `"retry"` can never loop forever.
+
+The strike counter is `nab.config`'s `fails` field (#214/#234): a plain
+read-modify-write, **power-loss tolerant** — a torn write leaves the sector
+blank/invalid, which the next boot reads as "no creds" and enters setup, never a
+crash (worst case one lost increment). A fresh provisioning through `net.setup`
+writes creds with no `fails` key, so it resets the strikes to 0.
+
+`nab.wifi` returns a third value on failure — a stable `reason` tag (`"radio"`,
+`"notfound"`, `"auth"`, `"timeout"`) classified in the wifi HAL — which drives
+the LED vocabulary (nose LED: blue setup / amber connecting / red auth-fail /
+green connected). `"auth"` is a best-effort wrong-PSK hint (an encrypted AP that
+never completed the join), not proof.
+
+**Hardware DoD is pending a JTAG session** (this environment has no rabbit): the
+software is complete and `lua:verify` green, but the end-to-end rows — wrong-PSK
+falls back to setup within a bounded time, button-hold forces setup, the
+persisted counter drives the transition — need the rig, like #219's on-device
+proof.
+
 ## Tests
 
 `task lua:lib:test` (in `lua:verify`) runs `test/run.lua` under the
@@ -87,11 +129,11 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of #233:
+`task lua:lib:size` - stripped `.lc` bytes per module. As of #234:
 link 1103, arp 1004, ipv4 1385, udp 788, dhcp 3420, tcp 4857, http 1881,
-iface 3782, setup 3823 — **22,043 B total**. The boot-critical subset (join
-path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is what #219 must fit
-(compressed) — if it doesn't, #215 (ExtRAM execution) is the lever. `setup.lua`
-is **not** in that subset: it runs only when there are no creds, so a frozen
-join image can page it in from the server (or the resident chunk can carry it
-in the setup-mode variant) rather than pay for it on every boot.
+iface 3782, setup 3823, provision 1597 — **23,640 B total**. The boot-critical
+subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is what #219 must
+fit (compressed) — if it doesn't, #215 (ExtRAM execution) is the lever.
+`setup.lua` is **not** in that subset (it runs only with no creds); `provision.lua`
+is small and boot-critical (it decides between join and setup every boot), so it
+joins the resident subset.
