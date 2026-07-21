@@ -25,7 +25,7 @@
 
 #define CFG_FLASH   0x08000000UL             /* internal flash base */
 #define CFG_SECTOR  (CFG_FLASH + 0x1F000UL)  /* sector 31: the config sector */
-#define CFG_VERSION 1
+#define CFG_VERSION 2   /* bumped: added the fails counter (#234) */
 
 /* On-flash record. Byte-granular on purpose (no compiler padding holes) and
  * word-padded by hand: cfg_program writes 4 bytes per SPD command. */
@@ -36,7 +36,8 @@ struct config_rec {
   char ssid[CONFIG_SSID_MAX + 1];
   char psk[CONFIG_PSK_MAX + 1];
   char url[CONFIG_URL_MAX + 1];
-  uint8_t pad[3];                   /* size up to a multiple of 4 */
+  uint8_t fails;                    /* consecutive-join-failure counter (#234) */
+  uint8_t pad[2];                   /* size up to a multiple of 4 */
 };
 _Static_assert(sizeof(struct config_rec) % 4 == 0, "word-granular programming");
 
@@ -128,6 +129,7 @@ int8_t config_load(nab_config_t *out)
   memcpy(out->ssid, rec->ssid, sizeof out->ssid);
   memcpy(out->psk, rec->psk, sizeof out->psk);
   memcpy(out->url, rec->url, sizeof out->url);
+  out->fails = rec->fails;
   /* a checksummed record has NUL-terminated fields by construction (below),
    * but cap them anyway - out feeds straight into Lua strings */
   out->ssid[CONFIG_SSID_MAX] = '\0';
@@ -156,6 +158,7 @@ int8_t config_save(const nab_config_t *cfg)
   strcpy(rec.ssid, cfg->ssid);
   strcpy(rec.psk, cfg->psk);
   strcpy(rec.url, cfg->url);
+  rec.fails = cfg->fails;
   rec.cksum = (uint8_t)-rec_sum(&rec);
 
   if (memcmp((const void *)CFG_SECTOR, &rec, sizeof rec) == 0)

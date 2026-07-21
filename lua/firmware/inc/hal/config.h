@@ -26,6 +26,11 @@ typedef struct {
   char ssid[CONFIG_SSID_MAX + 1];   /* all fields NUL-terminated; "" = unset */
   char psk[CONFIG_PSK_MAX + 1];
   char url[CONFIG_URL_MAX + 1];
+  uint8_t fails;                    /* consecutive-join-failure counter (#234):
+                                       the "N strikes -> setup mode" driver. A
+                                       fresh provisioning writes 0; the boot
+                                       orchestrator bumps it on a failed join
+                                       and clears it on a successful one. */
 } nab_config_t;
 
 /* Copy the persisted record into *out. Returns 0 on a valid record, <0 when
