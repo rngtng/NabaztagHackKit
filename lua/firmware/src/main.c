@@ -36,6 +36,7 @@
 #include "utils/delay.h" /* 1 ms tick: counter_timer + DelayMs */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
+#include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
 #include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
 
@@ -1075,6 +1076,30 @@ static int nab_config(lua_State *L)
   return 1;
 }
 
+/* nab.flash_firmware(image): whole-image OTA flash (#235). `image` is the
+ * verified firmware .bin as a byte string - net.ota has ALREADY checked its
+ * magic / target id / length / CRC, so nothing unverified reaches here. Masks
+ * interrupts and hands the bytes to the .ramfunc writer, which erases internal
+ * flash from address 0, programs the image and watchdog-reboots into it -
+ * so on success this never returns. Refuses an empty or over-budget image
+ * (returns nil, message), the only path that returns. BRICK RISK: there is no
+ * A/B slot; a bad image bricks the device (JTAG recovery). The image string
+ * lives in the ExtRAM Lua heap, readable while internal flash programs itself. */
+static int nab_flash_firmware(lua_State *L)
+{
+  size_t len;
+  const char *img = luaL_checklstring(L, 1, &len);
+  if (len == 0 || len > OTA_MAX_IMAGE) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "flash_firmware: image size %d out of range", (int)len);
+    return 2;
+  }
+  __disable_interrupt();
+  ota_flash_image((const uint8_t *)img, (uint32_t)len);
+  __enable_interrupt(); /* unreachable on hardware (watchdog reboot) */
+  return 0;
+}
+
 static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"wifi", nab_wifi},
@@ -1083,6 +1108,7 @@ static const luaL_Reg nab_funcs[] = {
     {"wifi_recv", nab_wifi_recv},
     {"wifi_mac", nab_wifi_mac},
     {"config", nab_config},
+    {"flash_firmware", nab_flash_firmware},
     {"led8", nab_led8},
     {"fade", nab_fade},
     {"delay", nab_delay},

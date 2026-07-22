@@ -78,7 +78,8 @@ function setup.page(opts)
     .. '<input name=url maxlength=' .. URL_MAX .. ' placeholder="http://...">'
     .. "<button type=submit>Save &amp; connect</button></form>"
     .. "<p><small>Open setup network - your details are sent once over this"
-    .. " local link, then the rabbit restarts.</small></p></body></html>"
+    .. " local link, then the rabbit restarts.</small></p>"
+    .. '<p><a href="/firmware">Update firmware</a></p></body></html>'
 end
 
 -- Confirmation page shown after a successful save.
@@ -161,12 +162,23 @@ function setup.run(opts)
   local ifc = opts.iface or net.iface.new(net.iface.nabdrv())
   ifc:dhcpd{ip = link.ip(setup.AP_IP), client_ip = link.ip(setup.CLIENT_IP)}
   ifc:dnsd() -- captive portal: resolve every hostname to us, show the page now
-  local ssids, saved = setup.scan_ssids()
+  local ssids = setup.scan_ssids()
+  local saved, image
   ifc:serve(80, function(q)
+    -- the setup page also hosts the firmware uploader (#235); route it there
+    if q.path == "/firmware" and net.ota then
+      local body, status, stop, img = net.ota.handle(q, {})
+      if img then image = img end
+      return body, status, stop
+    end
     local body, status, stop, creds = setup.handle(q, {ssids = ssids})
     if creds then saved = creds end
     return body, status, stop
   end)
+  if image then
+    nab.led("nose", 60, 0, 60) -- magenta = flashing (solid; IRQs off shortly)
+    nab.flash_firmware(image)  -- reboots into the new image; never returns
+  end
   nab.led("nose", 0, 40, 0) -- green = creds captured, about to restart
   return saved
 end

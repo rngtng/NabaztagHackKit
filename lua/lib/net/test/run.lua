@@ -23,7 +23,7 @@ local function runfile(path)
 end
 
 MODULES = {"link", "arp", "ipv4", "udp", "dns", "dhcp", "tcp", "http", "iface",
-           "setup", "provision"}
+           "setup", "provision", "ota"}
 
 -- The device opens base + table + string only (src/main.c): fail fast if a
 -- module drifts onto host-only stdlib. Word-boundary match keeps e.g.

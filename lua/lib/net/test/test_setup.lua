@@ -114,4 +114,27 @@ eq(#led, 2, "run signals setup (blue) then captured (green)")
 eq(led[1][4] > 0 and led[1][3], 0, "setup LED is blue")
 eq(led[2][3] > 0 and led[2][4], 0, "captured LED is green")
 
+-- run: a firmware upload on the setup page flashes after the response --------
+
+local flashed
+local IMG = H"cafebabe0011223344556677"
+local blob = string.pack(">c4BBI2I4I4", net.ota.MAGIC, 1, net.ota.HW_ID, 2,
+                         #IMG, net.ota.crc32(IMG)) .. IMG
+nab = {
+  wifi_mac = function() return H"00095b8f3ac4" end,
+  wifi_ap = function() return true end,
+  led = function() end,
+  config = function() return true end,
+  flash_firmware = function(bytes) flashed = bytes end, -- reboots on real hw
+}
+local fw_iface = {
+  dhcpd = function() end,
+  dnsd = function() end,
+  serve = function(self, port, handler)
+    handler({method = "POST", path = "/firmware", body = blob})
+  end,
+}
+setup.run{iface = fw_iface}
+eq(flashed, IMG, "a valid /firmware upload flashes the verified image")
+
 nab = nil -- don't leak the fake into later test files
