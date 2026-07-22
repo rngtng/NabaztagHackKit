@@ -88,8 +88,10 @@ nab = {
   config = function(cfg) persisted = cfg; return true end, -- the real save path
 }
 -- a fake iface whose serve delivers one valid POST to the handler
+local dnsd_called = false
 local fake_iface = {
   dhcpd = function(self, o) dhcpd_args = o end,
+  dnsd = function(self) dnsd_called = true end,
   serve = function(self, port, handler)
     self.port = port
     handler({method = "GET"}) -- a phone loads the page first
@@ -100,6 +102,7 @@ local fake_iface = {
 local got = setup.run{iface = fake_iface}
 eq(apname, "Nabaztag-3AC4", "run beacons the mac-derived open AP")
 eq(fake_iface.port, 80, "run serves the portal on port 80")
+eq(dnsd_called, true, "run starts the captive-portal DNS responder")
 eq(dhcpd_args ~= nil, true, "run starts the single-lease dhcp server")
 eq(net.link.ntoa(dhcpd_args.ip), setup.AP_IP, "dhcpd uses the fixed AP ip")
 eq(net.link.ntoa(dhcpd_args.client_ip), setup.CLIENT_IP, "dhcpd hands out the client ip")

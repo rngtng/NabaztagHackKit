@@ -14,8 +14,8 @@
 net = net or {}
 local iface = {}
 net.iface = iface
-local link, arp, ipv4, udp, dhcp, tcp, http =
-  net.link, net.arp, net.ipv4, net.udp, net.dhcp, net.tcp, net.http
+local link, arp, ipv4, udp, dhcp, tcp, http, dns =
+  net.link, net.arp, net.ipv4, net.udp, net.dhcp, net.tcp, net.http, net.dns
 
 local BCAST_IP = "\255\255\255\255"
 
@@ -130,6 +130,22 @@ function iface.new(drv)
     self.udp_ports[67] = function(d)
       local f = s:input(d.payload)
       if f then self.drv.send(link.BCAST, f) end
+    end
+  end
+
+  -- captive-portal DNS: answer every A query with `ip` (default: our own),
+  -- unicast back to the asker, so a joined phone resolves its OS connectivity
+  -- probe to the portal and shows the config page (#233 follow-up). Register
+  -- alongside dhcpd before serve(); the reply rides the same poll loop.
+  function i:dnsd(ip)
+    local s = dns.server(ip or self.ip)
+    self.udp_ports[53] = function(d, pkt)
+      local r = s:input(d.payload)
+      if r then
+        self:ipsend(pkt.src, ipv4.build{src = self.ip, dst = pkt.src,
+          proto = ipv4.UDP,
+          payload = udp.build(self.ip, 53, pkt.src, d.sport, r)})
+      end
     end
   end
 
