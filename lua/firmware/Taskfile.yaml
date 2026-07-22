@@ -60,6 +60,15 @@ tasks:
   image:
     internal: true   # built on demand as a dep; rebuilt when the toolchain changes
     dir: '{{.TASKFILE_DIR}}'
+    # Skip the build unless needed: Task skips only when ALL checks pass, so the
+    # image must exist (status) AND the Dockerfile be unchanged (sources
+    # checksum). The toolchain lives entirely in the Dockerfile - no COPY, the
+    # src tree is bind-mounted at run - so it's the only source. Deleting the
+    # image or editing the Dockerfile re-triggers.
+    sources:
+      - Dockerfile
+    status:
+      - docker image inspect {{.FV_IMAGE}} >/dev/null 2>&1
     cmds:
       - docker build -t {{.FV_IMAGE}} .
 

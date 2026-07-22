@@ -93,6 +93,34 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   real lever (see #128), not error-string shaving. `task lua:firmware:build` fails
   loudly on overflow; `task lua:verify` also runs the `firmware:test` bytecode-pipeline golden.
 
+## Lua track task surface & structure (post-#208)
+- **Leaves, each owning its targets; others delegate (interfaces stay abstract):**
+  `boot/` (`compile`) · `apps/` (`compile`,`simulate`,`clean`) · `firmware/`
+  (`build`,`simulate`,`simulate:repl`,`flash`,`flash:repl`,`test`,`clean`) ·
+  `lib/` (`test`,`size`) · `tools/{luac,simulator}` (image builders) · root
+  (`verify`,`clean`,`check:docs`). Delegations: `apps:compile`→`luac:compile`,
+  `firmware:build`→`boot:compile`, `firmware:simulate`→`simulator:run`. Inline (can't
+  delegate, documented): `apps:simulate` (mid-shell temp frame), `firmware:test`
+  (stdout capture), `*:repl` (luash wraps the docker argv), `lib:test/size`.
+- **Dependency graph is a downward DAG, no cycle:** `apps → firmware → {luac,
+  simulator, boot}`, `boot → luac`, `lib → luac`. A leaf never includes `apps` or root.
+- **Param conventions (one meaning each):** `EXAMPLE=<name>` a C bring-up prog under
+  `firmware/examples/`; `APP=<path>` a Lua app source, **layer-root-relative**
+  (`apps/foo.lua`), same in `apps:compile`/`apps:simulate`; the product firmware needs
+  no selector. Verbs: **`compile` = Lua→bytecode** (`apps:compile`,`boot:compile`);
+  **`build` = binary image** (`firmware:build`). REPL is a sub-verb of its transport
+  (`flash:repl` = HW, `simulate:repl` = sim).
+- **Tool image names live ONLY in the tool that builds them, via a UNIQUE var
+  (`LUAC_IMAGE`/`SIM_IMAGE`), never a generic `IMAGE`, and no include passes them.**
+  This is load-bearing, not style: `tools/luac` + `tools/simulator` get co-included by
+  `firmware`/`apps`, and a shared `IMAGE`/`DIR` var **bleeds and collides** across the
+  two (Task keeps one entry per leaf-global name) — it once tagged the *simulator*
+  build as `nabaztag-sdk-luac`, so `embed.py` ran `simulate.py`. Don't reintroduce a
+  generic `IMAGE` or thread image names through `vars:` in includes.
+- **`task lua:check:docs`** lints that every `` `task lua:…` `` string in docs/comments/
+  skills names a real task (chained into `lua:verify`, fail-fast) — run it after any
+  task rename so no doc reference is left dangling.
+
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
   starts `dockerd` if not running, installs `task` if missing, and — inside the

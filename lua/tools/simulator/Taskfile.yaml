@@ -15,6 +15,15 @@ tasks:
   image:
     internal: true   # rebuilt on demand; the COPYed simulate.py cache-busts it when the sim changes
     dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    # Skip the build unless needed: Task skips only when ALL checks pass, so both
+    # the image must exist (status) AND the Dockerfile + COPYed simulate.py be
+    # unchanged since the last build (sources checksum). Deleting the image or
+    # editing a source re-triggers. Paths are relative to dir (the lua root).
+    sources:
+      - tools/simulator/Dockerfile
+      - tools/simulator/simulate.py
+    status:
+      - docker image inspect {{.SIM_IMAGE}} >/dev/null 2>&1
     cmds:
       - docker build -t {{.SIM_IMAGE}} -f tools/simulator/Dockerfile .
 
