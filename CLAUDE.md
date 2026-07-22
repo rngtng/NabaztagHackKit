@@ -25,7 +25,7 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 - **Self-contained layer folders.** Each tool/layer owns its `Dockerfile` + `Taskfile.yaml`.
   The root `Taskfile.yaml` only `includes:` them under a namespace. **No central `docker/`.**
 - **Tasks = minimal parameterized verbs** (e.g. `mtl:app-piper:build`,
-  `mtl:boot:simulate`, `lua:firmware:flash APP=…`). Bake toolchain *builds* into the image;
+  `mtl:boot:simulate`, `lua:firmware:flash EXAMPLE=…`). Bake toolchain *builds* into the image;
   mark build/image tasks `internal: true`. Don't expose one task per Make target.
 - Apply the minimalism rule to **interfaces (tasks/CLI/structure), not just code.**
 
@@ -39,7 +39,7 @@ JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
 **The console is UART0 @38400 8N1, bidirectional (#203/#207): `print()`/prompt out,
 REPL input in, read/driven on the Pi's `/dev/serial0` — no OpenOCD session, no CPU
-halts. Drive it with `task lua:firmware:repl:hw`: omit SCRIPT for a live interactive
+halts. Drive it with `task lua:firmware:flash:repl`: omit SCRIPT for a live interactive
 prompt (`luash.py` compiles each typed line off-device + drives `uart_repl.py --relay`),
 or SCRIPT=file.lua|.lc for a scripted run. All input is luac bytecode - the firmware has
 no parser (#128); source typed at a bare terminal will not run. Input is paced for flow
@@ -63,7 +63,7 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`lua.elf`: ~16.9 KB free of 124 KB internal flash (109,648 B used, incl. the
+- **`firmware.elf`: ~16.9 KB free of 124 KB internal flash (109,648 B used, incl. the
   ~1.5 KB #195 event core): the #124
   WPA2-CCMP-only scavenge (WEP/WPA1/TKIP dropped - HMAC-MD5, RC4, the WPA1
   IE/scan-parse and every TKIP branch, 3,896 B) on top of the raw-frame/AP
@@ -73,7 +73,7 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA2/crypto stack
   (~23 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
   re-linked newlib's stdio FILE layer via `rand → assert → fiprintf` (~9 KB, the
-  M7.5/#106 win undone). `lua/firmware/src/libc_shim.c` (local `rand`/`srand`/
+  M7.5/#106 win undone). `lua/firmware/src/utils/libc_shim.c` (local `rand`/`srand`/
   `__assert_func`) reclaims that; a new libc call that grows the image needs the
   same treatment — check the map's "Archive member" section, don't trust
   gc-sections alone. Next large feature still needs a real lever - not
@@ -81,7 +81,7 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   every float passed through `...` is promoted to double (C default argument
   promotion) and links libgcc's double soft-float back in - print floats via the
   non-variadic `luai_num2str` instead. Lua's number I/O + console are off newlib
-  (`luai_*`/printf helpers in `lua/firmware/src/app/lua.c` + macro overrides in
+  (`luai_*`/printf helpers in `lua/firmware/src/main.c` + macro overrides in
   `lua/firmware/lua/luaconf.h`); the newlib+libgcc still linked
   (single-float/memcpy/malloc) is near-irreducible.
   Float *printing* stays approximate (integer part + `.0`) pending a real dtoa.
@@ -90,8 +90,8 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   Lua (REPL lines via `luash.py`, the resident boot chunk via `embed.py`) is compiled
   off-device by a `LUA_32BITS`-matched host `luac`. This is now the single image - it
   supersedes #128's dev/prod two-image split.** `-Os` and Lua 5.5 are NOT levers - pick a
-  real lever (see #128), not error-string shaving. `task lua:firmware:build APP=lua` fails
-  loudly on overflow; `task lua:verify` also runs the `test:luac` bytecode-pipeline golden.
+  real lever (see #128), not error-string shaving. `task lua:firmware:build` fails
+  loudly on overflow; `task lua:verify` also runs the `firmware:test` bytecode-pipeline golden.
 
 ## Session bootstrap & verification
 - Run `scripts/claude-setup.sh` once per session (idempotent — safe to re-run):
@@ -136,7 +136,7 @@ short `README.md`. Verify by actually running the task in Docker — not just "i
 Harness architecture, stub-ordering rationale, and "how to add a test for a new
 lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/lib/_test.mtl`.
 - **Golden / round-trip tests must assert positive expected content**, not just that two
-  runs match. `test:luac` compared source-run vs bytecode-run stdout with `[ "$A" = "$B" ]`
+  runs match. `firmware:test` (the luac golden) compared source-run vs bytecode-run stdout with `[ "$A" = "$B" ]`
   and passed on `empty == empty` when the app hung before the REPL — a green test that
   validated nothing (#207). Require a known marker in the output before comparing; an
   all-empty run must fail.

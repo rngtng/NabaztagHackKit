@@ -11,7 +11,7 @@ chip inventory: `docs/hardware-dissection.md`.
 ## Always use the taskified path
 
 - **Flash**: `task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]`
-- **Read console / REPL**: `task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
+- **Read console / REPL**: `task lua:firmware:flash:repl [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
 
 Never hand-roll `scp` + `openocd` + `gdb` - the raw ssh+openocd path is denied,
 and both operations are already taskified. If a task doesn't cover what you
@@ -22,7 +22,7 @@ need, extend the task rather than shelling out around it.
 There is one console: **UART0, both directions, @38400 8N1** on OKI `PB0` (TX)
 and `PB1` (RX), wired to the Pi's `/dev/serial0`. No OpenOCD session and never
 halts the CPU - use it for the REPL, probe output, and anything timing-sensitive
-(USB/WiFi). Read/driven via `task lua:firmware:repl:hw`.
+(USB/WiFi). Read/driven via `task lua:firmware:flash:repl`.
 
 Raw manual read on the Pi (when you want the stream without the REPL driver):
 `sudo systemctl stop serial-getty@ttyAMA0` (deliberately not `disable`d - do
@@ -48,9 +48,9 @@ cheapest disqualifying test comes first, not last.
 IDCODE `0x3f0f0f0f` on JTAG connect = CPU alive, wiring good. If you don't see
 this, stop and debug the physical connection before anything else.
 
-## Reading / driving the UART console (`repl:hw`)
+## Reading / driving the UART console (`flash:repl`)
 
-`task lua:firmware:repl:hw [APP=lua] [SCRIPT=path.lua] [PI_HOST=…]` flashes the app
+`task lua:firmware:flash:repl [APP=lua] [SCRIPT=path.lua] [PI_HOST=…]` flashes the app
 over JTAG, then drives `/dev/serial0` on the Pi. The firmware is **parser-less**
 (#128) - it runs only `luac` bytecode - so all input is compiled off-device
 (`tools/luac`). **No SCRIPT** = a live interactive prompt: `luash.py` compiles each
@@ -60,14 +60,14 @@ it. (There is no `LC` flag any more; framing is implicit. Source typed at a bare
 `screen`/`cat` will NOT run.) Input is fed **paced, byte-by-byte** - the OKI UART0
 has only a 16-byte RX FIFO and no HW flow control, so bursting a whole line drops
 bytes; the driver spaces each char. A scripted run is terminated with **EOT
-(`0x04`)**; the app prints `<<FV_DONE>>` when the REPL hits EOF, and `repl:hw`
+(`0x04`)**; the app prints `<<FV_DONE>>` when the REPL hits EOF, and `flash:repl`
 stops on that marker (backstop: `--run-timeout`, 120s default). `lua.elf` boots
 straight to the `> ` prompt - type `run()` for the RFID demo.
 
 If you write a new probe app, call `init_uart()` first, print via `putst_uart`,
 and emit `<<FV_DONE>>` before it idles.
 
-**Probe retry loops must fit `repl:hw`'s read window.** The UART read is capped
+**Probe retry loops must fit `flash:repl`'s read window.** The UART read is capped
 by `--run-timeout` (120s default), and each failed I2C/SPI call that spins a
 1M-iteration timeout loop burns real seconds - keep probe retries ≤ 5, never
 100+. Production `writecheck`/`readcheck` (1000 retries) is fine in the real app
@@ -79,7 +79,7 @@ spend a round-trip on a diagnostic probe.
 ## Concurrency
 
 **Only one OpenOCD may own the Pi/JTAG at a time.** Launching a second
-`flash`/`repl:hw` while one is running fails with
+`flash`/`flash:repl` while one is running fails with
 `Error: couldn't bind to socket: Address already in use`. Wait for the prior
 background run to finish before starting the next - don't retry blind.
 

@@ -11,7 +11,7 @@
  * the MCU actually reading and re-transmitting the byte.
  *
  * Flash + test (on the Pi, TX+RX both wired to /dev/serial0):
- *   task lua:firmware:flash APP=uartechoprobe
+ *   task lua:firmware:flash EXAMPLE=uartechoprobe
  *   sudo stty -F /dev/serial0 38400 raw -echo
  *   printf 'abcXYZ' > /dev/serial0   # then read: expect 'ABCxyz'
  *

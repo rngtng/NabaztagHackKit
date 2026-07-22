@@ -31,7 +31,7 @@
 // 1-4 are the four belly "directional cones", 5 is the nose. This is the RAW
 // channel map; set_led()/led_fade() apply a separate logical remap via
 // convled[] in led.c (invert it to target a known physical LED - see the M5 LED
-// binding in src/app/lua.c, which does exactly that so fades hit the same LEDs
+// binding in src/main.c, which does exactly that so fades hit the same LEDs
 // nab.led() lights by name).
 #define LED_RGB_1		0x01000000	/* belly (upper) */
 #define LED_RGB_2		0x02000000	/* belly bottom  */

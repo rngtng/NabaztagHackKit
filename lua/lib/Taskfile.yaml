@@ -25,7 +25,6 @@ includes:
   luac: # host luac/lua image (built with the lua layer root as Docker context)
     taskfile: ../tools/luac/Taskfile.yaml
     internal: true
-    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
 tasks:
   test:

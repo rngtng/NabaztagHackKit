@@ -2,7 +2,7 @@
 --
 -- The bytecode-only image has no on-device parser, so this cannot be compiled
 -- at startup - the build compiles it off-device (tools/luac/embed.py) into
--- gen/boot_lc.h and lua.c loads that blob via luaL_loadbuffer. Keep it small:
+-- gen/boot_lc.h and main.c loads that blob via luaL_loadbuffer. Keep it small:
 -- it is baked into the 124 KB flash image.
 --
 -- It defines the M5 nab-binding demo helpers plus a short LED showcase (#102),

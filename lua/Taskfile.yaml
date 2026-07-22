@@ -1,37 +1,35 @@
 # NabaztagSDK — Lua (V2) track entrypoint.
 #
 # Every build runs inside Docker, so the only host requirements are Docker and
-# Task (https://taskfile.dev). This file only `includes:` the self-contained
-# `firmware/` leaf, so targets read as `<leaf>:<verb>` — e.g.
-# `task firmware:build APP=lua`, `task firmware:flash`, `task firmware:repl:hw`
-# (from the repo root: `task lua:firmware:…`). Every leaf is relocatable:
-# `task firmware:build` here == `cd firmware && task build` there. Run `task`
-# with no args to list everything.
-#
-# This file owns no toolchain includes and re-implements nothing: `verify`/
-# `clean` just chain the leaf's own verbs. Decentralised per #63 — remaining
-# per-leaf duplication is intentional for now (DRY: #187).
+# Task (https://taskfile.dev). Self-contained, relocatable leaves, split by what
+# they touch:
+#   * firmware:*  — build the image + simulate it + flash/REPL on REAL hardware.
+#   * boot:*      — the resident boot chunk baked into the image (firmware delegates).
+#   * apps:*      — the Lua app sources: compile to bytecode, run in the sim.
+#   * lib:*       — host-side Lua stdlib tests.
+# (`task firmware:build` here == `cd firmware && task build`.) This root owns only
+# the cross-leaf orchestration (verify, clean). Run `task` with no args to list.
 version: '3'
 
 includes:
-  firmware: # Lua-successor firmware (Lua 5.4)
+  firmware: # Lua-successor firmware (Lua 5.4): build + simulate + real-hardware flash/REPL
     taskfile: ./firmware/Taskfile.yaml
+  boot: # the resident boot chunk baked into the firmware image (lua:boot:compile)
+    taskfile: ./boot/Taskfile.yaml
+  apps: # the Lua app sources + no-hardware verbs (compile to bytecode, run in the sim)
+    taskfile: ./apps/Taskfile.yaml
   lib: # pure-Lua standard libraries (auto-discovered); net/ is the first (#217)
     taskfile: ./lib/Taskfile.yaml
-  compile: # host Lua->device-bytecode compiler; layer-wide (firmware embed, lib tests, REPL all use it)
-    taskfile: ./tools/luac/Taskfile.yaml
-    vars: {IMAGE: nabaztag-sdk-luac, DIR: tools/luac}
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: the net-module unit tests pass, the firmware image builds (fails loudly on flash overflow) and the bytecode pipeline round-trips (test:luac golden transcript).'
+    desc: 'Definition of done for the Lua (V2) layer: the lib unit tests pass, the firmware image builds (fails loudly on flash overflow) and the bytecode pipeline round-trips (firmware:test golden transcript).'
     cmds:
       - task: lib:test
       - task: firmware:build
-      - task: firmware:test:luac
+      - task: firmware:test
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:
       - task: firmware:clean
-      - rm -rf build

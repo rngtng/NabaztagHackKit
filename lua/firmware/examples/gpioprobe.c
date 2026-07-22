@@ -7,11 +7,11 @@
  *
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0; watch the
  * transcript while operating the rabbit by hand:
- *   task lua:firmware:flash APP=gpioprobe
+ *   task lua:firmware:flash EXAMPLE=gpioprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  *
  * The back wheel's analog reading (ADC ch.2) is a separate, already-confirmed
- * register sequence (see hal/adc.c, nab.wheel() in app/lua.c) - this probe is
+ * register sequence (see hal/adc.c, nab.wheel() in src/main.c) - this probe is
  * only for the *digital* click switch and the jack, whose pins are unknown.
  */
 #include "ml674061.h"

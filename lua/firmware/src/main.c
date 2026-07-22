@@ -1,5 +1,5 @@
 /**
- * @file lua.c
+ * @file main.c
  * @brief Boot PUC-Rio Lua 5.4 and run a REPL - the first real language runtime
  *        on the ML67Q4051. Opens a trimmed stdlib, runs an embedded demo chunk,
  *        then drops into a REPL. Console = UART0 (#207); heap = 1 MB ExtRAM.
@@ -1132,7 +1132,7 @@ static void report(lua_State *L)
  * feed, not a ~2 KB script.
  *
  * This image has no on-device parser (#128), so the chunk cannot be compiled
- * from source at boot. The build compiles src/app/boot.lua off-device
+ * from source at boot. The build compiles lua/boot/boot.lua off-device
  * (tools/luac/embed.py) into gen/boot_lc.h - a `boot_lc[]` bytecode blob loaded
  * below via luaL_loadbuffer (sizeof boot_lc = chunk length). Edit boot.lua, not
  * this header. The fuller LED show is ../apps/led-demo.lua. */

@@ -13,7 +13,7 @@
  * clock + external-memory-controller init before main().
  *
  * Flash + listen:
- *   task lua:firmware:flash APP=uartprobe
+ *   task lua:firmware:flash EXAMPLE=uartprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  * Expect the banner line repeating ~5x/second.
  */

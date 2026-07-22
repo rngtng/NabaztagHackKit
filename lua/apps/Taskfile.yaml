@@ -1,0 +1,77 @@
+# lua/apps - the Lua applications leaf: the user `.lua` app sources (led-demo,
+# rfid-led-ears, ...) plus the verbs that operate on them without hardware:
+#   task lua:apps:compile  APP=apps/foo.lua   -> stripped .lc device bytecode
+#   task lua:apps:simulate APP=apps/foo.lua   -> run that app on the product firmware in the sim
+# (the interactive sim/HW REPLs are lua:firmware:simulate:repl / :flash:repl)
+# Real-hardware flash/REPL is the firmware leaf (`lua:firmware:*`); this leaf is
+# the no-hardware Lua path. It `includes:` firmware (to build the product image
+# it runs Lua on), the host luac tool (compile/frame) and the simulator image.
+# The graph stays a DAG - firmware never includes apps - so there is no cycle.
+version: '3'
+
+vars:
+  # SIM_IMAGE is referenced by apps:simulate's inline docker run (the framed temp
+  # path only exists mid-shell, so it can't delegate to simulator:run); the
+  # simulator tool owns the default.
+  SIM_IMAGE: '{{.SIM_IMAGE | default "nabaztag-sdk-simulator"}}'
+  # REPO = the lua layer root, depth-independent walk-up (identical formula to the
+  # firmware/lib leaves - see firmware/Taskfile.yaml for why it must be so).
+  REPO:
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+
+includes:
+  firmware: # built to run Lua apps on; its own verbs are exposed at the root, so internal here
+    taskfile: ../firmware/Taskfile.yaml
+    internal: true
+  luac: # host Lua->bytecode compiler (built with the lua layer root as Docker context)
+    taskfile: ../tools/luac/Taskfile.yaml
+    internal: true
+  simulator: # Unicorn simulator image
+    taskfile: ../tools/simulator/Taskfile.yaml
+    internal: true
+
+tasks:
+  compile:
+    desc: 'Compile a Lua app source to stripped 32-bit device bytecode. Paths are relative to the lua/ layer root (same as apps:simulate). Usage: task lua:apps:compile APP=apps/in.lua [OUT=apps/in.lc]'
+    # The luac tool leaf owns the verb; this re-exposes it under apps:, resolving
+    # APP/OUT against the layer root so they mean the same as in apps:simulate.
+    requires:
+      vars: [APP]
+    cmds:
+      - task: luac:compile
+        vars:
+          APP: '{{.REPO}}/{{.APP}}'
+          OUT: '{{if or (not .OUT) (eq .OUT "build")}}{{else}}{{.REPO}}/{{.OUT}}{{end}}'
+
+  simulate:
+    desc: 'Run a Lua app on the product firmware in the Unicorn simulator, no hardware (#96). APP=file.lua|.lc is framed to #LC bytecode, fed to the sim, and its console transcript printed. (For an interactive prompt use lua:firmware:simulate:repl.) Usage: task lua:apps:simulate APP=apps/led-demo.lua [ARGS=--leds] [N=budget]'
+    dir: '{{.TASKFILE_DIR}}'
+    interactive: true   # -it gives a live in-place view for ARGS=--leds
+    requires:
+      vars: [APP]       # fail loudly without an app; the bare REPL is lua:firmware:simulate:repl
+    deps:
+      - task: luac:image          # host luac: frames the app to bytecode
+        vars: {WORKDIR: '{{.REPO}}'}
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - task: firmware:build      # the product firmware -> {{.REPO}}/firmware/bin/firmware.elf
+      # Sim invoked inline (not via simulator:run) because the framed temp path
+      # only exists mid-shell, so it can't be handed to a `- task:` call. APP is
+      # resolved against the layer root (REPO), so `APP=apps/foo.lua` means the
+      # same here as in apps:compile.
+      - |
+        set -e
+        BIN="$(realpath '{{.REPO}}/firmware/bin')"
+        # Frame the app to #LC bytecode FIRST (parser-less #128, raw source is
+        # rejected), feed via --input-file so stdout stays the console / LED view.
+        # Keep the temp under REPO so colima's /Users-only share can bind-mount it.
+        fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$fr"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.REPO}}/{{.APP}}")" -o "$fr" 1>&2
+        docker run --rm -it -v "$BIN:/mnt:ro" -v "$fr:/in.lua:ro" \
+          {{.SIM_IMAGE}} {{.ARGS}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/firmware.elf
+
+  clean:
+    desc: 'Remove the tools/luac Docker image (the host Lua->bytecode compiler).'
+    cmds:
+      - task: luac:clean

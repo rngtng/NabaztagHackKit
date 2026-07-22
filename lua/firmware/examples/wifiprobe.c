@@ -20,8 +20,9 @@
  *   [6] (WIFI_SSID only) wifi_join(): associate + 4-way handshake, tracing each
  *       transition.
  *
- * Run: task lua:firmware:repl:hw APP=wifiprobe PROBE=1 (SSID/PSK from .env).
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0.
+ * Run: task lua:firmware:flash EXAMPLE=wifiprobe CAPTURE=1 (SSID/PSK from .env)
+ * flashes and captures its UART transcript until <<FV_DONE>>; or flash without
+ * CAPTURE and read /dev/serial0 by hand (UART0, 38400 8N1).
  * Hardware-only (the sim has no OHCI model).
  */
 #include <string.h>

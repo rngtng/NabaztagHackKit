@@ -8,7 +8,7 @@
  *
  * Audio is on SPI0 (WriteSPI/ReadSPI); the LEDs are on SPI1 - separate buses.
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0:
- *   task lua:firmware:flash APP=audioprobe
+ *   task lua:firmware:flash EXAMPLE=audioprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"

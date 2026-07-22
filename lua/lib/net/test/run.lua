@@ -24,7 +24,7 @@ end
 
 MODULES = {"link", "arp", "ipv4", "udp", "dhcp", "tcp", "http", "iface"}
 
--- The device opens base + table + string only (src/app/lua.c): fail fast if a
+-- The device opens base + table + string only (src/main.c): fail fast if a
 -- module drifts onto host-only stdlib. Word-boundary match keeps e.g.
 -- "date.iso" or a local named "iov" from tripping it.
 local FORBIDDEN = {"%f[%w]math%.", "%f[%w]os%.", "%f[%w]io%.",

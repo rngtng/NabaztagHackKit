@@ -20,9 +20,9 @@ task from the repo root — it builds the app, ships this repo's configs + ELF t
 the Pi, drives OpenOCD + gdb, verifies the write, and tears the bridge down:
 
 ```sh
-task lua:firmware:flash                       # APP defaults to lua
-task lua:firmware:flash APP=blink             # visible LED blink
-task lua:firmware:flash APP=blink PI_HOST=me@other-pi.local
+task lua:firmware:flash                       # the product Lua host (default)
+task lua:firmware:flash EXAMPLE=blink             # visible LED blink
+task lua:firmware:flash EXAMPLE=blink PI_HOST=me@other-pi.local
 ```
 
 The task wraps [`flash.py`](flash.py). It aborts if the JTAG chain check (IDCODE
@@ -127,7 +127,7 @@ sudo make install                             # installs to /usr/local/bin/openo
 ### 2. Build firmware (on the dev host)
 
 ```sh
-task lua:firmware:build APP=blink          # -> lua/firmware/bin/blink.elf (also .bin / .hex)
+task lua:firmware:build EXAMPLE=blink          # -> lua/firmware/bin/blink.elf (also .bin / .hex)
 ```
 
 ### 3. Copy configs + firmware to the Pi
@@ -186,7 +186,7 @@ halts the CPU.
 
 > No hardware flow control + a 16-byte RX FIFO the device drains only between
 > REPL lines, so a fast host burst drops bytes. `uart_repl.py` paces input one
-> byte at a time; feed the REPL through it (or `repl:hw`), not a raw `cat >`.
+> byte at a time; feed the REPL through it (or `repl`), not a raw `cat >`.
 
 > The baud is 38400, not 115200: the ML67Q4051 UART peripheral clock is a
 > **measured 8.00 MHz** (not the 33 MHz CPU clock), so 115200 is unreachable.
@@ -201,15 +201,15 @@ Wiring to the Pi rig **crosses over** (GND common):
 | PB0 (TX) | GPIO15 / RXD | 10 |
 | PB1 (RX) | GPIO14 / TXD | 8 |
 
-### One command: `task lua:firmware:repl:hw`
+### One command: `task lua:firmware:flash:repl`
 
 The single command to flash an app and drive its console (`print()` / the REPL)
 on the rabbit:
 
 ```sh
-task lua:firmware:repl:hw                                   # APP=lua, live interactive prompt
-task lua:firmware:repl:hw SCRIPT=path/to/commands.lua       # feed a script, capture the transcript
-task lua:firmware:repl:hw SCRIPT=path/to/chunk.lc           # feed prebuilt bytecode
+task lua:firmware:flash:repl                                   # product Lua host, live interactive prompt
+task lua:firmware:flash:repl SCRIPT=path/to/commands.lua       # feed a script, capture the transcript
+task lua:firmware:flash:repl SCRIPT=path/to/chunk.lc           # feed prebuilt bytecode
 ```
 
 The firmware is **parser-less** (#128): it runs only `luac` bytecode, so all input
@@ -225,15 +225,17 @@ is compiled off-device (`tools/luac`). Two modes:
 
 Input is **paced byte-by-byte** (the link has no flow control + a 16-byte RX FIFO);
 a scripted run ends with a single **EOT (0x04)** so the REPL prints `<<FV_DONE>>`
-(backstop: `--run-timeout`, 120 s). `lua.elf` boots straight to the `> ` prompt;
+(backstop: `--run-timeout`, 120 s). `firmware.elf` boots straight to the `> ` prompt;
 type `run()` for the RFID demo (the helpers ship in the resident boot chunk).
 
-### Reading the console by hand
+### Reading a print-only example's console
 
-Validate the link end-to-end with the banner probe, then read:
+One-shot: `task lua:firmware:flash EXAMPLE=<probe> CAPTURE=1` flashes, then streams the
+transcript read-only until `<<FV_DONE>>` (or `RUN_TIMEOUT`, default 120 s) - no stdin fed.
+To read by hand instead (validate the link end-to-end with the banner probe, then read):
 
 ```sh
-task lua:firmware:flash APP=uartprobe          # rabbit spews "NAB-UART-PROBE alive @38400 8N1"
+task lua:firmware:flash EXAMPLE=uartprobe          # rabbit spews "NAB-UART-PROBE alive @38400 8N1"
 # on the Pi:
 sudo systemctl stop serial-getty@ttyAMA0       # frees /dev/serial0 (getty squats on it; re-enables on reboot)
 sudo stty -F /dev/serial0 38400 raw -echo

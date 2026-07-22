@@ -1,34 +1,46 @@
-# firmwareV2 - bring-up build for the eLua-successor (Lua 5.4) port to the
-# Nabaztag:tag V2 (OKI ML67Q4051, ARM7TDMI). See README.md and issue #87.
+# firmwareV2 - build for the eLua-successor (Lua 5.4) port to the Nabaztag:tag
+# V2 (OKI ML67Q4051, ARM7TDMI). See README.md and issue #87.
 #
-# Builds ONE selectable bring-up app from src/app/ against the shared ARM7TDMI
-# startup in sys/. Toolchain flags mirror src/firmware (proven on this chip).
+# Two kinds of target share the ARM7TDMI startup in sys/ (toolchain flags mirror
+# src/firmware, proven on this chip):
+#   * the product firmware (src/main.c) - the Lua host, the DEFAULT build. It
+#     bakes the resident boot chunk (lua/boot/boot.lua) and runs a bytecode REPL.
+#   * a standalone example (examples/<name>.c) - a one-peripheral bring-up prog
+#     with its own main() and no Lua. Selected with EXAMPLE=<name>.
 #
-#   make APP=hello     -> bin/hello.{elf,hex,bin}   (M0, #88 - toolchain check)
-#   make APP=blink     -> bin/blink.{elf,hex,bin}   (M1, #89 - LED blink)
+#   make                   -> bin/firmware.{elf,hex,bin}  (the Lua product)
+#   make EXAMPLE=blink     -> bin/blink.{elf,hex,bin}     (#89 - LED blink)
 #
 # All targets run inside the Docker toolchain image (see Dockerfile); the only
 # host requirement is Docker + Task. Artifacts land in bin/ (and obj/).
 
-# Which app in src/app/ to build. Every app provides its own main().
-APP ?= hello
+# Entry point: the product firmware (src/main.c) by default; a standalone example
+# (examples/<EXAMPLE>.c, its own main(), no Lua) when EXAMPLE is set.
+ifdef EXAMPLE
+  NAME  = $(EXAMPLE)
+  ENTRY = examples/$(EXAMPLE).c
+else
+  NAME  = firmware
+  ENTRY = src/main.c
+endif
 
 # M11 (#119): debug builds (DEBUG_USB=1 / DEBUG_WIFI=1) get their own target
 # name and object tree - .o files don't record CFLAGS, so sharing obj/ would
 # silently mix debug and release objects across builds.
 ifneq ($(DEBUG_USB)$(DEBUG_WIFI),)
-  TARGET = $(APP)-dbg
+  TARGET = $(NAME)-dbg
   OBJDIR = obj/dbg
 else
-  TARGET = $(APP)
+  TARGET = $(NAME)
   OBJDIR = obj
 endif
 
-# Sources: the selected app + any shared C (src/*.c, src/hal/*.c) + startup.
-# src/usb (M11a, #143) is compiled for every app; --gc-sections drops it from
-# images that never call into it, so the APP=lua flash budget is untouched.
-C_FILES  = src/app/$(APP).c
-C_FILES += $(wildcard src/*.c)
+# Sources: the entry (product or example) + shared C (src/utils, src/hal, ...)
+# + startup. src/usb + src/net (M11a, #143) compile for every target;
+# --gc-sections drops them from images that never call in, so the product flash
+# budget is untouched.
+C_FILES  = $(ENTRY)
+C_FILES += $(wildcard src/utils/*.c)
 C_FILES += $(wildcard src/hal/*.c)
 C_FILES += $(wildcard src/usb/*.c)
 C_FILES += $(wildcard src/net/*.c)
@@ -40,21 +52,22 @@ AS_FILES = $(wildcard sys/asm/*.s)
 # 124 KB flash budget: no math (pulls ~16 KB of libm trig), no io/os/package/
 # debug/loadlib/coroutine/utf8 (no filesystem, OS, or dynamic loading on this
 # target; the rest do not earn their flash here). The standalone lua.c/luac.c and
-# linit.c are replaced by our own REPL + openlibs in src/app/lua.c. base's
-# dofile/loadfile are dropped in lua/lbaselib.c. See the src/app/lua.c header.
+# linit.c are replaced by our own REPL + openlibs in src/main.c. base's
+# dofile/loadfile are dropped in lua/lbaselib.c. See the src/main.c header.
 LUA_CORE = lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject \
            lopcodes lparser lstate lstring ltable ltm lundump lvm lzio
 LUA_LIB  = lauxlib lbaselib lstrlib ltablib
 # Bytecode-only image (#128): the on-device parser/lexer/codegen are NOT linked.
 # lcode+llex+lparser (~18.9 KB) exist only to compile source; the rabbit loads
-# only luac bytecode (see src/app/lua.c + tools/luac). The two remaining refs
+# only luac bytecode (see src/main.c + tools/luac). The two remaining refs
 # into this trio - luaY_parser (ldo.c) and luaX_init (lstate.c) - are guarded
 # out by -DLUA_NOPARSER (below). lundump/lvm (bytecode load + run) stay.
 # ldump (#213) is the same story on the way out: the device only *loads*
 # bytecode, never serialises it, so ldump.c and its refs (string.dump in
 # lstrlib.c, lua_dump in lapi.c) are dropped behind the same define.
 LUA_NOPARSE = lcode llex lparser ldump
-ifeq ($(APP),lua)
+# The product firmware links the Lua core; examples never do.
+ifndef EXAMPLE
   C_FILES += $(patsubst %,lua/%.c,$(filter-out $(LUA_NOPARSE),$(LUA_CORE)) $(LUA_LIB))
 endif
 
@@ -132,7 +145,7 @@ LIBS = -lc_nano -lm -lnosys
 # integer results (the #92 DoD, `print(1+1)`) are exact and float arithmetic is
 # still correct internally. Re-add `LDFLAGS += -Wl,-u,_printf_float` once code
 # moves off internal flash (M6) or a lib is dropped to make room.
-ifeq ($(APP),lua)
+ifndef EXAMPLE
   CFLAGS  += -Ilua
   CFLAGS  += -DLUA_NOPARSER   # bytecode-only: no on-device source parsing (#128)
   CFLAGS  += -Igen            # gen/boot_lc.h: resident boot chunk (tools/luac/embed.py)

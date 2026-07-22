@@ -5,7 +5,7 @@
  *        and check whether its FTM0/FTM1 pulse-capture counter
  *        (get_motor_position) actually moves.
  *
- *   task lua:firmware:flash APP=earprobe
+ *   task lua:firmware:flash EXAMPLE=earprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  *
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0. No timer

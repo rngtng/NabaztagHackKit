@@ -17,7 +17,7 @@
  *       waiting; on enumeration our match-all driver's connect() prints the
  *       descriptor.
  *
- * Run: task lua:firmware:flash APP=usbprobe
+ * Run: task lua:firmware:flash EXAMPLE=usbprobe
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe).
  * Sim runs boot but sees no device (sim stubs the ML60842 region, emulates no

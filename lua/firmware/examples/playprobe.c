@@ -11,7 +11,7 @@
  *
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (listen for
  * the tone too):
- *   task lua:firmware:flash APP=playprobe
+ *   task lua:firmware:flash EXAMPLE=playprobe
  *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"

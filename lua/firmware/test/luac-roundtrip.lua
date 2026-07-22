@@ -2,8 +2,8 @@
 --
 -- Compiled off-device to #LC frames (tools/luac/replpipe.py) and run on the
 -- parser-less sim, this must reproduce luac-roundtrip.expected byte-for-byte
--- (`task lua:firmware:test:luac`). Regenerate the golden after editing:
---   task lua:firmware:test:luac REGEN=1
+-- (`task lua:firmware:test`). Regenerate the golden after editing:
+--   task lua:firmware:test REGEN=1
 --
 -- Keep it print-only and error-free. The REPL compiles one chunk per line, so a
 -- `local` would not survive to the next line - cross-line state uses globals.

@@ -7,8 +7,8 @@ compiles it here, off-device:
 
 - **`luac`** (this image) — Lua source → stripped 32-bit device bytecode.
 - **`replpipe.py`** — frames a `.lua`/`.lc` file into the `#LC` console stream
-  (scripted REPL runs, and the `test:luac` golden test).
-- **`embed.py`** — bakes the resident boot chunk (`src/app/boot.lua`) into
+  (scripted REPL runs, and the `firmware:test` golden test).
+- **`embed.py`** — bakes the resident boot chunk (`lua/boot/boot.lua`) into
   `gen/boot_lc.h` for the firmware build (there is no on-device parser to compile
   it at startup).
 - **`luash.py`** — the live interactive REPL client: compiles each line you type
@@ -45,7 +45,7 @@ Raw bytecode can't ride the line-oriented UART console (chunks contain
     #LC:<len>\n            header line; len = chunk size in bytes (decimal)
     <2*len hex chars>      the chunk, wrapped at 64 cols (device skips whitespace)
 
-The device (`lua/firmware/src/app/lua.c`, `load_lc_frame`) mallocs `len` bytes
+The device (`lua/firmware/src/main.c`, `load_lc_frame`) mallocs `len` bytes
 off the external-RAM heap (with a sanity cap), hex-decodes the payload, then
 `luaL_loadbuffer(..., "=stdin")` and runs it through pcall+echo. A non-`#LC` line
 is rejected — the device has no parser. `replpipe.py`/`luash.py` are the senders.
@@ -54,15 +54,15 @@ is rejected — the device has no parser. `replpipe.py`/`luash.py` are the sende
 
 ```sh
 # Compile a Lua source file to stripped 32-bit device bytecode.
-task lua:compile SOURCE=foo.lua [OUT=foo.lc]
+task lua:apps:compile APP=foo.lua [OUT=foo.lc]
 
 # Golden-transcript test (sim): frames run and match apps/*.expected. REGEN=1 to refresh.
-task lua:firmware:test:luac [SCRIPT=apps/luac-roundtrip.lua] [REGEN=1]
+task lua:firmware:test [APP=test/luac-roundtrip.lua] [REGEN=1]
 
 # REPL - all input is compiled off-device to bytecode:
-task lua:firmware:repl                     # live interactive prompt (luash.py)
-task lua:firmware:repl SCRIPT=foo.lua      # feed a script (or a prebuilt .lc)
-task lua:firmware:repl:hw                  # same, on real hardware over the Pi UART relay
+task lua:firmware:simulate:repl            # live interactive prompt (luash.py)
+task lua:apps:simulate APP=foo.lua         # feed a script (or a prebuilt .lc)
+task lua:firmware:flash:repl               # same, on real hardware over the Pi UART relay
 ```
 
 `replpipe.py` (stdlib-only) converts a REPL script to the frame stream: a `.lua`

@@ -12,7 +12,7 @@
  *
  * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe):
- *   task lua:firmware:flash APP=rfidprobe
+ *   task lua:firmware:flash EXAMPLE=rfidprobe
  */
 #include "ml674061.h"
 #include "common.h"
