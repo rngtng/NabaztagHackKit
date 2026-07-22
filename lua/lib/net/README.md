@@ -24,6 +24,7 @@ table (the device has no `require`; load order is bottom-up):
 | `ipv4.lua` | header build/parse (fragments dropped), ICMP echo responder |
 | `udp.lua` | datagram build/parse, pseudo-header checksum |
 | `dhcp.lua` | client state machine (join) + single-lease server (AP config mode, DNS pointed at the portal for #218) |
+| `dns.lua` | captive-portal DNS sinkhole: answer every A query with the AP IP so a joined phone's OS probe resolves to the portal and shows the config page (#233 follow-up) |
 | `tcp.lua` | minimal single-connection TCP: stop-and-wait, fixed window, fixed RTO, no TIME_WAIT — sized for one HTTP exchange |
 | `http.lua` | HTTP/1.0 GET builder, incremental response/request parsers, query decoding. No chunked encoding — the boot URL points at a plain file |
 | `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, and the blocking flows below |
@@ -66,13 +67,24 @@ M11e-2 (#234) — this module is the happy path only. The form build, POST parse
 and validation are decomposed (`setup.page` / `setup.handle` / `setup.validate`)
 so they test host-side without hardware.
 
+**Captive portal.** `run()` also starts `ifc:dnsd()` (`dns.lua`): a DNS sinkhole
+that answers every A query with the AP IP. The DHCP server already advertises
+this box as the client's DNS server (#217), so when the joined phone's OS runs
+its connectivity probe (`captive.apple.com`, `connectivitycheck.gstatic.com`,
+`msftconnecttest.com`, …) the lookup resolves to the rabbit, the probe fetches
+the config page instead of its expected "success" response, and the OS pops the
+"Sign in to network" sheet straight onto the portal — no typing `192.168.0.1`
+into a browser. The HTTP handler already serves the form for every path, which
+is what makes the hijacked probe land on it. (A printed fixed IP still works as
+the fallback if a client suppresses the captive check.)
+
 **Security posture** (matches V1's setup mode, deliberate): the AP is OPEN and
 setup-mode only — the creds cross the local link once, in the clear — and the
 form says so. Setup mode is a transient, user-initiated state, not a running
-service. No captive-portal DNS trickery: the fixed `192.168.0.1` is documented
-rather than spoofed (#233 scope). Pre-filling the SSID field from a scan is a
-nice-to-have that lights up automatically once a `nab.wifi_scan`/`wifi_seen`
-binding is exposed to Lua; today the datalist is simply omitted.
+service. The DNS sinkhole answers only while setup mode is running. Pre-filling
+the SSID field from a scan is a nice-to-have that lights up automatically once a
+`nab.wifi_scan`/`wifi_seen` binding is exposed to Lua; today the datalist is
+simply omitted.
 
 ### Provisioning failure UX / boot fallback (#234, M11e-2)
 
@@ -129,11 +141,11 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of #234:
-link 1103, arp 1004, ipv4 1385, udp 788, dhcp 3420, tcp 4857, http 1881,
-iface 3782, setup 3823, provision 1597 — **23,640 B total**. The boot-critical
-subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is what #219 must
-fit (compressed) — if it doesn't, #215 (ExtRAM execution) is the lever.
-`setup.lua` is **not** in that subset (it runs only with no creds); `provision.lua`
-is small and boot-critical (it decides between join and setup every boot), so it
-joins the resident subset.
+`task lua:lib:size` - stripped `.lc` bytes per module. As of the captive-portal
+follow-up: link 1103, arp 1004, ipv4 1385, udp 788, dns 872, dhcp 3420, tcp
+4857, http 1881, iface 4104, setup 3837, provision 1597 — **24,848 B total**.
+The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB)
+is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM execution) is
+the lever. `setup.lua` + `dns.lua` are **not** in that subset (they run only in
+setup mode); `provision.lua` is small and boot-critical (it decides between join
+and setup every boot), so it joins the resident subset.

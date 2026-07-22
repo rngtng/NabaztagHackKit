@@ -160,6 +160,7 @@ function setup.run(opts)
   nab.led("nose", 0, 0, 40) -- dim blue = setup mode
   local ifc = opts.iface or net.iface.new(net.iface.nabdrv())
   ifc:dhcpd{ip = link.ip(setup.AP_IP), client_ip = link.ip(setup.CLIENT_IP)}
+  ifc:dnsd() -- captive portal: resolve every hostname to us, show the page now
   local ssids, saved = setup.scan_ssids()
   ifc:serve(80, function(q)
     local body, status, stop, creds = setup.handle(q, {ssids = ssids})
