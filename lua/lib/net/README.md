@@ -30,6 +30,7 @@ table (the device has no `require`; load order is bottom-up):
 | `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, and the blocking flows below |
 | `setup.lua` | AP setup-mode provisioning portal (#233): the one-page SSID/PSK/URL form, POST validation, and the `run()` boot flow that beacons the open AP, hands out a lease and saves creds to `nab.config` |
 | `provision.lua` | the provisioning boot decision (#234): setup-vs-join, the LED vocabulary, and the persisted strike counter that guarantees a wrong-PSK / dead-AP rabbit falls back to setup instead of boot-looping |
+| `ota.lua` | portal firmware upload (#235): CRC-32, whole-image header verify (magic / hardware id / length / checksum), and the `/firmware` upload page — hands only a fully verified image to `nab.flash_firmware` |
 
 State machines are pull-style: methods return arrays of ready-to-send
 packets, the caller owns the clock (`nab.time`) — that is what makes them
@@ -115,6 +116,33 @@ blank/invalid, which the next boot reads as "no creds" and enters setup, never a
 crash (worst case one lost increment). A fresh provisioning through `net.setup`
 writes creds with no `fails` key, so it resets the strikes to 0.
 
+### Firmware update over the portal (#235, `ota.lua`)
+
+The setup page also hosts a JTAG-free firmware uploader — the recovery/dev path
+that works even when the rabbit can't join any Wi-Fi. The build stamps
+`bin/firmware.fw` (`tools/otaimage.py`): a 16-byte header — magic `NBZF`, header
+version, target-hardware id, firmware version, image length, CRC-32 — prepended
+to the raw `firmware.bin`. The uploader (a file picker at `/firmware` that POSTs the
+raw bytes) feeds the blob to `ota.verify`, which checks **all** of magic /
+hardware id / length / CRC **before anything touches flash**. Only a fully
+verified image is handed to `nab.flash_firmware`, which erases internal flash
+from address 0 and watchdog-reboots into the new image.
+
+**Brick-safety is the whole point.** There is no A/B slot (the image is ~110 KB
+of 124 KB), so verification *is* the safety: a wrong-target, truncated, or
+corrupt file is refused with the current image untouched. The C writer
+(`hal/ota.c`, ported from V1's proven `flash_uc`) only ever writes sectors 0..N
+below the config sector, so the persisted creds survive an update. The portal
+shows the verified version + checksum and a "do not unplug" warning; `setup.run`
+sends that page, then flashes after the response is on the wire. Verification is
+pure Lua and fully host-tested (`test_ota.lua`: happy path plus truncated /
+CRC-mismatch / wrong-hardware-id / bad-magic / over-budget, each asserted to
+flash nothing); the flash itself is **hardware-gated** — the on-device demo
+needs the rig and a full JTAG backup first (⚠️ brick risk), like #219.
+
+The server-driven OTA path (a downloaded image, fleet updates) is out of scope
+here — it depends on #219's download path; this is the manual-upload half.
+
 `nab.wifi` returns a third value on failure — a stable `reason` tag (`"radio"`,
 `"notfound"`, `"auth"`, `"timeout"`) classified in the wifi HAL — which drives
 the LED vocabulary (nose LED: blue setup / amber connecting / red auth-fail /
@@ -141,11 +169,11 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of the captive-portal
-follow-up: link 1103, arp 1004, ipv4 1385, udp 788, dns 872, dhcp 3420, tcp
-4857, http 1881, iface 4104, setup 3837, provision 1597 — **24,848 B total**.
-The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB)
-is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM execution) is
-the lever. `setup.lua` + `dns.lua` are **not** in that subset (they run only in
-setup mode); `provision.lua` is small and boot-critical (it decides between join
-and setup every boot), so it joins the resident subset.
+`task lua:lib:size` - stripped `.lc` bytes per module. As of #235: link 1103,
+arp 1004, ipv4 1385, udp 788, dns 872, dhcp 3420, tcp 4857, http 1881, iface
+4104, setup 4078, provision 1597, ota 3443 — **28,532 B total**. The
+boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is
+what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM execution) is the
+lever. `setup.lua` + `dns.lua` + `ota.lua` are **not** in that subset (they run
+only in setup mode); `provision.lua` is small and boot-critical (it decides
+between join and setup every boot), so it joins the resident subset.

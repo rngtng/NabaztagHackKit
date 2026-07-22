@@ -87,6 +87,16 @@ tasks:
       - task: boot:compile
         vars: {OUT: '{{.TASKFILE_DIR}}/gen/boot_lc.h'}
       - 'docker run --rm -e SSID -e PSK -e BSSID -e CHANNEL -v "$(realpath .):/work" {{.FV_IMAGE}} make{{if .EXAMPLE}} EXAMPLE={{.EXAMPLE}}{{end}}{{if eq .DEBUG "wifi"}} DEBUG_WIFI=1{{else}}{{if .DEBUG}} DEBUG_USB=1 DEBUG_WIFI=1{{end}}{{end}}'
+      # OTA image (#235): stamp the product firmware .bin with the verifiable
+      # header (magic/hw-id/version/len/crc) net.ota checks before flashing, so
+      # bin/firmware.fw is ready to upload on the setup page. Product build only
+      # (no EXAMPLE); VERSION (u16, default 1) tags the build for the portal's
+      # version display.
+      - |
+        if [ -z "{{.EXAMPLE}}" ]; then
+          python3 '{{.REPO}}/tools/otaimage.py' bin/firmware.bin -o bin/firmware.fw \
+            --version '{{.VERSION | default "1"}}'
+        fi
 
   simulate:
     desc: 'Run a firmware image in the Unicorn simulator, no hardware (#96). Default: the product image; EXAMPLE=<name> runs a bring-up example headless. (To run a Lua app in the sim, use lua:apps:simulate.) Usage: task lua:firmware:simulate [EXAMPLE=blink] [ARGS=-v]'

@@ -113,11 +113,15 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/firmware.elf` uses 111,748 B of 124 KB (**~14.9 KB free**; ~23 KB of that growth is
+`bin/firmware.elf` uses 112,400 B of 124 KB (**~14.2 KB free**; ~23 KB of that growth is
 the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
 the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
 `nab.on`/`nab.wait`/`nab.time` bindings, ~2.1 KB the #234 provisioning plumbing —
-`nab.wifi`'s failure-reason classification + the config `fails` counter field). The stack is **WPA2-CCMP only** (#124,
+`nab.wifi`'s failure-reason classification + the config `fails` counter field —
+and ~0.65 KB the #235 OTA whole-image flash writer (`hal/ota.c`) +
+`nab.flash_firmware` binding). `task lua:firmware:build` also stamps
+`bin/firmware.fw` (16-byte header + image, `tools/otaimage.py`) — the file the setup
+page's firmware uploader (`net.ota`, #235) verifies and flashes. The stack is **WPA2-CCMP only** (#124,
 3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
 joins open or WPA2-PSK(AES) networks and rejects anything else at scan/auth. Newlib's stdio FILE layer stays out only
 because [`src/utils/libc_shim.c`](src/utils/libc_shim.c) provides local `rand`/`srand`/
