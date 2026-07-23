@@ -15,6 +15,9 @@ What it does:
     (#207); see the UART0 block below;
   * delivers the 1 ms System Timer IRQ between instruction slices so the LED
     fade engine advances, and can reconstruct + draw the five RGB LEDs (#102);
+  * models the input peripherals (#42) - button, RFID, ear drive + encoder -
+    driven from a JSON-Lines control timeline (--inject-file) and reports device
+    state on change (--emit-state); see the "peripheral I/O" block below;
   * reports whether execution reached main() and exits non-zero if not.
 
 What it does NOT do: model timing beyond the 1 ms tick, or any peripheral it
@@ -22,6 +25,7 @@ does not stub beyond instant completion (audio, WiFi). It validates code paths +
 GPIO + SPI/I2C framing + console, not analog behaviour. See lua/firmware/README.md.
 """
 import argparse
+import json
 import signal
 import sys
 import time
@@ -36,7 +40,7 @@ from unicorn import (
 )
 from unicorn.arm_const import (
     UC_ARM_REG_PC, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_CPSR,
-    UC_ARM_REG_SPSR, UC_ARM_REG_R0, UC_ARM_REG_R1,
+    UC_ARM_REG_SPSR, UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2,
 )
 from elftools.elf.elffile import ELFFile
 
@@ -95,6 +99,16 @@ SPI_DATA_TO_STATUS = {0xB7B0200C: 0xB7B02008, 0xB7B0300C: 0xB7B03008}
 #   I2C_BASE = 0xB7800C00; I2CCTL = +0x04, I2CSR = +0x08 (halfword), I2CDR = +0x0C.
 I2C_MCF = 0x0080
 I2CSR_ADDR = 0xB7800C08
+
+# Input peripherals modelled at the register level (#42), same approach as the
+# SPI/I2C/UART stubs: a MEM_READ hook forces the value the CPU sees.
+#   button_pressed() reads PI3 bit1 (active-low, PCR_BASE3+0x04): pressed=0.
+#   get_motor_position(n) reads the FTM capture counter - FTM0C (motor 1) /
+#   FTM1C (motor 2) - as a halfword; we return the synthetic encoder count.
+PI3_ADDR   = 0xB7A03004  # port 3 input register (button on bit1, active-low)
+BUTTON_BIT = 0x02        # PI3 bit1 = INT_SWITCH (head button)
+FTM0C_ADDR = 0xB7F00008  # ear motor 1 encoder capture counter (halfword)
+FTM1C_ADDR = 0xB7F00028  # ear motor 2 encoder capture counter (halfword)
 
 # UART0 console model (#207): the firmware's Lua REPL does polled TX/RX on the
 # 16550-style UART0 (hal/uart.c) - it is the console. We model just enough to
@@ -190,7 +204,8 @@ def unpack_dotcorr(buf):
 
 class Sim:
     def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False,
-                 console_only=False, show_leds=False, speed=None):
+                 console_only=False, show_leds=False, speed=None,
+                 inject_events=None, emit_state=False, state_file=None):
         self.budget = budget
         self.verbose = verbose
         # Wall-clock pacing (see run()): None = as fast as possible; a float is a
@@ -226,6 +241,31 @@ class Sim:
         self.led_frames = 0
         self._led_last = None
         self._leds_drawn = False
+        # Input/output peripheral model (#42). The sim already observes the LED
+        # bus (above); these model the peripherals the firmware *reads* (button,
+        # RFID) and the ear motors it drives, so scripts/UI can inject inputs and
+        # observe device state. State is driven through symbol-entry hooks on the
+        # real HAL functions (resolved in _load), not extra MMIO decoding.
+        self.button = False              # nab.button() -> button_pressed()
+        self.rfid_uid = None             # nab.rfid() UID hex string, or None
+        # ear[0]=motor 1, ear[1]=motor 2; pos is the synthetic 16-bit encoder.
+        self.ears = [{"dir": "forward", "run": False, "pos": 0},
+                     {"dir": "forward", "run": False, "pos": 0}]
+        self.encoder_rate = 8            # synthetic encoder counts per ms while running
+        self.rfid_addr = None            # rfid_read_uid entry (capture out buffer)
+        self.runmotor_addr = None        # run_motor entry (capture args)
+        self.stopmotor_addr = None       # stop_motor entry (capture args)
+        self._rfid_buf = None            # rfid_read_uid's uid_out ptr (r0 at entry)
+        self._rfid_ret_hook = None       # transient hook at its return site
+        # Peripheral control protocol (JSON-Lines, #42). inject_events is a list
+        # of {t,...} control objects each optionally gated by at_ms/after; they
+        # are applied between instruction slices (see _apply_injections). State
+        # snapshots are emitted on change when emit_state is set.
+        self.inject_events = inject_events or []
+        self.emit_state = emit_state
+        self.state_file = state_file     # file object for state JSON, else stderr
+        self._last_state_key = None
+        self.elapsed_ms = 0              # slice-based device-ms clock for gating
         # Interactive: read input live from the real terminal and echo the
         # console straight to stdout, so you can type at the REPL.
         self.interactive = interactive
@@ -268,6 +308,20 @@ class Sim:
                 wi = symtab.get_symbol_by_name("waiti2cmcf")
                 if wi:
                     self.waiti2c_addr = wi[0]["st_value"] & ~1  # strip Thumb bit
+                # HAL peripheral seam (#42): hook these firmware functions at
+                # entry to inject inputs / observe ear drive. Same symbol-hook
+                # approach as getch_uart above; Thumb bit stripped for the hook.
+                def _sym(name):
+                    s = symtab.get_symbol_by_name(name)
+                    return (s[0]["st_value"] & ~1) if s else None
+                # button + ear position are modelled at the register level (PI3 /
+                # FTM read hooks) - no symbol needed. rfid_read_uid runs a whole
+                # CRX14 I2C transaction (register-level would mean emulating the
+                # coupler, out of scope), so it is skipped at the symbol; run/stop
+                # _motor are observed at entry for the ear drive state.
+                self.rfid_addr = _sym("rfid_read_uid")
+                self.runmotor_addr = _sym("run_motor")
+                self.stopmotor_addr = _sym("stop_motor")
 
     # -- hooks ------------------------------------------------------------------
     def _hook(self):
@@ -288,6 +342,12 @@ class Sim:
         # keeps long animated runs (the #102 LED demo) watchable.
         for base in (align_down(I2CSR_ADDR), align_down(UART0_LSR)):
             u.hook_add(UC_HOOK_MEM_READ, self._on_read, begin=base, end=base + PAGE - 1)
+        # Input peripherals (#42): force the button (PI3) and ear-encoder (FTM
+        # capture) reads from device state, same read-hook fixup pattern as I2CSR
+        # /LSR above. PI3 shares the PCR page block; FTM has its own page.
+        for base in (align_down(PI3_ADDR), align_down(FTM0C_ADDR)):
+            u.hook_add(UC_HOOK_MEM_READ, self._on_input_read,
+                       begin=base, end=base + PAGE - 1)
         if self.main_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_main,
                        begin=self.main_addr, end=self.main_addr + 2)
@@ -303,6 +363,16 @@ class Sim:
         if self.waiti2c_addr is not None:
             u.hook_add(UC_HOOK_CODE, self._on_waiti2c,
                        begin=self.waiti2c_addr, end=self.waiti2c_addr)
+        # Peripheral seam (#42): entry hooks on the HAL functions. rfid_read_uid
+        # is skipped (its CRX14 I2C body can't complete in-sim) and its result
+        # injected; run/stop_motor only capture their args (the real body runs
+        # on against the stubbed PWM regs, harmless). end=begin: fire on the
+        # entry insn only, where r0..r3 still hold the call arguments.
+        for addr, cb in ((self.rfid_addr, self._on_rfid_read),
+                         (self.runmotor_addr, self._on_run_motor),
+                         (self.stopmotor_addr, self._on_stop_motor)):
+            if addr is not None:
+                u.hook_add(UC_HOOK_CODE, cb, begin=addr, end=addr)
 
     def _on_unmapped(self, uc, access, address, size, value, _ud):
         """Lazily map peripheral pages; a genuine bad access aborts the run."""
@@ -474,6 +544,110 @@ class Sim:
         on the first read once MCF is set, so seeding once at entry is enough."""
         uc.mem_write(I2CSR_ADDR, I2C_MCF.to_bytes(2, "little"))
 
+    # -- peripheral seam (#42): inject inputs / observe ear drive --------------
+    def _on_input_read(self, uc, _access, address, size, _value, _ud):
+        """Force the button / ear-encoder reads from device state, before the
+        CPU's load commits (same as the I2CSR/LSR read fixups). PI3 bit1 is the
+        head button (active-low: 0 = pressed); FTM0C/FTM1C are the ear encoder
+        capture counters that get_motor_position reads as a halfword."""
+        if address == PI3_ADDR:
+            cur = uc.mem_read(PI3_ADDR, 1)[0]
+            cur = (cur & ~BUTTON_BIT) | (0 if self.button else BUTTON_BIT)
+            uc.mem_write(PI3_ADDR, bytes([cur]))
+        elif address == FTM0C_ADDR:
+            uc.mem_write(FTM0C_ADDR, (self.ears[0]["pos"] & 0xFFFF).to_bytes(2, "little"))
+        elif address == FTM1C_ADDR:
+            uc.mem_write(FTM1C_ADDR, (self.ears[1]["pos"] & 0xFFFF).to_bytes(2, "little"))
+
+    def _on_rfid_read(self, uc, address, size, _ud):
+        """rfid_read_uid(uid_out[8]) entry: the real body runs to completion on
+        the stubbed I2C (it just returns a garbage UID), so rather than skip it
+        we let it run and correct its result at the return. Capture the out
+        buffer (r0) and arm a one-shot hook at the caller's return address (LR).
+        No emu_stop / PC-redirect - those break Unicorn's Thumb + IRQ state."""
+        self._rfid_buf = uc.reg_read(UC_ARM_REG_R0)
+        if self._rfid_ret_hook is None:
+            ret = uc.reg_read(UC_ARM_REG_LR) & ~1
+            self._rfid_ret_hook = uc.hook_add(UC_HOOK_CODE, self._on_rfid_ret,
+                                              begin=ret, end=ret)
+
+    def _on_rfid_ret(self, uc, address, size, _ud):
+        """Back in the caller after rfid_read_uid returned: overwrite its result
+        from device state - the injected UID + r0=1 (tag present), or r0=0 (no
+        tag) - then remove this transient hook."""
+        if self.rfid_uid:
+            raw = (bytes.fromhex(self.rfid_uid) + b"\x00" * 8)[:8]
+            uc.mem_write(self._rfid_buf, raw)
+            uc.reg_write(UC_ARM_REG_R0, 1)
+        else:
+            uc.reg_write(UC_ARM_REG_R0, 0)
+        uc.hook_del(self._rfid_ret_hook)
+        self._rfid_ret_hook = None
+
+    def _on_run_motor(self, uc, address, size, _ud):
+        """run_motor(n, speed, rotation): capture drive state (rotation 0=FORWARD,
+        1=REVERSE). No force-return - the real body runs on against stubbed PWM."""
+        n = uc.reg_read(UC_ARM_REG_R0) & 0xFF
+        rot = uc.reg_read(UC_ARM_REG_R2) & 0xFF
+        if n in (1, 2):
+            self.ears[n - 1]["run"] = True
+            self.ears[n - 1]["dir"] = "reverse" if rot else "forward"
+
+    def _on_stop_motor(self, uc, address, size, _ud):
+        """stop_motor(n): mark ear n stopped (real body runs on)."""
+        n = uc.reg_read(UC_ARM_REG_R0) & 0xFF
+        if n in (1, 2):
+            self.ears[n - 1]["run"] = False
+
+    # -- peripheral control protocol (JSON-Lines, #42) -------------------------
+    def _apply_injections(self):
+        """Apply any inject events whose gate is now satisfied. Each event fires
+        once; gates are at_ms (device-ms, self.elapsed_ms) and/or after (a
+        console substring). Ungated events fire on the first slice."""
+        for ev in self.inject_events:
+            if ev.get("_done"):
+                continue
+            at_ms = ev.get("at_ms")
+            after = ev.get("after")
+            if at_ms is not None and self.elapsed_ms < at_ms:
+                continue
+            if after is not None and after.encode("latin1") not in self.console:
+                continue
+            self._apply_event(ev)
+            ev["_done"] = True
+
+    def _apply_event(self, ev):
+        t = ev.get("t")
+        if t == "button":
+            self.button = bool(ev.get("down"))
+        elif t == "rfid":
+            self.rfid_uid = ev.get("uid")   # hex string, or None to remove
+        elif t == "ear":
+            n = ev.get("n")
+            if n in (1, 2):
+                self.ears[n - 1]["pos"] = int(ev.get("pos", 0)) & 0xFFFF
+
+    def _emit_state_if_changed(self):
+        """Emit a state snapshot (JSON line) when a discrete field changes. The
+        encoder pos is reported but not part of the change key (it ticks every
+        slice while an ear runs - it would spam), so a snapshot lands on a
+        button/RFID/ear-drive/LED transition and carries the current pos."""
+        key = (tuple(self.led_rgb),
+               tuple((e["dir"], e["run"]) for e in self.ears),
+               self.button, self.rfid_uid)
+        if key == self._last_state_key:
+            return
+        self._last_state_key = key
+        snap = {"t": "state", "ms": self.elapsed_ms,
+                "leds": [list(c) for c in self.led_rgb],
+                "ears": [{"dir": e["dir"], "run": e["run"], "pos": e["pos"]}
+                         for e in self.ears],
+                "button": self.button, "rfid": self.rfid_uid}
+        line = json.dumps(snap)
+        out = self.state_file if self.state_file else sys.stderr
+        out.write(line + "\n")
+        out.flush()
+
     def _on_rxrdy(self, uc, address, size, _ud):
         """Stage the LSR DR bit before rxrdy_uart reads it - the non-consuming
         peek the REPL's idle event pump (#195) polls between lines. Same
@@ -564,6 +738,18 @@ class Sim:
                     if self._fire_timer_irq():         # vectored into the ISR
                         self.timer_pending -= 1
                         pc = u.reg_read(UC_ARM_REG_PC)  # now 0x18
+                # Device-ms clock + synthetic ear encoders + peripheral I/O (#42).
+                # One slice stands for ~1 ms, so advance the ms clock, tick each
+                # running ear's encoder, apply any due inject events, and emit a
+                # state snapshot on change.
+                self.elapsed_ms += 1
+                for e in self.ears:
+                    if e["run"]:
+                        step = self.encoder_rate if e["dir"] == "forward" else -self.encoder_rate
+                        e["pos"] = (e["pos"] + step) & 0xFFFF
+                self._apply_injections()
+                if self.emit_state:
+                    self._emit_state_if_changed()
                 if pace_deadline is not None:
                     pace_deadline += (slice_n / INSNS_PER_MS) / (1000.0 * self.speed)
                     lag = pace_deadline - time.monotonic()
@@ -625,6 +811,16 @@ def main():
                     help="pace execution to wall-clock time at this multiplier "
                          "(1.0 = real time, 0.25 = quarter speed for a close "
                          "look at an animation); default: as fast as possible")
+    ap.add_argument("--inject-file",
+                    help="JSON-Lines peripheral control timeline (#42): one "
+                         "{\"t\":\"button|rfid|ear\",...} object per line, each "
+                         "optionally gated by at_ms (device-ms) and/or after (a "
+                         "console substring). Blank lines and #-comments skipped.")
+    ap.add_argument("--emit-state", action="store_true",
+                    help="emit a device-state JSON snapshot on each change "
+                         "(LEDs/ears/button/RFID) to stderr, or --state-file")
+    ap.add_argument("--state-file",
+                    help="write --emit-state snapshots here instead of stderr")
     args = ap.parse_args()
     if args.input_file:
         with open(args.input_file, "rb") as fh:
@@ -634,8 +830,20 @@ def main():
     # Interactive sessions run open-ended (stop on Ctrl-D/EOF), so default to a
     # large budget; batch runs keep the small default unless overridden.
     budget = args.budget if args.budget is not None else (2_000_000_000 if args.interactive else 300_000)
+    inject_events = []
+    if args.inject_file:
+        with open(args.inject_file) as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                inject_events.append(json.loads(line))
+    emit_state = args.emit_state or bool(args.state_file)
+    state_file = open(args.state_file, "w") if args.state_file else None
     sys.exit(Sim(args.elf, budget, args.verbose, stdin, args.interactive,
-                 args.console_only, args.leds, args.speed).run())
+                 args.console_only, args.leds, args.speed,
+                 inject_events=inject_events, emit_state=emit_state,
+                 state_file=state_file).run())
 
 
 if __name__ == "__main__":

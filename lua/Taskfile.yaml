@@ -28,6 +28,7 @@ tasks:
       - task: lib:test
       - task: firmware:build
       - task: firmware:test
+      - task: firmware:test:inject
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'

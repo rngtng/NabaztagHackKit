@@ -1,5 +1,25 @@
 # Changes
 
+## Unreleased
+
+  * [#42](https://github.com/rngtng/NabaztagHackKit/issues/42): the lua-track
+    simulator (`lua/tools/simulator/simulate.py`) now models the **input**
+    peripherals, so no-hardware runs can drive them. The head **button**
+    (`nab.button()` → PI3 bit1) and **ear encoder** (`nab.ear_pos()` → FTM
+    capture) are forced from device state via register-read hooks; the **ears**'
+    drive state is captured from `run_motor`/`stop_motor` and a synthetic encoder
+    advances while running; **RFID** (`nab.rfid()`) returns an injected UID (the
+    real `rfid_read_uid` runs on the stubbed I2C and its result is corrected at
+    return — no CRX14 bus emulation). Inputs are driven by a dependency-free
+    **JSON-Lines control protocol** (`--inject-file`, gated by `at_ms`/console
+    substring), and `--emit-state` logs a device-state snapshot on every change —
+    one schema in and out, the seam a future sim UI ([#43]) plugs into. New
+    `task lua:firmware:test:inject` golden feeds a probe through the button/RFID/
+    ear bindings while injecting those inputs and pins the transcript; it joins
+    `task lua:verify`. `apps:simulate` gains `INJECT=`. Also fixed the stale
+    3-arg `nab.ear_move(m, 255, 'forward')` calls in `apps/rfid-led-ears.lua`
+    (pre-#179 speed arg — the sim now catches that they error).
+
 ## v2.0.0-alpha13 - 14-07-2026
 
   * [#102](https://github.com/rngtng/NabaztagHackKit/issues/102): lua firmware LED

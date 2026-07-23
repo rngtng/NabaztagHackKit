@@ -224,6 +224,55 @@ tasks:
           exit 1
         fi
 
+  test:inject:
+    desc: 'Peripheral-injection golden (#42): feed a Lua probe that reads the button/RFID/ear bindings while a JSON-Lines timeline injects those inputs; the console transcript must match the committed golden. Exercises the simulator input model (button/RFID/ear) end to end. REGEN=1 rewrites the golden.'
+    summary: 'Usage: task lua:firmware:test:inject [APP=test/inject-sensors.lua] [INJECT=test/inject-sensors.jsonl] [EXPECT=test/inject-sensors.expected] [REGEN=1]'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      APP: '{{.APP | default "test/inject-sensors.lua"}}'
+      INJECT: '{{.INJECT | default "test/inject-sensors.jsonl"}}'
+      EXPECT: '{{.EXPECT | default "test/inject-sensors.expected"}}'
+    deps:
+      - task: build                 # the product firmware -> bin/firmware.elf
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - |
+        set -e
+        SIM={{.SIM_IMAGE}}
+        BIN="$(realpath bin)"
+        EXP="{{.TASKFILE_DIR}}/{{.EXPECT}}"
+        INJ="{{.TASKFILE_DIR}}/{{.INJECT}}"
+        # Frame the probe to #LC bytecode (parser-less #128) under REPO so a
+        # /Users-only Docker share can bind-mount it; feed it + the injection
+        # timeline to the sim and capture the pure console transcript.
+        FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.TASKFILE_DIR}}/{{.APP}}" -o "$FR"
+        GOT="$(docker run --rm -v "$BIN:/mnt:ro" -v "$FR:/in:ro" -v "$INJ:/inject.jsonl:ro" "$SIM" \
+                 --console-only -n 120000000 --input-file /in --inject-file /inject.jsonl /mnt/firmware.elf)"
+        # Guard a false pass: an init/boot hang yields an empty transcript that
+        # would match an empty golden. Require the probe's first print.
+        case "$GOT" in
+          *"inject-sensors start"*) : ;;
+          *) echo "test:inject: no probe output - the sim never reached the prompt ✗"
+             printf '%s\n' "$GOT"; exit 1 ;;
+        esac
+        if [ -n "{{.REGEN}}" ]; then
+          printf '%s\n' "$GOT" > "$EXP"
+          echo "test:inject: regenerated golden $EXP ✓"
+          exit 0
+        fi
+        if [ "$GOT" = "$(cat "$EXP")" ]; then
+          echo "test:inject: injection transcript matches the golden ✓"
+        else
+          echo "test:inject MISMATCH (golden $EXP vs run):"
+          diff <(cat "$EXP") <(printf '%s\n' "$GOT") || true
+          echo "If the change is intended: task lua:firmware:test:inject REGEN=1"
+          exit 1
+        fi
+
   clean:
     desc: 'Remove firmware (V2) build artifacts (bin/, obj/, gen/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'
