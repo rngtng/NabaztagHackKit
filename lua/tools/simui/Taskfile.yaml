@@ -1,0 +1,68 @@
+# tools/simui - browser UI for the lua-firmware simulator (#43).
+#
+# One container: NiceGUI + the embedded Unicorn sim (tools/simulator/simulate.py
+# runs in-process on a background thread; the page reads its device-state
+# attributes to draw the rabbit and writes button/RFID to inject - the seam #42
+# built). Owns the image build + the user-facing `serve` verb.
+#
+#   task lua:simui:serve [APP=apps/ui-demo.lua] [PORT=8080]  -> http://localhost:PORT
+#
+# Built with the *lua layer root* as the Docker context (like tools/luac /
+# tools/simulator) so the Dockerfile can COPY the sibling simulate.py.
+version: '3'
+
+vars:
+  SIMUI_IMAGE: '{{.SIMUI_IMAGE | default "nabaztag-sdk-simui"}}'
+  # REPO = the lua layer root, depth-independent walk-up (identical formula to
+  # the other leaves - see firmware/Taskfile.yaml for why it must be so).
+  REPO:
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+
+includes:
+  firmware: # built to run the sim on; its verbs are exposed at the root, internal here
+    taskfile: ../../firmware/Taskfile.yaml
+    internal: true
+  luac: # host Lua->bytecode compiler (frames the resident app)
+    taskfile: ../luac/Taskfile.yaml
+    internal: true
+
+tasks:
+  image:
+    internal: true   # the COPYed simulate.py/app.py cache-bust it when they change
+    # Docker context = the lua layer root (WORKDIR, passed by the caller as REPO)
+    # so the Dockerfile can COPY the sibling simulate.py - same pattern as
+    # tools/simulator / tools/luac (a bare dir: REPO mis-resolves under includes).
+    dir: '{{.WORKDIR | default .USER_WORKING_DIR}}'
+    cmds:
+      - docker build -t {{.SIMUI_IMAGE}} -f tools/simui/Dockerfile .
+
+  serve:
+    desc: 'Serve the pixel-retro browser UI for the simulator (#43): renders the five LEDs + ears live and injects button/RFID from the page, while APP runs resident on the embedded sim. Ctrl-C to stop. Usage: task lua:simui:serve [APP=apps/ui-demo.lua] [PORT=8080]'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      APP: '{{.APP | default "apps/ui-demo.lua"}}'
+      PORT: '{{.PORT | default "8080"}}'
+    deps:
+      - task: firmware:build          # the product firmware -> {{.REPO}}/firmware/bin/firmware.elf
+      - task: luac:image              # host luac: frames the resident app
+        vars: {WORKDIR: '{{.REPO}}'}
+      - task: image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - |
+        set -e
+        BIN="$(realpath '{{.REPO}}/firmware/bin')"
+        # Frame the resident app to #LC bytecode (parser-less #128) under REPO so a
+        # /Users-only Docker share can bind-mount it; the app reacts to whatever
+        # the browser injects. Kept for the container's lifetime, cleaned on exit.
+        FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.REPO}}/{{.APP}}")" -o "$FR" 1>&2
+        echo "simui: serving http://localhost:{{.PORT}}  (Ctrl-C to stop)"
+        docker run --rm -p {{.PORT}}:8080 -v "$BIN:/mnt:ro" -v "$FR:/in.lua:ro" \
+          -e FV_ELF=/mnt/firmware.elf -e FV_FRAMES=/in.lua -e FV_PORT=8080 \
+          {{.SIMUI_IMAGE}}
+
+  clean:
+    desc: 'Remove the tools/simui Docker image.'
+    cmds:
+      - docker rmi {{.SIMUI_IMAGE}} || true
