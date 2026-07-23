@@ -62,12 +62,21 @@ tasks:
       # same here as in apps:compile.
       - |
         set -e
+        # APP is layer-root-relative (e.g. apps/led-demo.lua). Fail loudly with a
+        # usage hint if it doesn't resolve - otherwise realpath fails silently
+        # inside the arg substitution below (set -e can't catch it there) and
+        # replpipe.py dies on an empty path with a confusing traceback.
+        app="{{.REPO}}/{{.APP}}"
+        if [ ! -f "$app" ]; then
+          echo "lua:apps:simulate: APP not found: '{{.APP}}' - path is relative to the lua/ layer root, e.g. APP=apps/led-demo.lua" >&2
+          exit 1
+        fi
         BIN="$(realpath '{{.REPO}}/firmware/bin')"
         # Frame the app to #LC bytecode FIRST (parser-less #128, raw source is
         # rejected), feed via --input-file so stdout stays the console / LED view.
         # Keep the temp under REPO so colima's /Users-only share can bind-mount it.
         fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$fr"' EXIT
-        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.REPO}}/{{.APP}}")" -o "$fr" 1>&2
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "$app")" -o "$fr" 1>&2
         # Optional peripheral-injection timeline (#42): mount it and pass
         # --inject-file so button/RFID/ear inputs are driven from the file.
         inj_mount=""; inj_arg=""

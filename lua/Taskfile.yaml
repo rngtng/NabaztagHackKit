@@ -23,12 +23,37 @@ includes:
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: the lib unit tests pass, the firmware image builds (fails loudly on flash overflow) and the bytecode pipeline round-trips (firmware:test golden transcript).'
+    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the lib unit tests pass, the firmware image builds (fails loudly on flash overflow) and the bytecode pipeline round-trips (firmware:test golden transcript).'
     cmds:
+      - task: check:docs      # cheap, fail-fast: catch stale `task lua:…` doc refs before the slow builds
       - task: lib:test
       - task: firmware:build
       - task: firmware:test
       - task: firmware:test:inject
+
+  check:docs:
+    desc: 'Lint: every `task lua:…` command written in docs/comments/skills names a real task - catches doc references left stale by a rename. Part of lua:verify.'
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - |
+        set -e
+        ROOT="$(git rev-parse --show-toplevel)"
+        # Real task names, fully qualified (run the lister from the repo root).
+        real="$(cd "$ROOT" && task --list-all --json | python3 -c 'import sys,json; print("\n".join(t["name"] for t in json.load(sys.stdin)["tasks"]))' | sort -u)"
+        # `task lua:…` invocations referenced in docs/comments (strip trailing args +
+        # a stray sentence colon). CHANGELOG is historical - past task names are
+        # expected there, so it is excluded.
+        refs="$(rg -oN --no-filename 'task (lua:[a-z0-9_:]+)' -r '$1' "$ROOT" -g '!*.lc' -g '!CHANGELOG.md' | sed 's/:$//' | sort -u)"
+        missing="$(comm -23 <(printf '%s\n' "$refs") <(printf '%s\n' "$real"))"
+        if [ -n "$missing" ]; then
+          echo "✗ docs reference lua task(s) that do not exist (rename left them stale):"
+          for m in $missing; do
+            echo "    $m"
+            rg -rn --no-heading "task $m" "$ROOT" -g '!*.lc' -g '!CHANGELOG.md' | sed 's/^/        /'
+          done
+          exit 1
+        fi
+        echo "✓ doc task-name check: every 'task lua:…' reference resolves"
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'

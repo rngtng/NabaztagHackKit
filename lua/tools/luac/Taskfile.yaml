@@ -30,6 +30,16 @@ tasks:
     # Docker context = the lua layer root (WORKDIR, two dirs up) so the Dockerfile
     # can COPY the sibling firmware/lua/ tree; -f is this tool's own fixed path.
     dir: '{{.WORKDIR | default (printf "%s/../.." .TASKFILE_DIR)}}'
+    # Skip the build entirely unless it's actually needed. Task skips only when
+    # ALL up-to-date checks pass, so both must hold: the image exists (status)
+    # AND the Dockerfile + COPYed lua/ tree are unchanged since the last build
+    # (sources checksum). Deleting the image or editing any source re-triggers.
+    # Paths are relative to dir (the lua layer root, same as the -f/context).
+    sources:
+      - tools/luac/Dockerfile
+      - firmware/lua/**/*
+    status:
+      - docker image inspect {{.LUAC_IMAGE}} >/dev/null 2>&1
     cmds:
       - docker build -t {{.LUAC_IMAGE}} -f tools/luac/Dockerfile .
 
