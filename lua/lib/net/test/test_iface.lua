@@ -167,3 +167,25 @@ eq(resp.status, 200, "phone got the status")
 eq(resp.body, "<form>ok</form>", "phone got the page")
 eq(a.state, "closed", "phone connection fully closed")
 hook = nil
+
+-- captive dns: an A query is answered with our ip, unicast to the asker -------
+
+t, sent, rxq = 0, {}, {}
+arp.cache = {}
+local i3 = iface.new(drv)
+i3.ip = IP_A
+i3:dnsd()
+-- DNS A query for "a.com" from IP_B:5353 -> IP_A:53
+local DNSQ = H[[0001 0100 0001 0000 0000 0000 0161 0363 6f6d 00 0001 0001]]
+push(link.encap(link.ETH_IP, ipv4.build{src = IP_B, dst = IP_A,
+      proto = ipv4.UDP, payload = udp.build(IP_B, 5353, IP_A, 53, DNSQ)}))
+i3:poll(0)
+mac, f = lastf()
+eq(mac, MAC_B, "dns reply unicast back to the asker")
+local rp = ipv4.parse(select(2, link.decap(f)))
+eq(rp.proto, ipv4.UDP, "dns reply is udp")
+eq(rp.dst, IP_B, "dns reply addressed to the asker")
+local dd = udp.parse(rp)
+eq(dd.sport, 53, "dns reply from port 53")
+eq(dd.dport, 5353, "dns reply to the query's source port")
+eq(dd.payload:sub(-4), IP_A, "dns answer resolves to our ip")
