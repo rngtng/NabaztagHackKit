@@ -41,8 +41,8 @@ threading.Thread(target=sim.run, daemon=True).start()
 # The 4 belly LEDs -> (cx, cy, r) on the 240x360 cone-body SVG (a row of three
 # plus one below, like the real device's belly lights). The 5th, "nose", is
 # drawn on the face (see rabbit_svg), not here.
-LED_XY = {"left": (92, 252, 12), "belly": (120, 252, 12), "right": (148, 252, 12),
-          "bottom": (120, 286, 12)}
+LED_XY = {"left": (85, 292, 13), "belly": (120, 292, 13), "right": (155, 292, 13),
+          "bottom": (120, 320, 12)}
 
 
 def _css(rgb):
@@ -52,14 +52,14 @@ def _css(rgb):
 
 
 def _ear(px, py, angle):
-    """A long tapering white ear pointing up from pivot (px,py), rotated `angle`
+    """A long thick tapering white ear rising from pivot (px,py), rotated `angle`
     degrees about that pivot - so the encoder spin reads as the ear turning."""
-    d = (f"M{px-14},{py} C{px-16},{py-46} {px-10},{py-104} {px-5},{py-132} "
-         f"Q{px},{py-144} {px+5},{py-132} C{px+10},{py-104} {px+16},{py-46} "
-         f"{px+14},{py} Z")
+    d = (f"M{px-15},{py} C{px-17},{py-52} {px-11},{py-120} {px-6},{py-152} "
+         f"Q{px},{py-166} {px+6},{py-152} C{px+11},{py-120} {px+17},{py-52} "
+         f"{px+15},{py} Z")
     return (f'<g transform="rotate({angle} {px} {py})">'
             f'<path d="{d}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>'
-            f'<path d="M{px-3},{py-20} C{px-4},{py-60} {px-2},{py-96} {px},{py-120}" '
+            f'<path d="M{px-3},{py-24} C{px-4},{py-70} {px-2},{py-112} {px},{py-140}" '
             f'fill="none" stroke="#e3ded2" stroke-width="4" stroke-linecap="round"/></g>')
 
 
@@ -73,45 +73,53 @@ def rabbit_svg() -> str:
     la = -13 + (e[0]["pos"] % 360)
     ra = 13 - (e[1]["pos"] % 360)
     nose = leds["nose"]
-    nose_col = _css(nose) if any(nose) else "#4a7fa5"   # muted blue when unlit
-    # cone/teardrop body: narrow rounded top flaring to a wide rounded base.
-    body = ("M120,116 C150,116 168,150 174,202 C179,252 183,292 176,306 "
-            "Q170,320 150,320 L90,320 Q70,320 64,306 C57,292 61,252 66,202 "
-            "C72,150 90,116 120,116 Z")
+    nose_col = _css(nose) if any(nose) else "#4a7fa5"
+    # cone body: a narrow rounded crown flaring smoothly to a wide rounded base,
+    # like the real device's bell/cone shell.
+    body = ("M120,148 C141,149 153,184 163,238 C170,282 183,306 187,318 "
+            "Q190,332 169,334 L71,334 Q50,332 53,318 C57,306 70,282 77,238 "
+            "C87,184 99,149 120,148 Z")
     parts = [
         '<svg viewBox="0 0 240 360" xmlns="http://www.w3.org/2000/svg" '
         'style="width:100%;max-width:320px">',
-        '<defs><filter id="glow" x="-60%" y="-60%" width="220%" height="220%">'
-        '<feGaussianBlur stdDeviation="3.2"/></filter></defs>',
-        _ear(104, 128, la), _ear(136, 128, ra),
+        '<defs><filter id="glow" x="-70%" y="-70%" width="240%" height="240%">'
+        '<feGaussianBlur stdDeviation="6"/></filter></defs>',
+        _ear(112, 152, la), _ear(128, 152, ra),
         f'<path d="{body}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>',
-        # soft glossy highlight down the left of the body
-        '<path d="M92,150 C80,190 78,250 84,300" fill="none" stroke="#ffffff" '
-        'stroke-width="10" stroke-linecap="round" opacity="0.5"/>',
-        # face: two eyes + mouth (the nose is an LED, drawn in the loop below)
-        '<ellipse cx="104" cy="188" rx="5" ry="7" fill="#2b2b2b"/>',
-        '<ellipse cx="136" cy="188" rx="5" ry="7" fill="#2b2b2b"/>',
-        '<path d="M120,214 L120,224 M120,224 Q112,228 108,222 M120,224 Q128,228 132,222" '
-        'fill="none" stroke="#8a8578" stroke-width="2" stroke-linecap="round"/>',
+        # soft glossy highlight down the left of the body (kept inside the shell)
+        '<path d="M101,232 C93,262 91,292 97,316" fill="none" stroke="#ffffff" '
+        'stroke-width="9" stroke-linecap="round" opacity="0.4"/>',
+        # the whole head IS the click button - shade the crown while held, so
+        # there is nothing drawn on it at rest (matches the smooth real shell).
+        ('<ellipse cx="120" cy="170" rx="46" ry="34" fill="#00000022"/>'
+         if sim.button else ''),
+        # face: two simple oval eyes (the iconic Nabaztag look)
+        '<ellipse cx="106" cy="200" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(10 106 200)"/>',
+        '<ellipse cx="134" cy="200" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(-10 134 200)"/>',
     ]
-    # LED nose on the face (glows when lit)
+    # nose: the blue LED glows through the shell (soft halo when lit); on top,
+    # the iconic dark nose - a small downward triangle with a short stem.
     if any(nose):
-        parts.append(f'<circle cx="120" cy="205" r="12" fill="{nose_col}" '
-                     f'filter="url(#glow)" opacity="0.85"/>')
-    parts.append(f'<path d="M120,197 Q130,205 120,213 Q110,205 120,197 Z" '
-                 f'fill="{nose_col}" stroke="#3a5a72" stroke-width="1"/>')
+        parts.append(f'<ellipse cx="120" cy="224" rx="20" ry="22" fill="{nose_col}" '
+                     f'filter="url(#glow)" opacity="0.8"/>')
+    parts.append('<path d="M112,218 Q120,215 128,218 L121,229 Q120,230 119,229 Z" '
+                 'fill="#242424"/>')
+    parts.append('<path d="M120,229 L120,238" stroke="#242424" stroke-width="2.4" '
+                 'stroke-linecap="round"/>')
     # belly LEDs: a faint translucent disc when off (like the real device),
     # a saturated glow when lit.
     for name, (cx, cy, r) in LED_XY.items():
         if any(leds[name]):
             col = _css(leds[name])
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r + 5}" fill="{col}" '
-                         f'filter="url(#glow)" opacity="0.85"/>')
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r + 9}" fill="{col}" '
+                         f'filter="url(#glow)" opacity="0.75"/>')
             parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="{col}" '
-                         f'stroke="#ece7db" stroke-width="1.5"/>')
+                         f'opacity="0.9"/>')
         else:
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="#e7e2d6" '
-                         f'stroke="#d5d0c3" stroke-width="1.5"/>')
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="#efece2" '
+                         f'stroke="#e4e0d3" stroke-width="1"/>')
     return "".join(parts) + "</svg>"
 
 
