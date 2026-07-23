@@ -1,7 +1,7 @@
 -- Continuous reactive loop for the simulator browser UI (#43). Unlike run() in
 -- rfid-led-ears.lua (which exits on a button press), this never returns, so the
 -- live view stays reacting to injected input for as long as the sim runs:
---   task lua:simui APP=apps/ui-demo.lua   (then present tags / hold the button)
+--   task lua:simui:serve APP=apps/ui-demo.lua   (then present tags / hold the button)
 -- Green tag -> all LEDs green + left ear spins; yellow tag -> yellow + right
 -- ear; no tag -> dark, ears stopped; button held -> all LEDs white.
 -- REPL note: each line is its own #LC chunk, so functions are one line and
