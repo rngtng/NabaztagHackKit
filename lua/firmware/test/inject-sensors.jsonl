@@ -1,0 +1,7 @@
+# Peripheral-injection timeline (#42) for inject-sensors.lua. One control event
+# per line (JSON object); gated by `after` (a console substring) or `at_ms`
+# (device-ms). These fire once the probe has printed its default reads, so the
+# "-default" prints see no input and the "-injected" prints see the injected
+# state. See lua/tools/simulator/README.md for the protocol.
+{"after": "rfid-default", "t": "rfid", "uid": "d0021a3506198b86"}
+{"after": "rfid-default", "t": "button", "down": true}

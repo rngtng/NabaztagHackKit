@@ -169,9 +169,10 @@ task lua:apps:simulate APP=apps/foo.lc                 # feed prebuilt .lc bytec
 Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
 `lua`). The simulator maps the real memory regions, runs from `Reset_Handler`, stubs
 peripheral pages, models **instant SPI completion** (a data-register write sets `SPIF`), and
-models the **UART0 console**. Beyond the 1 ms System Timer (below), it has **no timing, audio,
-WiFi, RFID, or analog model**, so it validates code paths + GPIO + SPI framing + console, not
-analog behaviour. Delays must be software busy-loops to be observable. **DREQ (VS1003 ready)
+models the **UART0 console**. Beyond the 1 ms System Timer (below) and the injectable
+button/RFID/ear inputs (**Peripheral injection**, below), it has **no timing, audio, WiFi, or
+analog model**, so it validates code paths + GPIO + SPI framing + console, not analog
+behaviour. Delays must be software busy-loops to be observable. **DREQ (VS1003 ready)
 and the ADC completion bit are unmodeled** - any bounded busy-wait on them (`nab.play`,
 `nab.wheel`) spins to its cap in-sim and is hardware-only. QEMU isn't used (no ML67Q4051
 machine, memory map doesn't fit).
@@ -194,7 +195,19 @@ firmware is parser-less, #128); the sim is paced to wall-clock time (`--speed`, 
 so the animation is watchable rather than a host-CPU blur - lower it (`SPEED=0.25`) for a
 close look.
 
+**Peripheral injection + state (#42).** The sim models the **input** peripherals so no-hardware
+runs can drive them: the head **button** (`nab.button()` → PI3 bit1), **RFID** (`nab.rfid()` →
+an injected UID, or `nil`; the real `rfid_read_uid` runs on the stubbed I2C and its result is
+corrected at return — no CRX14 bus emulation), and the **ears** (`nab.ear_move`/`ear_stop` set a
+drive state; a synthetic encoder advances while running so `nab.ear_pos()` moves). Inputs come
+from a **JSON-Lines** control file (`--inject-file`, passed as `INJECT=` to `apps:simulate`);
+`--emit-state` logs a device-state snapshot on every change. Both directions share one schema
+(button/RFID/ear in, LEDs/ears/button/RFID out) — the seam a UI (#43) plugs into. Full protocol
+in [`tools/simulator/README.md`](../tools/simulator/README.md#peripheral-io--control-protocol-42);
+`task lua:firmware:test:inject` (part of `lua:verify`) is the golden that drives it.
+
 ```sh
+task lua:apps:simulate APP=apps/rfid-led-ears.lua INJECT=... ARGS="--leds --emit-state"  # drive button/RFID/ear + watch state
 task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds                 # real-time 5-LED view
 task lua:apps:simulate APP=apps/led-demo.lua ARGS="--leds --speed 0.5"   # half speed for a closer look
 task lua:apps:simulate APP=path/to.lua ARGS=--leds N=200000000

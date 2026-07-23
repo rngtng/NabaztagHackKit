@@ -1,0 +1,8 @@
+> > > > > > > > > inject-sensors start
+> button-default	false
+> rfid-default	nil
+> > > > ear-advanced	true
+> > button-injected	true
+> rfid-injected	d0021a3506198b86
+> inject-sensors done
+> <<FV_DONE>>

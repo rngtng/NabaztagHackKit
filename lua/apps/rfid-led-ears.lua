@@ -18,8 +18,8 @@ YELLOW_UID = "d0021a35038f3a2f" -- confirmed on hardware (task lua:firmware:flas
 LEFT_MOTOR = 1  -- TODO: confirm against hardware which motor number is physically the left ear (swap with RIGHT_MOTOR if backwards)
 RIGHT_MOTOR = 2 -- TODO: the other motor number
 function allled(r,g,b) nab.led('nose',r,g,b) nab.led('belly',r,g,b) nab.led('bottom',r,g,b) nab.led('left',r,g,b) nab.led('right',r,g,b) end
-function greenmode() allled(0,127,0) nab.ear_move(LEFT_MOTOR,255,'forward') nab.ear_stop(RIGHT_MOTOR) end
-function yellowmode() allled(127,127,0) nab.ear_move(RIGHT_MOTOR,255,'forward') nab.ear_stop(LEFT_MOTOR) end
+function greenmode() allled(0,127,0) nab.ear_move(LEFT_MOTOR,'forward') nab.ear_stop(RIGHT_MOTOR) end
+function yellowmode() allled(127,127,0) nab.ear_move(RIGHT_MOTOR,'forward') nab.ear_stop(LEFT_MOTOR) end
 function blackmode() allled(0,0,0) nab.ear_stop(LEFT_MOTOR) nab.ear_stop(RIGHT_MOTOR) end
 function react(t) if t == GREEN_UID then greenmode() elseif t == YELLOW_UID then yellowmode() else blackmode() end end
 function run() while true do react(nab.rfid()) if nab.button() then blackmode() return end end end

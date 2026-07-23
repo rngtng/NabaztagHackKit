@@ -44,7 +44,7 @@ tasks:
           OUT: '{{if or (not .OUT) (eq .OUT "build")}}{{else}}{{.REPO}}/{{.OUT}}{{end}}'
 
   simulate:
-    desc: 'Run a Lua app on the product firmware in the Unicorn simulator, no hardware (#96). APP=file.lua|.lc is framed to #LC bytecode, fed to the sim, and its console transcript printed. (For an interactive prompt use lua:firmware:simulate:repl.) Usage: task lua:apps:simulate APP=apps/led-demo.lua [ARGS=--leds] [N=budget]'
+    desc: 'Run a Lua app on the product firmware in the Unicorn simulator, no hardware (#96). APP=file.lua|.lc is framed to #LC bytecode, fed to the sim, and its console transcript printed. INJECT=file.jsonl drives the peripheral inputs (button/RFID/ear) from a JSON-Lines timeline (#42); pair with ARGS=--emit-state to log device-state snapshots. (For an interactive prompt use lua:firmware:simulate:repl.) Usage: task lua:apps:simulate APP=apps/rfid-led-ears.lua INJECT=... [ARGS="--leds --emit-state"] [N=budget]'
     dir: '{{.TASKFILE_DIR}}'
     interactive: true   # -it gives a live in-place view for ARGS=--leds
     requires:
@@ -68,8 +68,15 @@ tasks:
         # Keep the temp under REPO so colima's /Users-only share can bind-mount it.
         fr="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$fr"' EXIT
         python3 '{{.REPO}}/tools/luac/replpipe.py' "$(realpath "{{.REPO}}/{{.APP}}")" -o "$fr" 1>&2
-        docker run --rm -it -v "$BIN:/mnt:ro" -v "$fr:/in.lua:ro" \
-          {{.SIM_IMAGE}} {{.ARGS}} -n {{.N | default "120000000"}} --input-file /in.lua /mnt/firmware.elf
+        # Optional peripheral-injection timeline (#42): mount it and pass
+        # --inject-file so button/RFID/ear inputs are driven from the file.
+        inj_mount=""; inj_arg=""
+        if [ -n "{{.INJECT}}" ]; then
+          inj_host="$(realpath "{{.REPO}}/{{.INJECT}}")"
+          inj_mount="-v $inj_host:/inject.jsonl:ro"; inj_arg="--inject-file /inject.jsonl"
+        fi
+        docker run --rm -it -v "$BIN:/mnt:ro" -v "$fr:/in.lua:ro" $inj_mount \
+          {{.SIM_IMAGE}} {{.ARGS}} -n {{.N | default "120000000"}} --input-file /in.lua $inj_arg /mnt/firmware.elf
 
   clean:
     desc: 'Remove the tools/luac Docker image (the host Lua->bytecode compiler).'
