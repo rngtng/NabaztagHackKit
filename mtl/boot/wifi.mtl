@@ -17,6 +17,9 @@ var wifitry;;
 // in-place USB re-enumeration crashes the host stack), so we do not self-heal:
 // if netState stays BROKEN for WIFI_STUCK_SECONDS, light the nose RED as a
 // "power-cycle me" signal. Normal bring-up reaches RT2501_S_IDLE in ~1-3s.
+// NOTE the firmware's own bring-up now drops VBUS and retries 3x before the VM
+// starts, so the intermittent-enumeration case is handled below us and a reboot
+// does cold-boot the module - reaching this indicator means the retries failed.
 const WIFI_STUCK_SECONDS=15;;
 var wifibrokensince;;
 var wifistuck;;
