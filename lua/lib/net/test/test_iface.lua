@@ -29,7 +29,7 @@ local function lastf() return sent[#sent].mac, sent[#sent].f end
 
 -- icmp echo + passive mac learning ----------------------------------------
 
-arp.cache = {}
+arp.reset()
 local i = iface.new(drv)
 i.ip = IP_A
 push(link.encap(link.ETH_IP, PING))
@@ -53,7 +53,7 @@ eq(arp.parse(ap).spa, IP_A, "arp reply claims our ip")
 
 -- ipsend: unknown mac -> arp request; off-subnet -> via router --------------
 
-arp.cache = {}
+arp.reset()
 local n0 = #sent
 i:ipsend(IP_B, "IGNORED")
 mac, f = lastf()
@@ -69,7 +69,7 @@ eq(#sent, n0 + 2, "one frame per ipsend")
 
 -- dhcp join against our own server ------------------------------------------
 
-arp.cache = {}
+arp.reset()
 t, sent, rxq = 0, {}, {}
 local i2 = iface.new(drv)
 local srv = dhcp.server{ip = IP_B, client_ip = IP_A}
@@ -120,7 +120,7 @@ hook = function(_, f3)
     for _, o in ipairs(b:close()) do pushpkt(o) end
   end
 end
-arp.cache = {}
+arp.reset()
 local status, body = i2:http_get(IP_B, "srv", "/boot/app.lc", 15000)
 eq(status, 200, "http_get status")
 eq(body, "LCDATA", "http_get body")

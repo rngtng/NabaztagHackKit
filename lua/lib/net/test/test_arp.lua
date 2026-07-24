@@ -26,13 +26,47 @@ eq(arp.parse(H"0001 0800 0604 0001"), nil, "parse short arp")
 eq(arp.parse(("\0"):rep(28)), nil, "parse non-ethernet arp")
 
 -- input(): learns the sender; answers requests addressed to us
-arp.cache = {}
+arp.reset()
 local _, reqp = link.decap(REQ)
 local out = arp.input(arp.parse(reqp), MAC_B, IP_B)
 eq(arp.cache[IP_A], MAC_A, "input learns requester")
 eq(out, REP, "input answers request for our ip with the fixture reply")
 eq(arp.input(arp.parse(reqp), MAC_B, H"c0a80063"), nil,
    "input ignores request for someone else")
-arp.cache = {}
+arp.reset()
 eq(arp.input(arp.parse(p), MAC_A, IP_A), nil, "reply input sends nothing")
 eq(arp.cache[IP_B], MAC_B, "reply input learns peer")
+
+-- #251: passive learning must not grow the cache without bound.
+do
+  local MAC = H"d83add112233"
+  local function count()
+    local n = 0
+    for _ in pairs(arp.cache) do n = n + 1 end
+    return n
+  end
+
+  arp.reset()
+  for k = 1, arp.MAX * 2 do
+    arp.learn(string.pack(">I4", 0x0a000000 + k), MAC)
+  end
+  ok(count() <= arp.MAX,
+     ("arp.cache holds %d entries, cap is %d (#251)"):format(count(), arp.MAX))
+
+  -- The entry that triggered the clear must survive it. Clearing after the
+  -- insert instead of before would drop the peer we are actively replying to -
+  -- an off-by-one here breaks the reply path exactly when it is in use.
+  local last = string.pack(">I4", 0x0a000000 + arp.MAX * 2)
+  eq(arp.cache[last], MAC, "the sender that triggered the clear stays cached")
+
+  -- Recovery after a clear is a normal learn.
+  arp.learn(H"c0a80001", MAC)
+  eq(arp.cache[H"c0a80001"], MAC, "re-learn after a clear")
+
+  -- Refreshing an existing entry is not a new insert; otherwise one chatty
+  -- peer would keep clearing the cache out from under everyone else.
+  arp.reset()
+  for _ = 1, arp.MAX * 3 do arp.learn(H"c0a80001", MAC) end
+  eq(count(), 1, "refreshing one peer neither grows nor clears the cache")
+  eq(arp.cache[H"c0a80001"], MAC, "refreshed peer still resolvable")
+end
