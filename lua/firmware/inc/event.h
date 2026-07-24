@@ -27,7 +27,12 @@ typedef struct {
   uint8_t uid[8];  /* EV_RFID_TAG only */
 } event_t;
 
-int8_t event_post(const event_t *e);  /* 0 = queued, -1 = full (dropped) */
+/* Queue an event. @retval 0 queued, -1 the queue was full and it was DROPPED.
+ * Callers MUST check the return and only then commit whatever state records
+ * "this event was announced" (a debounced level, a cached tag UID). Committing
+ * first loses the event permanently, because the poller then believes it was
+ * delivered and never re-posts it (#242). */
+int8_t event_post(const event_t *e);
 int8_t event_next(event_t *e);        /* 1 = popped into *e, 0 = empty */
 
 /* Poll the hardware and post edge events: the (cheap) button read always;

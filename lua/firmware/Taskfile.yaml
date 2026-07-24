@@ -181,6 +181,18 @@ tasks:
             ssh {{.PI_HOST}} 'cd openocd && sudo python3 uart_repl.py --relay'
         fi
 
+  test:host:
+    desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. SCENARIO=<name> runs one.'
+    summary: 'Usage: task lua:firmware:test:host [SCENARIO=rfid-drop]'
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [image]
+    cmds:
+      # Sources are bind-mounted (like every other target here); the image only
+      # supplies the host gcc + sanitizer runtime.
+      - 'docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work/test/host
+          {{.FV_IMAGE}}
+          sh -c "make clean >/dev/null && make {{if .SCENARIO}}&& ./event_test {{.SCENARIO}}{{else}}check{{end}}"'
+
   test:
     desc: 'Firmware tests. Today: the #128 bytecode-pipeline golden - compile a Lua app off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden (exercises luac -> frame -> lundump -> run -> print end to end). REGEN=1 rewrites the golden.'
     summary: 'Usage: task lua:firmware:test [APP=test/luac-roundtrip.lua] [EXPECT=test/luac-roundtrip.expected] [REGEN=1]'
