@@ -35,27 +35,45 @@ local function feed_head(o, s)
   return first
 end
 
+-- Body chunks accumulate in a table and are joined exactly once (#250).
+-- `body = body .. chunk` per arriving segment copies and discards the whole
+-- body every time - O(n^2) bytes, all of it churned through the device's 1 MB
+-- heap. `nbody` carries the running length so the completion test never needs
+-- an intermediate join. `cap` is the Content-Length to truncate at, or nil to
+-- keep everything (read-to-close).
+local function body_add(o, s)
+  if s ~= "" then
+    o.chunks[#o.chunks + 1] = s
+    o.nbody = o.nbody + #s
+  end
+end
+
+local function body_finish(o, cap)
+  o.body = table.concat(o.chunks)
+  if cap then o.body = o.body:sub(1, cap) end
+  o.done = true
+end
+
 -- response parser: r:feed(tcp:read()) until r.done (or tcp closes -> r:eof()).
 -- Then r.status (numeric), r.headers, r.body.
 function http.response()
-  local r = {buf = "", headers = {}}
+  local r = {buf = "", headers = {}, chunks = {}, nbody = 0}
 
   function r:feed(s)
     if not self.status then
       local line = feed_head(self, s)
       if not line then return end
       self.status = tonumber(line:match("^HTTP/%d%.%d (%d+)")) or 0
-      s, self.buf, self.body = self.buf, nil, ""
+      s, self.buf = self.buf, nil
     end
-    self.body = self.body .. s
-    if self.length and #self.body >= self.length then
-      self.body = self.body:sub(1, self.length)
-      self.done = true
+    body_add(self, s)
+    if self.length and self.nbody >= self.length then
+      body_finish(self, self.length)
     end
   end
 
   function r:eof() -- connection closed: without Content-Length that's the end
-    if self.status and not self.length then self.done = true end
+    if self.status and not self.length then body_finish(self, nil) end
   end
 
   return r
@@ -64,7 +82,7 @@ end
 -- request parser for the server side: q:feed(...) until q.done, then
 -- q.method, q.path, q.query (decoded key=value table), q.headers, q.body.
 function http.request()
-  local q = {buf = "", headers = {}}
+  local q = {buf = "", headers = {}, chunks = {}, nbody = 0}
 
   function q:feed(s)
     if not self.method then
@@ -74,12 +92,12 @@ function http.request()
       self.method = m or "?"
       local path, qs = (target or "/"):match("^([^?]*)%??(.*)$")
       self.path, self.query = path, http.query(qs)
-      s, self.buf, self.body = self.buf, nil, ""
+      s, self.buf = self.buf, nil
     end
-    self.body = self.body .. s
-    if #self.body >= (self.length or 0) then
-      self.body = self.body:sub(1, self.length or 0)
-      self.done = true
+    body_add(self, s)
+    -- no Content-Length means no body: cap 0 completes a GET immediately
+    if self.nbody >= (self.length or 0) then
+      body_finish(self, self.length or 0)
     end
   end
 

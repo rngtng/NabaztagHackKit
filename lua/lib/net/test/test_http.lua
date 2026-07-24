@@ -54,3 +54,55 @@ eq(p.done, nil, "post waits for full body")
 p:feed("rabb")
 eq(p.done, true, "post done at content-length")
 eq(p.body, "ssid=rabb", "post body")
+
+-- #250: the body must not be reassembled by repeated `body = body .. chunk`.
+-- With the GC stopped, heap growth across the feed IS the total allocated, so
+-- the quadratic shape (~1.3 MB to assemble 12.5 KB) and the table+concat shape
+-- (tens of KB) are unambiguously distinguishable - no timing, no flakiness.
+do
+  local N, CHUNK = 200, 64
+  local piece = ("x"):rep(CHUNK)
+  local r = http.response()
+  r:feed("HTTP/1.0 200 OK\r\nContent-Length: " .. (N * CHUNK) .. "\r\n\r\n")
+
+  collectgarbage("collect")
+  collectgarbage("stop")
+  local before = collectgarbage("count")
+  for _ = 1, N do r:feed(piece) end
+  local grew = collectgarbage("count") - before
+  collectgarbage("restart")
+
+  eq(r.done, true, "bulk body completes")
+  eq(#r.body, N * CHUNK, "bulk body length")
+  eq(r.body, piece:rep(N), "bulk body content")
+  ok(grew < 200,
+     ("bulk body reassembly allocated %.0f KB for %d KB of body (#250)")
+     :format(grew, N * CHUNK // 1024))
+end
+
+-- A body containing blank lines: feed_head must split on the FIRST \r\n\r\n
+-- only, and everything after it must survive reassembly byte for byte. This is
+-- the case a sloppy chunk-table refactor breaks silently.
+local r4 = http.response()
+r4:feed("HTTP/1.0 200 OK\r\nContent-Length: 14\r\n\r\nab\r\n\r\ncd\r\n\r\nef")
+eq(r4.done, true, "body with embedded blank lines completes")
+eq(r4.body, "ab\r\n\r\ncd\r\n\r\nef", "embedded blank lines survive intact")
+
+-- Whole response in a single feed (head and body together, one chunk).
+local r5 = http.response()
+r5:feed("HTTP/1.0 404 Not Found\r\nContent-Length: 3\r\n\r\nnope")
+eq(r5.status, 404, "single-feed status")
+eq(r5.body, "nop", "single-feed body cut at content-length")
+
+-- Read-to-close body assembled from many feeds, ended by :eof().
+local r6 = http.response()
+r6:feed("HTTP/1.0 200 OK\r\n\r\n")
+for i = 1, 10 do r6:feed(tostring(i % 10)) end
+r6:eof()
+eq(r6.body, "1234567890", "read-to-close body from many feeds")
+
+-- Same for the request parser's body path.
+local p2 = http.request()
+p2:feed("POST /x HTTP/1.0\r\nContent-Length: 7\r\n\r\na\r\n\r\nbc")
+eq(p2.done, true, "post body with a blank line completes")
+eq(p2.body, "a\r\n\r\nbc", "post body with blank line intact")

@@ -72,15 +72,23 @@ local function arm(c, out, flags, payload, opts)
   out[#out + 1] = segment(c, c.rtx.seq, flags, payload, opts)
 end
 
+-- bytes still waiting in the send queue. txq is consumed through a read index
+-- rather than by re-slicing it (#250): `txq = txq:sub(#chunk + 1)` per segment
+-- copies the whole remaining queue every time, O(n^2) over a large send.
+local function txq_len(c)
+  return #c.txq - c.txoff + 1
+end
+
 -- send queued data / a pending FIN once the previous segment is acked
 local function flush(c, out)
-  if not c.rtx and #c.txq > 0
+  if not c.rtx and txq_len(c) > 0
      and (c.state == "established" or c.state == "close-wait") then
-    local chunk = c.txq:sub(1, c.mss)
-    c.txq = c.txq:sub(#chunk + 1)
+    local chunk = c.txq:sub(c.txoff, c.txoff + c.mss - 1)
+    c.txoff = c.txoff + #chunk
+    if txq_len(c) == 0 then c.txq, c.txoff = "", 1 end  -- drained: drop the string
     arm(c, out, tcp.PSH | tcp.ACK, chunk)
   end
-  if not c.rtx and c.finq and #c.txq == 0 then
+  if not c.rtx and c.finq and txq_len(c) == 0 then
     if c.state == "established" then
       c.state = "fin-wait-1"
     elseif c.state == "close-wait" then
@@ -96,7 +104,8 @@ end
 local function new(o)
   local c = {src = o.src, dst = o.dst, sport = o.sport, dport = o.dport,
              clock = o.clock or (nab and nab.time) or function() return 0 end,
-             iss = o.iss, state = "closed", txq = "", rxq = "", mss = 536}
+             iss = o.iss, state = "closed", txq = "", txoff = 1, rxq = {},
+             mss = 536}
 
   function c:connect()
     local out = {}
@@ -117,8 +126,9 @@ local function new(o)
 
   -- drain everything received so far
   function c:read()
-    local d = self.rxq
-    self.rxq = ""
+    if #self.rxq == 0 then return "" end
+    local d = table.concat(self.rxq)   -- joined once, not per segment (#250)
+    self.rxq = {}
     return d
   end
 
@@ -220,7 +230,7 @@ local function new(o)
     -- in-order data / FIN; anything else with content gets a dup-ACK
     local fin = (s.flags & tcp.FIN) ~= 0
     if s.seq == self.rcv_nxt and (#s.payload > 0 or fin) then
-      self.rxq = self.rxq .. s.payload
+      self.rxq[#self.rxq + 1] = s.payload
       self.rcv_nxt = self.rcv_nxt + #s.payload
       if fin then
         self.rcv_nxt = self.rcv_nxt + 1
