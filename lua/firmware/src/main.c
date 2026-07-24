@@ -257,9 +257,9 @@ static int nab_volume(lua_State *L)
 }
 
 /* nab.beep([freq [, ms]]): play the VS1003 built-in sine test. freq is the
- * VS10xx sine-skip byte (pitch, 0..255, default 0x44); ms is an approximate
- * duration - a CPU busy-loop, since firmwareV2 has no timer yet, so it is
- * rough (default 300). The tone plays on the codec while the CPU spins. */
+ * VS10xx sine-skip byte (pitch, 0..255, default 0x44); ms is the duration,
+ * timed off the 1 ms System Timer like nab.delay (default 300). Blocking: the
+ * tone plays on the codec while the CPU waits out the tick. */
 static int nab_beep(lua_State *L)
 {
   lua_Integer freq = luaL_optinteger(L, 1, 0x44);
@@ -269,8 +269,14 @@ static int nab_beep(lua_State *L)
 
   vlsi_ampli(1);                   /* plays at the current nab.volume setting */
   vlsi_sine((uint8_t)freq, 1);
-  for (volatile unsigned long i = 0; i < (unsigned long)ms * 3000UL; i++)
-    CLR_WDT;                       /* ~ms; no timer, so approximate */
+  /* Timed off the 1 ms System Timer, like nab.delay (#247). This was a
+   * calibrated-by-guess spin whose comment still claimed "no timer yet" - the
+   * tick has existed since #102, and nab.delay's own comment records that the
+   * spin approach ran ~2x off on the 16 MHz ring oscillator, so nab.beep's ms
+   * argument was simply wrong. */
+  uint32_t t = counter_timer;
+  while ((counter_timer - t) < (uint32_t)ms)
+    CLR_WDT;
   vlsi_sine((uint8_t)freq, 0);
   vlsi_ampli(0);
   return 0;
@@ -354,10 +360,16 @@ static void report(lua_State *L);  /* defined with the REPL below */
 static void dispatch_events(lua_State *L, uint8_t allow_rfid)
 {
   static uint8_t busy;
+  /* Sample the hardware ALWAYS, even when re-entered (#243). The guard exists
+   * to stop recursive *Lua dispatch* (principle 2), and event_pump touches no
+   * Lua state - the queue is precisely the buffer that decouples the two. With
+   * the pump inside the guard, a nab.wait() called from a callback stopped the
+   * debouncer and the scan cycle outright, so a press+release entirely inside
+   * that window was never even observed, let alone queued for later. */
+  event_pump(allow_rfid);
   if (busy)
     return;
   busy = 1;
-  event_pump(allow_rfid);
   event_t e;
   while (event_next(&e)) {
     lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
@@ -881,7 +893,13 @@ static void repl(lua_State *L)
  * (the LLC2_4c LED-only subset of the firmware's init_io). */
 static void init_hw(void)
 {
-  init_irq();    /* #102: populate IRQ_HANDLER_TABLE before any source is armed */
+  /* #102: populate IRQ_HANDLER_TABLE + the interrupt controller before any
+   * source is armed. Exactly once (#244): init_irq() is not idempotent-in-place
+   * - it zeroes ILC0/ILC1/EXILC* and resets all 64 handler slots to
+   * null_handler - so a second call here silently discarded anything the
+   * peripherals below had registered. Nothing registered between the two calls
+   * as it stood, which is the only reason it was harmless. */
+  init_irq();
 
   CS_LED_AS_OUTPUT;
   MODE_LED_AS_OUTPUT;
@@ -889,8 +907,6 @@ static void init_hw(void)
   MODE_LED_CLEAR;
   init_spi();
   init_led_rgb_driver();
-  init_irq();    /* interrupt controller + the 1 ms tick (init_tick): */
-  init_tick();   /* counter_timer, the clock the wifi stack runs on */
   init_button();
   init_vlsi();   /* VS1003 audio codec on SPI0, for nab.beep/volume */
   init_adc();    /* ADC ch.2 (PD2), for nab.wheel() */
