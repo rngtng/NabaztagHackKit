@@ -11,6 +11,8 @@
 #include "ml674061.h"
 #include "common.h"
 
+#include "irq.h"
+
 #include "hal/i2c.h"
 
 /**
@@ -18,9 +20,19 @@
  *
  * @return Remaining timeout ticks
  */
+/* Spin budget for one bus wait (#253). Iteration-bounded rather than
+ * time-bounded on purpose: these loops run with interrupts masked, so
+ * counter_timer cannot advance inside them and a tick-based timeout would
+ * never expire. 20,000 volatile APB reads is on the order of 10 ms on the
+ * 16 MHz ring oscillator - well over a hundred byte-times at 100 kHz, so it
+ * cannot clip a healthy transfer - where the former 1,000,000 was most of a
+ * second, and multiplied by the caller's retries put a wedged bus into a
+ * minutes-long system freeze. */
+#define I2C_SPIN_MAX 20000
+
 static int32_t waiti2cmbb(void)
 {
-  int32_t nmax=1000000;
+  int32_t nmax=I2C_SPIN_MAX;
   while((get_hvalue(I2CSR)&I2CSR_I2CMBB)&&(nmax>0)) nmax--;
   return nmax;
 }
@@ -32,9 +44,39 @@ static int32_t waiti2cmbb(void)
  */
 static int32_t waiti2cmcf(void)
 {
-  int32_t nmax=1000000;
+  int32_t nmax=I2C_SPIN_MAX;
   while((!(get_hvalue(I2CSR)&I2CSR_I2CMCF))&&(nmax>0)) nmax--;
   return nmax;
+}
+
+/* Run a bus wait with interrupts as the caller left them, then re-fence the
+ * register work that follows (#252).
+ *
+ * The polls are the long part of a transfer - and the part a slow or wedged
+ * bus stretches - so holding the CPSR I-bit across them stalls the 1 ms tick
+ * and everything built on it: nab.time(), nab.wait(), the LED fade engine, the
+ * wifi stack's 200 ms rt2501_timer cadence. Nothing on this device drives I2C
+ * from an ISR (event.h: the event core is strictly single-context), so a tick
+ * landing mid-poll is harmless - the poll only reads a status flag.
+ *
+ * irq_restore/irq_disable_save round-trip rather than a bare enable/disable, so
+ * a caller that was ALREADY masked stays masked throughout (#246): *irq comes
+ * back 0x80 and the restore is a no-op.
+ */
+static int32_t i2c_wait_mbb(uint32_t *irq)
+{
+  irq_restore(*irq);
+  int32_t r = waiti2cmbb();
+  *irq = irq_disable_save();
+  return r;
+}
+
+static int32_t i2c_wait_mcf(uint32_t *irq)
+{
+  irq_restore(*irq);
+  int32_t r = waiti2cmcf();
+  *irq = irq_disable_save();
+  return r;
 }
 
 /**
@@ -71,16 +113,19 @@ void init_i2c(void)
  */
 uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 {
-  __disable_interrupt();
+  /* Save/restore, not a bare disable/enable (#246): an unconditional
+   * __enable_interrupt() on every exit path would re-enable interrupts a
+   * caller had deliberately masked, mid-critical-section. */
+  uint32_t irq = irq_disable_save();
 
   /* Set Master TX */
   set_hbit(I2CCTL,I2CCTL_I2CMTX);
 
   /* Wait for I2C bus to be ready */
-  if (!waiti2cmbb())
+  if (!i2c_wait_mbb(&irq))
   {
     /* Error, exit */
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
 
@@ -94,15 +139,15 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
   {
     /* Arbitration lost, Clear status */
     put_hvalue(I2CSR,0x0000);
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
 
   /* Wait for transfer to be completed */
-  if (!waiti2cmcf())
+  if (!i2c_wait_mcf(&irq))
   {
     /* Error, exit */
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
   /* Look at acknowledge */
@@ -113,7 +158,7 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
     /* Clear status */
     put_hvalue(I2CSR,0x0000);
     /* Exit */
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
 
@@ -124,10 +169,10 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
     /* Write data byte */
     put_hvalue(I2CDR,*(data++));
     /* Wait for transfer to be completed */
-    if (!waiti2cmcf())
+    if (!i2c_wait_mcf(&irq))
     {
       /* Error/Timeout */
-      __enable_interrupt();
+      irq_restore(irq);
       return FALSE;
     }
     /* Look at acknowledge */
@@ -138,7 +183,7 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
       /* Clear status */
       put_hvalue(I2CSR,0x0000);
       /* Exit */
-      __enable_interrupt();
+      irq_restore(irq);
       return FALSE;
     }
     /* Clear  completion bit */
@@ -149,7 +194,7 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
   put_hvalue(I2CSR,0x0000);
   /* Send I2C Stop condition */
   clr_hbit(I2CCTL,I2CCTL_I2CMSTA);
-  __enable_interrupt();
+  irq_restore(irq);
   return TRUE;
 }
 
@@ -166,14 +211,17 @@ uint8_t write_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 
 uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 {
-  __disable_interrupt();
+  /* Save/restore, not a bare disable/enable (#246): an unconditional
+   * __enable_interrupt() on every exit path would re-enable interrupts a
+   * caller had deliberately masked, mid-critical-section. */
+  uint32_t irq = irq_disable_save();
 
   /* Master TX */
   clr_hbit(I2CCTL,I2CCTL_I2CMTX);
   /* Wait for I2C bus to be ready */
-  if (!waiti2cmbb())
+  if (!i2c_wait_mbb(&irq))
   {
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
 
@@ -186,13 +234,13 @@ uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
   {
     /* Clear status */
     put_hvalue(I2CSR,0x0000);
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
   /* Wait for transfer to be completed */
-  if (!waiti2cmcf())
+  if (!i2c_wait_mcf(&irq))
   {
-  __enable_interrupt();
+  irq_restore(irq);
     return FALSE;
   }
   /* Look at acknowledge */
@@ -202,7 +250,7 @@ uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
     clr_hbit(I2CCTL,I2CCTL_I2CMSTA);
     /* Clear status */
     put_hvalue(I2CSR,0x0000);
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
 
@@ -214,9 +262,9 @@ uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
     if((nb_byte-1)==0)
       break;
     /* Wait for transfer to be completed */
-    if (!waiti2cmcf())
+    if (!i2c_wait_mcf(&irq))
     {
-      __enable_interrupt();
+      irq_restore(irq);
       return FALSE;
     }
     /* Read data */
@@ -226,9 +274,9 @@ uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
   /* Send NAck */
   set_hbit(I2CCTL,I2CCTL_I2CTXAK);
   /* Wait for transfer to be completed */
-  if (!waiti2cmcf())
+  if (!i2c_wait_mcf(&irq))
   {
-    __enable_interrupt();
+    irq_restore(irq);
     return FALSE;
   }
   /* Read last byte of data */
@@ -239,6 +287,6 @@ uint8_t read_i2c(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
   /* Send Stop condition */
   clr_hbit(I2CCTL,I2CCTL_I2CMSTA);
   clr_hbit(I2CCTL,I2CCTL_I2CTXAK);
-  __enable_interrupt();
+  irq_restore(irq);
   return TRUE;
 }

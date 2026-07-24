@@ -17,7 +17,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc -I$(FW)/l
 CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
-TESTS := event_test fmt_test
+TESTS := event_test fmt_test rfid_test i2c_test
 
 all: $(TESTS)
 
@@ -32,6 +32,18 @@ event_test: event_test.c $(FW)/src/utils/event.c
 fmt_test: fmt_test.c $(FW)/src/utils/fmt.c
 	$(CC) $(CFLAGS) -U_FORTIFY_SOURCE -Wno-format -Wno-format-truncation \
 	      -o $@ $^ $(LDFLAGS)
+
+# rfid.c drives the coupler purely through write_i2c/read_i2c, so the whole
+# scan runs host-native with that boundary stubbed. -std=gnu11: common.h's
+# __no_operation() uses the `asm` keyword, which strict ISO C rejects.
+# -D_NAB_SIM makes CLR_WDT a no-op (same switch mtl/tools/testvm uses).
+rfid_test: rfid_test.c $(FW)/src/hal/rfid.c
+	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -I$(FW)/sys/inc -o $@ $^ $(LDFLAGS)
+
+# i2c.c is register-only, so it needs stubs/ml674061.h FIRST on the include
+# path to shadow the real absolute peripheral addresses (see that header).
+i2c_test: i2c_test.c $(FW)/src/hal/i2c.c
+	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -Istubs -I$(FW)/sys/inc -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
