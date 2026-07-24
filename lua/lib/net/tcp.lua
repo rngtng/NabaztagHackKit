@@ -149,10 +149,20 @@ local function new(o)
 
   function c:input(pkt)
     local out = {}
-    local s = tcp.parse(pkt)
-    if not s or s.dport ~= self.sport then return out end
-    if self.dport and s.sport ~= self.dport then return out end
+    -- Decide whether the segment is ours from the 4 bytes of ports BEFORE
+    -- tcp.parse checksums the whole thing (#249) - that checksum is the most
+    -- expensive operation in the stack, and in AP mode we see every frame the
+    -- stations send. Its own `#p < 20` guard is repeated here because the
+    -- unpack below must not run off a runt segment.
+    local p = pkt.payload
+    if #p < 20 then return out end
+    local sport, dport = string.unpack(">I2I2", p)
+    if dport ~= self.sport then return out end
+    if self.dport and sport ~= self.dport then return out end
     if self.dst and pkt.src ~= self.dst then return out end
+    -- Only now verify it: nothing above this line trusts the segment.
+    local s = tcp.parse(pkt)
+    if not s then return out end
     if self.state == "closed" then return out end
 
     if (s.flags & tcp.RST) ~= 0 then

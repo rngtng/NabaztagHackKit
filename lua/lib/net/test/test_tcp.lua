@@ -165,3 +165,46 @@ settle(b, a, b:close())
 eq(b.state, "closed", "listener closed")
 eq(a.state, "closed", "client closed")
 eq(a.err, nil, "loopback teardown clean")
+
+-- #249: a segment for a port we are not handling must be rejected BEFORE the
+-- full-segment checksum runs - that checksum is the most expensive thing the
+-- stack does, and on a busy link (or in AP mode, where we see everything the
+-- stations send) it was being paid on traffic that was never ours.
+do
+  -- Build a SYN from B:80 to an arbitrary port on us; `corrupt` perturbs the
+  -- checksum field so verification is guaranteed to fail.
+  local function syn_to(dport, corrupt)
+    local hdr = string.pack(">I2I2I4I4BBI2I2I2", 80, dport, 7000, 0, 5 << 4,
+                            tcp.SYN, 8192, 0, 0)
+    local ck = link.checksum(IP_B .. IP_A
+                             .. string.pack(">BBI2", 0, ipv4.TCP, #hdr) .. hdr)
+    if corrupt then ck = (ck + 1) & 0xFFFF end
+    return ipv4.parse(ipv4.build{src = IP_B, dst = IP_A, proto = ipv4.TCP,
+      payload = hdr:sub(1, 16) .. string.pack(">I2", ck) .. hdr:sub(19)})
+  end
+
+  -- ipv4.parse above also checksums, so build every packet before counting.
+  local foreign, corrupt, good = syn_to(9999), syn_to(40001, true), syn_to(40001)
+
+  local real, calls = link.checksum, 0
+  link.checksum = function(x) calls = calls + 1; return real(x) end
+
+  local l1 = tcp.listen{src = IP_A, port = 40001, clock = clk}
+  eq(#l1:input(foreign), 0, "foreign dport produces no output")
+  eq(calls, 0, "foreign dport is rejected without checksumming it (#249)")
+
+  -- The control: a segment that IS ours must still be checksummed, and a bad
+  -- checksum must still be rejected. Without these, "rejects" could just mean
+  -- the reordering skipped verification altogether.
+  calls = 0
+  local l2 = tcp.listen{src = IP_A, port = 40001, clock = clk}
+  eq(#l2:input(corrupt), 0, "corrupt checksum on our port is rejected")
+  ok(calls > 0, "a segment on our port IS checksummed")
+  eq(l2.state, "listen", "corrupt SYN does not open the connection")
+
+  local l3 = tcp.listen{src = IP_A, port = 40001, clock = clk}
+  eq(#l3:input(good), 1, "a valid SYN on our port still yields a SYN-ACK")
+  eq(l3.state, "syn-received", "valid SYN advances the listener")
+
+  link.checksum = real
+end
