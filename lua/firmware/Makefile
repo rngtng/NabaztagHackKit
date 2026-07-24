@@ -100,6 +100,12 @@ CFLAGS += -fno-exceptions -fno-delete-null-pointer-checks
 # #124 WPA2-CCMP scavenge dropped rc4.h and stale .d files still listed it.
 CFLAGS += -mcpu=arm7tdmi -MMD -MP
 CFLAGS += -Iinc/ -Isys/inc
+# -Ilua for EVERY target (not just the Lua product): src/utils/fmt.c holds the
+# newlib overrides + Lua's luai_* number hooks and needs lua.h for LUA_NUMBER.
+# Examples that never call in get it dropped by --gc-sections; ones that do
+# call snprintf now get our compact version instead of newlib's, which is the
+# outcome we want anyway.
+CFLAGS += -Ilua
 
 # M11a (#143): DEBUG_USB=1 / DEBUG_WIFI=1 route the vendored stack's DBG_*
 # traces to the UART console (debug/probe builds only - pulls in newlib
@@ -146,7 +152,6 @@ LIBS = -lc_nano -lm -lnosys
 # still correct internally. Re-add `LDFLAGS += -Wl,-u,_printf_float` once code
 # moves off internal flash (M6) or a lib is dropped to make room.
 ifndef EXAMPLE
-  CFLAGS  += -Ilua
   CFLAGS  += -DLUA_NOPARSER   # bytecode-only: no on-device source parsing (#128)
   CFLAGS  += -Igen            # gen/boot_lc.h: resident boot chunk (tools/luac/embed.py)
 endif

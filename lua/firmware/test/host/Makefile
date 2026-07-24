@@ -13,16 +13,25 @@
 
 FW := ../..
 
-CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc
+CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc -I$(FW)/lua
 CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
-TESTS := event_test
+TESTS := event_test fmt_test
 
 all: $(TESTS)
 
 event_test: event_test.c $(FW)/src/utils/event.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# fmt.c overrides snprintf/vsnprintf; -U_FORTIFY_SOURCE keeps glibc from
+# redirecting them to __*_chk and colliding with our definitions.
+# -Wno-format*: gcc checks the format strings against GLIBC's printf, but the
+# calls here deliberately exercise our own - truncation, a NULL %s, an unknown
+# conversion - which are the contracts under test, not mistakes.
+fmt_test: fmt_test.c $(FW)/src/utils/fmt.c
+	$(CC) $(CFLAGS) -U_FORTIFY_SOURCE -Wno-format -Wno-format-truncation \
+	      -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
