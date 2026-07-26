@@ -16,8 +16,10 @@
 #include "hal/audio.h"
 #include "hal/spi.h"
 
-/* Software delay - firmwareV2 has no timer/DelayMs yet (see blink.c). Sized for
- * the ~1 ms reset window; a few hundred k loops at 33 MHz. */
+/* Software delay - init_vlsi runs before the tick, so no timer/DelayMs here.
+ * Sized for the VS1003 reset + PLL-lock window. #269: the loop count is wall-clock
+ * dependent, so it was scaled 4x (200k -> 800k) when the chip moved from the
+ * ring-osc 8 MHz to the 32 MHz PLL, keeping the #123-verified real-time delay. */
 static void audio_delay(volatile unsigned long n)
 {
   while (n--)
@@ -125,7 +127,7 @@ void init_vlsi(void)
    * XTAL - fast enough for the fixed sine test but far too slow to decode a
    * real stream (playback came out slow + static). */
   RST_AUDIO_CLEAR;
-  audio_delay(200000);
+  audio_delay(800000);
   RST_AUDIO_SET;
   wait_dreq();
 
@@ -138,7 +140,7 @@ void init_vlsi(void)
    * fast SCI once CLKI is multiplied). Let the PLL lock, then run SPI0 faster
    * (~8 MHz). */
   vlsi_write_sci(VS1003_CLOCKF, 0xc000);
-  audio_delay(200000);
+  audio_delay(800000);
   wait_dreq();
   /* Keep SPI0 slow (~2 MHz) - do NOT speed up to ~8 MHz. At 8 MHz, SCI reads
    * returned garbage and playback was slow+static, which only happens if CLKI

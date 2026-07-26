@@ -889,6 +889,27 @@ static void repl(lua_State *L)
   }
 }
 
+/* Bring the clock system up to 32 MHz (8 MHz crystal -> PLL), matching mtl (#269).
+ * init.s boots on the ring oscillator (~8 MHz measured on UART0) and never brings
+ * up the PLL, leaving the whole chip 4x slow + imprecise. This is a verbatim port
+ * of mtl/firmware main.c's init_pll(): configure PLLA/PLLB, enable the PLL'd
+ * sysclock, switch the clock source to it, stop the ring oscillator. Must run
+ * FIRST - before init_uart()/init_tick()/any peripheral - so their divisors are
+ * computed against the final 32 MHz. A wrong PLL config hangs the chip
+ * (JTAG-recoverable). LLC2_4c only - the mtl LLC2_2 (no-PLL) path is not shipped. */
+static void init_pll(void)
+{
+  /* Configure PLLA and PLLB (PLLDIVA=1, DVCOA=16, DREFA=1, SVCOA=3, PLLDIVC=3). */
+  put_wvalue(PLL1, 0x31013110);
+  put_wvalue(PLL2, 0x00030101);
+  /* CLKCNT: APB=CPU, sysclock+ring-osc+PLLA active, source=ring osc, CLKDIVA=1/4. */
+  put_wvalue(CLKCNT, 0x000D0109);
+  clr_wbit(CLKCNT, 0x00000300);   /* source = PLL'd sysclock */
+  clr_wbit(CLKCNT, 0x00040000);   /* stop ring oscillator */
+  set_wbit(PECLKCNT, 0x18000000); /* GPIO11/12 peripheral clock => XD16..XD31 */
+  set_wbit(PECLKCNT, 0x08000000); /* peripheral clock enable (mtl) */
+}
+
 /* Bring up the LED bus + button for the nab bindings. LED init mirrors blink.c
  * (the LLC2_4c LED-only subset of the firmware's init_io). */
 static void init_hw(void)
@@ -923,6 +944,7 @@ static void init_hw(void)
 
 int main(void)
 {
+  init_pll();                       /* #269: 8 MHz ring osc -> 32 MHz PLL, before any divisor */
   init_uart();                      /* console up first (#207): _read/_write, sh_puts */
   init_hw();                        /* LEDs + button, for the nab bindings */
 
