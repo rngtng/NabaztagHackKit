@@ -176,10 +176,10 @@ restarts the CPU into the new firmware.
 
 The rabbit should boot (LEDs / ears move). Done.
 
-## UART console + Lua REPL (bidirectional, 38400 8N1, #203/#207) — the console
+## UART console + Lua REPL (bidirectional, 115200 8N1, #203/#207) — the console
 
 The firmware has a real UART0 HAL (`lua/firmware/src/hal/uart.c`, OKI pins
-**PB0=TX / PB1=RX**, 38400 8N1, no flow control): #203 added TX, #207 added
+**PB0=TX / PB1=RX**, 115200 8N1, no flow control): #203 added TX, #207 added
 polled RX (`getch_uart`) and moved the Lua REPL's stdin/stdout onto it. UART is
 the console for **both directions** — it needs no OpenOCD session and never
 halts the CPU.
@@ -188,11 +188,11 @@ halts the CPU.
 > REPL lines, so a fast host burst drops bytes. `uart_repl.py` paces input one
 > byte at a time; feed the REPL through it (or `repl`), not a raw `cat >`.
 
-> The baud is 38400, not 115200: the ML67Q4051 UART peripheral clock is a
-> **measured 8.00 MHz** (not the 33 MHz CPU clock), so 115200 is unreachable.
-> `DLL=13` → 38462 ≈ 38400 +0.16%. Details + how to re-measure with the
-> `uartcal` app: [`lua/firmware/inc/hal/uart.h`](../../firmware/inc/hal/uart.h)
-> and #203.
+> The baud is **115200** (#271). `init.s` runs `init_pll()` before `main()`, so
+> the UART peripheral clock (= APB = CPU) is 32 MHz on every image; `DLL=0x11` →
+> 32e6/(16·17) = 117647 ≈ 115200 +2.1% (mtl's value). Before #269 the chip ran
+> at the ring-osc ~8 MHz where 115200 was unreachable (38400 via `DLL=13`); that
+> is history now. Details: [`lua/firmware/inc/hal/uart.h`](../../firmware/inc/hal/uart.h).
 
 Wiring to the Pi rig **crosses over** (GND common):
 
@@ -235,10 +235,10 @@ transcript read-only until `<<FV_DONE>>` (or `RUN_TIMEOUT`, default 120 s) - no 
 To read by hand instead (validate the link end-to-end with the banner probe, then read):
 
 ```sh
-task lua:firmware:flash EXAMPLE=uartprobe          # rabbit spews "NAB-UART-PROBE alive @38400 8N1"
+task lua:firmware:flash EXAMPLE=uartprobe          # rabbit spews "NAB-UART-PROBE alive @115200 8N1"
 # on the Pi:
 sudo systemctl stop serial-getty@ttyAMA0       # frees /dev/serial0 (getty squats on it; re-enables on reboot)
-sudo stty -F /dev/serial0 38400 raw -echo
+sudo stty -F /dev/serial0 115200 raw -echo
 sudo cat /dev/serial0                          # /dev/serial0 is root:tty 600
 ```
 

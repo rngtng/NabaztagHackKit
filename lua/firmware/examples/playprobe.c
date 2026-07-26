@@ -9,10 +9,10 @@
  * without the Lua app's full init_hw (LED/button/ADC/I2C). Everything is
  * self-contained (its own SCI/SDI helpers) so it does not depend on audio.c.
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (listen for
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0 (listen for
  * the tone too):
  *   task lua:firmware:flash EXAMPLE=playprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"
 #include "common.h"

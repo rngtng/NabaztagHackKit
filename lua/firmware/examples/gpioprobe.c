@@ -5,10 +5,10 @@
  *        GPIO input port and reports which bytes changed, so turning the wheel
  *        to its click, or inserting/removing a jack, shows up as a diff.
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0; watch the
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0; watch the
  * transcript while operating the rabbit by hand:
  *   task lua:firmware:flash EXAMPLE=gpioprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  *
  * The back wheel's analog reading (ADC ch.2) is a separate, already-confirmed
  * register sequence (see hal/adc.c, nab.wheel() in src/main.c) - this probe is

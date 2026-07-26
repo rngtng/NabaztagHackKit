@@ -3,9 +3,9 @@
  * @brief UART bring-up probe: spew a known banner on UART0 forever.
  *
  * The minimal UART0 link check (predates the full console, #203/#207). Proves
- * the physical UART link off the board: it initialises UART0 (38400 8N1 on
+ * the physical UART link off the board: it initialises UART0 (115200 8N1 on
  * OKI port PB0=TX / PB1=RX) and transmits a recognisable banner in a loop, so
- * a listener on the other end (e.g. a Raspberry Pi on /dev/serial0 @38400)
+ * a listener on the other end (e.g. a Raspberry Pi on /dev/serial0 @115200)
  * can confirm data, baud, and wiring/GND without a JTAG session.
  *
  * Deliberately self-contained like blink.c: a calibrated busy-loop delay, no
@@ -14,7 +14,7 @@
  *
  * Flash + listen:
  *   task lua:firmware:flash EXAMPLE=uartprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  * Expect the banner line repeating ~5x/second.
  */
 #include <stdint.h>
@@ -38,7 +38,7 @@ int main(void)
   init_uart();
 
   for (;;) {
-    putst_uart((uint8_t *)"NAB-UART-PROBE alive @38400 8N1\r\n");
+    putst_uart((uint8_t *)"NAB-UART-PROBE alive @115200 8N1\r\n");
     delay_ms(BANNER_MS);
   }
 

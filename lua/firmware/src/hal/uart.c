@@ -9,9 +9,9 @@
  * fault on the first byte. getch_uart() polls the LSR data-ready bit instead
  * and IER stays 0 (init_uart), matching the polled-TX style.
  *
- * UART0 = 38400 baud, 8 data bits, 1 stop bit, no parity, no flow control
+ * UART0 = 115200 baud, 8 data bits, 1 stop bit, no parity, no flow control
  * (see uart.h - the peripheral clock is a measured 8 MHz, so 115200 is out of
- * reach; DLL_BAUD/DLM_BAUD are chosen for 38400).
+ * reach; DLL_BAUD/DLM_BAUD are chosen for 115200).
  */
 #include "ml674061.h"
 #include "common.h"

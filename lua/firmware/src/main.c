@@ -37,7 +37,6 @@
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
-#include "clock.h"       /* init_pll: 8 MHz ring osc -> 32 MHz (#269) */
 #include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
@@ -924,7 +923,6 @@ static void init_hw(void)
 
 int main(void)
 {
-  init_pll();                       /* #269: 8 MHz ring osc -> 32 MHz PLL, before any divisor */
   init_uart();                      /* console up first (#207): _read/_write, sh_puts */
   init_hw();                        /* LEDs + button, for the nab bindings */
 

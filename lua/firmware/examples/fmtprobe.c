@@ -8,9 +8,9 @@
  * Listen: first sound = WAV, second (after a pause) = MP3. HDAT1 is read right
  * after each feed (nonzero => the decoder recognised that format).
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0:
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0:
  *   task lua:firmware:flash EXAMPLE=fmtprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  */
 #include "ml674061.h"
 #include "common.h"
