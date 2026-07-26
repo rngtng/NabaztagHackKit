@@ -32,9 +32,18 @@ static void rfid_delay_1ms(void)
   DelayMs(1);
 }
 
+/* Retries per bus transfer (#253). write_i2c/read_i2c already wait out the bus
+ * internally and handle arbitration and NAck, so a failure means the device
+ * genuinely did not answer - retrying a handful of times covers a transient,
+ * and the former 1000 did not add resilience, it multiplied the worst case.
+ * That mattered because each attempt can itself burn i2c.c's bus-wait budget
+ * with interrupts masked: 1000 x that budget is minutes of a frozen system on
+ * a wedged bus (SDA held low), which is the failure this bounds. */
+#define I2C_RETRIES 4
+
 static uint16_t writecheck(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 {
-  uint16_t nmax=1000;
+  uint16_t nmax=I2C_RETRIES;
   while( (nmax>0) && (!write_i2c(addr_i2c,data,nb_byte)))
   {
     nmax--;
@@ -47,7 +56,7 @@ static uint16_t writecheck(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 
 static uint16_t readcheck(uint8_t addr_i2c, uint8_t *data, uint8_t nb_byte)
 {
-  uint16_t nmax=1000;
+  uint16_t nmax=I2C_RETRIES;
   while( (nmax>0) && (!read_i2c(addr_i2c,data,nb_byte)))
   {
     nmax--;

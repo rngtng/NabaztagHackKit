@@ -75,7 +75,7 @@ function iface.new(drv)
     local pkt = ipv4.parse(p)
     if not pkt then return end
     if self.ip and pkt.dst ~= self.ip and pkt.dst ~= BCAST_IP then return end
-    arp.cache[pkt.src] = src_mac -- passive learning; replies need no ARP trip
+    arp.learn(pkt.src, src_mac) -- passive learning; replies need no ARP trip
     if pkt.proto == ipv4.ICMP and pkt.dst == self.ip then
       local r = ipv4.icmp_input(pkt)
       if r then self.drv.send(src_mac, link.encap(link.ETH_IP, r)) end

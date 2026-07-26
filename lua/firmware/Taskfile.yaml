@@ -181,6 +181,29 @@ tasks:
             ssh {{.PI_HOST}} 'cd openocd && sudo python3 uart_repl.py --relay'
         fi
 
+  monitor:
+    desc: 'Read the live UART console on the Pi read-only, no JTAG/flash: stop the login getty, set /dev/serial0 to 38400 8N1 raw, and stream print()/prompt output until Ctrl-C. Pair with a separate `task lua:firmware:flash` (JTAG-only, does not touch the UART) to watch a self-running app live. For an interactive REPL use flash:repl instead. Usage: task lua:firmware:monitor [PI_HOST=tobi@jtag.local]'
+    summary: 'Usage: task lua:firmware:monitor [PI_HOST=tobi@jtag.local]. Read-only UART view; Ctrl-C to stop. See lua/tools/openocd/README.md.'
+    interactive: true   # streams the serial console to your terminal until Ctrl-C
+    vars:
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+    cmds:
+      # serial-getty is stopped (not disabled - re-enables on reboot, #203) so it
+      # stops competing for the port; only one reader may own /dev/serial0.
+      - ssh -t {{.PI_HOST}} 'sudo systemctl stop serial-getty@ttyAMA0; sudo stty -F /dev/serial0 38400 raw -echo; echo "[monitor] /dev/serial0 @38400 8N1 - Ctrl-C to stop"; sudo cat /dev/serial0'
+
+  test:host:
+    desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. SCENARIO=<name> runs one.'
+    summary: 'Usage: task lua:firmware:test:host [SCENARIO=rfid-drop]'
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [image]
+    cmds:
+      # Sources are bind-mounted (like every other target here); the image only
+      # supplies the host gcc + sanitizer runtime.
+      - 'docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work/test/host
+          {{.FV_IMAGE}}
+          sh -c "make clean >/dev/null && make {{if .SCENARIO}}&& ./event_test {{.SCENARIO}}{{else}}check{{end}}"'
+
   test:
     desc: 'Firmware tests. Today: the #128 bytecode-pipeline golden - compile a Lua app off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden (exercises luac -> frame -> lundump -> run -> print end to end). REGEN=1 rewrites the golden.'
     summary: 'Usage: task lua:firmware:test [APP=test/luac-roundtrip.lua] [EXPECT=test/luac-roundtrip.expected] [REGEN=1]'

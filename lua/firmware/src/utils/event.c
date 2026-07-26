@@ -59,9 +59,14 @@ static void pump_button(void)
     return;
   }
   if (raw != btn_stable && (counter_timer - btn_edge_ms) >= BUTTON_DEBOUNCE_MS) {
-    btn_stable = raw;
+    /* Commit only once the edge is really queued (#242): btn_stable is what
+     * says "this edge was announced", so setting it before a post that the
+     * full queue rejects loses the edge for good - the raw level has already
+     * settled, so nothing re-triggers it. On failure we leave btn_stable
+     * alone and the next pump retries. */
     event_t e = { raw ? EV_BUTTON_DOWN : EV_BUTTON_UP, {0} };
-    event_post(&e);
+    if (event_post(&e) == 0)
+      btn_stable = raw;
   }
 }
 
@@ -93,20 +98,28 @@ static void pump_rfid(void)
     return; /* transient I2C fault: keep the last known state */
   if (r == 0) {
     if (rfid_present && ++rfid_miss >= RFID_MISS_MAX) {
-      rfid_present = 0;
+      /* Commit after the post, as in pump_button (#242). rfid_miss keeps
+       * climbing while the post keeps failing, so the condition stays true
+       * and the next scan retries. */
       event_t e = { EV_RFID_GONE, {0} };
-      event_post(&e);
+      if (event_post(&e) == 0)
+        rfid_present = 0;
     }
     return;
   }
   rfid_miss = 0;
   if (!rfid_present || memcmp(uid, rfid_uid, sizeof rfid_uid) != 0) {
-    rfid_present = 1;
-    memcpy(rfid_uid, uid, sizeof rfid_uid);
+    /* The cached UID is the "already announced this tag" record (#242). Caching
+     * it before a post the full queue rejects makes the tag invisible until it
+     * is physically lifted off the coupler - the scan keeps matching the cache
+     * and never posts again. Cache only on success; the next scan retries. */
     event_t e;
     e.type = EV_RFID_TAG;
     memcpy(e.uid, uid, sizeof e.uid);
-    event_post(&e);
+    if (event_post(&e) == 0) {
+      rfid_present = 1;
+      memcpy(rfid_uid, uid, sizeof rfid_uid);
+    }
   }
 }
 

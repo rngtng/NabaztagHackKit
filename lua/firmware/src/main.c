@@ -9,10 +9,9 @@
  * helpers to keep the buffered-FILE + libm layers out of the flash budget.
  */
 #include <errno.h>
-#include <stdarg.h>   /* vsnprintf override */
 #include <stddef.h>
 #include <stdint.h>   /* uintptr_t in the %p path */
-#include <stdio.h>
+#include <stdio.h>    /* snprintf: our own, in utils/fmt.c */
 #include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer */
 #include <string.h>   /* strcmp - LED-name lookup in the nab binding */
 
@@ -34,6 +33,7 @@
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: counter_timer + DelayMs */
+#include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
@@ -110,413 +110,6 @@ static char *sh_gets(char *buf, int size)
   }
   buf[i] = '\0';
   return buf;
-}
-
-/* ---- Lua console output -------------------------------------------------- */
-/* luaconf.h routes lua_writestring/writeline/writestringerror here so print()
- * and the error/panic paths write straight to the UART _write syscall, never
- * linking newlib's buffered-FILE layer (~6 KB). */
-void luai_writestring(const char *s, size_t l)
-{
-  _write(1, s, (int)l);
-}
-
-/* Every lua_writestringerror call site (lauxlib panic/warn) uses a "%s"-style
- * format with one const char* arg. snprintf is our own (below). */
-void luai_writestringerror(const char *fmt, const char *arg)
-{
-  char b[128];
-  int n = snprintf(b, sizeof b, fmt, arg);
-  if (n <= 0)
-    return;
-  if (n > (int)sizeof b)
-    n = (int)sizeof b;
-  _write(2, b, n);
-}
-
-/* ---- compact vsnprintf/snprintf, overriding newlib ----------------------- */
-/* Overriding these strong symbols keeps ~12 KB out of flash: Lua's number
- * formatting (lua_number2str/lua_integer2str/lua_pointer2str) and string.format
- * route through snprintf, and newlib's snprintf (_svfprintf_r) drags in the
- * buffered-FILE layer via __sinit's CHECK_INIT. This needs no FILE machinery.
- *
- * Supports the conversions Lua emits: d i u o x X c s p % - with flags
- * (-+space 0 #), width and precision (both incl '*'), and length modifiers
- * (h/hh/l/ll/L/z/t/j, parsed; values are fetched as `long` since LUA_32BITS
- * makes lua_Integer and pointers 32-bit, so no 64-bit divide helpers are
- * pulled). Float conversions (f e g a, any case) stay approximate - integer
- * part + ".0" - a real dtoa is future work. */
-
-#define PF_LEFT  1
-#define PF_PLUS  2
-#define PF_SPACE 4
-#define PF_ZERO  8
-#define PF_ALT   16
-
-/* unsigned -> digits (forward order) in out[]; returns the digit count. */
-static int pf_utoa(char *out, unsigned long v, int base, int upper)
-{
-  const char *dig = upper ? "0123456789ABCDEF" : "0123456789abcdef";
-  char rev[32];
-  int i = 0;
-  do {
-    rev[i++] = dig[v % (unsigned)base];
-    v /= (unsigned)base;
-  } while (v);
-  for (int j = 0; j < i; j++)
-    out[j] = rev[i - 1 - j];
-  return i;
-}
-
-static void pf_emit(char **d, char *end, size_t *n, char c)
-{
-  if (*d < end)
-    *(*d)++ = c;
-  (*n)++;
-}
-
-static void pf_pad(char **d, char *end, size_t *n, char c, int count)
-{
-  while (count-- > 0)
-    pf_emit(d, end, n, c);
-}
-
-int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
-{
-  char *d = buf;
-  char *end = (size > 0) ? buf + size - 1 : buf;   /* reserve room for NUL */
-  size_t n = 0;
-
-  for (; *fmt; fmt++) {
-    if (*fmt != '%') {
-      pf_emit(&d, end, &n, *fmt);
-      continue;
-    }
-    fmt++;                                          /* skip '%' */
-
-    int flags = 0;
-    for (;; fmt++) {
-      if (*fmt == '-')      flags |= PF_LEFT;
-      else if (*fmt == '+') flags |= PF_PLUS;
-      else if (*fmt == ' ') flags |= PF_SPACE;
-      else if (*fmt == '0') flags |= PF_ZERO;
-      else if (*fmt == '#') flags |= PF_ALT;
-      else break;
-    }
-
-    int width = 0;
-    if (*fmt == '*') {
-      width = va_arg(ap, int);
-      if (width < 0) { flags |= PF_LEFT; width = -width; }
-      fmt++;
-    } else {
-      while (*fmt >= '0' && *fmt <= '9')
-        width = width * 10 + (*fmt++ - '0');
-    }
-
-    int prec = -1;
-    if (*fmt == '.') {
-      fmt++;
-      if (*fmt == '*') { prec = va_arg(ap, int); fmt++; }
-      else { prec = 0; while (*fmt >= '0' && *fmt <= '9') prec = prec * 10 + (*fmt++ - '0'); }
-      if (prec < 0) prec = -1;
-    }
-
-    int islong = 0;                                 /* fetch value as long? */
-    for (;;) {
-      if (*fmt == 'l') { islong = 1; fmt++; }
-      else if (*fmt == 'h' || *fmt == 'L' || *fmt == 'j' || *fmt == 'z' || *fmt == 't') fmt++;
-      else break;
-    }
-
-    char conv = *fmt;
-    if (conv == '\0') break;
-
-    char tmp[32];
-    const char *body = tmp;
-    int blen = 0;
-    char sign = 0;
-    const char *prefix = "";
-    int is_num = 0;
-
-    switch (conv) {
-      case 'd': case 'i': {
-        long v = islong ? va_arg(ap, long) : (long)va_arg(ap, int);
-        unsigned long uv;
-        if (v < 0) { sign = '-'; uv = (unsigned long)(-(v + 1)) + 1; }
-        else { uv = (unsigned long)v; sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0; }
-        blen = pf_utoa(tmp, uv, 10, 0);
-        is_num = 1;
-        break;
-      }
-      case 'u': case 'o': case 'x': case 'X': {
-        unsigned long uv = islong ? va_arg(ap, unsigned long) : (unsigned long)va_arg(ap, unsigned int);
-        int base = (conv == 'o') ? 8 : (conv == 'u') ? 10 : 16;
-        blen = pf_utoa(tmp, uv, base, conv == 'X');
-        if ((flags & PF_ALT) && uv != 0)
-          prefix = (conv == 'o') ? "0" : (conv == 'X') ? "0X" : "0x";
-        is_num = 1;
-        break;
-      }
-      case 'p': {
-        unsigned long uv = (unsigned long)(uintptr_t)va_arg(ap, void *);
-        prefix = "0x";
-        blen = pf_utoa(tmp, uv, 16, 0);
-        is_num = 1;
-        prec = -1;
-        break;
-      }
-      case 'c':
-        tmp[0] = (char)va_arg(ap, int);
-        blen = 1;
-        break;
-      case 's': {
-        const char *s = va_arg(ap, const char *);
-        if (s == NULL) s = "(null)";
-        body = s;
-        while (s[blen] && (prec < 0 || blen < prec)) blen++;
-        break;
-      }
-      case '%':
-        tmp[0] = '%';
-        blen = 1;
-        break;
-      case 'f': case 'F': case 'e': case 'E':
-      case 'g': case 'G': case 'a': case 'A': {
-        /* Varargs promoted the float to a double (C default argument
-         * promotion, unavoidable through '...'), so take the IEEE-754 bits
-         * apart instead of doing double arithmetic - a single (long)dv or
-         * dv < 0 would link libgcc's double soft-float (~2.4 KB, #213).
-         * Output is the same integer part + ".0" as before. */
-        union { double d; uint64_t u; } fv;
-        fv.d = va_arg(ap, double);
-        int fexp = (int)((fv.u >> 52) & 0x7FF) - 1023;
-        uint64_t mant = (fv.u & 0xFFFFFFFFFFFFFULL) | (1ULL << 52);
-        unsigned long uv;
-        if (fexp < 0)
-          uv = 0;                                  /* |x| < 1, subnormals, 0 */
-        else if (fexp <= 52)
-          uv = (unsigned long)(mant >> (52 - fexp));
-        else                                       /* huge/inf/nan: low bits */
-          uv = (fexp - 52 < 64) ? (unsigned long)(mant << (fexp - 52)) : 0;
-        if (fv.u >> 63) sign = '-';
-        else sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0;
-        blen = pf_utoa(tmp, uv, 10, 0);
-        tmp[blen++] = '.';
-        tmp[blen++] = '0';
-        is_num = 1;
-        prec = -1;
-        break;
-      }
-      default:                                       /* unknown: emit literally */
-        pf_emit(&d, end, &n, '%');
-        pf_emit(&d, end, &n, conv);
-        continue;
-    }
-
-    int zeros = 0;
-    if (is_num && prec >= 0) {                        /* precision = min digits */
-      if (blen < prec) zeros = prec - blen;
-      flags &= ~PF_ZERO;                              /* precision disables '0' */
-    }
-
-    int preflen = 0;
-    while (prefix[preflen]) preflen++;
-    int total = (sign ? 1 : 0) + preflen + zeros + blen;
-    int pad = (width > total) ? width - total : 0;
-
-    if (!(flags & PF_LEFT) && !(flags & PF_ZERO))
-      pf_pad(&d, end, &n, ' ', pad);
-    if (sign)
-      pf_emit(&d, end, &n, sign);
-    for (int i = 0; i < preflen; i++)
-      pf_emit(&d, end, &n, prefix[i]);
-    if (!(flags & PF_LEFT) && (flags & PF_ZERO))
-      pf_pad(&d, end, &n, '0', pad);
-    pf_pad(&d, end, &n, '0', zeros);
-    for (int i = 0; i < blen; i++)
-      pf_emit(&d, end, &n, body[i]);
-    if (flags & PF_LEFT)
-      pf_pad(&d, end, &n, ' ', pad);
-  }
-
-  if (size > 0)
-    *d = '\0';
-  return (int)n;
-}
-
-int snprintf(char *buf, size_t size, const char *fmt, ...)
-{
-  va_list ap;
-  va_start(ap, fmt);
-  int r = vsnprintf(buf, size, fmt, ap);
-  va_end(ap);
-  return r;
-}
-
-/* ---- float -> string for Lua's number printing (#213) --------------------- */
-/* luaconf.h routes lua_number2str/lua_number2strx (lobject.c's tostringbuff,
- * string.format's %a and %q-on-floats) here. Non-variadic on purpose: a float
- * passed through '...' is promoted to double by the caller (C default argument
- * promotion), which links libgcc's double soft-float (~2.4 KB). Same
- * integer-part + ".0" output as the vsnprintf float stub (a real dtoa is still
- * future work), with the integer part taken from the float's own bits so no
- * double ever exists. snprintf contract: truncate to sz, NUL-terminate,
- * return the untruncated length. */
-int luai_num2str(char *s, size_t sz, float n)
-{
-  union { float f; uint32_t u; } fv;
-  fv.f = n;
-  int fexp = (int)((fv.u >> 23) & 0xFF) - 127;
-  uint32_t mant = (fv.u & 0x7FFFFF) | (1UL << 23);
-  unsigned long uv;
-  if (fexp < 0)
-    uv = 0;                                      /* |x| < 1, subnormals, 0 */
-  else if (fexp <= 23)
-    uv = mant >> (23 - fexp);
-  else                                           /* huge/inf/nan: low bits */
-    uv = (fexp - 23 < 32) ? (unsigned long)mant << (fexp - 23) : 0;
-
-  char body[16];                                 /* -,10 digits,.,0 = 13 max */
-  int blen = 0;
-  if (fv.u >> 31)
-    body[blen++] = '-';
-  blen += pf_utoa(body + blen, uv, 10, 0);
-  body[blen++] = '.';
-  body[blen++] = '0';
-
-  size_t copy = (sz > 0) ? (size_t)blen : 0;
-  if (copy > 0 && copy > sz - 1)
-    copy = sz - 1;
-  for (size_t i = 0; i < copy; i++)
-    s[i] = body[i];
-  if (sz > 0)
-    s[copy] = '\0';
-  return blen;
-}
-
-/* ---- decimal string -> Lua number ---------------------------------------- */
-/* Replaces strtof as Lua's lua_str2number (see luaconf.h). strtof drags in
- * newlib's double strtod + gdtoa multi-precision machinery (~14 KB). Lua only
- * reaches here for *decimal float* numerals - luaO_str2num tries the integer
- * path (l_str2int) first, and hex-floats use Lua's own lua_strx2number - so
- * this handles [ws][sign]digits[.digits][(e|E)[sign]digits] and nothing else.
- *
- * Contract matches strtof as used by l_str2dloc(): set *endptr to the first
- * unconsumed char, leave it at 's' (return 0) when no digit is seen. Mantissa
- * is accumulated in a float and scaled by 10^exp via binary exponentiation, so
- * only single-float mul/div are used (no libm, no strtod). Last-ulp rounding is
- * looser than strtof - acceptable here (integer-first target). */
-#define LUAI_ISDIGIT(c) ((c) >= '0' && (c) <= '9')
-
-LUA_NUMBER luai_str2number(const char *s, char **endptr)
-{
-  const char *p = s;
-  while (*p == ' ' || (*p >= '\t' && *p <= '\r'))  /* skip leading whitespace */
-    p++;
-
-  int neg = 0;
-  if (*p == '+' || *p == '-') {
-    neg = (*p == '-');
-    p++;
-  }
-
-  lua_Number val = 0;
-  int anydig = 0;
-  int fracdigits = 0;
-  while (LUAI_ISDIGIT(*p)) {
-    val = val * 10 + (*p - '0');
-    p++;
-    anydig = 1;
-  }
-  if (*p == '.') {
-    p++;
-    while (LUAI_ISDIGIT(*p)) {
-      val = val * 10 + (*p - '0');
-      fracdigits++;
-      p++;
-      anydig = 1;
-    }
-  }
-  if (!anydig) {              /* no mantissa digits: nothing valid */
-    *endptr = (char *)s;
-    return 0;
-  }
-
-  int exp = -fracdigits;
-  if (*p == 'e' || *p == 'E') {   /* optional exponent */
-    const char *ep = p + 1;
-    int eneg = 0, edig = 0, eval = 0;
-    if (*ep == '+' || *ep == '-') {
-      eneg = (*ep == '-');
-      ep++;
-    }
-    while (LUAI_ISDIGIT(*ep)) {
-      eval = eval * 10 + (*ep - '0');
-      ep++;
-      edig = 1;
-    }
-    if (edig) {                   /* only consume 'e...' if it has digits */
-      exp += eneg ? -eval : eval;
-      p = ep;
-    }
-  }
-
-  lua_Number scale = 1, base = 10;   /* scale = 10^|exp| by binary exponentiation */
-  for (int e = (exp < 0 ? -exp : exp); e; e >>= 1) {
-    if (e & 1)
-      scale *= base;
-    base *= base;
-  }
-  val = (exp < 0) ? val / scale : val * scale;
-  if (neg)
-    val = -val;
-
-  *endptr = (char *)p;
-  return val;
-}
-
-/* ---- float ^ and % without libm ------------------------------------------ */
-/* luaconf.h routes luai_numpow/luai_nummod here so Lua's `^` and float `%` do
- * not pull libm's powf/fmodf (~4 KB: __ieee754_powf/fmodf, scalbnf, wf_pow).
- * `^` yields a float in Lua: integer exponents are exact (binary
- * exponentiation), fractional exponents return NaN (no libm here; math.sqrt et
- * al. are unavailable anyway). `%` is Lua floor-mod, computed by truncation. */
-#define LUAI_NAN (__builtin_nanf(""))
-
-LUA_NUMBER luai_pow(LUA_NUMBER a, LUA_NUMBER b)
-{
-  long n = (long)b;
-  if ((LUA_NUMBER)n != b)          /* non-integer exponent: unsupported */
-    return LUAI_NAN;
-  int neg = n < 0;
-  unsigned long e = neg ? (unsigned long)(-n) : (unsigned long)n;
-  LUA_NUMBER r = 1, base = a;
-  while (e) {
-    if (e & 1)
-      r *= base;
-    base *= base;
-    e >>= 1;
-  }
-  return neg ? (LUA_NUMBER)1 / r : r;
-}
-
-LUA_NUMBER luai_fmod(LUA_NUMBER a, LUA_NUMBER b)
-{
-  if (b == 0)
-    return LUAI_NAN;
-  LUA_NUMBER q = a / b;
-  /* Truncate toward zero (C fmod). At |q| >= 2^24 every float is already
-   * integral, so only the small range needs the int round-trip - and (long)
-   * stays within single-float helpers. The former (long long) cast pulled
-   * __aeabi_f2lz, whose libgcc __fixunssfdi converts VIA DOUBLE, dragging in
-   * the double soft-float (~740 B: muldf3 + fixunsdfsi, #213). */
-  LUA_NUMBER n = (q >= 16777216.0f || q <= -16777216.0f)
-                     ? q : (LUA_NUMBER)(long)q;
-  LUA_NUMBER m = a - n * b;                  /* remainder, sign of a */
-  if (m != 0 && ((m < 0) != (b < 0)))        /* sign differs from b -> floor */
-    m += b;
-  return m;
 }
 
 /* ---- abort: halt, don't raise(SIGABRT) ----------------------------------- */
@@ -664,9 +257,9 @@ static int nab_volume(lua_State *L)
 }
 
 /* nab.beep([freq [, ms]]): play the VS1003 built-in sine test. freq is the
- * VS10xx sine-skip byte (pitch, 0..255, default 0x44); ms is an approximate
- * duration - a CPU busy-loop, since firmwareV2 has no timer yet, so it is
- * rough (default 300). The tone plays on the codec while the CPU spins. */
+ * VS10xx sine-skip byte (pitch, 0..255, default 0x44); ms is the duration,
+ * timed off the 1 ms System Timer like nab.delay (default 300). Blocking: the
+ * tone plays on the codec while the CPU waits out the tick. */
 static int nab_beep(lua_State *L)
 {
   lua_Integer freq = luaL_optinteger(L, 1, 0x44);
@@ -676,8 +269,14 @@ static int nab_beep(lua_State *L)
 
   vlsi_ampli(1);                   /* plays at the current nab.volume setting */
   vlsi_sine((uint8_t)freq, 1);
-  for (volatile unsigned long i = 0; i < (unsigned long)ms * 3000UL; i++)
-    CLR_WDT;                       /* ~ms; no timer, so approximate */
+  /* Timed off the 1 ms System Timer, like nab.delay (#247). This was a
+   * calibrated-by-guess spin whose comment still claimed "no timer yet" - the
+   * tick has existed since #102, and nab.delay's own comment records that the
+   * spin approach ran ~2x off on the 16 MHz ring oscillator, so nab.beep's ms
+   * argument was simply wrong. */
+  uint32_t t = counter_timer;
+  while ((counter_timer - t) < (uint32_t)ms)
+    CLR_WDT;
   vlsi_sine((uint8_t)freq, 0);
   vlsi_ampli(0);
   return 0;
@@ -720,8 +319,7 @@ static int nab_wheel(lua_State *L)
 static void push_uid_hex(lua_State *L, const uint8_t uid[8])
 {
   char hex[17];
-  for (int i = 0; i < 8; i++)
-    snprintf(hex + i * 2, 3, "%02x", uid[i]);
+  fmt_hex8(hex, uid);
   lua_pushstring(L, hex);
 }
 
@@ -762,10 +360,16 @@ static void report(lua_State *L);  /* defined with the REPL below */
 static void dispatch_events(lua_State *L, uint8_t allow_rfid)
 {
   static uint8_t busy;
+  /* Sample the hardware ALWAYS, even when re-entered (#243). The guard exists
+   * to stop recursive *Lua dispatch* (principle 2), and event_pump touches no
+   * Lua state - the queue is precisely the buffer that decouples the two. With
+   * the pump inside the guard, a nab.wait() called from a callback stopped the
+   * debouncer and the scan cycle outright, so a press+release entirely inside
+   * that window was never even observed, let alone queued for later. */
+  event_pump(allow_rfid);
   if (busy)
     return;
   busy = 1;
-  event_pump(allow_rfid);
   event_t e;
   while (event_next(&e)) {
     lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
@@ -1289,7 +893,13 @@ static void repl(lua_State *L)
  * (the LLC2_4c LED-only subset of the firmware's init_io). */
 static void init_hw(void)
 {
-  init_irq();    /* #102: populate IRQ_HANDLER_TABLE before any source is armed */
+  /* #102: populate IRQ_HANDLER_TABLE + the interrupt controller before any
+   * source is armed. Exactly once (#244): init_irq() is not idempotent-in-place
+   * - it zeroes ILC0/ILC1/EXILC* and resets all 64 handler slots to
+   * null_handler - so a second call here silently discarded anything the
+   * peripherals below had registered. Nothing registered between the two calls
+   * as it stood, which is the only reason it was harmless. */
+  init_irq();
 
   CS_LED_AS_OUTPUT;
   MODE_LED_AS_OUTPUT;
@@ -1297,8 +907,6 @@ static void init_hw(void)
   MODE_LED_CLEAR;
   init_spi();
   init_led_rgb_driver();
-  init_irq();    /* interrupt controller + the 1 ms tick (init_tick): */
-  init_tick();   /* counter_timer, the clock the wifi stack runs on */
   init_button();
   init_vlsi();   /* VS1003 audio codec on SPI0, for nab.beep/volume */
   init_adc();    /* ADC ch.2 (PD2), for nab.wheel() */
