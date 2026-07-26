@@ -29,6 +29,7 @@
 
 #include "ml674061.h"
 #include "common.h"
+#include "clock.h"
 #include "irq.h"
 
 #include "utils/delay.h"
@@ -173,6 +174,7 @@ int main(void)
 {
   volatile uint32_t spin;
 
+  init_pll();   /* #269: 32 MHz - USB host needs the PLL clock, like the product */
   init_uart();
 
   /* Park the audio amplifier: probes never init audio, so the amp pin sits

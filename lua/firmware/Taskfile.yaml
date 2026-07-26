@@ -187,10 +187,12 @@ tasks:
     interactive: true   # streams the serial console to your terminal until Ctrl-C
     vars:
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      BAUD: '{{.BAUD | default "38400"}}'
     cmds:
       # serial-getty is stopped (not disabled - re-enables on reboot, #203) so it
       # stops competing for the port; only one reader may own /dev/serial0.
-      - ssh -t {{.PI_HOST}} 'sudo systemctl stop serial-getty@ttyAMA0; sudo stty -F /dev/serial0 38400 raw -echo; echo "[monitor] /dev/serial0 @38400 8N1 - Ctrl-C to stop"; sudo cat /dev/serial0'
+      # BAUD overridable for bring-up diagnostics (e.g. confirming the clock rate).
+      - ssh -t {{.PI_HOST}} 'sudo systemctl stop serial-getty@ttyAMA0; sudo stty -F /dev/serial0 {{.BAUD}} raw -echo; echo "[monitor] /dev/serial0 @{{.BAUD}} 8N1 - Ctrl-C to stop"; sudo cat /dev/serial0'
 
   test:host:
     desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. SCENARIO=<name> runs one.'
