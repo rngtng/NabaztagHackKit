@@ -18,6 +18,7 @@ RUN apt-get update \
         gcc \
         libc6-dev \
         make \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work

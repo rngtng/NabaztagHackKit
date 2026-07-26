@@ -91,10 +91,14 @@ tasks:
       # header (magic/hw-id/version/len/crc) net.ota checks before flashing, so
       # bin/firmware.fw is ready to upload on the setup page. Product build only
       # (no EXAMPLE); VERSION (u16, default 1) tags the build for the portal's
-      # version display.
+      # version display. Run inside FV_IMAGE (not host): `make` above wrote bin/
+      # as root under docker, so a host-side write of bin/firmware.fw hits
+      # EACCES on Linux CI (Docker Desktop hides this by mapping uids). Mount the
+      # layer root so both bin/ and tools/otaimage.py are visible; stdlib only.
       - |
         if [ -z "{{.EXAMPLE}}" ]; then
-          python3 '{{.REPO}}/tools/otaimage.py' bin/firmware.bin -o bin/firmware.fw \
+          docker run --rm -v "$(realpath '{{.REPO}}'):/repo" -w /repo/firmware {{.FV_IMAGE}} \
+            python3 /repo/tools/otaimage.py bin/firmware.bin -o bin/firmware.fw \
             --version '{{.VERSION | default "1"}}'
         fi
 
