@@ -43,7 +43,11 @@ void init_tick(void)
   put_hvalue(TMRLR, 0xFE0C);        /* 1 ms: 500 counts @ 500 kHz (8 MHz clock /16). #255:
                                      * 0xFC18 (1000 counts) assumed 16 MHz and ticked ~2x slow -
                                      * the clock is the same 8 MHz MEASURED on UART0 (hal/uart.h),
-                                     * not the 16/32 MHz the V1/#102 comments claimed. */
+                                     * not the 16/32 MHz the V1/#102 comments claimed. This is a
+                                     * bandaid: the tick reads a true 1 ms but the whole chip still
+                                     * runs at ring-osc 8 MHz because V2 never runs init_pll(). The
+                                     * real fix (PLL -> 32 MHz like mtl, then restore 0xF830) is
+                                     * #269 - revert this reload as part of that. */
 
   IRQ_HANDLER_TABLE[INT_SYSTEM_TIMER] = tick_handler;
   set_wbit(ILC0, ILC0_ILR0 & ILC0_INT_LV7);
