@@ -1,0 +1,5 @@
+# Compiled host test binaries + objects (rebuilt in Docker via
+# `task lua:firmware:test:host`; never checked in - #241 committed them by mistake).
+*_test
+*.o
+*.dSYM/
