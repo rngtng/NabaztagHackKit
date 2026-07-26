@@ -7,7 +7,7 @@
  *        context problem (init_hw and/or console reads interleaved with SPI0),
  *        not the VS1003.
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe):
  *   task lua:firmware:flash EXAMPLE=volprobe
  */

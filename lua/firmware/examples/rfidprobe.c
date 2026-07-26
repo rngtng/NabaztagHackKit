@@ -10,7 +10,7 @@
  * higher hal/rfid.c layer, so a failure localises to "no I2C ACK" vs "I2C fine,
  * CRX14 silent" instead of blaming the whole driver stack.
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0 (see
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe):
  *   task lua:firmware:flash EXAMPLE=rfidprobe
  */

@@ -54,7 +54,7 @@ maps these onto C subsystems. Remaining structural gap:
 - Internal flash `0x08000000`, 124 KB usable (last sector = config)
 - Internal RAM `0x10000000`, **16 KB** (too small for Lua)
 - External RAM `0xD0000000`, **1 MB** (Lua heap/data live here)
-- Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 38400 8N1 - the UART
+- Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 115200 8N1 - the UART
   peripheral clock is a measured **8 MHz**, so 115200 is unreachable; #203).
   UART is bidirectional (input + output).
 - Board revision `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three tag sub-revisions
@@ -86,12 +86,12 @@ The product firmware boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
 Two things bare metal lacks:
 
 - **Console:** newlib `_read`/`_write` route stdin/stdout through **UART0**
-  (`src/hal/uart.c`, 38400 8N1). `print()` and the prompt go out `putch_uart`/`_write`;
+  (`src/hal/uart.c`, 115200 8N1). `print()` and the prompt go out `putch_uart`/`_write`;
   REPL input comes in `getch_uart`/`_read` (EOF is EOT, `0x04`). Both directions run over
   UART on hardware (no JTAG session, no CPU halts) and the simulator models the UART0
   console. The old JTAG console path was fully removed in #207 (UART RX landed there too).
   Read it on the Pi rig: see
-  [`../tools/openocd/README.md`](../tools/openocd/README.md#uart-console-tx-only-38400-8n1-203--preferred-for-output).
+  [`../tools/openocd/README.md`](../tools/openocd/README.md#uart-console--lua-repl-bidirectional-115200-8n1-203207--the-console).
 - **Heap:** `_sbrk` hands out the **1 MB ExtRAM** window (`0xD0000000`, set up by `init.s`);
   16 KB internal RAM is too small.
 
@@ -233,7 +233,7 @@ src/hal/adc.c       ADC ch.2 read (the back wheel)
 src/hal/i2c.c       I2C bus - OKI bring-up + polled master read/write
 src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
 src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture position, no IRQ
-src/hal/uart.c      polled UART0 @38400 8N1 (#203/#207) - TX putch/putst + RX getch/rxrdy
+src/hal/uart.c      polled UART0 @115200 8N1 (#203/#207) - TX putch/putst + RX getch/rxrdy
 src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
 src/main.c          product firmware entry - boots Lua 5.4 into a bytecode REPL (the default build)
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c exercise one peripheral
@@ -268,7 +268,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds`). |
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
-| - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @38400 on the Pi serial link; RX + `nab.uart` + UART console open |
+| - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @115200 on the Pi serial link; RX + `nab.uart` + UART console open |
 | - | `nab.config` - persist wifi creds in the config sector | #214 | built - HW verify pending (sim models flash reads only; write creds, power-cycle, read back) |
 | - | Cooperative event core - `nab.on`/`nab.wait`/`nab.time` | #195 | built - HW verify pending (sim has no timer/RFID model; register `watch()` on the rig, place/remove a tag, press the button) |
 

@@ -12,7 +12,7 @@
  *
  * Flash + test (on the Pi, TX+RX both wired to /dev/serial0):
  *   task lua:firmware:flash EXAMPLE=uartechoprobe
- *   sudo stty -F /dev/serial0 38400 raw -echo
+ *   sudo stty -F /dev/serial0 115200 raw -echo
  *   printf 'abcXYZ' > /dev/serial0   # then read: expect 'ABCxyz'
  *
  * Emits a one-shot banner on boot so a listener sees the link is alive before

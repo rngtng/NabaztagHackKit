@@ -12,20 +12,19 @@
  * RX carries the Lua REPL's input on the wire (getch_uart); TX carries print()
  * and the prompt - this UART is the console. See lua/firmware/README.md.
  *
- * Baud divisor: UARTDL = F_uart / (baud * 16). Since #269 main() runs init_pll(),
- * so the UART peripheral clock (= APB = CPU) is now 32 MHz, not the ring-osc
- * 8 MHz it was measured at before the PLL bring-up. Console kept at 38400 (the
- * Pi-side uart_repl.py is B38400): DLL=0x34=52 -> 32e6/(16*52) = 38461 baud =
- * 38400 +0.16%. 115200 is now reachable (DLL=0x11 -> 32e6/(16*17) = 117647,
- * +2.1%) if the Pi side is switched to match - left as a follow-up.
+ * Baud divisor: UARTDL = F_uart / (baud * 16). init.s runs init_pll() before
+ * main(), so the UART peripheral clock (= APB = CPU) is 32 MHz for every image.
+ * Console at 115200 (#271, was 38400): DLL=0x11=17 -> 32e6/(16*17) = 117647 baud
+ * = 115200 +2.1%, within UART tolerance and mtl's exact value. The Pi side
+ * (uart_repl.py, monitor task) is 115200 to match.
  */
 #ifndef _UART_H
 #define _UART_H
 
 #include <stdint.h>
 
-#define DLM_BAUD  0x00  /**< @brief divisor latch MSB - 38400 baud @ 32 MHz F_uart (#269) */
-#define DLL_BAUD  0x34  /**< @brief divisor latch LSB - 38400 baud (32e6/(16*52)) */
+#define DLM_BAUD  0x00  /**< @brief divisor latch MSB - 115200 baud @ 32 MHz F_uart */
+#define DLL_BAUD  0x11  /**< @brief divisor latch LSB - 115200 baud (32e6/(16*17)) */
 
 /** @brief Configure UART0 pins + 38400 8N1, polled (no interrupts). */
 void init_uart(void);

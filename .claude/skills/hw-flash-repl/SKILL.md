@@ -19,7 +19,7 @@ need, extend the task rather than shelling out around it.
 
 ## The UART console (input + output, #203)
 
-There is one console: **UART0, both directions, @38400 8N1** on OKI `PB0` (TX)
+There is one console: **UART0, both directions, @115200 8N1** on OKI `PB0` (TX)
 and `PB1` (RX), wired to the Pi's `/dev/serial0`. No OpenOCD session and never
 halts the CPU - use it for the REPL, probe output, and anything timing-sensitive
 (USB/WiFi). Read/driven via `task lua:firmware:flash:repl`.
@@ -27,9 +27,9 @@ halts the CPU - use it for the REPL, probe output, and anything timing-sensitive
 Raw manual read on the Pi (when you want the stream without the REPL driver):
 `sudo systemctl stop serial-getty@ttyAMA0` (deliberately not `disable`d - do
 this every session, re-enables on reboot; #203), then
-`sudo stty -F /dev/serial0 38400 raw -echo; sudo cat /dev/serial0`. Link sanity
+`sudo stty -F /dev/serial0 115200 raw -echo; sudo cat /dev/serial0`. Link sanity
 check: `task lua:firmware:flash APP=uartprobe` -> a repeating
-`NAB-UART-PROBE alive @38400 8N1` banner. Dead line without a scope:
+`NAB-UART-PROBE alive @115200 8N1` banner. Dead line without a scope:
 `sudo pinctrl set <gpio> ip pd; pinctrl get <gpio>` - driven reads `hi`,
 floating reads `lo` (how a TX/RX swap shows up). Not 115200: the UART clock
 is a measured 8 MHz (`lua/firmware/inc/hal/uart.h`).
@@ -131,7 +131,7 @@ ExtRAM) triggers constantly.
 ## Never print from IRQ context
 
 `putch_uart` is polled-blocking: it spins on THR-empty for ~0.26 ms per char
-at 38400 8N1. A `putst_uart`/`DBG_*` inside an ISR (USB rx callbacks, timer
+at 115200 8N1. A `putst_uart`/`DBG_*` inside an ISR (USB rx callbacks, timer
 handlers) holds the CPU in that spin for the whole string, starving every
 other interrupt (the UART rx IRQ, the tick, the OHCI ISR) for that time -
 stretching `DelayMs`, timing out in-flight USB transfers, and wedging runs in

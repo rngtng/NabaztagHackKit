@@ -188,6 +188,15 @@ LoopZI:         CMP     R1, R2
   STRLO   R0, [R1], #4
   BLO     LoopZI
 
+;@ Bring the CPU to 32 MHz (8 MHz crystal -> PLL) before main (#269/#271). Done
+;@ here, not in main(), so EVERY image - the product AND every bring-up example -
+;@ runs at the real clock, letting one UART divisor (115200) serve all. init_pll
+;@ (sys/src/clock.c, thumb) returns via bx lr to this ARM code.
+  ldr     lr,=_after_pll
+  ldr     r0,=init_pll
+  bx      r0
+_after_pll:
+
 ;@ Continue to main
   ldr     lr,return_main
   ldr     r0,=main

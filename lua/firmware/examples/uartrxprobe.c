@@ -12,11 +12,11 @@
  * transmitted while looping. The probe therefore: (1) loops back a set of test
  * bytes chosen to catch stuck/shorted data lines (0x00, 0x55, 0xAA, 0xFF),
  * (2) disables loopback, (3) spews PASS / FAIL forever on the real TX line so a
- * listener on the Pi (/dev/serial0 @38400) can read the verdict without JTAG.
+ * listener on the Pi (/dev/serial0 @115200) can read the verdict without JTAG.
  *
  * Flash + listen:
  *   task lua:firmware:flash EXAMPLE=uartrxprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  * Expect "NAB-UART-RX LOOPBACK PASS" repeating; FAIL prints exp/got hex.
  */
 #include <stdint.h>

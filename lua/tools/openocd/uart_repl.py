@@ -6,7 +6,7 @@ Runs ON THE PI (it owns the serial line wired to the rabbit's UART). flash.py
 JTAG flash. It optionally feeds an input file to the REPL, then reads the console
 until the app prints the done-marker or a timeout elapses.
 
-Flow control: the link is 38400 8N1 with NO hardware flow control and the device
+Flow control: the link is 115200 8N1 with NO hardware flow control and the device
 polls a 16-byte RX FIFO, draining it only while it is reading a line/frame - NOT
 during the gaps where it does other work. Two such gaps drop bytes for #LC
 bytecode frames (#128): after the `#LC:<len>` header the device runs malloc(len)
@@ -46,8 +46,8 @@ def open_port(dev):
     a[1] = 0                                          # oflag: raw
     a[2] = termios.CS8 | termios.CLOCAL | termios.CREAD
     a[3] = 0                                          # lflag: raw (no echo/canon)
-    a[4] = termios.B38400                             # ispeed
-    a[5] = termios.B38400                             # ospeed
+    a[4] = termios.B115200                             # ispeed
+    a[5] = termios.B115200                             # ospeed
     termios.tcsetattr(fd, termios.TCSANOW, a)
     termios.tcflush(fd, termios.TCIOFLUSH)
     return fd

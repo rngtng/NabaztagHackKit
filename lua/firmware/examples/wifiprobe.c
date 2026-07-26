@@ -15,14 +15,14 @@
  *   [2][3][4] wifi_up(): USB host + RT2501 driver (firmware upload + BBP/RF
  *       init inside the driver connect()); prints the EEPROM MAC + rt2501_state.
  *   [5] wifi_scan(): directed (WIFI_SSID) or broadcast scan; the deduped list
- *       is printed last (after the verdict - ~30 lines at 38400 baud take
+ *       is printed last (after the verdict - ~30 lines at 115200 baud take
  *       longer than the association itself).
  *   [6] (WIFI_SSID only) wifi_join(): associate + 4-way handshake, tracing each
  *       transition.
  *
  * Run: task lua:firmware:flash EXAMPLE=wifiprobe CAPTURE=1 (SSID/PSK from .env)
  * flashes and captures its UART transcript until <<FV_DONE>>; or flash without
- * CAPTURE and read /dev/serial0 by hand (UART0, 38400 8N1).
+ * CAPTURE and read /dev/serial0 by hand (UART0, 115200 8N1).
  * Hardware-only (the sim has no OHCI model).
  */
 #include <string.h>

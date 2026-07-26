@@ -187,7 +187,7 @@ tasks:
     interactive: true   # streams the serial console to your terminal until Ctrl-C
     vars:
       PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
-      BAUD: '{{.BAUD | default "38400"}}'
+      BAUD: '{{.BAUD | default "115200"}}'
     cmds:
       # serial-getty is stopped (not disabled - re-enables on reboot, #203) so it
       # stops competing for the port; only one reader may own /dev/serial0.

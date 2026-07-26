@@ -37,7 +37,7 @@ so the **compiler comes before firmware**. Don't start a layer whose inputs aren
 ## Openocd / hardware flashing (lua track)
 JTAG flashing is the one host-side exception (USB): openocd on a Raspberry Pi
 (`ssh tobi@jtag.local`, native `bcm2835gpio` bit-bang, patched openocd 0.8.0).
-**The console is UART0 @38400 8N1, bidirectional (#203/#207): `print()`/prompt out,
+**The console is UART0 @115200 8N1, bidirectional (#203/#207): `print()`/prompt out,
 REPL input in, read/driven on the Pi's `/dev/serial0` — no OpenOCD session, no CPU
 halts. Drive it with `task lua:firmware:flash:repl`: omit SCRIPT for a live interactive
 prompt (`luash.py` compiles each typed line off-device + drives `uart_repl.py --relay`),

@@ -6,9 +6,9 @@
  *        (get_motor_position) actually moves.
  *
  *   task lua:firmware:flash EXAMPLE=earprobe
- *   (on the Pi) stty -F /dev/serial0 38400 raw -echo; cat /dev/serial0
+ *   (on the Pi) stty -F /dev/serial0 115200 raw -echo; cat /dev/serial0
  *
- * Output is on UART0 (38400 8N1), read on the Pi's /dev/serial0. No timer
+ * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0. No timer
  * subsystem exists, so "briefly" is a CPU busy-loop, same caveat as nab.beep's ms.
  *
  * probe_motor only ever runs at speed=255, so it never covered the `speed`
