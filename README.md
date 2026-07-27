@@ -28,6 +28,9 @@ Targets read as `<track>:<layer>:<verb>`, e.g. `task mtl:app-piper:build`,
 layer is self-contained and relocatable: `task mtl:lib:test` here ==
 `cd mtl/lib && task test` there.
 
+See **[COMMANDS.md](COMMANDS.md)** for a workflow-grouped tour of the common
+commands (build / simulate / browser UI + REPL / flash / test) on both tracks.
+
 ## Layout
 
 ```
