@@ -1118,6 +1118,16 @@ static void init_hw(void)
    * as it stood, which is the only reason it was harmless. */
   init_irq();
 
+  /* #275: mux XD16-31 (upper external-data-bus half) to GPIO, as mtl's
+   * init_io does. BWC=0xA0 runs ExtRAM as a 16-bit bank, so XD16-31 carry no
+   * data - but left on their default bus function they toggle on every EMC
+   * WRITE, and they share package pins with the audio-control GPIO group
+   * (RST_AUDIO = PIO11.7): each Lua-heap write burst hardware-reset the
+   * VS1003 (CLOCKF/MODE/VOLUME back to defaults), killing nab.record and
+   * forcing vlsi_play's re-assert workaround. Reads leave the bus hi-Z,
+   * which is why playback mostly survived. Isolated by examples/recprobe.c. */
+  set_wbit(PORTSEL4, 0x00000040);
+
   CS_LED_AS_OUTPUT;
   MODE_LED_AS_OUTPUT;
   CS_LED_SET;
