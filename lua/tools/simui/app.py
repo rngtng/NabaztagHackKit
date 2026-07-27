@@ -136,9 +136,11 @@ def _ear(px, py, angle, eid):
     `angle`. Rotation is a CSS transform about the base (transform-origin bottom-
     centre of the shape) so tick() can retarget it and the browser tweens the
     spin smoothly between the 100 ms samples (id `eid`)."""
-    d = (f"M{px-14},{py} C{px-15},{py-54} {px-13},{py-116} {px-8},{py-150} "
-         f"Q{px},{py-166} {px+8},{py-150} C{px+13},{py-116} {px+15},{py-54} "
-         f"{px+14},{py} Z")
+    # taper/length traced from the real ear (front-view vector); base flattened to
+    # the pivot so it rotates cleanly (the real junction is a diagonal cut).
+    d = (f"M{px-16},{py} C{px-18},{py-55} {px-18},{py-118} {px-11},{py-150} "
+         f"Q{px-1},{py-162} {px+8},{py-149} C{px+16},{py-118} {px+17},{py-55} "
+         f"{px+16},{py} Z")
     return (f'<g id="{eid}" style="transform-box:fill-box;transform-origin:50% 100%;'
             f'transform:rotate({angle}deg)">'
             f'<path d="{d}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>'
