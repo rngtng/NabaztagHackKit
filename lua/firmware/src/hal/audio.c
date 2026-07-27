@@ -83,13 +83,13 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
   CS_AUDIO_SDI_SET;
 }
 
-/* Last volume requested via set_vlsi_volume(). The single SCI write below does
- * not durably stick: the Lua heap lives in ExtRAM, and EMC bus activity between
- * a bare VOLUME write and the next decode clears the VS1003's SCI config
- * (CLOCKF/VOLUME reproducibly knocked to 0 by an ExtRAM burst). So we cache the
- * value and re-assert it inside vlsi_play(), in the same post-EMC
- * window where MODE is rewritten - that is the only reason MODE/CLOCKF survive,
- * and VOLUME needs the identical treatment to actually attenuate playback. */
+/* Last volume requested via set_vlsi_volume(). Historically a bare SCI write
+ * did not stick: with XD16-31 left on their bus function, every ExtRAM (EMC)
+ * write burst hardware-reset the VS1003, knocking CLOCKF/MODE/VOLUME back to
+ * defaults - so vlsi_play() re-asserts the cached value right before the SDI
+ * feed. #275 fixed the root cause (PORTSEL4 mux in main.c's init_hw; isolated
+ * by examples/recprobe.c), so writes now hold; the play-window re-assert is
+ * kept as cheap defence in depth. */
 static uint8_t vlsi_volume = 0x20;
 
 void set_vlsi_volume(uint8_t volume)
@@ -144,10 +144,11 @@ void init_vlsi(void)
   vlsi_write_sci(VS1003_CLOCKF, 0xc000);
   audio_delay(800000);
   wait_dreq();
-  /* Keep SPI0 slow (~2 MHz) - do NOT speed up to ~8 MHz. At 8 MHz, SCI reads
-   * returned garbage and playback was slow+static, which only happens if CLKI
-   * never left base XTAL (max SCI = CLKI/7). Staying slow lets us read
-   * registers back reliably to confirm whether CLOCKF took. */
+  /* SPI0 stays at ~2 MHz. The historical "8 MHz reads garbage" observation was
+   * #275: EMC write bursts hardware-reset the codec, so CLKI was back at base
+   * XTAL (max SCI = CLKI/7) whenever we looked. With the PORTSEL4 fix CLOCKF
+   * holds and ~8 MHz should be safe (mtl runs it), but 2 MHz is plenty for
+   * SCI + the SDI feed and is the speed everything here was verified at. */
 
   set_vlsi_volume(0x20);
 }

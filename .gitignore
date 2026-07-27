@@ -27,3 +27,5 @@ boot_lc.h
 /mtl/tools/testvm/bc.c
 *.local.lua
 *.local.lc
+# apps:compile output (device bytecode built from the .lua next to it)
+/lua/apps/*.lc
