@@ -37,7 +37,7 @@ tasks:
       - docker build -t {{.SIMUI_IMAGE}} -f tools/simui/Dockerfile .
 
   serve:
-    desc: 'Serve the pixel-retro browser UI for the simulator (#43): renders the five LEDs + ears live and injects button/RFID from the page, while APP runs resident on the embedded sim. Ctrl-C to stop. Usage: task lua:simui:serve [APP=apps/ui-demo.lua] [PORT=8080]'
+    desc: 'Serve the pixel-retro browser UI for the simulator (#43): renders the five LEDs + ears live, injects button/RFID from the page, and runs an in-browser Lua REPL (compiled to bytecode in-container, #128), while APP runs resident on the embedded sim. Ctrl-C to stop. Usage: task lua:simui:serve [APP=apps/ui-demo.lua] [PORT=8080]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
       APP: '{{.APP | default "apps/ui-demo.lua"}}'

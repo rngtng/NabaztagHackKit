@@ -5,14 +5,22 @@ Embeds the Unicorn simulator (tools/simulator/simulate.py) *in this process*:
 `Sim` runs on a background thread while NiceGUI serves the page. There is no
 socket or IPC - the UI reads the sim's device-state attributes to render the
 rabbit (LEDs, ears) and writes `sim.button` / `sim.rfid_uid` to inject input,
-exactly the seam #42 built. A short resident app (default apps/ui-demo.lua) runs
-on the device so it keeps reacting to whatever the browser injects.
+exactly the seam #42 built. A short resident app (default apps/ui-demo.lua)
+registers nab.on callbacks and returns, so the device keeps reacting to injected
+input while sitting at the REPL prompt (below).
 
-v1 is visual + input only; the in-browser Lua REPL is a follow-up (needs the
-sim's console I/O moved onto queues). Env in: FV_ELF (firmware ELF), FV_FRAMES
-(the app pre-framed to #LC bytecode by the Taskfile), FV_PORT.
+The page also drives an in-browser Lua REPL: the sim's UART RX is a live queue
+(simulate.Sim(rx_queue=...)), the resident app registers nab.on callbacks and
+returns so the firmware sits at the REPL prompt, and each typed line is compiled
+to #LC bytecode by the in-container luac (parser-less firmware, #128) and pushed
+onto the queue. Device output streams back into the console panel.
+
+Env in: FV_ELF (firmware ELF), FV_FRAMES (the resident app pre-framed to #LC
+bytecode by the Taskfile), FV_PORT.
 """
 import os
+import queue
+import subprocess
 import sys
 import threading
 
@@ -29,14 +37,50 @@ PORT = int(os.environ.get("FV_PORT", "8080"))
 TAGS = [("Green", "d0021a3506198b86"), ("Yellow", "d0021a35038f3a2f")]
 
 # --- start the embedded simulator on a background thread ---------------------
+# The console RX is a live queue: seed it with the resident app's #LC frames
+# (the firmware runs them, registers its nab.on callbacks and returns to the
+# prompt) and keep it open so the browser REPL can push more frames. An empty
+# queue reads as "no byte yet" (never EOF), so the REPL idles + pumps events.
+RX = queue.Queue()
 with open(FRAMES, "rb") as fh:
-    _frames = fh.read()
+    for _b in fh.read():
+        RX.put(_b)
 # Real-time pacing (speed=1.0) so fades + ear motion look right; a huge budget so
-# the resident loop runs for the whole session; console buffered (console_only)
-# so nothing scribbles the container stdout - the UI reads sim.console instead.
-sim = Sim(ELF, budget=10**12, verbose=False, stdin=_frames,
+# the session runs indefinitely; console buffered (console_only) so nothing
+# scribbles the container stdout - the UI reads sim.console instead.
+sim = Sim(ELF, budget=10**12, verbose=False, rx_queue=RX,
           console_only=True, speed=1.0)
 threading.Thread(target=sim.run, daemon=True).start()
+
+
+def _luac(src: bytes):
+    """Compile Lua source to stripped #LC-ready bytecode via the in-container
+    luac (matches the firmware's LUA_32BITS dump). Returns (chunk, stderr);
+    chunk is None on a compile error. Source rides stdin, chunk rides stdout."""
+    p = subprocess.run(["luac", "-s", "-o", "/dev/stdout", "-"],
+                       input=src, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if p.returncode != 0:
+        return None, p.stderr.decode("utf-8", "replace")
+    return p.stdout, ""
+
+
+def compile_line(line: bytes):
+    """Compile one REPL line expression-first (mirrors luash.compile_line): try
+    `return <line>` so a bare expression echoes its value, else the line verbatim."""
+    chunk, _ = _luac(b"return " + line)
+    if chunk is not None:
+        return chunk, ""
+    return _luac(line)
+
+
+def send_frame(chunk: bytes):
+    """Push one #LC frame (header line + 64-col hex payload) onto the RX queue,
+    byte by byte - the exact format the firmware's load_lc_frame decodes."""
+    hexs = chunk.hex()
+    body = f"#LC:{len(chunk)}\n" + "\n".join(
+        hexs[i:i + 64] for i in range(0, len(hexs), 64)) + "\n"
+    for b in body.encode():
+        RX.put(b)
 
 # The 4 belly LEDs -> (cx, cy, r) on the 240x360 cone-body SVG (a row of three
 # plus one below, like the real device's belly lights). The 5th, "nose", is
@@ -181,6 +225,26 @@ def index():
 
         log = ui.log(max_lines=200).classes("w-full").style(
             "height:150px;background:#0e0e12;color:#7fd88f;font-size:12px")
+
+        # in-browser REPL: type Lua, compile off-device to #LC bytecode (#128),
+        # push it onto the sim's RX queue; the device output streams into `log`.
+        def repl_submit():
+            line = (repl_in.value or "").strip()
+            repl_in.value = ""
+            if not line:
+                return
+            log.push("> " + line)
+            chunk, err = compile_line(line.encode())
+            if chunk is None:
+                for e in err.splitlines():
+                    if e.strip():
+                        log.push(e)
+                return
+            send_frame(chunk)
+
+        repl_in = ui.input(placeholder="lua > (Enter to run)").props("dense dark") \
+            .classes("w-full").style("font-family:monospace")
+        repl_in.on("keydown.enter", repl_submit)
 
     seen = {"n": 0}
 
