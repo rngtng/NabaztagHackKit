@@ -18,6 +18,7 @@ onto the queue. Device output streams back into the console panel.
 Env in: FV_ELF (firmware ELF), FV_FRAMES (the resident app pre-framed to #LC
 bytecode by the Taskfile), FV_PORT.
 """
+import math
 import os
 import queue
 import subprocess
@@ -96,22 +97,26 @@ def _css(rgb):
 
 
 OFF_COL = "#efece2"          # a lit-off LED reads as the shell, never black (#43)
-EAR_REST = (-45, 45)         # left/right ear splay at rest: ~45 deg to the side,
-                             # like the real device (they sweep up<->side as they
-                             # turn, passing through everything in between).
-# The sim's synthetic encoder ticks ~8 counts/ms (far faster than the physical
-# motor) and wraps at 16 bits. Mapping it straight to degrees (mod 360) spun the
-# ear absurdly fast and made each poll's tween target jump backwards randomly.
-# Instead accumulate the unwrapped signed delta into a continuous (unbounded)
-# angle at a calm scale, so the CSS transition always eases one way.
-DEG_PER_COUNT = 0.012
+# Ear rotation. Each real ear turns on a cone tilted OUTWARD, so head-on it
+# sweeps within its own side and never crosses to the other ear: the left ear
+# runs left <-> up (the [-90, 0] deg hemisphere), the right ear up <-> right
+# ([0, 90]). Rest is ~45 deg to the side (the sweep midpoint). We drive a
+# continuous phase from the encoder delta and map it through sin() - which is
+# exactly what a constant-speed cone rotation looks like projected head-on
+# (eases at the side/up extremes, quicker through the middle) - so the ear never
+# swings past vertical into the other ear.
+EAR_REST = (-45, 45)         # left/right rest splay, degrees (also the sweep centre)
+EAR_AMP = (45, -45)          # signed amplitude: left dips to -90/0, right to 0/+90
+# ~8 encoder counts/ms; this scale gives a calm ~2-3 s per full sweep cycle.
+RAD_PER_COUNT = 0.0003
 _ear_last = [None, None]     # previous encoder pos per ear
-_ear_angle = [0.0, 0.0]      # accumulated rotation per ear, degrees
+_ear_phase = [0.0, 0.0]      # accumulated sweep phase per ear, radians
 
 
 def ear_angles():
-    """Advance the two ears' continuous rotation from the encoder delta since the
-    last poll and return their absolute angles (rest splay + accumulated turn)."""
+    """Advance each ear's sweep phase from the encoder delta since the last poll
+    and return the two absolute angles. left stays in [-90, 0], right in [0, 90],
+    so they never overlap."""
     out = []
     for i, e in enumerate(sim.ears):
         pos = e["pos"]
@@ -121,8 +126,8 @@ def ear_angles():
             d = (pos - last) & 0xFFFF          # unwrap the 16-bit encoder
             if d >= 0x8000:
                 d -= 0x10000
-            _ear_angle[i] += d * DEG_PER_COUNT
-        out.append(EAR_REST[i] + _ear_angle[i])
+            _ear_phase[i] += d * RAD_PER_COUNT
+        out.append(EAR_REST[i] + EAR_AMP[i] * math.sin(_ear_phase[i]))
     return out
 
 
