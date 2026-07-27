@@ -9,8 +9,9 @@ chunk.
 ## Libs
 
 - **`net/`** (#217) - the network bootstrap: ARP, IPv4 (+ICMP echo), UDP, DHCP
-  (client + single-lease server), TCP and HTTP as pure-Lua modules over the
-  raw-frame `nab.wifi_*` bindings (#216). See `net/README.md`.
+  (client + single-lease server), DNS (resolver + captive-portal sinkhole), TCP
+  and HTTP as pure-Lua modules over the raw-frame `nab.wifi_*` bindings (#216).
+  See `net/README.md`.
 
 ## Tasks
 

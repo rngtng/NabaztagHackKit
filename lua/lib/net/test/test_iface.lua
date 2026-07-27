@@ -1,8 +1,9 @@
 -- net.iface over a scripted fake driver: demux, learning, ARP-on-demand,
 -- and the three blocking flows (dhcp join, http_get, serve).
 
-local iface, link, arp, ipv4, udp, dhcp, tcp, http =
-  net.iface, net.link, net.arp, net.ipv4, net.udp, net.dhcp, net.tcp, net.http
+local iface, link, arp, ipv4, udp, dhcp, tcp, http, dns =
+  net.iface, net.link, net.arp, net.ipv4, net.udp, net.dhcp, net.tcp, net.http,
+  net.dns
 
 local MAC_A, MAC_B = H"00095b8f3a01", H"d83add112233"
 local IP_A, IP_B = H"c0a8002a", H"c0a80001"
@@ -90,6 +91,7 @@ eq(lerr, nil, "dhcp join succeeds")
 eq(lease.ip, IP_A, "lease ip")
 eq(i2.ip, IP_A, "iface adopts the lease ip")
 eq(i2.router, IP_B, "iface adopts the router")
+eq(i2.dns, IP_B, "iface adopts the dhcp-supplied resolver (#232)")
 eq(i2.udp_ports[68], nil, "dhcp port handler unregistered")
 
 -- http_get against a scripted peer (arp answered, tcp served) ---------------
@@ -189,3 +191,130 @@ local dd = udp.parse(rp)
 eq(dd.sport, 53, "dns reply from port 53")
 eq(dd.dport, 5353, "dns reply to the query's source port")
 eq(dd.payload:sub(-4), IP_A, "dns answer resolves to our ip")
+
+-- resolve: a scripted resolver answers the A query ---------------------------
+
+local DNS_IP, SRV_IP = H"c0a800fe", H"5db8d822" -- 192.168.0.254, 93.184.216.34
+local NAME = "boot.example.com"
+local QNAME = "\4boot\7example\3com\0"
+
+-- Answer whatever A question arrives, echoing the question and pointing the
+-- answer's owner name at it (0xC00C) the way a real server does. `drop` makes
+-- it a black hole (the timeout/retry case); `seen` collects the queries.
+local seen, drop
+local function resolver(_, fr)
+  local et6, p6 = link.decap(fr)
+  if et6 == link.ETH_ARP then
+    local a6 = arp.parse(p6)
+    if a6 and a6.op == arp.REQUEST then
+      push(arp.reply(MAC_B, a6.tpa, MAC_A, IP_A))
+    end
+    return true
+  end
+  local pkt = ipv4.parse(p6)
+  if not pkt or pkt.proto ~= ipv4.UDP then return end
+  local d6 = udp.parse(pkt)
+  if not d6 or d6.dport ~= 53 then return end
+  seen[#seen + 1] = d6.payload
+  if drop then return true end
+  local body = d6.payload:sub(1, 2)
+                 .. string.pack(">I2I2I2I2I2", 0x8180, 1, 1, 0, 0)
+                 .. d6.payload:sub(13)
+                 .. string.pack(">I2I2I2I4I2", 0xC00C, 1, 1, 120, 4) .. SRV_IP
+  pushpkt(ipv4.build{src = DNS_IP, dst = IP_A, proto = ipv4.UDP,
+    payload = udp.build(DNS_IP, 53, IP_A, d6.sport, body)})
+  return true
+end
+
+t, sent, rxq, seen, drop = 0, {}, {}, {}, nil
+arp.reset()
+arp.learn(DNS_IP, MAC_B) -- resolved already, so the query counts below are exact
+dns.forget()
+local i4 = iface.new(drv)
+i4.ip, i4.dns = IP_A, DNS_IP
+hook = resolver
+local rip, rerr = i4:resolve(NAME, 5000)
+eq(rerr, nil, "resolve succeeds")
+eq(rip, SRV_IP, "resolve returns the A record's address")
+eq(rip and link.ntoa(rip), "93.184.216.34", "and it prints as the expected quad")
+eq(#seen, 1, "one question on the wire")
+eq(seen[1]:sub(13), QNAME .. H"00010001", "the query carries the name, A/IN")
+eq(string.unpack(">I2", seen[1], 3), 0x0100, "the query asks for recursion")
+local nports = 0
+for _ in pairs(i4.udp_ports) do nports = nports + 1 end
+eq(nports, 0, "the resolver's udp port handler is unregistered")
+
+-- second lookup: served from the cache, nothing on the wire
+sent, seen = {}, {}
+hook = nil
+eq(i4:resolve(NAME, 0), SRV_IP, "a repeat lookup is served from the cache")
+eq(#sent, 0, "and puts nothing on the wire")
+
+-- a literal address needs no resolver at all
+eq(i4:resolve("192.168.0.10"), H"c0a8000a", "a dotted quad resolves to itself")
+eq(#sent, 0, "a literal address never queries")
+
+-- preconditions: no address of our own, no server configured
+local i5 = iface.new(drv)
+i5.dns = DNS_IP
+eq(select(2, i5:resolve("x.example")), "no address",
+   "resolving before dhcp reports no address")
+i5.ip, i5.dns = IP_A, nil
+eq(select(2, i5:resolve("x.example")), "no dns server",
+   "resolving with no server reports it")
+eq(select(2, i4:resolve("a..b")), "bad name", "a malformed name never queries")
+
+-- a black-hole resolver: retried with a fresh id, then a clean timeout
+t, sent, rxq, seen, drop = 0, {}, {}, {}, true
+arp.reset()
+arp.learn(DNS_IP, MAC_B)
+dns.forget()
+hook = resolver
+local nip, nerr = i4:resolve("dead.example", 3000)
+eq(nip, nil, "an unanswered lookup fails")
+eq(nerr, "dns timeout", "and says it timed out")
+ok(#seen >= 3, "the question was retried on the 1 s timer (" .. #seen .. " sent)")
+eq(seen[1] and seen[1]:sub(13), "\4dead\7example\0" .. H"00010001",
+   "each retry re-asks it")
+ok(#seen >= 2 and seen[1]:sub(1, 2) ~= seen[2]:sub(1, 2),
+   "each retry carries a fresh id")
+eq(dns.cached("dead.example", 0), nil, "a failed lookup caches nothing")
+local nports2 = 0
+for _ in pairs(i4.udp_ports) do nports2 = nports2 + 1 end
+eq(nports2, 0, "the port handler is unregistered on timeout too")
+
+-- http_get by hostname: resolve, then fetch from the address we got ----------
+
+t, sent, rxq, seen, drop = 0, {}, {}, {}, nil
+arp.reset()
+arp.learn(DNS_IP, MAC_B)
+dns.forget()
+local i7 = iface.new(drv)
+i7.ip, i7.dns = IP_A, DNS_IP
+local b2 = tcp.listen{src = SRV_IP, port = 80, iss = 700, clock = timefn}
+local q2 = http.request()
+local served
+hook = function(mac7, f7)
+  if resolver(mac7, f7) then return end
+  local pkt = ipv4.parse(select(2, link.decap(f7)))
+  if not pkt or pkt.proto ~= ipv4.TCP then return end
+  for _, o in ipairs(b2:input(pkt)) do pushpkt(o) end
+  local d7 = b2:read()
+  if d7 ~= "" then q2:feed(d7) end
+  if q2.done and not served then
+    served = true
+    for _, o in ipairs(b2:send(http.response_build("200 OK", "BYNAME"))) do
+      pushpkt(o)
+    end
+    for _, o in ipairs(b2:close()) do pushpkt(o) end
+  end
+end
+local hstatus, hbody = i7:http_get(nil, NAME, "/boot/app.lc", 15000)
+eq(hstatus, 200, "http_get by hostname gets a status")
+eq(hbody, "BYNAME", "http_get by hostname gets the body")
+eq(#seen, 1, "the hostname was resolved once")
+eq(q2.headers["host"], NAME, "the Host header carries the hostname")
+eq(q2.path, "/boot/app.lc", "the peer at the resolved address saw the path")
+eq(dns.cached(NAME, 0), SRV_IP, "and the answer is cached for the next fetch")
+hook = nil
+dns.forget()
