@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+  * [#43](https://github.com/rngtng/NabaztagHackKit/issues/43): a **browser UI
+    for the simulator** (v1) - a pixel-retro Nabaztag. New self-contained tool
+    `lua/tools/simui/` (NiceGUI + the embedded Unicorn sim in one container):
+    `tools/simulator/simulate.py`'s `Sim` runs in a background thread while the
+    page renders it. No socket - the UI reads the sim's device-state attributes
+    (`led_rgb`/`ears`/`button`/`rfid_uid`) to draw the five LEDs and the spinning
+    ears, and writes `button`/`rfid_uid` to inject, over the seam #42 built. A
+    resident app (default `apps/ui-demo.lua`, a never-exiting reactive loop) runs
+    on the device so it keeps reacting to browser input. `task lua:simui:serve
+    [APP=… PORT=…]` frames the app and serves `http://localhost:8080`. The ASCII
+    `--leds` strip is untouched (stays the console/CI view); the in-browser Lua
+    REPL + animation polish are the v2 follow-up. Verified headlessly with the
+    preinstalled Chromium/Playwright (place a tag → LEDs go green + an ear spins).
+
   * [#42](https://github.com/rngtng/NabaztagHackKit/issues/42): the lua-track
     simulator (`lua/tools/simulator/simulate.py`) now models the **input**
     peripherals, so no-hardware runs can drive them. The head **button**

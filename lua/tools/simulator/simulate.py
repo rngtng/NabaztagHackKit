@@ -26,6 +26,7 @@ GPIO + SPI/I2C framing + console, not analog behaviour. See lua/firmware/README.
 """
 import argparse
 import json
+import queue
 import signal
 import sys
 import time
@@ -205,7 +206,8 @@ def unpack_dotcorr(buf):
 class Sim:
     def __init__(self, elf_path, budget, verbose, stdin=b"", interactive=False,
                  console_only=False, show_leds=False, speed=None,
-                 inject_events=None, emit_state=False, state_file=None):
+                 inject_events=None, emit_state=False, state_file=None,
+                 rx_queue=None):
         self.budget = budget
         self.verbose = verbose
         # Wall-clock pacing (see run()): None = as fast as possible; a float is a
@@ -222,8 +224,13 @@ class Sim:
         self.stdin = stdin           # bytes fed to the console (UART RBR)
         self.stdin_pos = 0
         self.dlab = False            # UART LCR divisor-latch-access bit
-        self._rx = None              # interactive: one prefetched input byte
+        self._rx = None              # interactive/live: one prefetched input byte
         self._uart_eot_sent = False  # batch: EOT appended once input is exhausted
+        # Live console input (simui #43): a queue.Queue of int bytes pushed at
+        # runtime. Unlike batch, an empty queue reports RX *not ready* (never a
+        # synthetic EOT), so the REPL idles + pumps events (#195) between lines
+        # and stays alive for the next typed frame instead of hitting EOF.
+        self.rx_queue = rx_queue
         self.getch_addr = None       # getch_uart entry, for the RX code hook
         self.rxrdy_addr = None       # rxrdy_uart entry, for the RX-peek code hook
         self.waiti2c_addr = None     # waiti2cmcf entry, for the I2C-done code hook
@@ -510,6 +517,15 @@ class Sim:
     # -- UART0 RX (console input): the polled counterpart of _console_out --------
     def _uart_rx_ready(self):
         """Whether getch_uart() should see a byte now (drives the LSR DR bit)."""
+        if self.rx_queue is not None:
+            # Live (simui): ready only if a byte is queued. Empty -> not ready,
+            # so the REPL idle loop pumps events and waits (no EOF).
+            if self._rx is None:
+                try:
+                    self._rx = self.rx_queue.get_nowait()
+                except queue.Empty:
+                    return False
+            return True
         if self.interactive:
             if self._rx is None:
                 self._rx = self._stdin_byte_blocking()
@@ -519,6 +535,14 @@ class Sim:
 
     def _uart_rx_take(self):
         """Consume and return one RX byte (an RBR read)."""
+        if self.rx_queue is not None:
+            b, self._rx = self._rx, None
+            if b is None:                       # DR-gated: getch only reads when
+                try:                            # ready, so this is a benign guard
+                    b = self.rx_queue.get_nowait()
+                except queue.Empty:
+                    return 0
+            return b
         if self.interactive:
             b = self._rx if self._rx is not None else self._stdin_byte_blocking()
             self._rx = None
