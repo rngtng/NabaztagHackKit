@@ -153,7 +153,8 @@ nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> f
                               --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
                               --   (registering starts the background ~750 ms scan)
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
-nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
+nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel - an analog pot, HW-verified:
+                              --   255 at rest, smooth 255->0->255 across its travel)
 nab.rfid()                    -- -> lowercase hex UID string, or nil (one live scan)
 nab.ear_move(n, dir)          -- n: 1|2 (1 = left); dir "forward"|"reverse". Full speed only (#179)
 nab.ear_stop(n)               -- n: 1|2
@@ -220,11 +221,16 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 |---|---|
 | LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
-| UART0 console both directions @115200 | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
-| USB host + RT2501 join, WPA2-CCMP | `nab.play`/`nab.tone`/`nab.wheel` — DREQ and the ADC bit are unmodeled in sim (#123) |
-| — | **Streaming playback (#265/#283)** — `nab.play` must sound as it did before it was fed in bursts, `nab.play_feed` must accept bytes at all, and a clip must not underrun while an ear moves or a GET runs |
+| `nab.wheel` — analog pot on ADC ch.2, 255 rest -> 0 full sweep (#123) | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
+| UART0 console both directions @115200 | `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates, DREQ+ADC unmodeled in sim (#123; verified pre-#265, needs a re-check against the new streaming `nab.play`) |
+| USB host + RT2501 join, WPA2-CCMP | **Streaming playback (#265/#283)** — `nab.play` must sound as it did before it was fed in bursts, `nab.play_feed` must accept bytes at all, and a clip must not underrun while an ear moves or a GET runs |
 | 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
+
+Two #123 probe results with no code behind them: the wheel's end-of-travel **click has no
+separate GPIO** (only PD2, the wheel's own ADC line, moves), and the **audio-out jack is a
+mechanical normalled switch** — inserting a plug cuts the speaker without changing any GPIO.
+`nab.play`/`nab.tone`/`nab.wheel` stay unrunnable in-sim (DREQ and the ADC bit are unmodeled).
 
 ## Hardware gotchas
 

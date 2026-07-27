@@ -539,10 +539,11 @@ static int nab_rec_wav(lua_State *L)
   return 1;
 }
 
-/* nab.wheel(): 8-bit ADC ch.2 reading (0..255). The back wheel is almost
- * certainly an analog pot on this channel (ADCON1_CH2, same register sequence
- * as src/firmware's get_adc_value) - not yet hardware-confirmed. To map it to
- * volume: `nab.volume(nab.wheel())` in a polling loop. */
+/* nab.wheel(): 8-bit ADC ch.2 reading (0..255). The back wheel is an analog
+ * pot on this channel (ADCON1_CH2, same register sequence as src/firmware's
+ * get_adc_value) - hardware-confirmed: 255 at rest, smooth 255->0->255 sweep
+ * when turned. To map it to volume: `nab.volume(nab.wheel())` in a polling
+ * loop. */
 static int nab_wheel(lua_State *L)
 {
   lua_pushinteger(L, adc_read_ch2());
