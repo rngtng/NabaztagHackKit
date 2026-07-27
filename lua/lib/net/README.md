@@ -118,10 +118,13 @@ the fallback if a client suppresses the captive check.)
 **Security posture** (matches V1's setup mode, deliberate): the AP is OPEN and
 setup-mode only — the creds cross the local link once, in the clear — and the
 form says so. Setup mode is a transient, user-initiated state, not a running
-service. The DNS sinkhole answers only while setup mode is running. Pre-filling
-the SSID field from a scan is a nice-to-have that lights up automatically once a
-`nab.wifi_scan`/`wifi_seen` binding is exposed to Lua; today the datalist is
-simply omitted.
+service. The DNS sinkhole answers only while setup mode is running.
+
+**SSID drop-down** (#273): `run()` takes one broadcast `nab.wifi_scan()` (~5 s)
+*before* `nab.wifi_ap` — the radio only scans as a station — and feeds the
+`nab.wifi_seen()` names, deduped and minus hidden APs, into a `<datalist>` on
+the form, so the phone picks the network instead of typing it. A failed or
+empty scan just omits the drop-down; the field stays free-text either way.
 
 ### Provisioning failure UX / boot fallback (#234, M11e-2)
 

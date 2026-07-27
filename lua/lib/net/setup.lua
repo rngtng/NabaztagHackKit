@@ -13,8 +13,8 @@
 -- documented instead (#233 scope note).
 --
 -- Pure-Lua and transport-thin like its net siblings: the form build, POST parse
--- and validation are testable host-side (test/test_setup.lua); only run() touches
--- hardware (nab.wifi_ap / nab.led / net.iface).
+-- and validation are testable host-side (test/test_setup.lua); only run() and
+-- scan_ssids() touch hardware (nab.wifi_ap / nab.wifi_scan / nab.led / net.iface).
 
 net = net or {}
 local setup = {}
@@ -129,15 +129,22 @@ function setup.handle(q, o)
   return setup.page{ssids = o.ssids}, "200 OK"
 end
 
--- Nearby-SSID list for the datalist (nice-to-have). The scan binding is not
--- exposed to Lua yet, so this returns nil today and the datalist is simply
--- omitted; it lights up for free if a nab.wifi_scan/wifi_seen binding lands.
+-- Nearby-SSID list for the datalist (#273): one broadcast scan (~5 s), deduped
+-- by name - the radio reports one entry per BSSID, so a multi-AP network would
+-- otherwise repeat itself in the drop-down. Hidden APs report an empty SSID and
+-- are skipped (nothing to offer). Returns nil when nothing is seen or the
+-- bindings are absent, and the caller simply omits the datalist. MUST run while
+-- the radio is still a station: nab.wifi_scan fails once wifi_ap has switched
+-- it to master mode.
 function setup.scan_ssids()
   if not (nab.wifi_scan and nab.wifi_seen) then return nil end
-  nab.wifi_scan("")
-  local seen, out = nab.wifi_seen(), {}
-  for _, r in ipairs(seen or {}) do
-    if r.ssid and r.ssid ~= "" then out[#out + 1] = r.ssid end
+  if not nab.wifi_scan() then return nil end
+  local out, dup = {}, {}
+  for _, r in ipairs(nab.wifi_seen() or {}) do
+    if r.ssid and r.ssid ~= "" and not dup[r.ssid] then
+      dup[r.ssid] = true
+      out[#out + 1] = r.ssid
+    end
   end
   return #out > 0 and out or nil
 end
@@ -166,12 +173,15 @@ function setup.run(opts)
     assert(nab.wifi_up())
     name = setup.ap_name(nab.wifi_mac())
   end
+  -- Scan BEFORE going to master mode: the driver only scans as a station, so
+  -- once nab.wifi_ap beacons, nab.wifi_scan refuses (#273). ~5 s, and the LED
+  -- is still dark here - same stretch as the cold boot above.
+  local ssids = setup.scan_ssids()
   assert(nab.wifi_ap(name))
   nab.led("nose", 0, 0, 40) -- dim blue = setup mode
   local ifc = opts.iface or net.iface.new(net.iface.nabdrv())
   ifc:dhcpd{ip = link.ip(setup.AP_IP), client_ip = link.ip(setup.CLIENT_IP)}
   ifc:dnsd() -- captive portal: resolve every hostname to us, show the page now
-  local ssids = setup.scan_ssids()
   local saved, image
   ifc:serve(80, function(q)
     -- the setup page also hosts the firmware uploader (#235); route it there

@@ -841,6 +841,62 @@ static int nab_wifi_up(lua_State *L)
   return 1;
 }
 
+/* nab.wifi_scan([ssid]) -> count | nil, message. Probe every channel (~5 s) and
+ * record what answers; the results are read back with nab.wifi_seen(). ssid nil
+ * or "" is a broadcast scan (one pass, everything nearby); a given ssid makes
+ * the probe request directed, so an AP whose beacon we'd miss still answers -
+ * that is the scan nab.wifi() runs internally before joining. Cold-boots the
+ * dongle first when it is down (~10 s), like nab.wifi/nab.wifi_ap. Fails in AP
+ * mode: the driver only scans as a station, so setup.run (#273) must scan
+ * BEFORE nab.wifi_ap switches the radio to master. A scan clears the BSSID and
+ * hops all 14 channels, so an existing association does not survive it. */
+static int nab_wifi_scan(lua_State *L)
+{
+  const char *ssid = luaL_optstring(L, 1, NULL);
+  if (ssid != NULL && *ssid == '\0')
+    ssid = NULL;                        /* "" = broadcast, not a hidden SSID */
+  if (wifi_state() == RT2501_S_MASTER) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "wifi_scan: radio is in AP mode");
+    return 2;
+  }
+  if (wifi_state() == RT2501_S_BROKEN && wifi_up() != 0) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "wifi_scan: radio bring-up failed");
+    return 2;
+  }
+  lua_pushinteger(L, wifi_scan(ssid));
+  return 1;
+}
+
+/* nab.wifi_seen() -> {{ssid=,bssid=,rssi=,channel=,enc=}, ...}: the networks
+ * the last nab.wifi_scan() saw, deduped by BSSID (up to 32 - a dense place has
+ * far more). bssid is a 6-byte binary string; enc is the raw 802.11 encryption
+ * byte (0 = open, 0x40|cipher = WPA2 - the only encrypted flavour this image
+ * joins). The setup portal (#273) turns the ssid fields into its drop-down. */
+static int nab_wifi_seen(lua_State *L)
+{
+  int32_t i, n = wifi_seen_count();
+
+  lua_createtable(L, n, 0);
+  for (i = 0; i < n; i++) {
+    const struct rt2501_scan_result *r = wifi_seen(i);
+    lua_createtable(L, 0, 5);
+    lua_pushstring(L, (const char *)r->ssid);
+    lua_setfield(L, -2, "ssid");
+    lua_pushlstring(L, (const char *)r->bssid, 6);
+    lua_setfield(L, -2, "bssid");
+    lua_pushinteger(L, r->rssi);
+    lua_setfield(L, -2, "rssi");
+    lua_pushinteger(L, r->channel);
+    lua_setfield(L, -2, "channel");
+    lua_pushinteger(L, r->encryption);
+    lua_setfield(L, -2, "enc");
+    lua_seti(L, -2, i + 1);
+  }
+  return 1;
+}
+
 /* nab.wifi_send(dst_mac, payload) -> true | nil, message. One raw data frame
  * at the 802.3 payload boundary: payload (a byte string, starts at LLC) goes
  * to dst_mac, a 6-byte binary string ("\xFF\xFF\xFF\xFF\xFF\xFF" = broadcast;
@@ -1001,6 +1057,8 @@ static const luaL_Reg nab_funcs[] = {
     {"wifi", nab_wifi},
     {"wifi_ap", nab_wifi_ap},
     {"wifi_up", nab_wifi_up},
+    {"wifi_scan", nab_wifi_scan},
+    {"wifi_seen", nab_wifi_seen},
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
     {"wifi_mac", nab_wifi_mac},

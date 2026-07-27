@@ -78,10 +78,38 @@ eq(#saves, 1, "invalid POST saves nothing")
 ok(b3:find("<form method=POST"), "invalid POST re-serves the form")
 ok(b3:find("class=m>"), "invalid POST shows an error message")
 
+-- scan_ssids: the nearby-network list behind the datalist (#273) -----------
+
+nab = {}
+eq(setup.scan_ssids(), nil, "no scan bindings -> no ssid list")
+
+local scan_arg, scanned = "unset", 0
+nab = {
+  wifi_scan = function(s) scan_arg = s; scanned = scanned + 1; return 7 end,
+  wifi_seen = function()
+    return {{ssid = "HomeWifi", rssi = -42}, {ssid = "Cafe", rssi = -70},
+            {ssid = "HomeWifi", rssi = -55},   -- 2nd AP of the same network
+            {ssid = "", rssi = -80}}           -- hidden AP: nothing to offer
+  end,
+}
+local list = setup.scan_ssids()
+eq(scan_arg, nil, "scan_ssids runs a broadcast scan (no ssid)")
+eq(scanned, 1, "scan_ssids scans exactly once")
+eq(list and #list, 2, "duplicate bssids and the hidden ap collapse to 2 ssids")
+eq(list[1], "HomeWifi", "first-seen ssid comes first")
+eq(list[2], "Cafe", "second ssid kept")
+
+nab.wifi_seen = function() return {} end
+eq(setup.scan_ssids(), nil, "an empty scan yields no list, not an empty one")
+
+-- AP mode: the binding refuses (nil, msg) and the portal just has no drop-down
+nab.wifi_scan = function() return nil, "wifi_scan: radio is in AP mode" end
+eq(setup.scan_ssids(), nil, "a failed scan yields no list")
+
 -- run: the whole boot flow over fakes -------------------------------------
 
 local led, apname, dhcpd_args, persisted = {}, nil, nil, nil
-local radio_up = false
+local radio_up, scanned_at_ap = false, "unset"
 nab = {
   wifi_up = function() radio_up = true; return true end,
   -- Model the dongle: the MAC reads all-zero until the radio is brought up
@@ -92,15 +120,19 @@ nab = {
   wifi_ap = function(name) apname = name; return true end,
   led = function(w, r, g, b) led[#led + 1] = {w, r, g, b} end,
   config = function(cfg) persisted = cfg; return true end, -- the real save path
+  -- The scan only works as a station, so it must run before wifi_ap: record
+  -- the AP name at scan time - it is still nil if the order is right (#273).
+  wifi_scan = function() scanned_at_ap = apname; return 2 end,
+  wifi_seen = function() return {{ssid = "Home"}, {ssid = "Cafe & Co"}} end,
 }
 -- a fake iface whose serve delivers one valid POST to the handler
-local dnsd_called = false
+local dnsd_called, get_body = false, nil
 local fake_iface = {
   dhcpd = function(self, o) dhcpd_args = o end,
   dnsd = function(self) dnsd_called = true end,
   serve = function(self, port, handler)
     self.port = port
-    handler({method = "GET"}) -- a phone loads the page first
+    get_body = handler({method = "GET"}) -- a phone loads the page first
     handler({method = "POST", body = "ssid=Home&psk=hunter2pw&url="})
   end,
 }
@@ -112,6 +144,9 @@ eq(dnsd_called, true, "run starts the captive-portal DNS responder")
 eq(dhcpd_args ~= nil, true, "run starts the single-lease dhcp server")
 eq(net.link.ntoa(dhcpd_args.ip), setup.AP_IP, "dhcpd uses the fixed AP ip")
 eq(net.link.ntoa(dhcpd_args.client_ip), setup.CLIENT_IP, "dhcpd hands out the client ip")
+eq(scanned_at_ap, nil, "run scans while still a station, before wifi_ap")
+ok(get_body:find("<datalist"), "the served form offers the scanned networks")
+ok(get_body:find('value="Cafe &amp; Co"'), "a scanned ssid is an escaped option")
 eq(got and got.ssid, "Home", "run returns the creds captured by the portal")
 eq(got.psk, "hunter2pw", "run returns the submitted psk")
 eq(persisted and persisted.ssid, "Home", "run persists the creds via nab.config")
