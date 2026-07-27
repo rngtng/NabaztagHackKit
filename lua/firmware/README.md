@@ -120,7 +120,7 @@ the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
 `nab.wifi`'s failure-reason classification + the config `fails` counter field —
 and ~0.65 KB the #235 OTA whole-image flash writer (`hal/ota.c`) +
 `nab.flash_firmware` binding). `task lua:firmware:build` also stamps
-`bin/firmware.fw` (16-byte header + image, `tools/otaimage.py`) — the file the setup
+`bin/firmware.sim` (16-byte header + image, `tools/otaimage.py`) — the file the setup
 page's firmware uploader (`net.ota`, #235) verifies and flashes. The stack is **WPA2-CCMP only** (#124,
 3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
 joins open or WPA2-PSK(AES) networks and rejects anything else at scan/auth. Newlib's stdio FILE layer stays out only

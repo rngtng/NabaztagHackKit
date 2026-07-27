@@ -1,7 +1,7 @@
 -- net.ota - portal firmware upload + brick-safe verification (#235).
 --
 -- The JTAG-free "manually upload a new firmware" path: the setup page (#233)
--- accepts a .fw file (tools/otaimage.py output = a 16-byte header + the raw
+-- accepts a .sim file (tools/otaimage.py output = a 16-byte header + the raw
 -- image), and this module verifies it ENTIRELY before anything touches flash -
 -- magic, target-hardware id, exact length, CRC-32 - then hands only a fully
 -- verified image to nab.flash_firmware, which erases internal flash from
@@ -94,10 +94,10 @@ function ota.page(opts)
   opts = opts or {}
   local msg = opts.msg and ("<p class=m>" .. esc(opts.msg) .. "</p>") or ""
   return HEAD .. "<body><h1>Update firmware</h1>" .. msg
-    .. "<p>Choose a Nabaztag firmware file (<code>.fw</code>) built by the SDK."
+    .. "<p>Choose a Nabaztag firmware file (<code>.sim</code>) built by the SDK."
     .. " The rabbit verifies magic, hardware id, length and checksum before it"
     .. " flashes.</p>"
-    .. "<input type=file id=f accept=.fw>"
+    .. "<input type=file id=f accept=.sim>"
     .. "<button onclick=up()>Upload &amp; flash</button>"
     .. "<p><small><b>Do not unplug during flashing.</b> There is no second"
     .. " firmware slot - a bad file is refused before flashing, but a power cut"

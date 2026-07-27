@@ -120,7 +120,7 @@ writes creds with no `fails` key, so it resets the strikes to 0.
 
 The setup page also hosts a JTAG-free firmware uploader — the recovery/dev path
 that works even when the rabbit can't join any Wi-Fi. The build stamps
-`bin/firmware.fw` (`tools/otaimage.py`): a 16-byte header — magic `NBZF`, header
+`bin/firmware.sim` (`tools/otaimage.py`): a 16-byte header — magic `NBZF`, header
 version, target-hardware id, firmware version, image length, CRC-32 — prepended
 to the raw `firmware.bin`. The uploader (a file picker at `/firmware` that POSTs the
 raw bytes) feeds the blob to `ota.verify`, which checks **all** of magic /
