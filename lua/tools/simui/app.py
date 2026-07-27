@@ -86,8 +86,8 @@ def send_frame(chunk: bytes):
 # The 4 belly LEDs -> (cx, cy, r) on the 240x360 cone-body SVG (a row of three
 # plus one below, like the real device's belly lights). The 5th, "nose", is
 # drawn on the face (see rabbit_static_svg), not here.
-LED_XY = {"left": (78, 300, 14), "belly": (120, 300, 14), "right": (162, 300, 14),
-          "bottom": (120, 328, 13)}
+LED_XY = {"left": (74, 286, 15), "belly": (120, 286, 15), "right": (166, 286, 15),
+          "bottom": (120, 318, 14)}
 
 
 def _css(rgb):
@@ -152,11 +152,12 @@ def rabbit_static_svg() -> str:
     LEDs. Every animated element carries a stable id and a CSS transition, and
     starts at rest / unlit; tick() drives the dynamic values via `tick_js` so the
     browser interpolates motion + glow rather than snapping each poll."""
-    # cone body: a broad rounded head flaring straight out to a wide rounded base
-    # (proportions traced from the real device - base ~0.7 of the body height).
-    body = ("M120,144 C139,144 150,157 153,183 C160,233 179,300 189,330 "
-            "Q193,345 173,345 L67,345 Q47,345 51,330 C61,300 80,233 87,183 "
-            "C90,157 101,144 120,144 Z")
+    # cone body: symmetric shape built from the real device's measured width
+    # profile (tools trace of the front-view vector - broad flat-topped head, a
+    # gentle flare to a wide rounded base ~0.85 of the head-to-base height).
+    body = ("M120,146 C140,146 155,150 159,158 C169,178 179,216 186,258 "
+            "C190,286 195,312 195,323 Q196,331 181,331 L59,331 Q44,331 45,323 "
+            "C45,312 50,286 54,258 C61,216 71,178 81,158 C85,150 100,146 120,146 Z")
     parts = [
         '<svg viewBox="0 0 240 360" xmlns="http://www.w3.org/2000/svg" '
         'style="width:100%;max-width:320px">',
@@ -170,24 +171,24 @@ def rabbit_static_svg() -> str:
         _ear(113, 149, EAR_REST[0], "earL"), _ear(127, 149, EAR_REST[1], "earR"),
         f'<path d="{body}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>',
         # soft glossy highlight down the left of the body (kept inside the shell)
-        '<path d="M96,226 C86,260 84,296 92,324" fill="none" stroke="#ffffff" '
+        '<path d="M92,224 C82,258 82,296 93,323" fill="none" stroke="#ffffff" '
         'stroke-width="10" stroke-linecap="round" opacity="0.4"/>',
         # the whole head IS the click button - the crown shade fades in while held
         # (opacity driven by tick), so nothing is drawn on it at rest.
-        '<ellipse id="crown" cx="120" cy="166" rx="48" ry="36" fill="#000000" '
+        '<ellipse id="crown" cx="120" cy="176" rx="52" ry="42" fill="#000000" '
         'opacity="0"/>',
         # face: two simple oval eyes (the iconic Nabaztag look)
-        '<ellipse cx="105" cy="190" rx="6.5" ry="9" fill="#1e1e1e" '
-        'transform="rotate(10 105 190)"/>',
-        '<ellipse cx="135" cy="190" rx="6.5" ry="9" fill="#1e1e1e" '
-        'transform="rotate(-10 135 190)"/>',
+        '<ellipse cx="103" cy="186" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(10 103 186)"/>',
+        '<ellipse cx="137" cy="186" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(-10 137 186)"/>',
         # nose: the blue LED glows through the shell (id nose-glow, fades in); on
         # top, the iconic dark nose - a small downward triangle with a short stem.
-        '<ellipse id="nose-glow" cx="120" cy="220" rx="21" ry="23" fill="#4a7fa5" '
+        '<ellipse id="nose-glow" cx="120" cy="214" rx="22" ry="24" fill="#4a7fa5" '
         'filter="url(#glow)" opacity="0"/>',
-        '<path d="M112,214 Q120,211 128,214 L121,225 Q120,226 119,225 Z" '
+        '<path d="M111,208 Q120,205 129,208 L121,219 Q120,220 119,219 Z" '
         'fill="#242424"/>',
-        '<path d="M120,225 L120,234" stroke="#242424" stroke-width="2.4" '
+        '<path d="M120,219 L120,229" stroke="#242424" stroke-width="2.4" '
         'stroke-linecap="round"/>',
     ]
     # belly LEDs: a glow disc (fades in when lit) behind a solid core that
