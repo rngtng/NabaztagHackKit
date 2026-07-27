@@ -138,6 +138,108 @@ void wdt_start(void)
   CLR_WDT;
 }
 
+/* The RT2573 intermittently fails to come up at boot: the dongle never
+ * enumerates and netState stays RT2501_S_BROKEN for the whole session. A wedged
+ * dongle keeps running whatever state its 8051 was left in until VBUS actually
+ * drops - re-initialising the ML60842 alone does not clear it, and a JTAG
+ * reflash resets only the CPU. So drop VBUS before every attempt, cold-booting
+ * the (internal, host-port-powered) module like a real power-on, and retry the
+ * whole controller + host re-init cycle.
+ *
+ * Backported from the lua track's hal/wifi.c wifi_up(), where the sequence is
+ * hardware-verified. Retrying here, before the VM starts, avoids the crash an
+ * in-place re-enumeration causes: no device is bound while rt2501_state() is
+ * RT2501_S_BROKEN, so there are no in-flight URBs to tear down. */
+#define USB_BRINGUP_ATTEMPTS 3      /* x (VBUS-off + wait) */
+#define USB_BRINGUP_WAIT_MS  10000  /* per attempt; a healthy dongle binds in 1-3s */
+#define USB_VBUS_OFF_MS      1000   /* long enough for the module to lose power */
+
+extern uint8_t usbhost_init_status;  /* usbhcore.c's init-once guard */
+
+/**
+ * @brief One USB service slice, for use before the main loop exists.
+ *
+ * hcd_rh_events() is what drives connect -> reset -> enumerate, and nothing
+ * else runs it this early. Frames arriving before the VM (so before netCb)
+ * have no consumer and are freed.
+ */
+static void usb_bringup_pump(void)
+{
+  static uint32_t last_timer;
+  struct rt2501buffer *r;
+
+  CLR_WDT;
+  usbhost_events();
+  while((r=rt2501_receive())!=NULL)
+  {
+    disable_ohci_irq();
+    hcd_free(r);
+    enable_ohci_irq();
+    CLR_WDT;
+  }
+  if(counter_timer-last_timer>=200)
+  {
+    last_timer=counter_timer;
+    rt2501_timer();
+  }
+}
+
+/**
+ * @brief Bring up the USB host and wait for the RT2501 driver to bind.
+ * @return the state reached; RT2501_S_BROKEN if every attempt failed.
+ */
+static int32_t usb_wifi_bringup(void)
+{
+  int32_t state = RT2501_S_BROKEN;
+  uint32_t t0;
+  uint8_t attempt;
+
+  usbctrl_host_driver_set(NULL, usbhost_interrupt);
+  //Install the driver once - re-installing duplicates the driver-list entry
+  if(rt2501_driver_install() != OK)
+  {
+    DBG_MAIN("RT2501 Driver installation failed"EOL);
+    return RT2501_S_BROKEN;
+  }
+
+  for(attempt=0; attempt<USB_BRINGUP_ATTEMPTS && state==RT2501_S_BROKEN; attempt++)
+  {
+    /* One line per attempt: on a rig with UART0 wired this is how you tell a
+     * first-try bring-up from a retry that the VBUS drop rescued. */
+    DBG_MAIN("USB bring-up: VBUS cold boot"EOL);
+
+    usbctrl_vbus_set(VBUS_OFF);
+    DelayMs(USB_VBUS_OFF_MS);
+
+    if(usbctrl_init(USB_HOST) != OK)
+    {
+      DBG_MAIN("USB Controller initialization failed"EOL);
+      continue;
+    }
+
+    reg_irq_handler();
+    put_value(FIQEN, 0x00 );
+    __enable_interrupt();
+
+    setup_malloc();           //re-arm the EXTRAM bank; a failed attempt's descriptors are abandoned
+    usbhost_init_status = 0;  //force a full hcd_init() on retry
+    if(usbhost_init() != OK)
+    {
+      DBG_MAIN("USB Host initialization failed"EOL);
+      continue;
+    }
+
+    t0 = counter_timer;
+    do
+    {
+      usb_bringup_pump();
+      state = rt2501_state();
+    } while(state==RT2501_S_BROKEN && counter_timer-t0<USB_BRINGUP_WAIT_MS);
+  }
+
+  return state;
+}
+
 /**
  * Usercode Entry point
  */
@@ -147,7 +249,6 @@ int main(void)
   int32_t iii;
   uint8_t *ptest;
   #endif
-	int32_t ret;
 //        int st;
 //        int sendarp=0;
   //~ uint8_t buf[64];
@@ -194,8 +295,6 @@ int main(void)
   //registration of IRQ handler
   reg_irq_handler();
 
-  setup_malloc();
-
   //Enable interrupts
   __enable_interrupt();
 
@@ -236,35 +335,17 @@ int main(void)
     DBG_MAIN("Big Endian"EOL);
   #endif
 
-  // Configure USB
-	usbctrl_host_driver_set(NULL, usbhost_interrupt);
-	ret = usbctrl_init(USB_HOST);
-	if(ret != OK)
-  {
-    DBG_MAIN("USB Controller initialization failed"EOL);
-    while(1);
-  };
-
-	reg_irq_handler();
-  put_value(FIQEN, 0x00 );
-
-	__enable_interrupt();
-
 //xmodem_recv((uuint8_t *)SRAM_BASE);
 
-  ret = usbhost_init();
-	if(ret != OK)
+  // Configure USB and cold-boot the wifi dongle until it binds
+  if(usb_wifi_bringup() == RT2501_S_BROKEN)
   {
-    DBG_MAIN("USB Host initialization failed"EOL);
-    while(1);
-  };
-
-	ret = rt2501_driver_install();
-	if(ret != OK)
-  {
-    DBG_MAIN("RT2501 Driver installation failed"EOL);
-    while(1);
-  };
+    /* Boot on regardless: the rabbit still plays audio and reads buttons
+     * without wifi, and boot.mtl's wifiRun raises the red-nose "power-cycle me"
+     * indicator while netState stays BROKEN. Hanging here would just feed the
+     * watchdog a reboot loop. */
+    DBG_MAIN("RT2501 bring-up failed - continuing without wifi"EOL);
+  }
 
   DBG_MAIN("Nabaztag firmware ("__DATE__" "__TIME__") ready."EOL);
   DBG_MAIN("vmemInit"EOL);

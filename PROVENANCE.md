@@ -32,3 +32,9 @@ Bugs found and fixed here while building the test suite, all present in upstream
 Linux `rt2x00`, at algorithm/register granularity (umbrella #151): RSSI decode (#155),
 bounded BBP/RF busy-bit polling (#156), BBP R3 smart-mode bit (#153), RX replay/PN
 protection (#154), WPA2/CCMP GTK unwrap (#152, KAT-verified via `task mtl:firmware:test:crypto`).
+
+**USB bring-up retry** (`mtl/firmware/src/main.c`) - backported *from* the lua track
+(`lua/firmware/src/hal/wifi.c` `wifi_up()`, hardware-verified under #119) *into* mtl (#144):
+the boot USB init drops VBUS and retries the controller/host re-init cycle up to 3x, so an
+RT2573 that fails to enumerate - or is wedged on stale 8051 state - gets a real cold boot.
+Both tracks now run the same sequence; a change to one belongs in the other.
