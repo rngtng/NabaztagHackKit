@@ -86,8 +86,8 @@ def send_frame(chunk: bytes):
 # The 4 belly LEDs -> (cx, cy, r) on the 240x360 cone-body SVG (a row of three
 # plus one below, like the real device's belly lights). The 5th, "nose", is
 # drawn on the face (see rabbit_static_svg), not here.
-LED_XY = {"left": (85, 292, 13), "belly": (120, 292, 13), "right": (155, 292, 13),
-          "bottom": (120, 320, 12)}
+LED_XY = {"left": (78, 300, 14), "belly": (120, 300, 14), "right": (162, 300, 14),
+          "bottom": (120, 328, 13)}
 
 
 def _css(rgb):
@@ -136,13 +136,13 @@ def _ear(px, py, angle, eid):
     `angle`. Rotation is a CSS transform about the base (transform-origin bottom-
     centre of the shape) so tick() can retarget it and the browser tweens the
     spin smoothly between the 100 ms samples (id `eid`)."""
-    d = (f"M{px-15},{py} C{px-17},{py-52} {px-11},{py-120} {px-6},{py-152} "
-         f"Q{px},{py-166} {px+6},{py-152} C{px+11},{py-120} {px+17},{py-52} "
-         f"{px+15},{py} Z")
+    d = (f"M{px-14},{py} C{px-15},{py-54} {px-13},{py-116} {px-8},{py-150} "
+         f"Q{px},{py-166} {px+8},{py-150} C{px+13},{py-116} {px+15},{py-54} "
+         f"{px+14},{py} Z")
     return (f'<g id="{eid}" style="transform-box:fill-box;transform-origin:50% 100%;'
             f'transform:rotate({angle}deg)">'
             f'<path d="{d}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>'
-            f'<path d="M{px-3},{py-24} C{px-4},{py-70} {px-2},{py-112} {px},{py-140}" '
+            f'<path d="M{px-3},{py-26} C{px-4},{py-68} {px-2},{py-110} {px},{py-138}" '
             f'fill="none" stroke="#e3ded2" stroke-width="4" stroke-linecap="round"/></g>')
 
 
@@ -152,10 +152,11 @@ def rabbit_static_svg() -> str:
     LEDs. Every animated element carries a stable id and a CSS transition, and
     starts at rest / unlit; tick() drives the dynamic values via `tick_js` so the
     browser interpolates motion + glow rather than snapping each poll."""
-    # cone body: a narrow rounded crown flaring smoothly to a wide rounded base.
-    body = ("M120,148 C141,149 153,184 163,238 C170,282 183,306 187,318 "
-            "Q190,332 169,334 L71,334 Q50,332 53,318 C57,306 70,282 77,238 "
-            "C87,184 99,149 120,148 Z")
+    # cone body: a broad rounded head flaring straight out to a wide rounded base
+    # (proportions traced from the real device - base ~0.7 of the body height).
+    body = ("M120,144 C139,144 150,157 153,183 C160,233 179,300 189,330 "
+            "Q193,345 173,345 L67,345 Q47,345 51,330 C61,300 80,233 87,183 "
+            "C90,157 101,144 120,144 Z")
     parts = [
         '<svg viewBox="0 0 240 360" xmlns="http://www.w3.org/2000/svg" '
         'style="width:100%;max-width:320px">',
@@ -166,27 +167,27 @@ def rabbit_static_svg() -> str:
         '#nose-glow,#crown{transition:opacity .2s ease}</style>',
         '<defs><filter id="glow" x="-70%" y="-70%" width="240%" height="240%">'
         '<feGaussianBlur stdDeviation="6"/></filter></defs>',
-        _ear(112, 152, EAR_REST[0], "earL"), _ear(128, 152, EAR_REST[1], "earR"),
+        _ear(113, 149, EAR_REST[0], "earL"), _ear(127, 149, EAR_REST[1], "earR"),
         f'<path d="{body}" fill="#f4f3ef" stroke="#c7c2b6" stroke-width="2.5"/>',
         # soft glossy highlight down the left of the body (kept inside the shell)
-        '<path d="M101,232 C93,262 91,292 97,316" fill="none" stroke="#ffffff" '
-        'stroke-width="9" stroke-linecap="round" opacity="0.4"/>',
+        '<path d="M96,226 C86,260 84,296 92,324" fill="none" stroke="#ffffff" '
+        'stroke-width="10" stroke-linecap="round" opacity="0.4"/>',
         # the whole head IS the click button - the crown shade fades in while held
         # (opacity driven by tick), so nothing is drawn on it at rest.
-        '<ellipse id="crown" cx="120" cy="170" rx="46" ry="34" fill="#000000" '
+        '<ellipse id="crown" cx="120" cy="166" rx="48" ry="36" fill="#000000" '
         'opacity="0"/>',
         # face: two simple oval eyes (the iconic Nabaztag look)
-        '<ellipse cx="106" cy="200" rx="6.5" ry="9" fill="#1e1e1e" '
-        'transform="rotate(10 106 200)"/>',
-        '<ellipse cx="134" cy="200" rx="6.5" ry="9" fill="#1e1e1e" '
-        'transform="rotate(-10 134 200)"/>',
+        '<ellipse cx="105" cy="190" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(10 105 190)"/>',
+        '<ellipse cx="135" cy="190" rx="6.5" ry="9" fill="#1e1e1e" '
+        'transform="rotate(-10 135 190)"/>',
         # nose: the blue LED glows through the shell (id nose-glow, fades in); on
         # top, the iconic dark nose - a small downward triangle with a short stem.
-        '<ellipse id="nose-glow" cx="120" cy="224" rx="20" ry="22" fill="#4a7fa5" '
+        '<ellipse id="nose-glow" cx="120" cy="220" rx="21" ry="23" fill="#4a7fa5" '
         'filter="url(#glow)" opacity="0"/>',
-        '<path d="M112,218 Q120,215 128,218 L121,229 Q120,230 119,229 Z" '
+        '<path d="M112,214 Q120,211 128,214 L121,225 Q120,226 119,225 Z" '
         'fill="#242424"/>',
-        '<path d="M120,229 L120,238" stroke="#242424" stroke-width="2.4" '
+        '<path d="M120,225 L120,234" stroke="#242424" stroke-width="2.4" '
         'stroke-linecap="round"/>',
     ]
     # belly LEDs: a glow disc (fades in when lit) behind a solid core that
