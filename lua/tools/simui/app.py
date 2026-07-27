@@ -96,7 +96,34 @@ def _css(rgb):
 
 
 OFF_COL = "#efece2"          # a lit-off LED reads as the shell, never black (#43)
-EAR_REST = (-13, 13)         # left/right ear splay at rest, in degrees
+EAR_REST = (-45, 45)         # left/right ear splay at rest: ~45 deg to the side,
+                             # like the real device (they sweep up<->side as they
+                             # turn, passing through everything in between).
+# The sim's synthetic encoder ticks ~8 counts/ms (far faster than the physical
+# motor) and wraps at 16 bits. Mapping it straight to degrees (mod 360) spun the
+# ear absurdly fast and made each poll's tween target jump backwards randomly.
+# Instead accumulate the unwrapped signed delta into a continuous (unbounded)
+# angle at a calm scale, so the CSS transition always eases one way.
+DEG_PER_COUNT = 0.012
+_ear_last = [None, None]     # previous encoder pos per ear
+_ear_angle = [0.0, 0.0]      # accumulated rotation per ear, degrees
+
+
+def ear_angles():
+    """Advance the two ears' continuous rotation from the encoder delta since the
+    last poll and return their absolute angles (rest splay + accumulated turn)."""
+    out = []
+    for i, e in enumerate(sim.ears):
+        pos = e["pos"]
+        last = _ear_last[i]
+        _ear_last[i] = pos
+        if last is not None:
+            d = (pos - last) & 0xFFFF          # unwrap the 16-bit encoder
+            if d >= 0x8000:
+                d -= 0x10000
+            _ear_angle[i] += d * DEG_PER_COUNT
+        out.append(EAR_REST[i] + _ear_angle[i])
+    return out
 
 
 def _ear(px, py, angle, eid):
@@ -173,10 +200,7 @@ def tick_js() -> str:
     makes the browser tween ear rotation, LED/nose glow and the crown shade
     between polls instead of snapping."""
     leds = {name: sim.led_rgb[i] for i, name in enumerate(LED_PHYS_NAME)}
-    e = sim.ears
-    # ears splay at rest and turn with the encoder count.
-    la = EAR_REST[0] + (e[0]["pos"] % 360)
-    ra = EAR_REST[1] - (e[1]["pos"] % 360)
+    la, ra = ear_angles()   # continuous, smoothed rotation from the encoder delta
     js = [
         "var S=function(id,f,o,t){var e=document.getElementById(id);if(!e)return;"
         "if(f!=null)e.style.fill=f;if(o!=null)e.style.opacity=o;"
