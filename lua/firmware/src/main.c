@@ -564,6 +564,24 @@ static int nab_wifi_ap(lua_State *L)
   return 1;
 }
 
+/* nab.wifi_up() -> true | nil, message. Cold-boot the USB dongle (~10 s) WITHOUT
+ * joining or beaconing, so nab.wifi_mac() reads the real EEPROM MAC. setup.run
+ * (#233) calls this before deriving the "Nabaztag-XXXX" AP name: the MAC is
+ * all-zero until the radio is up, and nab.wifi_ap is itself the bring-up, so
+ * naming off wifi_mac() before it yielded "Nabaztag-0000" on every device. With
+ * the dongle already up, the following nab.wifi_ap skips the cold boot (its
+ * BROKEN check is false) and only sets master mode - no double boot. */
+static int nab_wifi_up(lua_State *L)
+{
+  if (wifi_up() != 0) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "wifi_up: radio bring-up failed");
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 /* nab.wifi_send(dst_mac, payload) -> true | nil, message. One raw data frame
  * at the 802.3 payload boundary: payload (a byte string, starts at LLC) goes
  * to dst_mac, a 6-byte binary string ("\xFF\xFF\xFF\xFF\xFF\xFF" = broadcast;
@@ -708,6 +726,7 @@ static const luaL_Reg nab_funcs[] = {
     {"led", nab_led},
     {"wifi", nab_wifi},
     {"wifi_ap", nab_wifi_ap},
+    {"wifi_up", nab_wifi_up},
     {"wifi_send", nab_wifi_send},
     {"wifi_recv", nab_wifi_recv},
     {"wifi_mac", nab_wifi_mac},

@@ -156,7 +156,16 @@ end
 -- (tests); opts.name overrides the derived AP SSID.
 function setup.run(opts)
   opts = opts or {}
-  local name = opts.name or setup.ap_name(nab.wifi_mac())
+  -- Cold-boot the dongle FIRST: nab.wifi_mac() is all-zero until the radio is
+  -- up, and nab.wifi_ap is itself the bring-up, so deriving the name off the MAC
+  -- before it beacons "Nabaztag-0000" on every device (verified on hardware).
+  -- nab.wifi_up leaves the dongle up, so nab.wifi_ap below only sets master
+  -- mode - no second cold boot. A caller-supplied opts.name skips all of it.
+  local name = opts.name
+  if not name then
+    assert(nab.wifi_up())
+    name = setup.ap_name(nab.wifi_mac())
+  end
   assert(nab.wifi_ap(name))
   nab.led("nose", 0, 0, 40) -- dim blue = setup mode
   local ifc = opts.iface or net.iface.new(net.iface.nabdrv())

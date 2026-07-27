@@ -81,8 +81,14 @@ ok(b3:find("class=m>"), "invalid POST shows an error message")
 -- run: the whole boot flow over fakes -------------------------------------
 
 local led, apname, dhcpd_args, persisted = {}, nil, nil, nil
+local radio_up = false
 nab = {
-  wifi_mac = function() return H"00095b8f3ac4" end,
+  wifi_up = function() radio_up = true; return true end,
+  -- Model the dongle: the MAC reads all-zero until the radio is brought up
+  -- (the real hardware behaviour). This is the Nabaztag-0000 guard - if run()
+  -- ever derives the name before nab.wifi_up() again, apname becomes
+  -- "Nabaztag-0000" and the assertion below fails.
+  wifi_mac = function() return radio_up and H"00095b8f3ac4" or H"000000000000" end,
   wifi_ap = function(name) apname = name; return true end,
   led = function(w, r, g, b) led[#led + 1] = {w, r, g, b} end,
   config = function(cfg) persisted = cfg; return true end, -- the real save path
@@ -121,6 +127,7 @@ local IMG = H"cafebabe0011223344556677"
 local blob = string.pack(">c4BBI2I4I4", net.ota.MAGIC, 1, net.ota.HW_ID, 2,
                          #IMG, net.ota.crc32(IMG)) .. IMG
 nab = {
+  wifi_up = function() return true end,
   wifi_mac = function() return H"00095b8f3ac4" end,
   wifi_ap = function() return true end,
   led = function() end,
