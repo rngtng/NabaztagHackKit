@@ -73,43 +73,56 @@ end
 
 -- Every length here comes off the wire, so each one is bounds-checked against
 -- #p before it is used; dns.answer runs this under pcall as the backstop.
+--
+-- A failure carries a third value, `definitive`: true once the datagram is
+-- confidently the answer to THIS query (our id matched) but is negative or
+-- unusable - NXDOMAIN, TC, a malformed answer section, no A record. The waiter
+-- (iface:resolve) must stop on those, not retry to its full timeout. A false
+-- `definitive` marks a datagram we are not sure is ours - wrong id, a spoofed
+-- question echo, a runt/oversized frame - which the waiter ignores and keeps
+-- listening past, so a stray packet cannot cut a lookup short.
 local function parse_answer(p, id, host)
-  if #p < 12 then return nil, "short response" end
-  if #p > MAX_MSG then return nil, "oversized response" end
-  if p:sub(1, 2) ~= id then return nil, "wrong id" end
+  if #p < 12 then return nil, "short response", false end
+  if #p > MAX_MSG then return nil, "oversized response", false end
+  if p:sub(1, 2) ~= id then return nil, "wrong id", false end
   local flags, qd, an = string.unpack(">I2I2I2", p, 3)
-  if (flags & 0x8000) == 0 then return nil, "not a response" end
-  if (flags & 0x0200) ~= 0 then return nil, "truncated" end -- no TCP fallback
-  if (flags & 0x000F) ~= 0 then return nil, "rcode " .. (flags & 0x000F) end
-  if qd ~= 1 then return nil, "bad question count" end
+  if (flags & 0x8000) == 0 then return nil, "not a response", false end
+  -- Past the id check the datagram is ours: negatives below are definitive.
+  if (flags & 0x0200) ~= 0 then return nil, "truncated", true end -- no TCP fallback
+  if (flags & 0x000F) ~= 0 then return nil, "rcode " .. (flags & 0x000F), true end
+  if qd ~= 1 then return nil, "bad question count", true end
   local qn = dns.qname(host)
-  if not qn then return nil, "bad name" end
-  -- The echoed question must be the one we asked: cheap, and it drops both a
-  -- stale reply from an earlier attempt and a blind off-path answer.
+  if not qn then return nil, "bad name", true end
+  -- The echoed question must be the one we asked: cheap, and it drops a blind
+  -- off-path answer. A mismatch is treated as not-ours (ignore, keep waiting),
+  -- so a spoofed reply carrying our id but a different question cannot end the
+  -- lookup early - the real answer (or the timeout) still decides.
   local q = qn .. string.pack(">I2I2", A, IN)
-  if p:sub(13, 12 + #q) ~= q then return nil, "question mismatch" end
+  if p:sub(13, 12 + #q) ~= q then return nil, "question mismatch", false end
   local i = 13 + #q
   for _ = 1, an do
     i = skip_name(p, i)
-    if not i then return nil, "bad rr name" end
-    if i + 9 > #p then return nil, "short rr" end
+    if not i then return nil, "bad rr name", true end
+    if i + 9 > #p then return nil, "short rr", true end
     local rtype, rclass, ttl, rdlen = string.unpack(">I2I2I4I2", p, i)
     i = i + 10
-    if i + rdlen - 1 > #p then return nil, "bad rdlength" end
+    if i + rdlen - 1 > #p then return nil, "bad rdlength", true end
     if rtype == A and rclass == IN and rdlen == 4 then
       return p:sub(i, i + 3), ttl
     end
     i = i + rdlen -- CNAME/AAAA/...: the A we want is further down the section
   end
-  return nil, "no address"
+  return nil, "no address", true
 end
 
 -- The answer to our own query, or an error - never a throw (principle 3).
--- -> 4-byte ip, ttl (seconds) | nil, err
+-- -> 4-byte ip, ttl (seconds) | nil, err, definitive
+-- `definitive` (see parse_answer) tells iface:resolve a negative that must stop
+-- the retry loop from a datagram it should ignore and wait past.
 function dns.answer(p, id, host)
-  local done, ip, ttl = pcall(parse_answer, p, id, host)
-  if not done then return nil, "malformed response" end
-  return ip, ttl
+  local ok, ip, ttl, definitive = pcall(parse_answer, p, id, host)
+  if not ok then return nil, "malformed response", false end
+  return ip, ttl, definitive
 end
 
 -- resolver: cache -------------------------------------------------------------

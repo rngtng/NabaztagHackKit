@@ -178,24 +178,31 @@ function iface.new(drv)
     end
     local bad = ask()
     if bad then return nil, bad end
+    local err, done
     self.udp_ports[sport] = function(d, pkt)
       if pkt.src ~= server or d.sport ~= 53 then return end
-      local ip, t = dns.answer(d.payload, id, host)
-      if ip then got, ttl = ip, t end
+      local ip, t, definitive = dns.answer(d.payload, id, host)
+      if ip then got, ttl, done = ip, t, true
+      -- A definitive negative (NXDOMAIN, TC, no A) is our answer: stop now with
+      -- its error instead of retrying to the full timeout. Anything dns.answer
+      -- is unsure is ours (wrong id, spoofed question) leaves `done` unset, so
+      -- the loop keeps listening.
+      elseif definitive then err, done = t, true end
     end
     local t0, last = self.time(), self.time()
-    while not got do
+    while not done do
       if self.time() - t0 > (timeout or 5000) then
         self.udp_ports[sport] = nil
         return nil, "dns timeout"
       end
       self:poll(100)
-      if not got and self.time() - last > 1000 then
+      if not done and self.time() - last > 1000 then
         last = self.time()
         ask() -- the first send may also have been eaten by the ARP round trip
       end
     end
     self.udp_ports[sport] = nil
+    if not got then return nil, err end
     dns.remember(host, got, ttl, self.time())
     return got
   end

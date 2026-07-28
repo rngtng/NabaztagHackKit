@@ -206,6 +206,25 @@ refused(RESP .. ("\0"):rep(600), nil, "an oversized (>512 B) datagram")
 refused(RESP, "other.example", "a response for a name we did not ask")
 refused(RESP, "a..b", "a response checked against a malformed name")
 
+-- The `definitive` third return tells iface:resolve a negative it must stop on
+-- (our id matched, the answer is bad) from a datagram it should ignore and wait
+-- past (not confidently ours). A false flag must never end a lookup early.
+local function definitive(p, host, id)
+  return select(3, dns.answer(p, id or ID, host or "example.com"))
+end
+eq(definitive(RESP_NXDOMAIN), true, "NXDOMAIN is a definitive negative - stop")
+eq(definitive(RESP_EMPTY), true, "NOERROR-no-A is definitive - stop")
+eq(definitive(RESP_TC), true, "a truncated answer is definitive - no TCP fallback")
+eq(definitive(RESP_A_RDLEN16), true, "a matched answer with no usable A is definitive")
+eq(definitive(RESP_BADID), false, "a wrong-id datagram is not ours - keep waiting")
+eq(definitive(RESP_QR0), false, "a query (QR=0) is not our answer - keep waiting")
+eq(definitive(RESP_OTHER_Q), false,
+   "a matched-id reply to another question is not trusted - keep waiting")
+eq(definitive(RESP .. ("\0"):rep(600)), false, "an oversized frame is ignored")
+eq(definitive("garbage"), false, "a runt datagram is ignored")
+eq(select(1, dns.answer(RESP, ID, "example.com")), EXAMPLE_IP,
+   "a good answer still returns the address (definitive unused on success)")
+
 -- A pointer loop must terminate, not hang: the answer's owner name sits at
 -- offset 29 and is a pointer to offset 29 - itself.
 local LOOP = H"12348180000100010000000007657861"

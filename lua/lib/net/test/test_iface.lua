@@ -283,6 +283,80 @@ local nports2 = 0
 for _ in pairs(i4.udp_ports) do nports2 = nports2 + 1 end
 eq(nports2, 0, "the port handler is unregistered on timeout too")
 
+-- an NXDOMAIN reply ends the lookup at once with its rcode, not a timeout.
+-- This is the case the black-hole test cannot reach: the resolver *answers*,
+-- and the answer is a definitive negative. Regression guard for the resolve
+-- loop discarding dns.answer's error and spinning to the full budget instead.
+local function nxresolver(_, fr)
+  local et6, p6 = link.decap(fr)
+  if et6 == link.ETH_ARP then
+    local a6 = arp.parse(p6)
+    if a6 and a6.op == arp.REQUEST then push(arp.reply(MAC_B, a6.tpa, MAC_A, IP_A)) end
+    return true
+  end
+  local pkt = ipv4.parse(p6)
+  if not pkt or pkt.proto ~= ipv4.UDP then return end
+  local d6 = udp.parse(pkt)
+  if not d6 or d6.dport ~= 53 then return end
+  seen[#seen + 1] = d6.payload
+  -- flags 0x8183 = response, RD, RA, rcode 3 (NXDOMAIN); question echoed, no RRs
+  local body = d6.payload:sub(1, 2)
+                 .. string.pack(">I2I2I2I2I2", 0x8183, 1, 0, 0, 0)
+                 .. d6.payload:sub(13)
+  pushpkt(ipv4.build{src = DNS_IP, dst = IP_A, proto = ipv4.UDP,
+    payload = udp.build(DNS_IP, 53, IP_A, d6.sport, body)})
+  return true
+end
+
+t, sent, rxq, seen, drop = 0, {}, {}, {}, nil
+arp.reset()
+arp.learn(DNS_IP, MAC_B)
+dns.forget()
+hook = nxresolver
+local xip, xerr = i4:resolve("nope.example", 5000)
+eq(xip, nil, "an NXDOMAIN name does not resolve")
+eq(xerr, "rcode 3", "and returns the rcode, not 'dns timeout'")
+eq(#seen, 1, "it stops on the first answer - no retry to the timeout")
+eq(dns.cached("nope.example", 0), nil, "a negative answer is not cached")
+local nports3 = 0
+for _ in pairs(i4.udp_ports) do nports3 = nports3 + 1 end
+eq(nports3, 0, "the port handler is unregistered after a definitive negative")
+
+-- a spoofed reply carrying our id but a different question must NOT end the
+-- lookup - the loop ignores it and still times out (it is not our answer).
+local function spoofer(_, fr)
+  local et6, p6 = link.decap(fr)
+  if et6 == link.ETH_ARP then
+    local a6 = arp.parse(p6)
+    if a6 and a6.op == arp.REQUEST then push(arp.reply(MAC_B, a6.tpa, MAC_A, IP_A)) end
+    return true
+  end
+  local pkt = ipv4.parse(p6)
+  if not pkt or pkt.proto ~= ipv4.UDP then return end
+  local d6 = udp.parse(pkt)
+  if not d6 or d6.dport ~= 53 then return end
+  seen[#seen + 1] = d6.payload
+  -- echo our id, but answer a *different* question with a bogus A record
+  local other = "\4evil" .. QNAME:sub(6)
+  local body = d6.payload:sub(1, 2)
+                 .. string.pack(">I2I2I2I2I2", 0x8180, 1, 1, 0, 0)
+                 .. other .. string.pack(">I2I2", 1, 1)
+                 .. string.pack(">I2I2I2I4I2", 0xC00C, 1, 1, 120, 4) .. H"06060606"
+  pushpkt(ipv4.build{src = DNS_IP, dst = IP_A, proto = ipv4.UDP,
+    payload = udp.build(DNS_IP, 53, IP_A, d6.sport, body)})
+  return true
+end
+
+t, sent, rxq, seen, drop = 0, {}, {}, {}, nil
+arp.reset()
+arp.learn(DNS_IP, MAC_B)
+dns.forget()
+hook = spoofer
+local sip, serr = i4:resolve(NAME, 2000)
+eq(sip, nil, "a spoofed wrong-question reply does not resolve")
+eq(serr, "dns timeout", "it is ignored, and the lookup times out honestly")
+eq(dns.cached(NAME, 0), nil, "nothing from the spoof is cached")
+
 -- http_get by hostname: resolve, then fetch from the address we got ----------
 
 t, sent, rxq, seen, drop = 0, {}, {}, {}, nil
