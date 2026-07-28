@@ -11,6 +11,12 @@
  * decoded audio (unlike the sine test). vlsi_rec_start/read/stop add IMA-ADPCM
  * microphone record, ported from src/firmware's init_adpcm_encode/rec_check/
  * stop_adpcm_encode.
+ *
+ * #265 split that playback path into vlsi_stream_start/feed/busy/stop, where
+ * feed never waits (it pushes what the decoder can take and returns the count),
+ * so Lua can keep the codec fed from its cooperative loop and the CPU is free
+ * in between - the rabbit plays a sound AND animates/serves/answers the REPL.
+ * vlsi_play() is now that same primitive with the waiting put back.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -168,13 +174,24 @@ void vlsi_sine(uint8_t freq_n, uint8_t on)
 
 /* VS10xx end-of-stream flush length: clock out >=2048 endFillBytes so the
  * decoder's internal buffers finish draining rather than being cut off
- * mid-sample. Bounded like the rest of the SDI feed path. */
+ * mid-sample. */
 #define VLSI_FLUSH_BYTES 2052
 
-void vlsi_play(const uint8_t *data, uint32_t len)
-{
-  uint32_t i;
+/* SDI burst size: the datasheet's contract is that a high DREQ means the
+ * decoder can take at least 32 more bytes, so a burst needs one DREQ test,
+ * not one per byte. */
+#define SDI_BURST 32
 
+/* Blocking feeds give up after this many consecutive "DREQ never came back"
+ * waits. Without a bound vlsi_play would hang on a wedged codec - and in the
+ * simulator, where DREQ is unmodelled (reads 0 forever), it would never
+ * return at all. */
+#define VLSI_STALL_MAX 16
+
+static uint8_t stream_open;   /* a vlsi_stream_start() session is active */
+
+void vlsi_stream_start(void)
+{
   /* Ensure decode (native SPI) mode without a soft reset - the PLL clock is
    * set once in init_vlsi and a reset here (at the fast post-init SPI rate)
    * would risk dropping it back to base XTAL. */
@@ -189,20 +206,82 @@ void vlsi_play(const uint8_t *data, uint32_t len)
   vlsi_write_sci(VS1003_VOLUME, (vlsi_volume << 8) | vlsi_volume);
 
   vlsi_ampli(1);
-  vlsi_feed_sdi(data, len);
+  stream_open = 1;
+}
 
-  /* End-of-stream flush. Zero is the correct endFillByte for PCM/WAV, so feed
-   * zeros - avoids the VS1053-only WRAM endFillByte read (0x1E06) this used to
-   * do, which returns garbage on the VS1003B and injected ~2 KB of noise. */
+uint32_t vlsi_stream_feed(const uint8_t *data, uint32_t len)
+{
+  uint32_t sent = 0;
+
+  if (!stream_open)
+    return 0;
+
   CS_AUDIO_SDI_CLEAR;
-  for (i = 0; i < VLSI_FLUSH_BYTES; i++) {
-    wait_dreq();
-    WriteSPI(0x00);
-    get_value(SPDRR0);   /* drain, same as vlsi_feed_sdi */
+  /* Push whole bursts while DREQ says there is room, and stop the moment it
+   * drops - the short return is what lets the caller keep the CPU. */
+  while (sent < len && (INT_AUDIO_READ & INT_AUDIO_BIT)) {
+    uint32_t n = len - sent;
+    if (n > SDI_BURST)
+      n = SDI_BURST;
+    while (n--) {
+      WriteSPI(data[sent++]);
+      get_value(SPDRR0);   /* drain the RX byte each write: a long stream would
+                            * otherwise overflow SPI0's RX FIFO (init_spi never
+                            * clears SPI0 ORF), which stalls the feed */
+    }
+    CLR_WDT;
   }
   CS_AUDIO_SDI_SET;
+  return sent;
+}
 
+uint8_t vlsi_stream_busy(void)
+{
+  /* HDAT1 carries the detected stream format while the decoder has something
+   * to decode and reads 0 once it has drained (in record mode it means the
+   * FIFO fill instead - hence "playback only"). */
+  return stream_open && vlsi_read_sci(VS1003_HDAT1) != 0;
+}
+
+void vlsi_stream_stop(void)
+{
+  stream_open = 0;
   vlsi_ampli(0);
+}
+
+/* Feed the whole buffer, waiting out DREQ between short feeds. Bounded: gives
+ * up after VLSI_STALL_MAX fruitless waits. Returns bytes fed. */
+static uint32_t vlsi_feed_all(const uint8_t *data, uint32_t len)
+{
+  uint32_t sent = 0, stalls = 0;
+
+  while (sent < len && stalls < VLSI_STALL_MAX) {
+    uint32_t n = vlsi_stream_feed(data + sent, len - sent);
+    sent += n;
+    if (n == 0) {
+      wait_dreq();
+      stalls++;
+    } else {
+      stalls = 0;
+    }
+  }
+  return sent;
+}
+
+void vlsi_play(const uint8_t *data, uint32_t len)
+{
+  /* End-of-stream flush source. Zero is the correct endFillByte for PCM/WAV,
+   * so feed zeros - avoids the VS1053-only WRAM endFillByte read (0x1E06) this
+   * used to do, which returns garbage on the VS1003B and injected ~2 KB of
+   * noise. One burst, fed repeatedly, so the zeros cost 32 bytes of flash. */
+  static const uint8_t zeros[SDI_BURST] = {0};
+  uint32_t i;
+
+  vlsi_stream_start();
+  vlsi_feed_all(data, len);
+  for (i = 0; i < VLSI_FLUSH_BYTES; i += SDI_BURST)
+    vlsi_feed_all(zeros, SDI_BURST);
+  vlsi_stream_stop();
 }
 
 void vlsi_rec_start(uint16_t sample_rate, uint16_t gain)

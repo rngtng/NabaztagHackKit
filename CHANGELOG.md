@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+  * [#265](https://github.com/rngtng/NabaztagHackKit/issues/265): the lua track can
+    **make a sound and do something else at the same time**. `vlsi_play()` was one
+    blocking call — soft reset, wait on DREQ per byte, flush, return — so nothing else
+    ran while the rabbit spoke, and nothing bigger than the heap could play at all. The
+    SDI path is now split into `vlsi_stream_start/feed/busy/stop` (`hal/audio.c`) and
+    exposed as **`nab.play_start` / `nab.play_feed(data[, i]) -> accepted` /
+    `nab.playing()` / `nab.play_stop()`**: a feed pushes whole 32-byte bursts while DREQ
+    is high and returns the moment it drops, so a short return is the flow-control
+    signal, not an error. `nab.play` keeps its blocking contract on top of the same
+    primitive, now bounded (16 fruitless DREQ waits, instead of hanging on a wedged
+    codec). **552 B of flash**, measured; ~12.2 KB free.
+    Everything above it is Lua and costs no flash — new **`lua/lib/audio/`**, mirroring
+    `mtl/lib/audio/`: `player.lua` (a queue of sources fed a burst per `:step()` from the
+    caller's loop, 2048-byte endFillByte tail, HDAT1 drain detection, stall bail-out on
+    either clock), `stream.lua` (an HTTP body as a source — head off `net.http`, body
+    queued with high-water flow control and a prebuffer, so a file larger than the 1 MB
+    heap plays as it arrives), `midi.lua` (jingles built as Standard MIDI Files, which the
+    VS1003B decodes natively — ~60 B a note, versus `midi.mtl`'s table of pre-built blobs)
+    and `volume.lua` (the wheel through mtl's squared taper into `nab.volume`).
+    `net.http.response{sink=fn}` streams body bytes out instead of accumulating them —
+    what keeps a stream off the heap. 246 host assertions under `task lua:lib:test` drive
+    a fake VS1003 that accepts N bytes per feed and a fake socket that dribbles a
+    response, asserting what the *decoder* received (byte for byte, in order), the
+    prebuffer, the flow control, both stall paths and the Content-Length cap; the MIDI
+    files are compared against bytes derived from the SMF spec by hand.
+    `apps/audio-demo.lua` is the acceptance demo (jingle + HTTP stream while the belly
+    ring animates and the button answers). `task lua:lib:size`: `audio/player` 2649 B,
+    `audio/stream` 1860 B, `audio/midi` 1584 B, `audio/volume` 670 B. **Not verified on
+    hardware** — no rig access from this session; the simulator has no DREQ model, so
+    every feed there returns 0 and playback is hardware-only (the player reports a stall
+    rather than spinning).
+
   * [#263](https://github.com/rngtng/NabaztagHackKit/issues/263): the lua track can
     **point an ear**. New `lua/lib/hw/` (the behaviour layer mirroring `mtl/lib/hw/`,
     first module `ears.lua`) turns `nab.ear_pos`' raw wrapping 16-bit edge count into

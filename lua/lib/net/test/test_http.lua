@@ -106,3 +106,28 @@ local p2 = http.request()
 p2:feed("POST /x HTTP/1.0\r\nContent-Length: 7\r\n\r\na\r\n\r\nbc")
 eq(p2.done, true, "post body with a blank line completes")
 eq(p2.body, "a\r\n\r\nbc", "post body with blank line intact")
+
+-- Streaming sink (#265): body bytes are handed over as they arrive and never
+-- accumulate, so a file larger than the heap can be played while it downloads.
+local got = {}
+local r7 = http.response{sink = function(s) got[#got + 1] = s end}
+r7:feed("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: 9\r\n\r\nabc")
+eq(r7.status, 200, "sink mode still parses the head")
+eq(r7.headers["content-type"], "audio/mpeg", "and the headers")
+eq(table.concat(got), "abc", "first body bytes went to the sink")
+ok(not r7.done, "not done at 3 of 9 bytes")
+r7:feed("def")
+r7:feed("ghiJUNK")
+eq(table.concat(got), "abcdefghi", "sink gets the body, capped at Content-Length")
+eq(r7.done, true, "done at Content-Length")
+eq(r7.body, "", "and the response itself holds no body")
+eq(r7.nbody, 9, "but still counts what passed through")
+
+-- read-to-close in sink mode
+local got2 = {}
+local r8 = http.response{sink = function(s) got2[#got2 + 1] = s end}
+r8:feed("HTTP/1.0 200 OK\r\n\r\nstream")
+r8:feed("ing")
+r8:eof()
+eq(table.concat(got2), "streaming", "read-to-close body streamed out")
+eq(r8.done, true, "eof completes it")

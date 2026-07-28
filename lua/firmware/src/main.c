@@ -279,6 +279,58 @@ static int nab_play(lua_State *L)
   return 0;
 }
 
+/* nab.play_start(): open a non-blocking playback stream (#265) - decoder into
+ * decode mode, volume re-asserted, amplifier on. Then push bytes with
+ * nab.play_feed as fast as the decoder takes them, and close with
+ * nab.play_stop. This is what lets the rabbit make a sound AND do something
+ * else: nothing here waits. */
+static int nab_play_start(lua_State *L)
+{
+  (void)L;
+  vlsi_stream_start();
+  return 0;
+}
+
+/* nab.play_feed(data [, i]) -> n: push data (from byte i, 1-based, default 1)
+ * to the decoder and return how many bytes it accepted - 0..#data-i+1. A short
+ * return means the decoder's FIFO is full, NOT an error: keep the rest and
+ * offer it again next turn (`i = i + n`). Returns immediately, always.
+ * End of stream is >= 2048 zero endFillBytes fed through here, then
+ * nab.playing() until the decoder has drained. */
+static int nab_play_feed(lua_State *L)
+{
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  lua_Integer i = luaL_optinteger(L, 2, 1);
+  uint32_t n = 0;
+
+  luaL_argcheck(L, i >= 1, 2, "index must be >= 1");
+  if ((size_t)i <= len)
+    n = vlsi_stream_feed((const uint8_t *)data + (i - 1),
+                         (uint32_t)(len - (size_t)i + 1));
+  lua_pushinteger(L, (lua_Integer)n);
+  return 1;
+}
+
+/* nab.playing() -> boolean: true while the decoder still has a stream to
+ * decode (SCI_HDAT1 != 0) inside an open nab.play_start session. Goes false
+ * once the endFillByte tail has drained - that is "the sound finished". */
+static int nab_playing(lua_State *L)
+{
+  lua_pushboolean(L, vlsi_stream_busy());
+  return 1;
+}
+
+/* nab.play_stop(): close the stream (amplifier off). Whatever was still in the
+ * decoder is not drained - call it after nab.playing() goes false for a clean
+ * ending, or right away to cut playback short. */
+static int nab_play_stop(lua_State *L)
+{
+  (void)L;
+  vlsi_stream_stop();
+  return 0;
+}
+
 /* nab.tone(): a small built-in MP3 tone (nab_tone_mp3, see tone_mp3.h) so
  * nab.play + nab.volume are demoable without shipping a file. It is MP3, not
  * raw PCM WAV: the VS1003B on this board decodes MP3 but NOT PCM WAV
@@ -901,6 +953,10 @@ static const luaL_Reg nab_funcs[] = {
     {"volume", nab_volume},
     {"beep", nab_beep},
     {"play", nab_play},
+    {"play_start", nab_play_start},
+    {"play_feed", nab_play_feed},
+    {"play_stop", nab_play_stop},
+    {"playing", nab_playing},
     {"tone", nab_tone},
     {"record", nab_record},
     {"rec_start", nab_rec_start},
