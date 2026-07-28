@@ -29,3 +29,4 @@ boot_lc.h
 *.local.lc
 # apps:compile output (device bytecode built from the .lua next to it)
 /lua/apps/*.lc
+/lua/firmware/test/*.lc
