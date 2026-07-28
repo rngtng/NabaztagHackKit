@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+  * [#263](https://github.com/rngtng/NabaztagHackKit/issues/263): the lua track can
+    **point an ear**. New `lua/lib/hw/` (the behaviour layer mirroring `mtl/lib/hw/`,
+    first module `ears.lua`) turns `nab.ear_pos`' raw wrapping 16-bit edge count into
+    homing and absolute positions — the state machine `hal/motor.h` explicitly left
+    out. **Homing** spins the ear and finds the wheel's one double-width gap by timing
+    (an interval ≥1.5× the shortest seen so far), which lands it on hardware zero,
+    `OFFZERO` holes short of ears-up; **`move_to(n, p)`** counts holes to any of the 17
+    positions, shortest way round unless forced, arriving on `remaining <= 0` so a poll
+    that catches several edges still stops. Idle counter movement past a post-stop
+    coast window is a **hand turn**: direction is unknowable, so the position is voided
+    (not adjusted, as mtl also re-acquired) and `on_touched(n, holes)` fires. A **jam**
+    (no edge for 3 s) or an over-long move (10 s) stops the motor and flags the ear
+    broken — it is never left driving. Pull-style like `lib/net`: the whole HAL is
+    injected, the caller owns the clock and pumps `:step()`, with `:wait()` as the
+    blocking REPL convenience. 69 host tests under `task lua:lib:test` drive a fake
+    wheel (17 holes, one gap, spin-up, ±8 ms jitter) and assert against the *wheel's*
+    hole, not just the module's belief — homing from all 17 start holes, across an
+    encoder **and** 32-bit tick rollover, ten hops with no drift, coast vs. touch, jam
+    and gapless-wheel give-up. No `nab.ear_move` speed argument was added: #179 already
+    measured that these gearmotors are stall-or-go. `task lua:lib:size`: `hw/ears`
+    3424 B (costs no flash — REPL-loaded).
+    
   * [#43](https://github.com/rngtng/NabaztagHackKit/issues/43): a **browser UI
     for the simulator** (v1) - a pixel-retro Nabaztag. New self-contained tool
     `lua/tools/simui/` (NiceGUI + the embedded Unicorn sim in one container):
