@@ -14,6 +14,11 @@ chunk.
 - **`hw/`** (#263) - the hardware behaviour layer, mirroring `mtl/lib/hw/`:
   `ears.lua` turns the raw encoder edge count into homing and absolute ear
   positions (the state machine `hal/motor.h` points at). See `hw/README.md`.
+- **`audio/`** (#265) - non-blocking playback, mirroring `mtl/lib/audio/`:
+  `player.lua` keeps the VS1003 fed from the cooperative loop (so sound and
+  LEDs/net/REPL coexist), `stream.lua` plays an HTTP body bigger than the heap,
+  `midi.lua` builds jingles the codec decodes natively, `volume.lua` maps the
+  wheel to `nab.volume`. See `audio/README.md`.
 
 ## Tasks
 

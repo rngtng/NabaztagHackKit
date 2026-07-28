@@ -113,7 +113,9 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/firmware.elf` uses 112,400 B of 124 KB (**~14.2 KB free**; ~23 KB of that growth is
+`bin/firmware.elf` uses 114,428 B of 124 KB (**~12.2 KB free**; the #265 non-blocking
+audio stream HAL - `vlsi_stream_start/feed/busy/stop` plus the four `nab.play_*`
+bindings - is 552 B of it, measured against the same build without them; ~23 KB of that growth is
 the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
 the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
 `nab.on`/`nab.wait`/`nab.time` bindings, ~2.1 KB the #234 provisioning plumbing —
@@ -350,7 +352,12 @@ nab.delay(ms)                 -- block ms (timed off the System Timer); paces an
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
 nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255, ms ~duration
 nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
-nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
+nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio; blocking
+nab.play_start()              -- open a NON-blocking stream (#265): decode mode + volume + amp on
+nab.play_feed(data [, i])     -- -> bytes the decoder accepted from data[i..]; 0/short = FIFO full,
+                              --   never waits. >=2048 zero endFillBytes end a stream (lib/audio)
+nab.playing()                 -- -> true while the decoder still has a stream (SCI_HDAT1 != 0)
+nab.play_stop()               -- close the stream (amplifier off)
 nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square), for nab.play
 nab.record(ms [, gain])       -- -> ~ms of microphone audio as a WAV string (8 kHz IMA ADPCM); blocking
 nab.rec_start([gain])         -- open a cooperative record session (codec encodes, CPU free)
@@ -397,6 +404,13 @@ button, `nab.beep()` is audible. Caveats:
   (DREQ/ADC unmodeled). `nab.play` streams over SDI so `nab.volume` actually attenuates (VS1003B
   decodes MP3/WAV per the teardown); the SDI mechanism itself is M8-proven. `nab.wheel` ports
   `mtl/firmware`'s ADC ch.2 sequence. Flash + listen/probe to confirm.
+- **`nab.play_start`/`play_feed`/`playing`/`play_stop` (#265) are the same SDI path, split so
+  nothing waits** - `play_feed` pushes whole 32-byte bursts while DREQ is high and returns the
+  count the moment it drops, which is what lets the rabbit play and animate/serve/REPL at the
+  same time. Unverified on hardware, and in-sim `play_feed` always returns 0 (DREQ unmodeled),
+  so playback is hardware-only; `lib/audio`'s player detects that as a stall instead of
+  spinning. `nab.play` now runs on top of the same primitive (bounded: it gives up after 16
+  fruitless DREQ waits rather than hanging on a wedged codec).
 - **`nab.record` (#116 mic half) built, sim returns a header-only WAV; unverified on
   hardware** - see its section below.
 - **`nab.config` (#214) built, not HW-confirmed** - the simulator models flash *reads* only,

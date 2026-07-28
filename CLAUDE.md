@@ -63,11 +63,13 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`firmware.elf`: ~14.2 KB free of 124 KB internal flash (112,400 B used, incl. the
+- **`firmware.elf`: ~12.2 KB free of 124 KB internal flash (114,428 B used, incl. the
   ~1.5 KB #195 event core, the ~2.1 KB #234 provisioning plumbing —
-  `nab.wifi`'s failure-reason classification + the config `fails` counter — and
+  `nab.wifi`'s failure-reason classification + the config `fails` counter —
   the ~0.65 KB #235 OTA writer (`hal/ota.c` whole-image `flash_uc` port +
-  `nab.flash_firmware`): the #124
+  `nab.flash_firmware`) and the 552 B #265 non-blocking audio stream
+  (`vlsi_stream_start/feed/busy/stop` + `nab.play_start/play_feed/playing/play_stop`;
+  everything above it is Lua in `lua/lib/audio/`, which costs no flash): the #124
   WPA2-CCMP-only scavenge (WEP/WPA1/TKIP dropped - HMAC-MD5, RC4, the WPA1
   IE/scan-parse and every TKIP branch, 3,896 B) on top of the raw-frame/AP
   `nab.wifi_*` bindings (#216, ~0.8 KB) + `nab.config` (#214, 836 B) + the #212

@@ -50,11 +50,31 @@ void vlsi_sine(uint8_t freq_n, uint8_t on);
 
 /* Stream a buffer (e.g. a WAV/MP3/ADPCM-WAV file) over SDI for the decoder to
  * play - the VS1003B decodes MP3/WMA/WAV/MIDI, so unlike vlsi_sine this is real
- * decoded audio and SCI_VOLUME actually attenuates it. Blocking: soft-resets
- * the decoder, waits on DREQ per byte (bounded) like vlsi_sine's control feed,
- * then flushes the decoder's tail with zero endFillBytes before returning.
- * Turns the amplifier on/off around playback. */
+ * decoded audio and SCI_VOLUME actually attenuates it. Blocking: opens a stream
+ * (below), feeds the whole buffer, flushes the decoder's tail with zero
+ * endFillBytes, closes. Turns the amplifier on/off around playback. Bounded: a
+ * decoder that never raises DREQ again ends the feed instead of hanging. */
 void vlsi_play(const uint8_t *data, uint32_t len);
+
+/* Non-blocking stream interface (#265) - the same SDI path as vlsi_play, but
+ * split so the CPU stays free between feeds: the caller (lib/audio's Lua
+ * player) keeps the decoder fed from its cooperative loop while LEDs, net and
+ * the REPL keep running.
+ *
+ * vlsi_stream_start: decode mode + volume re-assert + amplifier on.
+ * vlsi_stream_feed:  push what the decoder can take RIGHT NOW and return the
+ *                    number of bytes accepted - 0..len, short (or 0) when its
+ *                    FIFO is full. NEVER waits for DREQ: a short return is the
+ *                    flow-control signal, not an error. Feeding the tail
+ *                    (>=2048 zero endFillBytes) at end of stream is the
+ *                    caller's job - that is just more bytes through here.
+ * vlsi_stream_busy:  SCI_HDAT1 != 0, i.e. the decoder still recognises a
+ *                    stream - how the caller knows the tail has drained.
+ * vlsi_stream_stop:  amplifier off, stream closed (feeds are ignored again). */
+void vlsi_stream_start(void);
+uint32_t vlsi_stream_feed(const uint8_t *data, uint32_t len);
+uint8_t vlsi_stream_busy(void);
+void vlsi_stream_stop(void);
 
 /* Microphone record, IMA ADPCM (#116 mic half; port of src/firmware's
  * init_adpcm_encode/rec_check/stop_adpcm_encode). The VS1003 encodes the mic
