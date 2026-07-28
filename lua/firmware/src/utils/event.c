@@ -4,10 +4,10 @@
  *
  * Pollers, not ISRs: button debouncing and the CRX14 scan cycle run inside
  * event_pump(), called from the cooperative main loop. Timing comes from the
- * 1 ms tick (sys/src/tick.c, counter_timer). In the Unicorn simulator the
- * tick is frozen at 0, which disarms the debounce/period checks - the pump
- * degrades to a raw button read that never posts (the sim models neither
- * RFID nor time, so that is the correct no-op).
+ * 1 ms tick (sys/src/tick.c, counter_timer), which the Unicorn simulator also
+ * advances (#102) - but the sim emulates no CRX14 bus, so the RFID half is
+ * hardware-only there. See the simulator's peripheral-injection model for
+ * how sim runs drive button/RFID inputs instead.
  */
 #include <string.h>
 

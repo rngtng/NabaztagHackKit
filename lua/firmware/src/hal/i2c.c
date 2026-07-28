@@ -23,8 +23,8 @@
 /* Spin budget for one bus wait (#253). Iteration-bounded rather than
  * time-bounded on purpose: these loops run with interrupts masked, so
  * counter_timer cannot advance inside them and a tick-based timeout would
- * never expire. 20,000 volatile APB reads is on the order of 10 ms on the
- * 16 MHz ring oscillator - well over a hundred byte-times at 100 kHz, so it
+ * never expire. 20,000 volatile APB reads is on the order of milliseconds at
+ * the core clock - well over a hundred byte-times at 100 kHz, so it
  * cannot clip a healthy transfer - where the former 1,000,000 was most of a
  * second, and multiplied by the caller's retries put a wedged bus into a
  * minutes-long system freeze. */

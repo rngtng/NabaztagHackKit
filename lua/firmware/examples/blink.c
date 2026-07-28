@@ -4,10 +4,10 @@
  *        touches a peripheral, validating startup + linker + toolchain plus the
  *        SPI + LED driver copied from src/firmware.
  *
- * Delay is a calibrated software busy-loop, NOT the timer-based DelayMs: there
- * is no interrupt controller or timer here yet, and it is the only delay the
- * instruction-level simulator can observe (it models no timers). LOOPS_PER_MS
- * is a first estimate for the 33 MHz core; tune on hardware if too fast/slow.
+ * Delay is a calibrated software busy-loop, NOT the timer-based DelayMs: this
+ * example arms no interrupt controller or timer, so the sim's timer model
+ * (which only runs once the firmware enables the timer) never starts here.
+ * LOOPS_PER_MS is a first estimate for the 32 MHz core; tune on hardware.
  *
  * I/O bring-up is the LED-only subset of src/firmware's init_io() for this
  * board (PCB_RELEASE == LLC2_4c): the CS_LED and MODE_LED lines are plain GPIO

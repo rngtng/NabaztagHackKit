@@ -63,42 +63,22 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`firmware.elf`: ~13.6 KB free of 124 KB internal flash (113,072 B used, incl. the
-  ~1.5 KB #195 event core, the ~2.1 KB #234 provisioning plumbing —
-  `nab.wifi`'s failure-reason classification + the config `fails` counter — and
-  the ~0.65 KB #235 OTA writer (`hal/ota.c` whole-image `flash_uc` port +
-  `nab.flash_firmware`): the #124
-  WPA2-CCMP-only scavenge (WEP/WPA1/TKIP dropped - HMAC-MD5, RC4, the WPA1
-  IE/scan-parse and every TKIP branch, 3,896 B) on top of the raw-frame/AP
-  `nab.wifi_*` bindings (#216, ~0.8 KB) + `nab.config` (#214, 836 B) + the #212
-  rand/assert shim + #213 double-soft-float/ldump scavenges. `nab.wifi` joins
-  open or WPA2-PSK(AES) networks only; anything else is rejected at scan/auth.** The
-  `nab.wifi` join HAL (M11) pulls the whole vendored USB + 802.11/WPA2/crypto stack
-  (~23 KB, `--gc-sections` no longer strips it) — and its `rand()` calls silently
-  re-linked newlib's stdio FILE layer via `rand → assert → fiprintf` (~9 KB, the
-  M7.5/#106 win undone). `lua/firmware/src/utils/libc_shim.c` (local `rand`/`srand`/
-  `__assert_func`) reclaims that; a new libc call that grows the image needs the
-  same treatment — check the map's "Archive member" section, don't trust
-  gc-sections alone. Next large feature still needs a real lever - not
-  `-Os`/error-string shaving. **No float crosses varargs on the device** (#213):
-  every float passed through `...` is promoted to double (C default argument
-  promotion) and links libgcc's double soft-float back in - print floats via the
-  non-variadic `luai_num2str` instead. Lua's number I/O + console are off newlib
-  (`luai_*`/printf helpers in `lua/firmware/src/main.c` + macro overrides in
-  `lua/firmware/lua/luaconf.h`); the newlib+libgcc still linked
-  (single-float/memcpy/malloc) is near-irreducible.
-  Float *printing* stays approximate (integer part + `.0`) pending a real dtoa.
-  **The image is parser-less by design (#128, done): `lparser`/`llex`/`lcode` are dropped
-  (~18.9 KB) - the rabbit runs ONLY `luac` bytecode. There is no on-device compiler; all
-  Lua (REPL lines via `luash.py`, the resident boot chunk via `embed.py`) is compiled
-  off-device by a `LUA_32BITS`-matched host `luac`. This is now the single image - it
-  supersedes #128's dev/prod two-image split.** `-Os` and Lua 5.5 are NOT levers - pick a
-  real lever (see #128), not error-string shaving. **The two cheapest remaining levers are
-  demo assets, 4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and
-  the resident boot chunk (`gen/boot_lc.h` from `lua/boot/boot.lua`, 2,387 B - `run`/`watch`/
-  `ledshow` + two hard-coded RFID UIDs, largely a duplicate of `lua/apps/`). Both are
-  product decisions, not refactors - ask before spending them.** `task lua:firmware:build` fails
-  loudly on overflow; `task lua:verify` also runs the `firmware:test` bytecode-pipeline golden.
+**Numbers live in one place: [`lua/firmware/README.md`](lua/firmware/README.md#flash-budget).**
+Don't restate them here - two copies drift. The rules that bind new work:
+- **`task lua:firmware:build` fails loudly on overflow.** Believe it; the budget is real.
+- **A new libc call can silently cost kilobytes.** `rand()` once re-linked newlib's whole
+  stdio FILE layer via `rand -> assert -> fiprintf` (~9 KB, undoing the #106 win);
+  `src/utils/libc_shim.c` reclaims it. Check the map's **"Archive member"** section after
+  any change that adds one - `--gc-sections` alone will not tell you.
+- **No float crosses varargs on the device** (#213): C default argument promotion turns it
+  into a `double` and links libgcc's double soft-float. Print floats through the
+  non-variadic `luai_num2str`. Float printing stays approximate pending a real dtoa.
+- **The image is parser-less by design (#128, done)** - `lparser`/`llex`/`lcode` dropped, the
+  rabbit runs ONLY `luac` bytecode, all Lua compiled off-device by a `LUA_32BITS`-matched
+  host `luac`. This is the single image; it supersedes #128's dev/prod split.
+- **`-Os` and Lua 5.5 are NOT levers**, and neither is error-string shaving. The two cheapest
+  real ones are demo assets (the `nab.tone()` MP3 and the resident boot chunk) - **product
+  decisions, so ask before spending them.**
 
 ## Lua track task surface & structure (post-#208)
 - **Leaves, each owning its targets; others delegate (interfaces stay abstract):**

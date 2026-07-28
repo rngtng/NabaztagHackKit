@@ -203,9 +203,9 @@ static int nab_led8(lua_State *L)
  * (8-bit, gamma) over ms, in the BACKGROUND - returns immediately. The 1 ms
  * System Timer IRQ (#102) interpolates and reflushes the LED bus; start fades on
  * all five and they run at once. A nab.led/nab.led8/nab.fade on the same LED
- * replaces its fade. ms=0 sets the colour instantly. NB: the fade only advances
- * once interrupts run on real hardware - the simulator models no timer, so there
- * fades jump to their target on the next explicit write. */
+ * replaces its fade. ms=0 sets the colour instantly. The fade only advances
+ * while interrupts run; the simulator models the timer and delivers its IRQ
+ * (#102), so fades animate there too. */
 static int nab_fade(lua_State *L)
 {
   int i = luaL_checkoption(L, 1, NULL, led_names);
@@ -219,9 +219,9 @@ static int nab_fade(lua_State *L)
 
 /* nab.delay(ms): block for ms, timed off the 1 ms System Timer (counter_timer,
  * #102) - the same clock the background fades use, so a Lua animation's frame
- * pacing and its fades stay in step (a busy-loop drifts against them, and was
- * ~2x off on the 16 MHz ring oscillator). The sim models the timer too, so this
- * works there as well. Feeds the watchdog while it waits. */
+ * pacing and its fades stay in step (a calibrated busy-loop drifts against
+ * them, and skewed badly whenever the core clock changed). The sim models the
+ * timer too, so this works there as well. Feeds the watchdog while it waits. */
 static int nab_delay(lua_State *L)
 {
   lua_Integer ms = luaL_checkinteger(L, 1);
@@ -261,9 +261,8 @@ static int nab_beep(lua_State *L)
   vlsi_sine((uint8_t)freq, 1);
   /* Timed off the 1 ms System Timer, like nab.delay (#247). This was a
    * calibrated-by-guess spin whose comment still claimed "no timer yet" - the
-   * tick has existed since #102, and nab.delay's own comment records that the
-   * spin approach ran ~2x off on the 16 MHz ring oscillator, so nab.beep's ms
-   * argument was simply wrong. */
+   * tick has existed since #102 - so nab.beep's ms argument was simply wrong
+   * whenever the core clock differed from whatever the spin was tuned against. */
   wait_ms((uint32_t)ms);
   vlsi_sine((uint8_t)freq, 0);
   vlsi_ampli(0);
@@ -549,14 +548,15 @@ static int nab_on(lua_State *L)
 
 /* nab.wait(ms): sleep ~ms on the 1 ms tick while running the event pump, so
  * nab.on callbacks fire during the wait - the idiomatic script main loop is
- * `while true do nab.wait(100) end`. In the simulator (no timer model) the
- * wait degrades to DelayMs' bounded busy fallback instead of hanging. */
+ * `while true do nab.wait(100) end`. If the tick is not advancing at all (IRQs
+ * masked, or init_tick not yet run) the wait degrades to DelayMs' bounded busy
+ * fallback instead of hanging. */
 static int nab_wait(lua_State *L)
 {
   lua_Integer ms = luaL_checkinteger(L, 1);
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
   uint32_t start = counter_timer;
-  lua_Integer fallback = ms; /* counts DelayMs slices while the tick is frozen */
+  lua_Integer fallback = ms; /* counts DelayMs slices if the tick never moves */
   dispatch_events(L, 1);
   while ((counter_timer - start) < (uint32_t)ms && fallback > 0) {
     DelayMs(1);
@@ -569,7 +569,8 @@ static int nab_wait(lua_State *L)
 
 /* nab.time() -> milliseconds since boot: the raw 1 ms tick (counter_timer),
  * a wrapping 32-bit count - subtract two readings, don't compare absolutes.
- * Frozen at 0 in the simulator (no timer model). */
+ * Advances in the simulator too (it models the timer, #102), but on an
+ * instruction-count clock - so it is approximate there, not wall time. */
 static int nab_time(lua_State *L)
 {
   lua_pushinteger(L, (lua_Integer)counter_timer);
