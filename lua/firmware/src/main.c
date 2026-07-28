@@ -10,10 +10,9 @@
  */
 #include <errno.h>
 #include <stddef.h>
-#include <stdint.h>   /* uintptr_t in the %p path */
-#include <stdio.h>    /* snprintf: our own, in utils/fmt.c */
+#include <stdint.h>
 #include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer */
-#include <string.h>   /* strcmp - LED-name lookup in the nab binding */
+#include <string.h>   /* memcpy - WAV header assembly */
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -32,18 +31,17 @@
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
-#include "utils/delay.h" /* 1 ms tick: counter_timer + DelayMs */
+#include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
 #include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
-#include "utils/delay.h" /* init_tick + counter_timer (the wifi stack's clock) */
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
 
 /* ---- UART console (#207) ------------------------------------------------- */
-/* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 38400 8N1.
+/* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 115200 8N1.
  * init_uart() runs at boot (main); read/drive it on the Pi's /dev/serial0.
  *
  * EOF: getch_uart() is non-blocking (-1 = RX FIFO empty) and a raw UART has no
@@ -144,42 +142,49 @@ void *_sbrk(ptrdiff_t incr)
 /* Exposes the LEDs, head button, audio (speaker + microphone), RFID coupler,
  * and ear motors to Lua. */
 
+/* The five LEDs, by the name Lua uses. Each hardware entry point wants the LED
+ * under a different index, so one row of these parallel tables carries both:
+ * `sel` is set_led_rgb's raw channel number (LED_RGB_n >> 24) and `logical` is
+ * what set_led/led_fade take - the inverse of led.c's convled[] remap, so all
+ * three bindings land on the same physical LED (map verified on LLC2_4c, see
+ * inc/hal/led.h). luaL_checkoption does the name lookup for all of them. */
+static const char *const led_names[] = {"nose",  "belly", "left",
+                                        "right", "bottom", NULL};
+static const uint8_t led_sel[]     = {5, 1, 3, 4, 2};
+static const uint8_t led_logical[] = {0, 2, 1, 3, 4};
+
+/* Args 2,3,4 -> one 0xRRGGBB word, each channel checked against `max`
+ * (127 for the raw TLC5922 range, 255 for the gamma bindings). */
+static uint32_t check_rgb(lua_State *L, lua_Integer max)
+{
+  uint32_t rgb = 0;
+  for (int i = 2; i <= 4; i++) {
+    lua_Integer v = luaL_checkinteger(L, i);
+    luaL_argcheck(L, v >= 0 && v <= max, i, max == 127 ? "0..127" : "0..255");
+    rgb = (rgb << 8) | (uint32_t)v;
+  }
+  return rgb;
+}
+
+/* Block ~ms on the 1 ms System Timer tick (counter_timer), feeding the
+ * watchdog - the clock nab.delay and nab.beep both pace themselves off. */
+static void wait_ms(uint32_t ms)
+{
+  uint32_t t = counter_timer;
+  while ((counter_timer - t) < ms)
+    CLR_WDT;
+}
+
 /* nab.led(name, r, g, b): light an RGB LED. name is one of
  * nose|belly|left|right|bottom (physical map verified on hardware, LLC2_4c -
  * see inc/hal/led.h). r/g/b are 7-bit intensities (0..127), the TLC5922 range. */
 static int nab_led(lua_State *L)
 {
-  const char *name = luaL_checkstring(L, 1);
-  lua_Integer r = luaL_checkinteger(L, 2);
-  lua_Integer g = luaL_checkinteger(L, 3);
-  lua_Integer b = luaL_checkinteger(L, 4);
-  luaL_argcheck(L, r >= 0 && r <= 127, 2, "0..127");
-  luaL_argcheck(L, g >= 0 && g <= 127, 3, "0..127");
-  luaL_argcheck(L, b >= 0 && b <= 127, 4, "0..127");
+  int i = luaL_checkoption(L, 1, NULL, led_names);
+  uint32_t rgb = check_rgb(L, 127);
 
-  uint32_t ch;
-  if      (strcmp(name, "belly")  == 0) ch = LED_RGB_1;
-  else if (strcmp(name, "bottom") == 0) ch = LED_RGB_2;
-  else if (strcmp(name, "left")   == 0) ch = LED_RGB_3;
-  else if (strcmp(name, "right")  == 0) ch = LED_RGB_4;
-  else if (strcmp(name, "nose")   == 0) ch = LED_RGB_5;
-  else return luaL_error(L, "bad LED '%s'", name);  /* nose|belly|left|right|bottom */
-
-  set_led_rgb(ch | ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+  set_led_rgb(((uint32_t)led_sel[i] << 24) | rgb);
   return 0;
-}
-
-/* Map an LED name to led.c's *logical* index (the arg set_led/led_fade take).
- * convled[] remaps logical->physical; these values invert it so a name lands on
- * the same physical LED nab.led() lights by name (see inc/hal/led.h). */
-static int nab_led_logical(const char *name)
-{
-  if (strcmp(name, "belly")  == 0) return 2;
-  if (strcmp(name, "bottom") == 0) return 4;
-  if (strcmp(name, "left")   == 0) return 1;
-  if (strcmp(name, "right")  == 0) return 3;
-  if (strcmp(name, "nose")   == 0) return 0;
-  return -1;   /* nose|belly|left|right|bottom */
 }
 
 /* nab.led8(name, r, g, b): like nab.led but r/g/b are 8-bit (0..255) and pass
@@ -187,17 +192,10 @@ static int nab_led_logical(const char *name)
  * old table's 0..51 dead zone is gone), giving smooth low-end fades. Instant. */
 static int nab_led8(lua_State *L)
 {
-  const char *name = luaL_checkstring(L, 1);
-  lua_Integer r = luaL_checkinteger(L, 2);
-  lua_Integer g = luaL_checkinteger(L, 3);
-  lua_Integer b = luaL_checkinteger(L, 4);
-  luaL_argcheck(L, r >= 0 && r <= 255, 2, "0..255");
-  luaL_argcheck(L, g >= 0 && g <= 255, 3, "0..255");
-  luaL_argcheck(L, b >= 0 && b <= 255, 4, "0..255");
+  int i = luaL_checkoption(L, 1, NULL, led_names);
+  uint32_t rgb = check_rgb(L, 255);
 
-  int l = nab_led_logical(name);
-  if (l < 0) return luaL_error(L, "bad LED '%s'", name);
-  set_led((uint8_t)l, ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b);
+  set_led(led_logical[i], rgb);
   return 0;
 }
 
@@ -210,20 +208,12 @@ static int nab_led8(lua_State *L)
  * fades jump to their target on the next explicit write. */
 static int nab_fade(lua_State *L)
 {
-  const char *name = luaL_checkstring(L, 1);
-  lua_Integer r = luaL_checkinteger(L, 2);
-  lua_Integer g = luaL_checkinteger(L, 3);
-  lua_Integer b = luaL_checkinteger(L, 4);
+  int i = luaL_checkoption(L, 1, NULL, led_names);
+  uint32_t rgb = check_rgb(L, 255);
   lua_Integer ms = luaL_checkinteger(L, 5);
-  luaL_argcheck(L, r >= 0 && r <= 255, 2, "0..255");
-  luaL_argcheck(L, g >= 0 && g <= 255, 3, "0..255");
-  luaL_argcheck(L, b >= 0 && b <= 255, 4, "0..255");
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 5, "0..60000");
 
-  int l = nab_led_logical(name);
-  if (l < 0) return luaL_error(L, "bad LED '%s'", name);
-  led_fade((uint8_t)l, ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b,
-           (uint32_t)ms);
+  led_fade(led_logical[i], rgb, (uint32_t)ms);
   return 0;
 }
 
@@ -235,10 +225,8 @@ static int nab_fade(lua_State *L)
 static int nab_delay(lua_State *L)
 {
   lua_Integer ms = luaL_checkinteger(L, 1);
-  uint32_t t = counter_timer;
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  while ((counter_timer - t) < (uint32_t)ms)
-    CLR_WDT;
+  wait_ms((uint32_t)ms);
   return 0;
 }
 
@@ -276,9 +264,7 @@ static int nab_beep(lua_State *L)
    * tick has existed since #102, and nab.delay's own comment records that the
    * spin approach ran ~2x off on the 16 MHz ring oscillator, so nab.beep's ms
    * argument was simply wrong. */
-  uint32_t t = counter_timer;
-  while ((counter_timer - t) < (uint32_t)ms)
-    CLR_WDT;
+  wait_ms((uint32_t)ms);
   vlsi_sine((uint8_t)freq, 0);
   vlsi_ampli(0);
   return 0;
@@ -515,12 +501,14 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
     return;
   busy = 1;
   event_t e;
+  /* The callback table is fetched once, not per event: it is the same table
+   * throughout, and the registry lookup hashes EVENTS_TABLE every time. */
+  lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
+  int cbs = lua_gettop(L);
   while (event_next(&e)) {
-    lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
-    lua_getfield(L, -1,
+    lua_getfield(L, cbs,
                  (e.type == EV_RFID_TAG || e.type == EV_RFID_GONE) ? "rfid"
                                                                    : "button");
-    lua_remove(L, -2);
     if (!lua_isfunction(L, -1)) {
       lua_pop(L, 1); /* callback cleared after the event was queued */
       continue;
@@ -534,6 +522,7 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
       report(L);
   }
+  lua_settop(L, cbs - 1); /* drop the callback table */
   busy = 0;
 }
 
@@ -598,18 +587,15 @@ static int nab_time(lua_State *L)
  * counts/700ms flat from 115 to 200, ~11 at 255). So "speed" was effectively
  * stall-or-go; the old speed argument was dropped and the ear always runs at
  * full duty. */
+static const char *const ear_dirs[] = {"forward", "reverse", NULL};
+
 static int nab_ear_move(lua_State *L)
 {
   lua_Integer n = luaL_checkinteger(L, 1);
-  const char *dir = luaL_checkstring(L, 2);
+  int dir = luaL_checkoption(L, 2, NULL, ear_dirs);
   luaL_argcheck(L, n == 1 || n == 2, 1, "1 or 2");
 
-  uint8_t rotation;
-  if      (strcmp(dir, "forward") == 0) rotation = FORWARD;
-  else if (strcmp(dir, "reverse") == 0) rotation = REVERSE;
-  else return luaL_error(L, "bad direction '%s' (forward|reverse)", dir);
-
-  run_motor((uint8_t)n, 255, rotation);
+  run_motor((uint8_t)n, 255, dir == 0 ? FORWARD : REVERSE);
   return 0;
 }
 
@@ -930,6 +916,14 @@ static void open_trimmed_libs(lua_State *L)
     luaL_requiref(L, lib->name, lib->func, 1);
     lua_pop(L, 1); /* remove the library table left on the stack */
   }
+}
+
+/* Lua's "randomness" sources (string-hash seed, table.sort's fallback pivot),
+ * routed here by luaconf.h so they read the 1 ms tick instead of the C wall
+ * clock - see the luai_tickseed note there. */
+unsigned int luai_tickseed(void)
+{
+  return (unsigned int)counter_timer;
 }
 
 /* Print and clear a Lua error message sitting on the top of the stack. */

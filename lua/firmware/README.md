@@ -54,9 +54,10 @@ maps these onto C subsystems. Remaining structural gap:
 - Internal flash `0x08000000`, 124 KB usable (last sector = config)
 - Internal RAM `0x10000000`, **16 KB** (too small for Lua)
 - External RAM `0xD0000000`, **1 MB** (Lua heap/data live here)
-- Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 115200 8N1 - the UART
-  peripheral clock is a measured **8 MHz**, so 115200 is unreachable; #203).
-  UART is bidirectional (input + output).
+- Debug: 8-pin JTAG + **UART0** (PB0=TX/PB1=RX, **115200 8N1**). `init.s` runs
+  `init_pll()` before `main` (#269), so the UART peripheral clock is 32 MHz for
+  every image and one divisor serves all (#271; it was 38400 off the ~8 MHz ring
+  oscillator before). UART is bidirectional (input + output).
 - Board revision `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three tag sub-revisions
   (`LLC2_2`/`LLC2_3`/`LLC2_4c`), the one hardware-verified below. Pin diffs:
   [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release).
@@ -113,13 +114,17 @@ no FPU/`double`):
   `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
   `-DLUA_NOPARSER`.
 
-`bin/firmware.elf` uses 112,400 B of 124 KB (**~14.2 KB free**; ~23 KB of that growth is
+`bin/firmware.elf` uses 113,072 B of 124 KB (**~13.6 KB free**; ~23 KB of that growth is
 the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
 the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
 `nab.on`/`nab.wait`/`nab.time` bindings, ~2.1 KB the #234 provisioning plumbing —
 `nab.wifi`'s failure-reason classification + the config `fails` counter field —
 and ~0.65 KB the #235 OTA whole-image flash writer (`hal/ota.c`) +
-`nab.flash_firmware` binding). `task lua:firmware:build` also stamps
+`nab.flash_firmware` binding). Two **demo assets** account for 4,547 B of the image on
+their own: the built-in `nab.tone()` MP3 (2,160 B) and the resident boot chunk
+`gen/boot_lc.h` (2,387 B - `run`/`watch`/`ledshow` and two hard-coded RFID UIDs, largely
+duplicating `../apps/`). Both are the obvious levers if a feature needs the room; neither
+is load-bearing. `task lua:firmware:build` also stamps
 `bin/firmware.sim` (16-byte header + image, `tools/otaimage.py`) — the file the setup
 page's firmware uploader (`net.ota`, #235) verifies and flashes. The stack is **WPA2-CCMP only** (#124,
 3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
@@ -272,7 +277,7 @@ on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
 | M9 | RFID - CRX14 over I2C | #117 | sim - flash `rfidprobe` to confirm before trusting `nab.rfid()` |
 | M10 | Ear motors - PWM + encoder | #118 | HW at full speed (see `nab.ear_*` caveats) |
 | M11 | WiFi - USB host + RT2501 | #119 | open epic. **M11a done, HW:** USB host stack ported, first live IRQ (1 ms tick), `usbprobe` enumerates the dongle (VID:PID `0db0:6877`, RT2501). Next: rt2501usb driver + 802.11 (prereq #125). |
-| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds`). |
+| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose reload is `0xF830` for the PLL'd 32 MHz clock (#269); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds`). |
 | - | Unicorn simulator | #96 | first cut done |
 | - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
 | - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @115200 on the Pi serial link; RX + `nab.uart` + UART console open |
@@ -303,8 +308,9 @@ verified on `LLC2_4c` with the `ledmap` probe:
 
 `blink` drives `LED_RGB_5` (nose). `nab.led` uses this raw `set_led_rgb` map by name. The gamma
 bindings (`nab.led8`/`nab.fade`) go through `led.c`'s `set_led`/`led_fade`, which apply the
-`convled[]` logical remap - so `nab_led_logical()` inverts `convled[]` to hit the same physical
-LEDs by name. All three land on the verified map above.
+`convled[]` logical remap - so `main.c`'s `led_logical[]` table inverts `convled[]` to hit the
+same physical LEDs by name. One `led_names[]`/`led_sel[]`/`led_logical[]` row per LED serves all
+three bindings, looked up with `luaL_checkoption`. All three land on the verified map above.
 
 ## LED gamma + background fades (#102)
 `src/hal/led.c` was re-synced from `mtl/firmware` (PR #45): a **gamma-2.2** table with **no
@@ -319,9 +325,12 @@ REPL), so led.c's main-context writers mask that IRQ around their SPI flush
 (`irq_disable_save`/`irq_restore`).
 
 Wiring the fades up caught a **calibration bug** in the shared tick: it reloaded `TMRLR=0xF830`
-(1 ms @ 32 MHz, copied from `mtl/firmware`), but V2 never runs `init_pll()` and clocks off the
-**16 MHz ring oscillator**, so every tick - and thus every fade and `DelayMs` - ran ~2x slow on
-hardware. Corrected to `0xFC18` (1 ms @ 16 MHz). (The tick only fires because M11a already moved
+(1 ms @ 32 MHz, copied from `mtl/firmware`) while V2 still booted on the ring oscillator, so every
+tick - and thus every fade and `DelayMs` - ran slow on hardware. That was patched at the reload
+(`0xFC18`, then `0xFE0C`); **#269 fixed it at the source** instead - `init.s` now runs `init_pll()`
+before `main`, the chip really is at 32 MHz, and the reload is back to `mtl/firmware`'s `0xF830`.
+Reload and PLL bring-up move together; changing one without the other re-breaks every timing on
+the board. (The tick only fires because M11a already moved
 `main` to **System mode**, where `msr cpsr_c` can clear the I-bit that `__enable_interrupt()`
 needs - `mtl/firmware`'s `swi` path is avoided because a SWI collides with the semihosting
 console.)
@@ -351,7 +360,8 @@ nab.button()                  -- -> true while the head button is held (polled, 
 nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255, ms ~duration
 nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
 nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
-nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square), for nab.play
+nab.tone()                    -- -> a built-in ~0.25 s 880 Hz MP3 tone (2,160 B of flash), for
+                              --   nab.play. MP3, not PCM WAV - the VS1003B does not decode WAV.
 nab.record(ms [, gain])       -- -> ~ms of microphone audio as a WAV string (8 kHz IMA ADPCM); blocking
 nab.rec_start([gain])         -- open a cooperative record session (codec encodes, CPU free)
 nab.rec_read()                -- -> a chunk of whole 256-byte ADPCM blocks, or nil; returns immediately
@@ -372,9 +382,16 @@ nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open; #124) -> true | 
 nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
 nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
 nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
-nab.config()                  -- -> {ssid=,psk=,url=} persisted in the config sector, or nil
-nab.config{ssid=,psk=,url=}   -- persist (survives power cycles); true = written+verified,
+nab.wifi_up()                 -- cold-boot the dongle without joining/beaconing, so wifi_mac()
+                              --   reads the real EEPROM MAC (#233) -> true | nil, msg
+nab.wifi_mac()                -- -> our 6-byte station MAC (all-zero until the radio is up)
+nab.config()                  -- -> {ssid=,psk=,url=,fails=} persisted in the config sector, or nil
+nab.config{ssid=,psk=,url=,fails=}
+                              -- persist (survives power cycles); true = written+verified,
                               --   false = flash already held this record (write skipped)
+nab.flash_firmware(image)     -- whole-image OTA flash + reboot (#235). Never returns on success;
+                              --   BRICK RISK - net.ota verifies the image before calling this.
+nab.sci(reg) / nab.sciw(r,v)  -- read/write a VS1003 SCI register (codec bring-up diagnostics)
 ```
 
 HW-verified (M5/M8): `nab.led` lights each named LED, `nab.button()` tracks the physical
@@ -382,10 +399,9 @@ button, `nab.beep()` is audible. Caveats:
 
 - **`nab.beep` bypasses `SCI_VOLUME`** (the sine test is a fixed-level diagnostic tone), so
   `nab.volume` has no effect on it. `nab.beep`'s `ms` is a rough CPU busy-loop, but `nab.delay`
-  (#102) is timed off the 1 ms System Timer (`counter_timer`) - the same clock the LED fades use.
-  The timer is calibrated to the **16 MHz ring oscillator** (firmwareV2 never calls `init_pll()`),
-  so `TMRLR=0xFC18`, not `mtl/firmware`'s 32 MHz `0xF830`; the ring osc isn't crystal-accurate, so
-  `ms` is nominal.
+  (#102) is timed off the 1 ms System Timer (`counter_timer`) - the same clock the LED fades use,
+  and `nab.beep` now shares `nab.delay`'s wait (#247). The timer runs off the PLL'd 32 MHz clock
+  (`init.s` calls `init_pll()`, #269), so `TMRLR=0xF830` - `mtl/firmware`'s value.
 - **`nab.ear_*` HW-verified at full speed only.** Both motors drive and encoders count. The
   `speed` parameter is unverified (#179) - `earprobe` now sweeps 255->20 and reports encoder
   delta; run it to find where movement stops before trusting partial speed. A bug fixed during

@@ -63,7 +63,7 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   `nab` HAL API. **Honour them on new lua-track work; a change that breaks one needs a stated reason.**
 
 ## Firmware flash budget (lua track)
-- **`firmware.elf`: ~14.2 KB free of 124 KB internal flash (112,400 B used, incl. the
+- **`firmware.elf`: ~13.6 KB free of 124 KB internal flash (113,072 B used, incl. the
   ~1.5 KB #195 event core, the ~2.1 KB #234 provisioning plumbing —
   `nab.wifi`'s failure-reason classification + the config `fails` counter — and
   the ~0.65 KB #235 OTA writer (`hal/ota.c` whole-image `flash_uc` port +
@@ -93,7 +93,11 @@ run serialisation, `<<FV_DONE>>` marker, hardware-debugging discipline — lives
   Lua (REPL lines via `luash.py`, the resident boot chunk via `embed.py`) is compiled
   off-device by a `LUA_32BITS`-matched host `luac`. This is now the single image - it
   supersedes #128's dev/prod two-image split.** `-Os` and Lua 5.5 are NOT levers - pick a
-  real lever (see #128), not error-string shaving. `task lua:firmware:build` fails
+  real lever (see #128), not error-string shaving. **The two cheapest remaining levers are
+  demo assets, 4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and
+  the resident boot chunk (`gen/boot_lc.h` from `lua/boot/boot.lua`, 2,387 B - `run`/`watch`/
+  `ledshow` + two hard-coded RFID UIDs, largely a duplicate of `lua/apps/`). Both are
+  product decisions, not refactors - ask before spending them.** `task lua:firmware:build` fails
   loudly on overflow; `task lua:verify` also runs the `firmware:test` bytecode-pipeline golden.
 
 ## Lua track task surface & structure (post-#208)

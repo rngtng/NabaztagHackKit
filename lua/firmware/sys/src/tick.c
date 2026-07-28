@@ -5,11 +5,13 @@
  * Shared by the USB host stack (URB timeouts, DelayMs in enumeration) and the
  * #102 LED fade engine (the ISR calls led_fade_tick). Mirrors mtl/firmware
  * main.c's timer setup, ISR on INT_SYSTEM_TIMER (0). init.s already starts the
- * timer (10 ms, ring-osc path); init_tick() reprograms it to 1 ms and unmasks
- * the interrupt. NOTE the reload is 0xFC18 (1 ms @ the 16 MHz ring oscillator),
- * NOT mtl/firmware's 0xF830 (1 ms @ 32 MHz): V2 never runs init_pll(), so the
- * 32 MHz value ticked ~2x slow on hardware (#102). Verify tick liveness on
- * hardware before trusting anything built on it.
+ * timer (10 ms); init_tick() reprograms it to 1 ms and unmasks the interrupt.
+ * The reload is mtl/firmware's 0xF830 (1 ms @ 32 MHz) because init.s runs
+ * init_pll() before main (#269) - every image, product and example alike, is
+ * on the PLL. It was 0xFC18/0xFE0C while V2 still booted on the ring
+ * oscillator; those now tick ~2-4x slow, so the reload and the PLL bring-up
+ * move together. Verify tick liveness on hardware before trusting anything
+ * built on it.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -41,10 +43,10 @@ void init_tick(void)
   put_value(TMEN, 0x00);            /* stop timer while reprogramming */
   put_value(TMOVF, TMOVF_OVF);      /* clear stale overflow */
   put_hvalue(TMRLR, 0xF830);        /* 1 ms: 2000 counts @ 2 MHz (32 MHz clock /16). #269:
-                                     * main() now runs init_pll() so the chip is at 32 MHz, the
-                                     * mtl value. The prior 0xFE0C (#255 bandaid) read 1 ms only at
-                                     * the old ring-osc 8 MHz - restored to mtl's 0xF830 in lockstep
-                                     * with the PLL bring-up. */
+                                     * init.s runs init_pll() before main so the chip is at
+                                     * 32 MHz, the mtl value. The prior 0xFE0C (#255 bandaid)
+                                     * read 1 ms only at the old ring-osc 8 MHz - restored to
+                                     * mtl's 0xF830 in lockstep with the PLL bring-up. */
 
   IRQ_HANDLER_TABLE[INT_SYSTEM_TIMER] = tick_handler;
   set_wbit(ILC0, ILC0_ILR0 & ILC0_INT_LV7);

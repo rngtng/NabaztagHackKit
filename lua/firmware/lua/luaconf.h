@@ -884,6 +884,20 @@ extern int luai_num2str (char *s, size_t sz, LUA_NUMBER n);
 #undef lua_getlocaledecpoint
 #define lua_getlocaledecpoint()     '.'
 
+/*
+** firmwareV2: seed Lua's two "randomness" hooks off the 1 ms System Timer
+** instead of the C wall clock. lstate.c's luai_makeseed (string-hash seed) and
+** ltablib.c's l_randomizePivot (table.sort's fallback pivot) both reach for
+** time()/clock(); on this target those are nosys stubs that return a constant
+** yet still link ~260 B of reentrant plumbing (time, gettimeofdayr, clock,
+** timesr + libnosys' gettod/times) plus a <time.h> dependency. counter_timer
+** (luai_tickseed, src/main.c) is the same clock nab.time() reads - free, and
+** on hardware actually varying, where time() never was.
+*/
+extern unsigned int luai_tickseed (void);
+#define luai_makeseed(L)            ((void)(L), luai_tickseed())
+#define l_randomizePivot()          luai_tickseed()
+
 #endif					/* } !LUA_HOST_LUAC */
 
 
