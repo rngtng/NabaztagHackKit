@@ -20,6 +20,8 @@ includes:
     taskfile: ./apps/Taskfile.yaml
   lib: # pure-Lua standard libraries (auto-discovered); net/ is the first (#217)
     taskfile: ./lib/Taskfile.yaml
+  simui: # browser UI for the simulator (#43): NiceGUI + embedded sim, one container
+    taskfile: ./tools/simui/Taskfile.yaml
 
 tasks:
   verify:

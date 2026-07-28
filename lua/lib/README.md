@@ -9,9 +9,12 @@ chunk.
 ## Libs
 
 - **`net/`** (#217) - the network bootstrap: ARP, IPv4 (+ICMP echo), UDP, DHCP
-  (client + single-lease server), DNS (resolver + captive-portal sinkhole), TCP
-  and HTTP as pure-Lua modules over the raw-frame `nab.wifi_*` bindings (#216).
-  See `net/README.md`.
+  (client + single-lease server),  DNS (resolver + captive-portal sinkhole), 
+  TCP and HTTP as pure-Lua modules over the raw-frame `nab.wifi_*` bindings (#216). See `net/README.md`.
+- **`hw/`** (#263) - the hardware behaviour layer, mirroring `mtl/lib/hw/`:
+  `ears.lua` turns the raw encoder edge count into homing and absolute ear
+  positions (the state machine `hal/motor.h` points at). See `hw/README.md`.
+
 
 ## Tasks
 

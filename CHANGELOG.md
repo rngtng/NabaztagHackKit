@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+  * [#263](https://github.com/rngtng/NabaztagHackKit/issues/263): the lua track can
+    **point an ear**. New `lua/lib/hw/` (the behaviour layer mirroring `mtl/lib/hw/`,
+    first module `ears.lua`) turns `nab.ear_pos`' raw wrapping 16-bit edge count into
+    homing and absolute positions — the state machine `hal/motor.h` explicitly left
+    out. **Homing** spins the ear and finds the wheel's one double-width gap by timing
+    (an interval ≥1.5× the shortest seen so far), which lands it on hardware zero,
+    `OFFZERO` holes short of ears-up; **`move_to(n, p)`** counts holes to any of the 17
+    positions, shortest way round unless forced, arriving on `remaining <= 0` so a poll
+    that catches several edges still stops. Idle counter movement past a post-stop
+    coast window is a **hand turn**: direction is unknowable, so the position is voided
+    (not adjusted, as mtl also re-acquired) and `on_touched(n, holes)` fires. A **jam**
+    (no edge for 3 s) or an over-long move (10 s) stops the motor and flags the ear
+    broken — it is never left driving. Pull-style like `lib/net`: the whole HAL is
+    injected, the caller owns the clock and pumps `:step()`, with `:wait()` as the
+    blocking REPL convenience. 69 host tests under `task lua:lib:test` drive a fake
+    wheel (17 holes, one gap, spin-up, ±8 ms jitter) and assert against the *wheel's*
+    hole, not just the module's belief — homing from all 17 start holes, across an
+    encoder **and** 32-bit tick rollover, ten hops with no drift, coast vs. touch, jam
+    and gapless-wheel give-up. No `nab.ear_move` speed argument was added: #179 already
+    measured that these gearmotors are stall-or-go. `task lua:lib:size`: `hw/ears`
+    3424 B (costs no flash — REPL-loaded).
+    
+  * [#43](https://github.com/rngtng/NabaztagHackKit/issues/43): a **browser UI
+    for the simulator** (v1) - a pixel-retro Nabaztag. New self-contained tool
+    `lua/tools/simui/` (NiceGUI + the embedded Unicorn sim in one container):
+    `tools/simulator/simulate.py`'s `Sim` runs in a background thread while the
+    page renders it. No socket - the UI reads the sim's device-state attributes
+    (`led_rgb`/`ears`/`button`/`rfid_uid`) to draw the five LEDs and the spinning
+    ears, and writes `button`/`rfid_uid` to inject, over the seam #42 built. A
+    resident app (default `apps/ui-demo.lua`, a never-exiting reactive loop) runs
+    on the device so it keeps reacting to browser input. `task lua:simui:serve
+    [APP=… PORT=…]` frames the app and serves `http://localhost:8080`. The ASCII
+    `--leds` strip is untouched (stays the console/CI view); the in-browser Lua
+    REPL + animation polish are the v2 follow-up. Verified headlessly with the
+    preinstalled Chromium/Playwright (place a tag → LEDs go green + an ear spins).
+
   * [#42](https://github.com/rngtng/NabaztagHackKit/issues/42): the lua-track
     simulator (`lua/tools/simulator/simulate.py`) now models the **input**
     peripherals, so no-hardware runs can drive them. The head **button**
