@@ -56,7 +56,7 @@ AS_FILES = $(wildcard sys/asm/*.s)
 # dofile/loadfile are dropped in lua/lbaselib.c. See the src/main.c header.
 LUA_CORE = lapi lcode lctype ldebug ldo ldump lfunc lgc llex lmem lobject \
            lopcodes lparser lstate lstring ltable ltm lundump lvm lzio
-LUA_LIB  = lauxlib lbaselib lstrlib ltablib
+LUA_LIB  = lauxlib lbaselib lstrlib ltablib lcorolib
 # Bytecode-only image (#128): the on-device parser/lexer/codegen are NOT linked.
 # lcode+llex+lparser (~18.9 KB) exist only to compile source; the rabbit loads
 # only luac bytecode (see src/main.c + tools/luac). The two remaining refs

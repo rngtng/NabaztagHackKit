@@ -16,6 +16,78 @@
 -- fade engine work; a jump means the timer isn't firing. The fuller show is
 -- ../apps/led-demo.lua.
 
+-- ---- sched: the cooperative reactor (#283) ---------------------------------
+-- One place that advances everything, so the four workloads compose. Two ways
+-- in, matching the two shapes work already has here:
+--
+--   sched.pump(fn)   fn() every pump iteration - for the pull-style state
+--                    machines that already exist (hw.ears :step(), net.iface
+--                    :poll()). They were correct all along; nothing was calling
+--                    them during a blocking stretch.
+--   sched.spawn(fn)  run fn as a coroutine; it calls sched.sleep(ms) to yield
+--                    until a deadline. For sequential behaviour (a choreography,
+--                    a fetch-then-speak) that reads top-to-bottom instead of
+--                    being hand-unrolled into a state machine.
+--
+-- It is driven from nab.on("tick"), which the C pump calls after draining the
+-- event queue - so it runs from the REPL's idle loop AND from inside every
+-- nab.wait()/nab.delay(). That is what makes a blocking call stop being a hole
+-- in which nothing else happens.
+--
+-- Resident in the boot chunk (flash) rather than REPL-loaded: it is a core
+-- runtime service, and an app that has to load its own scheduler before it can
+-- keep an ear on target is not much of a fix.
+--
+-- Time is the wrapping 32-bit nab.time(); deadlines are compared as
+-- (now - due) >= 0 so the comparison stays correct across the wrap (Lua 5.4
+-- integers wrap two's-complement, and LUA_32BITS makes them 32-bit, so this is
+-- the usual signed-difference trick, good for intervals under ~24 days).
+
+sched = {}
+local pumps, tasks = {}, {}
+
+function sched.pump(fn)
+  pumps[#pumps + 1] = fn
+end
+
+function sched.spawn(fn)
+  local t = {co = coroutine.create(fn), due = nab.time()}
+  tasks[#tasks + 1] = t
+  return t.co
+end
+
+function sched.sleep(ms)
+  coroutine.yield(nab.time() + ms)
+end
+
+-- One slice: every pump, then every task whose deadline has come. A task that
+-- errors or finishes is dropped; an error is printed and the rest keep running
+-- (principle 3 - one broken activity must not take the runtime down).
+function sched.tick()
+  for i = 1, #pumps do
+    pumps[i]()
+  end
+  local i = 1
+  while i <= #tasks do
+    local t = tasks[i]
+    if (nab.time() - t.due) >= 0 then
+      local ok, due = coroutine.resume(t.co)
+      if not ok then
+        print("sched: " .. tostring(due))
+      end
+      if not ok or coroutine.status(t.co) == "dead" then
+        table.remove(tasks, i)
+        i = i - 1
+      else
+        t.due = due or nab.time()
+      end
+    end
+    i = i + 1
+  end
+end
+
+nab.on("tick", sched.tick)
+
 GREEN_UID = "d0021a3506198b86"
 YELLOW_UID = "d0021a35038f3a2f"
 LEFT_MOTOR = 1

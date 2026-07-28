@@ -20,6 +20,15 @@ that breaks one needs a stated reason.**
    C pollers (debounced button, ~750 ms RFID scan) post edge events into a small fixed queue;
    Lua drains it via `lua_pcall`'d `nab.on` callbacks, from the REPL's idle loop or `nab.wait()`.
    No interrupt handler ever calls into Lua — the 1 ms tick ISR only counts and steps fades.
+   **The reactor (#283)** closes the gap this left: draining events is not enough if a
+   blocking call means nothing gets drained. `nab.on("tick", fn)` hands Lua a slice on every
+   pump iteration, and the resident `sched` ([`../boot/boot.lua`](../boot/boot.lua)) builds two
+   entry points on it — `sched.pump(fn)` for the pull-style state machines that already exist
+   (`hw.ears` `:step()`, `net.iface` `:poll()`), `sched.spawn`/`sched.sleep` for sequential
+   behaviour written top-to-bottom as a coroutine. `nab.delay` is now an alias of `nab.wait`:
+   a delay that silently disabled a script's own callbacks was the bug, not a second primitive
+   worth keeping. **New blocking bindings must pump** — a call that spins without advancing the
+   reactor reopens exactly the hole `firmware:test:sched` exists to catch.
 3. **Explicit memory + error budget.** *(partly established)* Flash is tracked to the byte
    (124 KB, `-Werror`, parser-less image). Every chunk runs under `lua_pcall`, so a script
    fault returns to the prompt instead of crashing the rabbit. *Target:* a fixed Lua-heap cap.
@@ -28,7 +37,7 @@ that breaks one needs a stated reason.**
    `LLC2_4c` has **no external flash** (#94, `CS_FLASH` unpopulated) — a slot region must come
    out of the ~13.6 KB free internal flash or the volatile 1 MB ExtRAM.
 5. **Sandbox by construction.** *(partly established)* Stdlib is trimmed to `base + string +
-   table` — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
+   table + coroutine` (the reactor's, 2,300 B measured) — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
    parser-less image hardens this further: with no on-device compiler the rabbit cannot `eval`
    source, only run bytecode it is handed. New bindings are bounded `nab.*` calls; don't re-add
    a general-purpose library without a security review.
@@ -90,7 +99,8 @@ in [`src/main.c`](src/main.c). Bare metal supplies neither a console nor a heap,
 
 Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float, no `double`):
 
-- **Stdlib = base + string + table.** No `math`/`io`/`os`/`package`/`debug`/`coroutine`/`utf8`.
+- **Stdlib = base + string + table + coroutine.** No `math`/`io`/`os`/`package`/`debug`/`utf8`.
+  `coroutine` (2,300 B, measured) is what the #283 cooperative reactor is built on.
 - **Integer math is exact; float *printing* is approximate.** `1+1`→`2`, `2^10`→`1024.0`, but
   `1/2`→`0.0` — fractional digits drop. Arithmetic is correct internally; only decimal
   rendering is stubbed (a real dtoa is future work).

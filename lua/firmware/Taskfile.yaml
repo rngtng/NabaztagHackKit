@@ -322,7 +322,7 @@ tasks:
         fi
 
   test:sched:
-    desc: 'Cooperative-scheduler acceptance demo (#283): run test/sched-demo.lua in the sim with a button timeline while an ear move and blocking work overlap, and require all three criteria to pass. FAILS until the scheduler lands - that is the point; it is wired into lua:verify only once green.'
+    desc: 'Cooperative-scheduler acceptance demo (#283): run test/sched-demo.lua in the sim with a button timeline while an ear move and blocking work overlap, and require all three criteria to pass. Part of lua:verify: a regression here means a blocking call has gone back to being a hole in which nothing else runs.'
     summary: 'Usage: task lua:firmware:test:sched [APP=test/sched-demo.lua] [INJECT=test/sched-demo.jsonl]'
     dir: '{{.TASKFILE_DIR}}'
     vars:

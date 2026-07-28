@@ -217,18 +217,16 @@ static int nab_fade(lua_State *L)
   return 0;
 }
 
-/* nab.delay(ms): block for ms, timed off the 1 ms System Timer (counter_timer,
- * #102) - the same clock the background fades use, so a Lua animation's frame
- * pacing and its fades stay in step (a calibrated busy-loop drifts against
- * them, and skewed badly whenever the core clock changed). The sim models the
- * timer too, so this works there as well. Feeds the watchdog while it waits. */
-static int nab_delay(lua_State *L)
-{
-  lua_Integer ms = luaL_checkinteger(L, 1);
-  luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  wait_ms((uint32_t)ms);
-  return 0;
-}
+/* nab.delay is nab.wait (see below). Until #283 it was a bare spin that fed
+ * only the watchdog, so every delay was a hole in which no event was even
+ * sampled, no ear stopped on its target and no connection was pumped - a press
+ * and release inside one was lost for good rather than delivered late. That a
+ * script's frame pacing silently disabled its own callbacks was the bug, not a
+ * feature worth keeping a second primitive for, so the two collapsed into one
+ * and `delay` is now an alias. Both still time off the 1 ms System Timer
+ * (counter_timer, #102), the same clock the background fades use, so animation
+ * pacing and fades stay in step.
+ */
 
 /* nab.button() -> boolean: true while the head button is held (polled). */
 static int nab_button(lua_State *L)
@@ -477,7 +475,7 @@ static int nab_rfid(lua_State *L)
 #define EVENTS_TABLE "nab.events"  /* registry key: {button=fn, rfid=fn} */
 #define CONSOLE_IDLE_MS 500        /* RX quiet this long before a coupler scan */
 
-static const char *const event_names[] = {"button", "rfid", NULL};
+static const char *const event_names[] = {"button", "rfid", "tick", NULL};
 
 static void report(lua_State *L);  /* defined with the REPL below */
 
@@ -521,6 +519,21 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
       report(L);
   }
+  /* Cooperative tick (#283): once the C event queue is drained, hand the Lua
+   * reactor a slice. This is the seam that lets behaviour which must keep
+   * running during a blocking call - an ear stopping on its target, a net
+   * connection being pumped - actually run, without the C layer knowing what
+   * any of it is. Registered with nab.on("tick", fn); under lua_pcall like
+   * every other callback (principle 3), and inside the busy guard, so a
+   * nab.wait() from within the tick cannot recurse into dispatch. Reuses the
+   * callback table already on the stack rather than hashing EVENTS_TABLE again. */
+  lua_getfield(L, cbs, "tick");
+  if (lua_isfunction(L, -1)) {
+    if (lua_pcall(L, 0, 0, 0) != LUA_OK)
+      report(L);
+  } else {
+    lua_pop(L, 1);
+  }
   lua_settop(L, cbs - 1); /* drop the callback table */
   busy = 0;
 }
@@ -529,8 +542,11 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
  * name "button": fn(pressed) on debounced press/release edges. name "rfid":
  * fn(uid) when a new tag lands on the coupler, fn(nil) when it leaves;
  * registering starts the background ~750 ms scan cycle, clearing stops it.
+ * name "tick": fn() on every pump iteration, after the event queue is drained -
+ * the seam the Lua reactor (sched, #283) hangs off. It is not an event source:
+ * nothing is queued for it and it carries no argument.
  * Callbacks fire from the cooperative pump - while the REPL prompt is idle or
- * inside nab.wait() - never from an interrupt (principle 2). */
+ * inside nab.wait()/nab.delay() - never from an interrupt (principle 2). */
 static int nab_on(lua_State *L)
 {
   int which = luaL_checkoption(L, 1, NULL, event_names);
@@ -546,8 +562,9 @@ static int nab_on(lua_State *L)
   return 0;
 }
 
-/* nab.wait(ms): sleep ~ms on the 1 ms tick while running the event pump, so
- * nab.on callbacks fire during the wait - the idiomatic script main loop is
+/* nab.wait(ms) - also exposed as nab.delay(ms), see above: sleep ~ms on the
+ * 1 ms tick while running the event pump, so nab.on callbacks and the reactor
+ * tick fire during the wait - the idiomatic script main loop is
  * `while true do nab.wait(100) end`. If the tick is not advancing at all (IRQs
  * masked, or init_tick not yet run) the wait degrades to DelayMs' bounded busy
  * fallback instead of hanging. */
@@ -864,7 +881,7 @@ static const luaL_Reg nab_funcs[] = {
     {"flash_firmware", nab_flash_firmware},
     {"led8", nab_led8},
     {"fade", nab_fade},
-    {"delay", nab_delay},
+    {"delay", nab_wait},   /* alias: a delay pumps the reactor too (#283) */
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
@@ -898,15 +915,19 @@ static int luaopen_nab(lua_State *L)
 
 /* ---- Lua runtime --------------------------------------------------------- */
 /* Trimmed stdlib for the 124 KB flash budget (see the Makefile's LUA_LIB note):
- * base + string + table only. Dropped: math (pulls ~16 KB of libm trig),
+ * base + string + table + coroutine. Dropped: math (pulls ~16 KB of libm trig),
  * io/os/package/debug/loadlib (no filesystem, OS, or dynamic loading on this
- * target), coroutine, and utf8. base's dofile/loadfile are removed in
- * lua/lbaselib.c. This is the largest set that fits; drop string or table to
- * make room for another (e.g. coroutine or forced float printf). */
+ * target), and utf8. base's dofile/loadfile are removed in lua/lbaselib.c.
+ *
+ * coroutine costs 2,300 B (measured, #283) and buys the cooperative scheduler:
+ * without it every long-running activity has to be hand-unrolled into a state
+ * machine that some other loop remembers to pump, which is exactly why the four
+ * workloads could not compose. */
 static const luaL_Reg loadedlibs[] = {
     {LUA_GNAME, luaopen_base},
     {LUA_TABLIBNAME, luaopen_table},
     {LUA_STRLIBNAME, luaopen_string},
+    {LUA_COLIBNAME, luaopen_coroutine},
     {"nab", luaopen_nab},   /* LEDs + button + audio + RFID + ears */
     {NULL, NULL},
 };
