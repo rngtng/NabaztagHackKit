@@ -63,11 +63,20 @@ function link.checksum(s)
   return ~sum & 0xFFFF
 end
 
--- "192.168.0.1" -> 4-byte string (string.char rejects out-of-range octets)
-function link.ip(s)
+-- "192.168.0.1" -> 4-byte string, or nil if it is not a dotted quad. The
+-- non-throwing form: net.dns uses it to tell a literal address from a hostname
+-- (#232), where "not an address" is an ordinary answer, not an error.
+function link.aton(s)
+  if type(s) ~= "string" then return nil end
   local a, b, c, d = s:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
-  assert(a, "bad IPv4 address")
+  if not a then return nil end
+  a, b, c, d = tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+  if a > 255 or b > 255 or c > 255 or d > 255 then return nil end
   return string.char(a, b, c, d)
+end
+
+function link.ip(s)
+  return assert(link.aton(s), "bad IPv4 address")
 end
 
 function link.ntoa(ip)

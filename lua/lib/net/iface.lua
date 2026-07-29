@@ -120,6 +120,7 @@ function iface.new(drv)
     end
     self.udp_ports[68] = nil
     self.ip, self.mask, self.router = got.ip, got.mask, got.router
+    self.dns = got.dns -- resolver for i:resolve; assign after :dhcp to override
     return got
   end
 
@@ -149,9 +150,73 @@ function iface.new(drv)
     end
   end
 
-  -- blocking GET; dns is out of scope, so dst_ip is explicit and `host`
-  -- only feeds the Host header. -> status, body | nil, err
+  -- Blocking DNS A lookup (#232), mirroring :dhcp - one UDP question, retried
+  -- on a 1 s timer with a fresh transaction id until `timeout` (default 5 s).
+  -- The server is self.dns, learned from the DHCP lease; assign the field to
+  -- override it (a persisted config key is #268). A dotted quad resolves to
+  -- itself, so a caller can hand either form straight through.
+  -- -> 4-byte ip | nil, err
+  function i:resolve(host, timeout)
+    local literal = link.aton(host)
+    if literal then return literal end
+    local hit = dns.cached(host, self.time())
+    if hit then return hit end
+    if not self.ip then return nil, "no address" end
+    if not self.dns then return nil, "no dns server" end
+    local server = self.dns
+    local sport = 49152 + (self.time() & 0x3FFF)
+    local id, got, ttl
+    local function ask()
+      -- fresh id per attempt: a late answer to the previous one no longer
+      -- matches, so a retry can never adopt a stale reply
+      id = string.pack(">I2", (self.time() ~ 0x5bd1) & 0xFFFF)
+      local q, qerr = dns.query(id, host)
+      if not q then return qerr end
+      self:ipsend(server, ipv4.build{src = self.ip, dst = server,
+        proto = ipv4.UDP,
+        payload = udp.build(self.ip, sport, server, 53, q)})
+    end
+    local bad = ask()
+    if bad then return nil, bad end
+    local err, done
+    self.udp_ports[sport] = function(d, pkt)
+      if pkt.src ~= server or d.sport ~= 53 then return end
+      local ip, t, definitive = dns.answer(d.payload, id, host)
+      if ip then got, ttl, done = ip, t, true
+      -- A definitive negative (NXDOMAIN, TC, no A) is our answer: stop now with
+      -- its error instead of retrying to the full timeout. Anything dns.answer
+      -- is unsure is ours (wrong id, spoofed question) leaves `done` unset, so
+      -- the loop keeps listening.
+      elseif definitive then err, done = t, true end
+    end
+    local t0, last = self.time(), self.time()
+    while not done do
+      if self.time() - t0 > (timeout or 5000) then
+        self.udp_ports[sport] = nil
+        return nil, "dns timeout"
+      end
+      self:poll(100)
+      if not done and self.time() - last > 1000 then
+        last = self.time()
+        ask() -- the first send may also have been eaten by the ARP round trip
+      end
+    end
+    self.udp_ports[sport] = nil
+    if not got then return nil, err end
+    dns.remember(host, got, ttl, self.time())
+    return got
+  end
+
+  -- Blocking GET. dst_ip nil resolves `host` first (#232) - hostname or dotted
+  -- quad; pass an explicit dst_ip to skip DNS entirely. `host` always feeds the
+  -- Host header. The timeout bounds the HTTP exchange; a lookup adds its own
+  -- default budget on top. -> status, body | nil, err
   function i:http_get(dst_ip, host, path, timeout)
+    if not dst_ip then
+      local err
+      dst_ip, err = self:resolve(host)
+      if not dst_ip then return nil, err end
+    end
     local c = tcp.client{src = self.ip, dst = dst_ip, dport = 80,
                          sport = 49152 + (self.time() & 0x3FFF),
                          clock = self.time}

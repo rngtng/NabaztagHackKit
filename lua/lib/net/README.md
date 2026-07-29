@@ -24,7 +24,7 @@ table (the device has no `require`; load order is bottom-up):
 | `ipv4.lua` | header build/parse (fragments dropped), ICMP echo responder |
 | `udp.lua` | datagram build/parse, pseudo-header checksum |
 | `dhcp.lua` | client state machine (join) + single-lease server (AP config mode, DNS pointed at the portal for #218) |
-| `dns.lua` | captive-portal DNS sinkhole: answer every A query with the AP IP so a joined phone's OS probe resolves to the portal and shows the config page (#233 follow-up) |
+| `dns.lua` | both DNS halves: an A-record resolver with a bounded TTL cache (#232), and the captive-portal sinkhole that answers every A query with the AP IP so a joined phone's OS probe lands on the config page (#233 follow-up) |
 | `tcp.lua` | minimal single-connection TCP: stop-and-wait, fixed window, fixed RTO, no TIME_WAIT — sized for one HTTP exchange |
 | `http.lua` | HTTP/1.0 GET builder, incremental response/request parsers, query decoding. No chunked encoding — the boot URL points at a plain file |
 | `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, and the blocking flows below |
@@ -44,11 +44,47 @@ ifc = net.iface.new(net.iface.nabdrv())
 lease = ifc:dhcp(15000)                      -- rabbit gets a real lease
 print(net.link.ntoa(ifc.ip))
 st, body = ifc:http_get(net.link.ip("192.168.0.10"), "srv", "/app.lc")
+print(net.link.ntoa(ifc:resolve("example.com")))  -- DNS (#232)
+st, body = ifc:http_get(nil, "example.com", "/app.lc")  -- ... or by name
 ```
 
 AP config mode (#218): `nab.wifi_ap("Nabaztag")`, then `ifc:dhcpd{ip=...,
 client_ip=...}` + `ifc:serve(80, handler)`. The rabbit answers ping as soon
 as `ifc.ip` is set — the first thing to try against fresh hardware.
+
+### Name resolution (#232)
+
+`ifc:resolve(host [, timeout])` is the blocking A lookup, shaped like
+`ifc:dhcp`: one UDP question to `ifc.dns`, retried on a 1 s timer with a **fresh
+transaction id** each attempt, until the timeout (default 5 s) — then
+`4-byte ip | nil, err`. `ifc.dns` is learned from the DHCP lease (option 6 was
+already parsed and thrown away before this); assign the field to override it,
+until #268 gives config a place to persist a resolver address. A dotted quad
+resolves to itself (`link.aton`), so a caller can hand either form through
+without branching.
+
+`ifc:http_get(nil, host, path)` resolves `host` first — that is what lets #219's
+boot URL and any public endpoint be a hostname instead of a dotted quad.
+Passing an explicit `dst_ip` still skips DNS entirely.
+
+Deliberately a first cut: A records only, one server, no failover and no
+periodic refresh task (the mtl reference's `dns.mtl` is 504 lines of exactly
+that machinery, and none of it buys anything on one rabbit with one resolver).
+What is **not** optional and is implemented:
+
+- **Compression pointers.** Real servers return the answer's owner name as a
+  0xC0 offset, and a CNAME chain adds a second pointer into the first record's
+  rdata. Names are *spanned*, never *followed* — a pointer always ends a name,
+  so a crafted pointer loop cannot hang the parser.
+- **Nothing from the wire is trusted.** Every length is bounds-checked against
+  the datagram before use, the response must echo our own question and id, TC
+  is refused (there is no TCP fallback), and the whole parse runs under `pcall`
+  (principle 3) so the worst a hostile answer can do is `nil, err`.
+- **The cache is bounded** (`dns.MAX` = 8 entries, `dns.MAX_TTL` = 1 h), with
+  arp.learn's cap-and-clear — the #251 lesson, where an uncapped table grew for
+  as long as the rabbit was up. TTL is honoured; a TTL-0 answer is used once and
+  never stored. Expiry compares by signed difference, so it survives the ms
+  clock wrapping.
 
 ### Setup mode / provisioning (#233, M11e-1)
 
@@ -169,11 +205,24 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of #235: link 1103,
-arp 1004, ipv4 1385, udp 788, dns 872, dhcp 3420, tcp 4857, http 1881, iface
-4104, setup 4078, provision 1597, ota 3443 — **28,532 B total**. The
-boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 14.4 KB) is
-what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM execution) is the
-lever. `setup.lua` + `dns.lua` + `ota.lua` are **not** in that subset (they run
-only in setup mode); `provision.lua` is small and boot-critical (it decides
-between join and setup every boot), so it joins the resident subset.
+`task lua:lib:size` - stripped `.lc` bytes per module. As of #232: link 1502,
+arp 1220, ipv4 1385, udp 788, dns 3061, dhcp 3420, tcp 5142, http 2126, iface
+5158, setup 4111, provision 1597, ota 3445 — **32,955 B total**.
+
+(The previous listing was stamped "as of #235" but had already drifted — several
+modules grew after it; these numbers are re-measured, not patched.)
+
+The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 15.6 KB,
+20.7 KB once `iface` is counted) is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM
+execution) is the lever. `setup.lua` + `ota.lua` are **not** in that subset
+(they run only in setup mode); `provision.lua` is small and boot-critical (it
+decides between join and setup every boot), so it joins the resident subset.
+
+`dns.lua` is **conditionally** boot-critical: the sinkhole half is setup-mode
+only, but the resolver is on the join path the moment #219's boot URL carries a
+hostname instead of a dotted quad. #232 cost 3,475 B across three modules —
+dns 872 → 3,061 (the resolver + cache added to the responder), iface 4,108 →
+5,158 (`:resolve` + the `http_get` wiring) and link 1,266 → 1,502
+(`link.aton`) — well above the issue's ~1–1.5 KB guess, so a hostname boot URL
+costs #219 roughly 3.5 KB over a dotted quad. Configuring the boot server as an
+IP still avoids all of it: `dns.lua` simply is not loaded.
