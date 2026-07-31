@@ -2,7 +2,7 @@
  * @file uart.h
  * @brief Minimal polled UART0 driver (TX + RX) for firmwareV2.
  *
- * OKI ML67Q4051 UART0 on port PB0 (TX) / PB1 (RX), 38400 baud 8N1, no flow
+ * OKI ML67Q4051 UART0 on port PB0 (TX) / PB1 (RX), 115200 baud 8N1, no flow
  * control. Trimmed port of the proven V1 driver (mtl/firmware/src/hal/uart.c):
  * polled TX + polled RX, no interrupts, no XMODEM. V1 drove RX off an interrupt
  * (UARTIER_ERBF -> a ring-buffer ISR); firmwareV2 has no RX handler wired into
@@ -26,7 +26,7 @@
 #define DLM_BAUD  0x00  /**< @brief divisor latch MSB - 115200 baud @ 32 MHz F_uart */
 #define DLL_BAUD  0x11  /**< @brief divisor latch LSB - 115200 baud (32e6/(16*17)) */
 
-/** @brief Configure UART0 pins + 38400 8N1, polled (no interrupts). */
+/** @brief Configure UART0 pins + 115200 8N1, polled (no interrupts). */
 void init_uart(void);
 /** @brief Blocking write of one byte (spins on THR-empty). */
 void putch_uart(uint8_t c);

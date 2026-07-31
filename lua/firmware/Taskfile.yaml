@@ -196,7 +196,7 @@ tasks:
         fi
 
   monitor:
-    desc: 'Read the live UART console on the Pi read-only, no JTAG/flash: stop the login getty, set /dev/serial0 to 38400 8N1 raw, and stream print()/prompt output until Ctrl-C. Pair with a separate `task lua:firmware:flash` (JTAG-only, does not touch the UART) to watch a self-running app live. For an interactive REPL use flash:repl instead. Usage: task lua:firmware:monitor [PI_HOST=tobi@jtag.local]'
+    desc: 'Read the live UART console on the Pi read-only, no JTAG/flash: stop the login getty, set /dev/serial0 to 115200 8N1 raw (BAUD= to override), and stream print()/prompt output until Ctrl-C. Pair with a separate `task lua:firmware:flash` (JTAG-only, does not touch the UART) to watch a self-running app live. For an interactive REPL use flash:repl instead. Usage: task lua:firmware:monitor [PI_HOST=tobi@jtag.local]'
     summary: 'Usage: task lua:firmware:monitor [PI_HOST=tobi@jtag.local]. Read-only UART view; Ctrl-C to stop. See lua/tools/openocd/README.md.'
     interactive: true   # streams the serial console to your terminal until Ctrl-C
     vars:

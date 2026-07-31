@@ -11,9 +11,37 @@ task lua:apps:simulate APP=<lua file> [ARGS=…] # feed a Lua app into the sim
 task lua:firmware:simulate:repl                # live interactive Lua REPL over the modelled UART
 ```
 
-What it does and doesn't model (no timing/audio/WiFi; DREQ/ADC unmodeled): see
-[`lua/firmware/README.md`](../../firmware/README.md#simulate-no-hardware).
 `simulate.py` holds the machine model; the Docker image bundles Unicorn.
+
+## What it models
+
+* **UART0 console**, both directions — this is how apps and the REPL are fed.
+  Each REPL line is its own chunk, so `local`s don't persist; use globals.
+* **SPI**, with *instant* completion: a data-register write sets `SPIF`. Enough
+  for framing, not for timing.
+* **The 1 ms System Timer, including its interrupt** (#102). The CPU runs in
+  ~1 ms instruction slices (`INSNS_PER_MS`) and between slices the sim performs
+  a real ARM7 IRQ entry (SPSR←CPSR, IRQ mode, vector to the flash-resident
+  `0x18` handler) whenever the timer is enabled and interrupts are unmasked.
+  The firmware's own dispatcher then runs `timer_handler` → `led_fade_tick` —
+  the *actual* fade code — so `counter_timer` advances and **LED fades animate
+  in the sim**. The clock is instruction-counted, not cycle-accurate, so
+  `nab.time()` is approximate here rather than wall time. An image that never
+  enables the timer (most `examples/`) sees no ticks at all.
+* **Button / RFID / ear inputs**, injected — see the protocol below.
+
+Not modelled: audio, WiFi, analog. **DREQ (VS1003 ready) and the ADC completion
+bit are unmodeled**, so any bounded busy-wait on them (`nab.play`, `nab.wheel`)
+spins to its cap and is hardware-only. `nab.record` is the exception — its wait
+guard is one-shot, so in-sim it returns a header-only WAV instead of burning the
+budget. QEMU isn't used (no ML67Q4051 machine; the memory map doesn't fit).
+
+**Live LED view.** `ARGS=--leds` reconstructs the 14-byte dot-correction frame
+from the SPI1 byte stream (latched on the CS_LED rising edge), unpacks it to five
+RGB LEDs and draws an ANSI truecolor strip — animated in place on a TTY, one line
+per distinct frame when piped. `--speed` (default `1`) paces the sim to wall-clock
+so the animation is watchable; lower it (`ARGS="--leds --speed 0.5"`) for a close
+look. The run summary reports timer IRQs delivered and LED frames rendered.
 
 ## Peripheral I/O + control protocol (#42)
 

@@ -3,297 +3,235 @@
 An alternative **Layer 0**: a bare-metal **PUC-Rio Lua 5.4** runtime on the stock
 hardware, replacing the mtl track's C-bytecode VM. Not eLua (dormant, Lua 5.1, its
 board layer duplicates our HAL, and its RAM trick is moot given 1 MB ExtRAM). Tracking
-issue: [#87](https://github.com/rngtng/NabaztagHackKit/issues/87).
+issue: [#87](https://github.com/rngtng/NabaztagHackKit/issues/87); roadmap lives in
+GitHub Issues, not here.
 
 ## Design principles
 
 Five principles ([#183](https://github.com/rngtng/NabaztagHackKit/issues/183), from
-embedded-Lua practice - ArduPilot, rusEFI, Lua-RTOS) govern the C/Lua split, memory/error
-budgets, and remote loading. **Binding on new work: a change that breaks one needs a
-stated reason.** `(established)` = already in the code; `(target)` = being built toward.
+embedded-Lua practice — ArduPilot, rusEFI, Lua-RTOS). **Binding on new work: a change
+that breaks one needs a stated reason.**
 
-1. **Layered API - HAL in C, behaviour in Lua, narrow seam.** *(established)* RFID, ear
-   motors, LED PWM, sound DMA stay in C (`src/hal/`); Lua sees only high-level primitives -
-   the [`nab` module](#the-nab-module). New hardware gets a C driver + a thin `nab.*`
-   binding, never a register poke or timing loop in Lua.
-2. **Minimal, event-driven core - cooperative, never Lua in an ISR.** *(established, #195)*
-   `src/utils/event.c`: C pollers (debounced button, ~750 ms RFID scan) post edge events into a
-   small fixed-size queue; the Lua layer drains it via `lua_pcall`'d callbacks
-   (`nab.on`), from the REPL's idle loop or `nab.wait()`. The hard rule holds - no
-   interrupt handler ever calls into Lua (the 1 ms tick ISR only counts).
+1. **Layered API — HAL in C, behaviour in Lua, narrow seam.** *(established)* RFID, ear
+   motors, LED PWM, audio stay in C (`src/hal/`); Lua sees only the [`nab` module](#the-nab-module).
+   New hardware gets a C driver + a thin `nab.*` binding, never a register poke or timing
+   loop in Lua. Behaviour on top of that seam lives in [`../lib/`](../lib/), in Lua.
+2. **Cooperative event core — never Lua in an ISR.** *(established, #195)* `src/utils/event.c`:
+   C pollers (debounced button, ~750 ms RFID scan) post edge events into a small fixed queue;
+   Lua drains it via `lua_pcall`'d `nab.on` callbacks, from the REPL's idle loop or `nab.wait()`.
+   No interrupt handler ever calls into Lua — the 1 ms tick ISR only counts and steps fades.
 3. **Explicit memory + error budget.** *(partly established)* Flash is tracked to the byte
-   (124 KB budget, `-Werror`, parser-less bytecode-only image #128). Every chunk runs under
-   `lua_pcall`, so a script fault returns to the prompt instead of crashing the rabbit.
-   *Target:* a fixed Lua-heap cap and error paths hardened so a broken remote script can't
-   wedge core functions.
-4. **Partial-update-friendly script structure.** *(target, ties to wifi)* Remote loading
-   should swap small Lua/`luac` payloads, never reflash. Design a fixed script-slot layout;
-   keep the C HAL + boot core independent of any loaded script.
-5. **Sandbox from the start.** *(partly established)* Remote scripts reach only the `nab`
-   API. Stdlib is trimmed to `base + string + table` - no `os`/`io`/`package`/`debug`/
-   `loadlib`, `dofile`/`loadfile` removed - so no `os.execute`, no raw memory/filesystem
-   access by construction. The parser-less image (#128) hardens this further: with no
-   on-device compiler the rabbit cannot `eval` arbitrary source, only run bytecode it is
-   handed. Every new binding is a bounded `nab.*` call; don't re-add a general-purpose
-   library without a security review.
+   (124 KB, `-Werror`, parser-less image). Every chunk runs under `lua_pcall`, so a script
+   fault returns to the prompt instead of crashing the rabbit. *Target:* a fixed Lua-heap cap.
+4. **Partial-update-friendly script structure.** *(target)* Remote loading should swap small
+   `luac` payloads, not reflash. **Open gap:** script slots need versioning + rollback, and
+   `LLC2_4c` has **no external flash** (#94, `CS_FLASH` unpopulated) — a slot region must come
+   out of the ~13.6 KB free internal flash or the volatile 1 MB ExtRAM.
+5. **Sandbox by construction.** *(partly established)* Stdlib is trimmed to `base + string +
+   table` — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
+   parser-less image hardens this further: with no on-device compiler the rabbit cannot `eval`
+   source, only run bytecode it is handed. New bindings are bounded `nab.*` calls; don't re-add
+   a general-purpose library without a security review.
 
-The driver-buildout sub-issue [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)
-maps these onto C subsystems. Remaining structural gap:
-
-- **Script slots need versioning + rollback (principles 3-4)** with no storage on
-  `LLC2_4c`: there is **no external flash** (#94, `CS_FLASH` unpopulated), so a slot region
-  must be carved from the ~24 KB free internal flash or the volatile 1 MB ExtRAM.
-
-> ⚠️ #184's hardware list is partly web-sourced and **contradicts the `LLC2_4c` board**: it
-> claims LEDs via an `MCP23017` I2C expander (actually a **TLC594x over SPI**, `src/hal/led.c`)
-> and ears via `L293D` (actually **OKI FTM PWM**, `src/hal/motor.c`). Neither part exists
-> here. Trust the [teardown](../../docs/hardware-dissection.md) and a probe, not a forum post.
+> ⚠️ [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)'s hardware list is partly
+> web-sourced and **contradicts this board**: it claims LEDs via `MCP23017` (actually a
+> **TLC594x over SPI**, `src/hal/led.c`) and ears via `L293D` (actually **OKI FTM PWM**,
+> `src/hal/motor.c`). Trust the [teardown](../../docs/hardware-dissection.md) and a probe.
 
 ## Hardware
-- MCU: OKI **ML67Q4051**, ARM7TDMI @ 33 MHz (no FPU, no Thumb-2, vectors at `0x0`)
-- Internal flash `0x08000000`, 124 KB usable (last sector = config)
-- Internal RAM `0x10000000`, **16 KB** (too small for Lua)
-- External RAM `0xD0000000`, **1 MB** (Lua heap/data live here)
-- Debug: 8-pin JTAG + **UART0 TX** (PB0=TX/PB1=RX, 115200 8N1 - the UART
-  peripheral clock is a measured **8 MHz**, so 115200 is unreachable; #203).
-  UART is bidirectional (input + output).
-- Board revision `PCB_RELEASE LLC2_4c` (`inc/common.h`) - one of three tag sub-revisions
-  (`LLC2_2`/`LLC2_3`/`LLC2_4c`), the one hardware-verified below. Pin diffs:
+
+- MCU **OKI ML67Q4051**, ARM7TDMI (no FPU, no Thumb-2, vectors at `0x0`). `init.s` runs
+  `init_pll()` before `main` (#269), so **every** image — product and examples — runs at
+  **32 MHz** off the 8 MHz crystal.
+- Internal flash `0x08000000`, **124 KB** usable (last 4 KB sector = `nab.config`).
+- Internal RAM `0x10000000`, 16 KB (too small for a Lua state). External RAM `0xD0000000`,
+  **1 MB** — the Lua heap (`_sbrk`), less the top 32 KB reserved for the USB allocator.
+- Console + debug: 8-pin JTAG, and **UART0 on PB0(TX)/PB1(RX) at 115200 8N1**, bidirectional
+  (#203/#207/#271). One divisor serves all images because of the PLL above.
+- Board revision `LLC2_4c` (`inc/common.h`); pin diffs for the other two:
   [PCB revisions](../../docs/hardware-dissection.md#pcb-revisions-pcb_release).
 
-## Build
-Host needs only Docker + Task; the ARM toolchain lives in the Docker image. Two kinds of
-target: the **product firmware** (`src/main.c`, the Lua host - the default build) and
-standalone **examples** (`examples/<name>.c`, one-peripheral bring-up progs, own `main()`,
-no Lua, selected with `EXAMPLE=`).
+## Build, simulate, flash
+
+Host needs only Docker + Task. Two target kinds: the **product firmware** (`src/main.c`, the
+Lua host — the default) and standalone **examples** (`examples/<name>.c`, one peripheral each,
+own `main()`, no Lua).
 
 ```sh
-task lua:firmware:build                # -> bin/firmware.{elf,hex,bin}  (the Lua 5.4 product)
-task lua:firmware:build EXAMPLE=blink   # -> bin/blink.{elf,hex,bin}   (LED blink bring-up prog)
-task lua:firmware:build EXAMPLE=hello   # -> bin/hello.{elf,hex,bin}   (toolchain check)
+task lua:firmware:build                  # -> bin/firmware.{elf,hex,bin,sim}
+task lua:firmware:build EXAMPLE=blink    # -> bin/blink.{elf,hex,bin}
+task lua:firmware:simulate               # run the product in the Unicorn sim, no hardware
+task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds   # feed a Lua app, live LED view
+task lua:firmware:simulate:repl          # interactive REPL against the sim
+task lua:firmware:flash                  # JTAG flash via the Raspberry Pi bridge
+task lua:firmware:flash:repl             # flash, then drive the REPL over UART
+task lua:verify                          # definition of done for this track
 ```
 
-`arm-none-eabi-gcc` + newlib-nano, `-mcpu=arm7tdmi -mthumb -mthumb-interwork`, linked
-against [`sys/ml67q4051.ld`](sys/ml67q4051.ld) with our own startup (`-nostartfiles`) and
-`--gc-sections`. Our sources build warning-clean and **`-Werror`-enforced** under `-Wall
--Wextra -Wpedantic -Wpointer-arith -Wcast-align` (`-Wcast-align` matters on ARM7TDMI: an
-unaligned 32-bit load rotates silently instead of faulting). The vendored Lua core is
-exempt (`-Wno-cast-align -Wno-error`) - not our code to fix; see the `Makefile`.
+`arm-none-eabi-gcc` + newlib-nano, `-mcpu=arm7tdmi -mthumb -mthumb-interwork`, our own startup
+(`-nostartfiles`) and `--gc-sections`. Our sources are **`-Werror`**-clean under `-Wall -Wextra
+-Wpedantic -Wpointer-arith -Wcast-align` (`-Wcast-align` matters on ARM7TDMI: an unaligned
+32-bit load rotates silently instead of faulting). Vendored Lua and the vendored usb/net dirs
+are exempt — see the `Makefile`, which also documents why those dirs must stay at `-Os`.
+
+Detail lives with the tool that owns it: **simulator model + injection protocol** in
+[`../tools/simulator/README.md`](../tools/simulator/README.md), **off-device `luac` +
+`#LC` framing** in [`../tools/luac/README.md`](../tools/luac/README.md), **JTAG/Pi rig +
+UART console** in [`../tools/openocd/README.md`](../tools/openocd/README.md).
+
+> ⚠️ **Brick risk:** never erase or program internal flash without a verified full backup.
+> IDCODE `0x3f0f0f0f` over JTAG = the CPU is alive.
 
 ## Lua runtime
-The product firmware boots **PUC-Rio Lua 5.4** ([`lua/`](lua/), vendored - see
-[`PROVENANCE.md`](../../PROVENANCE.md)) into a REPL. Glue in [`src/main.c`](src/main.c).
-Two things bare metal lacks:
 
-- **Console:** newlib `_read`/`_write` route stdin/stdout through **UART0**
-  (`src/hal/uart.c`, 115200 8N1). `print()` and the prompt go out `putch_uart`/`_write`;
-  REPL input comes in `getch_uart`/`_read` (EOF is EOT, `0x04`). Both directions run over
-  UART on hardware (no JTAG session, no CPU halts) and the simulator models the UART0
-  console. The old JTAG console path was fully removed in #207 (UART RX landed there too).
-  Read it on the Pi rig: see
-  [`../tools/openocd/README.md`](../tools/openocd/README.md#uart-console--lua-repl-bidirectional-115200-8n1-203207--the-console).
-- **Heap:** `_sbrk` hands out the **1 MB ExtRAM** window (`0xD0000000`, set up by `init.s`);
-  16 KB internal RAM is too small.
+PUC-Rio Lua 5.4 ([`lua/`](lua/), vendored — see [`PROVENANCE.md`](../../PROVENANCE.md)), glued
+in [`src/main.c`](src/main.c). Bare metal supplies neither a console nor a heap, so `_read`/
+`_write` route stdin/stdout through UART0 and `_sbrk` hands out the ExtRAM window.
 
-Tuned to the **124 KB flash budget** (`luaconf.h` sets `LUA_32BITS` - 32-bit int + float,
-no FPU/`double`):
+Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float, no `double`):
 
-- **Stdlib = base + string + table** only. Dropped `math`/`io`/`os`/`package`/`debug`/
-  `loadlib`/`coroutine`/`utf8`; `dofile`/`loadfile` removed (no filesystem).
-- **Integer math is exact; float *printing* is approximate.** `1+1`→`2`, `10//3`→`3`. A float
-  renders as integer part + `.0`, so whole floats are right (`2^10`→`1024.0`) but fractional
-  digits drop (`1/2`→`0.0`). Float *arithmetic* is correct internally; only decimal rendering
-  is stubbed - a real dtoa is future work.
-- **Number I/O is newlib-free (#106):** compact decimal parser vs `strtof`, libm-free `^`/`%`
-  (fractional `^`→NaN), in-tree `snprintf`/`vsnprintf` - so number formatting doesn't pull
-  newlib's FILE layer.
-- **Double-free (#213):** no float crosses a variadic call on the device - C default argument
-  promotion would turn it into a `double` and link libgcc's double soft-float (~2.4 KB). Floats
-  print via the non-variadic `luai_num2str`; `string.pack`'s C-`double` `'d'` code and
-  `string.dump`/`ldump.c` (the device only *loads* bytecode) are compiled out behind
-  `-DLUA_NOPARSER`.
+- **Stdlib = base + string + table.** No `math`/`io`/`os`/`package`/`debug`/`coroutine`/`utf8`.
+- **Integer math is exact; float *printing* is approximate.** `1+1`→`2`, `2^10`→`1024.0`, but
+  `1/2`→`0.0` — fractional digits drop. Arithmetic is correct internally; only decimal
+  rendering is stubbed (a real dtoa is future work).
+- **Number I/O is newlib-free** (#106): compact decimal parser instead of `strtof`, libm-free
+  `^`/`%` (fractional `^`→NaN), in-tree `snprintf`. **No float ever crosses a variadic call**
+  (#213) — C argument promotion would make it a `double` and link libgcc's soft-float.
+- **Parser-less by design** (#128): `lparser`/`llex`/`lcode` are dropped (~18.9 KB), so the
+  rabbit runs *only* `luac` bytecode. Every REPL line and the resident boot chunk is compiled
+  **off-device** by a `LUA_32BITS`-matched host `luac`. That freed budget is what lets the
+  wifi C fit at all. A source line typed at a bare terminal will not run.
+- Each REPL line is its own chunk, so `local`s don't persist — use globals, same as stock `lua`.
 
-`bin/firmware.elf` uses 112,400 B of 124 KB (**~14.2 KB free**; ~23 KB of that growth is
-the M11 USB + 802.11/WPA2 wifi stack, ~0.8 KB the #216 raw-frame/AP bindings, 836 B
-the #214 config-sector writer + binding, ~1.5 KB the #195 event core +
-`nab.on`/`nab.wait`/`nab.time` bindings, ~2.1 KB the #234 provisioning plumbing —
-`nab.wifi`'s failure-reason classification + the config `fails` counter field —
-and ~0.65 KB the #235 OTA whole-image flash writer (`hal/ota.c`) +
-`nab.flash_firmware` binding). `task lua:firmware:build` also stamps
-`bin/firmware.sim` (16-byte header + image, `tools/otaimage.py`) — the file the setup
-page's firmware uploader (`net.ota`, #235) verifies and flashes. The stack is **WPA2-CCMP only** (#124,
-3,896 B reclaimed): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone - `nab.wifi`
-joins open or WPA2-PSK(AES) networks and rejects anything else at scan/auth. Newlib's stdio FILE layer stays out only
-because [`src/utils/libc_shim.c`](src/utils/libc_shim.c) provides local `rand`/`srand`/
-`__assert_func` — the vendored net stack's `rand()` otherwise drags ~9 KB of
-vfprintf/FILE machinery back in via newlib's asserting archive members. This is the
-**only** image and it is **parser-less by design** (decided in
-[#128](https://github.com/rngtng/NabaztagHackKit/issues/128)): `lparser`/`llex`/`lcode` are
-dropped (~18.9 KB), so the rabbit runs *only* `luac` bytecode (`lundump` resident). There is
-no on-device compiler - all Lua, including every REPL line and the resident boot chunk, is
-compiled *off-device* by a `LUA_32BITS`-matched host `luac`. The freed budget is what lets
-wifi C (~26 KB) fit.
+### Flash budget
 
-### Off-device `luac` pipe
-The host half lives in [`../tools/luac/`](../tools/luac/): a `luac` built from *this* `lua/`
-tree + `luaconf.h`, so its bytecode matches what the rabbit's `lundump.c` accepts (4-byte
-int/float/instruction). Building from the vendored tree - not a distro `luac` - is what keeps
-the header sizes aligned; full rule in [`../tools/luac/README.md`](../tools/luac/README.md).
+`bin/firmware.elf` uses **113,072 B of 124 KB (~13.6 KB free)**. Roughly: ~23 KB the USB +
+802.11/WPA2 stack, ~2.1 KB the #234 provisioning plumbing, ~1.5 KB the #195 event core,
+836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings, ~0.65 KB the #235 OTA writer.
 
-```sh
-task lua:apps:compile APP=apps/foo.lua [OUT=apps/foo.lc]   # compile to stripped device bytecode
-task lua:firmware:test                             # golden-transcript test of the bytecode pipeline
+Two things keep it from being worse, and both are load-bearing:
+
+- **WPA2-CCMP only** (#124, 3,896 B): HMAC-MD5, RC4 and every WEP/WPA1/TKIP path are gone.
+  `nab.wifi` joins open or WPA2-PSK(AES) and rejects anything else at scan/auth.
+- **[`src/utils/libc_shim.c`](src/utils/libc_shim.c)** supplies local `rand`/`srand`/
+  `__assert_func`. Without it the vendored net stack's `rand()` re-links ~9 KB of newlib
+  vfprintf/FILE machinery through an asserting archive member. **A new libc call that grows
+  the image needs the same treatment — check the map's "Archive member" section; don't trust
+  `--gc-sections` alone.**
+
+`-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
+4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
+boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 2,387 B — `run`/`watch`/`ledshow` plus
+two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
+decisions, not refactors. `task lua:firmware:build` fails loudly on overflow.
+
+## The `nab` module
+
+The one seam between Lua and hardware, registered in `src/main.c`:
+
+```lua
+nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127 (raw, no gamma)
+nab.led8(name, r, g, b)       -- same LEDs, r/g/b 0..255 through the gamma-2.2 table - instant
+nab.fade(name, r, g, b, ms)   -- background fade over ms; returns immediately (#102)
+nab.delay(ms)                 -- block ms, timed off the 1 ms tick (the clock fades use)
+nab.time()                    -- -> ms since boot (wrapping 32-bit tick)
+nab.wait(ms)                  -- sleep ~ms while running the event pump, so nab.on callbacks fire
+nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> fn(pressed) on
+                              --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
+                              --   (registering starts the background ~750 ms scan)
+nab.button()                  -- -> true while the head button is held (polled, undebounced)
+nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
+nab.rfid()                    -- -> lowercase hex UID string, or nil (one live scan)
+nab.ear_move(n, dir)          -- n: 1|2 (1 = left); dir "forward"|"reverse". Full speed only (#179)
+nab.ear_stop(n)               -- n: 1|2
+nab.ear_pos(n)                -- -> raw wrapping 16-bit encoder edge count, NOT an angle
+nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
+nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255. Bypasses SCI_VOLUME
+nab.play(data)                -- stream bytes over SDI - real decoded audio, nab.volume applies
+nab.tone()                    -- -> a built-in ~0.25 s 880 Hz MP3, for nab.play. MP3, not PCM
+                              --   WAV - the VS1003B does not decode WAV.
+nab.record(ms [, gain])       -- -> ~ms of mic audio as a complete WAV (8 kHz IMA ADPCM). Blocking.
+                              --   gain: 1024 = 1x, 512 = 0.5x, 0 = AGC (default)
+nab.rec_start([gain])         -- cooperative session: codec encodes into its ~2 KB FIFO, CPU free
+nab.rec_read()                -- -> whole 256-byte ADPCM blocks, or nil. Returns immediately
+nab.rec_stop()                -- close the session (codec back to decode mode)
+nab.rec_wav(data)             -- wrap concatenated rec_read chunks as a WAV string
+nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open) -> true | nil, msg, reason
+                              --   reason: "radio"|"notfound"|"auth"|"timeout" (#234 branches on it)
+nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
+nab.wifi_up()                 -- cold-boot the dongle without joining, so wifi_mac() is real (#233)
+nab.wifi_mac()                -- -> our 6-byte station MAC (all-zero until the radio is up)
+nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
+nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
+nab.config()                  -- -> {ssid=,psk=,url=,fails=} from the config sector, or nil
+nab.config{...}               -- persist it; true = written+verified, false = already identical
+nab.flash_firmware(image)     -- whole-image OTA flash + reboot (#235). Never returns on success.
+                              --   BRICK RISK - net.ota verifies the image before calling this
+nab.sci(reg) / nab.sciw(r,v)  -- read/write a VS1003 SCI register (codec bring-up diagnostics)
 ```
 
-Since bytecode contains `\n`/NUL and the console is line-oriented, the REPL accepts a
-**frame**: a `#LC:<len>` header line + `2*len` hex chars. `load_lc_frame` (`src/main.c`)
-decodes and runs it; a non-frame line is rejected (there is no parser). The host tools:
-`replpipe.py` frames a `.lua`/`.lc` file, `embed.py` bakes the boot chunk into
-`gen/boot_lc.h`, and `luash.py` is the live-REPL client (compiles each typed line
-off-device). A source line typed at a bare terminal will not run.
+Higher-level behaviour belongs in [`../lib/`](../lib/), not here — e.g. `nab.ear_pos` is a raw
+edge count, and `lib/hw/ears.lua` (#263) is what turns it into homing and absolute positions.
 
-## Simulate (no hardware)
-Run the ELF in an instruction-level simulator ([`../tools/simulator/`](../tools/simulator/),
-Unicorn Engine, #96) - no JTAG, no device:
+`nab.record`'s RIFF header is **byte-identical to the mtl stack's** (`mtl/lib/hw/reclib.mtl`),
+so anything that accepts a V1 recording accepts this one. `nab.record` is blocking; the
+`rec_*` session API is the non-blocking form — the codec encodes into its own ~2 KB FIFO
+(~half a second at 8 kHz; overflow drops audio but never crashes) while your script does
+other work:
 
-```sh
-task lua:firmware:simulate                            # run bin/firmware.elf (the Lua product), report reaching main
-task lua:firmware:simulate EXAMPLE=blink ARGS=-v      # run an example; -v logs every peripheral (MMIO) write
-task lua:apps:simulate APP=apps/repl-demo.lua         # boot the product, feed a Lua app over the modelled UART console
+```lua
+chunks = {}
+nab.rec_start()
+while nab.button() do                        -- record while held
+  local c = nab.rec_read()
+  if c then chunks[#chunks + 1] = c end
+  nab.led('nose', 127, 0, 0)                 -- ...LEDs/ears/net between polls
+end
+nab.rec_stop()
+nab.play(nab.rec_wav(table.concat(chunks)))
 ```
 
-To drive the **REPL**: `task lua:firmware:simulate:repl` (live prompt - `luash.py` compiles each line you
-type off-device to bytecode, then pipes it to the modelled UART console) or feed a file with
-`apps:simulate APP=…`:
+### What is confirmed on hardware
 
-```sh
-task lua:apps:simulate APP=apps/repl-demo.lua          # compile + feed a .lua file, print transcript
-task lua:apps:simulate APP=apps/foo.lc                 # feed prebuilt .lc bytecode
-```
+`LLC2_4c`, the only board revision tested. Treat everything else as *needs a probe* — a
+documented chip is not a *responding* chip until you have seen it answer (the M6 AT45 lesson:
+`CS_FLASH` is unpopulated, so #94 was reverted outright).
 
-Each REPL line is its own chunk, so `local`s don't persist - use globals (same as stock
-`lua`). The simulator maps the real memory regions, runs from `Reset_Handler`, stubs
-peripheral pages, models **instant SPI completion** (a data-register write sets `SPIF`), and
-models the **UART0 console**. Beyond the 1 ms System Timer (below) and the injectable
-button/RFID/ear inputs (**Peripheral injection**, below), it has **no timing, audio, WiFi, or
-analog model**, so it validates code paths + GPIO + SPI framing + console, not analog
-behaviour. Delays must be software busy-loops to be observable. **DREQ (VS1003 ready)
-and the ADC completion bit are unmodeled** - any bounded busy-wait on them (`nab.play`,
-`nab.wheel`) spins to its cap in-sim and is hardware-only. `nab.record` is the exception:
-its wait guard is one-shot (first block only), so in-sim it returns a header-only WAV
-instead of burning the budget (see `nab.record` below). QEMU isn't used (no ML67Q4051
-machine, memory map doesn't fit).
+| Confirmed on hardware | Built, **not** HW-confirmed |
+|---|---|
+| LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |
+| `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
+| UART0 console both directions @115200 | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
+| USB host + RT2501 join, WPA2-CCMP | `nab.play`/`nab.tone`/`nab.wheel` — DREQ and the ADC bit are unmodeled in sim (#123) |
+| 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
+| LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
 
-**System Timer + IRQ (#102).** The sim models the 1 ms System Timer and *delivers its
-interrupt*: it runs the CPU in ~1 ms instruction slices (`INSNS_PER_MS`) and, between slices,
-performs a real ARM7 IRQ entry (SPSR←CPSR, switch to IRQ mode, vector to the flash-resident
-`0x18` handler) whenever the timer is enabled and interrupts are unmasked. The firmware's own
-dispatcher then runs `timer_handler` → `led_fade_tick` - the *actual* fade code - so
-`counter_timer` advances and LED **fades animate in the sim**, exactly as on hardware. Timing
-is still approximate (instruction-count clock, not cycle-accurate); `nab.delay`'s busy-loop is
-calibrated to roughly the same scale so fades and delays keep pace.
+## Hardware gotchas
 
-**Live LED view (#102).** `--leds` (passed via `ARGS=--leds` to `apps:simulate`) reconstructs the 14-byte
-dot-correction frame from the SPI1 byte stream (latched on the CS_LED rising edge), un-packs it
-to five RGB LEDs, and draws them as an ANSI truecolor strip - a live in-place animation on a
-TTY, or one line per distinct frame when piped. The run summary reports `timer IRQs` delivered
-and `LED frames` rendered. The script is compiled to `#LC` bytecode before it is fed (the
-firmware is parser-less, #128); the sim is paced to wall-clock time (`--speed`, default `1`)
-so the animation is watchable rather than a host-CPU blur - lower it (`SPEED=0.25`) for a
-close look.
+Each of these cost real debugging time. They are not obvious from the datasheet.
 
-**Peripheral injection + state (#42).** The sim models the **input** peripherals so no-hardware
-runs can drive them: the head **button** (`nab.button()` → PI3 bit1), **RFID** (`nab.rfid()` →
-an injected UID, or `nil`; the real `rfid_read_uid` runs on the stubbed I2C and its result is
-corrected at return — no CRX14 bus emulation), and the **ears** (`nab.ear_move`/`ear_stop` set a
-drive state; a synthetic encoder advances while running so `nab.ear_pos()` moves). Inputs come
-from a **JSON-Lines** control file (`--inject-file`, passed as `INJECT=` to `apps:simulate`);
-`--emit-state` logs a device-state snapshot on every change. Both directions share one schema
-(button/RFID/ear in, LEDs/ears/button/RFID out) — the seam a UI (#43) plugs into. Full protocol
-in [`tools/simulator/README.md`](../tools/simulator/README.md#peripheral-io--control-protocol-42);
-`task lua:firmware:test:inject` (part of `lua:verify`) is the golden that drives it.
+- **XD16-31 must be muxed to GPIO (#275).** `BWC=0xA0` runs ExtRAM as a 16-bit bank, so the
+  upper external-data-bus half carries no data — but left on its default bus function it
+  toggles on every EMC *write*, and it shares package pins with the audio-control group
+  (`RST_AUDIO = PIO11.7`). Every Lua-heap write burst was hardware-resetting the VS1003.
+  `init_hw()` sets `PORTSEL4` bit 6 to stop it. Reads leave the bus hi-Z, which is why
+  playback mostly survived and recording did not. Isolated by `examples/recprobe.c`.
+- **SPI0 RX-FIFO + DREQ.** `WriteSPI` clocks in a byte per write but never consumes it, so a
+  run of SCI writes fills the RX FIFO and shifts later `vlsi_read_sci` results — `audio.c`
+  drains the FIFO at the end of every `vlsi_write_sci`. DREQ also dips right after those
+  writes, so the SDI feed waits (bounded) for DREQ per byte rather than aborting on DREQ-low.
+  Together these were the root cause of an initially-silent `nab.beep`.
+- **The tick reload and the PLL move together.** `TMRLR=0xF830` is 1 ms *at 32 MHz*. It was
+  patched twice (`0xFC18`, `0xFE0C`) while the chip still booted on the ring oscillator;
+  #269 fixed it at the source instead. Change one without the other and every timing on the
+  board — fades, `nab.delay`, the USB stack's 200 ms cadence — silently skews.
+- **`init_ears` needs the `PORTSEL3` pin-mux** (`0x05550000`) to route PF0-PF5 to FTM.
+  Without it the PWM pins stay GPIO and the motors are silent.
+- **A config write masks IRQs for ~63 ms** (flash supplies no code or data while programming
+  itself), so expect a wifi/tick hiccup. The writer takes no address — the sector base is a
+  compile-time constant, so it physically cannot touch the firmware below `0x1F000`.
 
-```sh
-task lua:apps:simulate APP=apps/rfid-led-ears.lua INJECT=... ARGS="--leds --emit-state"  # drive button/RFID/ear + watch state
-task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds                 # real-time 5-LED view
-task lua:apps:simulate APP=apps/led-demo.lua ARGS="--leds --speed 0.5"   # half speed for a closer look
-task lua:apps:simulate APP=path/to.lua ARGS=--leds N=200000000
-```
-
-## Layout
-```
-sys/                ARM7TDMI startup, linker, OKI register defs (copied from mtl/firmware)
-  ml67q4051.ld      memory map
-  asm/init.s        reset vector, clock + EMC init, per-mode stacks, .data/.bss -> main()
-  asm/*.s           SWI + reentrant IRQ/FIQ handlers
-  src/irq.c         IRQ handler table + init
-  src/tick.c        1 ms system tick - the first live IRQ; counter_timer + DelayMs
-  inc/*.h           ml674061.h (GPIO/SPI/IRQ regs), irq.h
-inc/common.h        GPIO/register macros (UART include stripped - no UART here)
-src/utils/*.c       cooperative event core (#195, fixed queue + button/RFID pollers) + libc_shim (local rand/assert, keeps newlib stdio out)
-inc/hal/*.h         HAL headers (copied from mtl/firmware)
-src/hal/spi.c       SPI0/SPI1 low-level access
-src/hal/led.c       TLC594x RGB LED driver over SPI
-src/hal/button.c    head-button read (polled active-low GPIO on P3.1)
-src/hal/audio.c     VS1003 codec over SPI0 - SCI r/w, volume, amp, sine test, SDI playback, ADPCM mic record
-src/hal/adc.c       ADC ch.2 read (the back wheel)
-src/hal/i2c.c       I2C bus - OKI bring-up + polled master read/write
-src/hal/rfid.c      CRX14 RFID coupler over I2C - anti-collision scan + UID read
-src/hal/motor.c     ear motor + encoder driver - FTM PWM drive + pulse-capture position, no IRQ
-src/hal/uart.c      polled UART0 @115200 8N1 (#203/#207) - TX putch/putst + RX getch/rxrdy
-src/usb/            USB host stack (#143) - ML60842 OHCI hcd/hcdmem + usbctrl + enumeration
-src/main.c          product firmware entry - boots Lua 5.4 into a bytecode REPL (the default build)
-examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c exercise one peripheral
-gen/boot_lc.h       generated: lua/boot/boot.lua baked to bytecode (tools/luac/embed.py) for the product
-lua/                vendored PUC-Rio Lua 5.4 core; build compiles a subset (Makefile LUA_CORE/LUA_LIB)
-../tools/simulator/ Unicorn instruction-level simulator (#96)
-../tools/luac/      host luac matching the device's bytecode format (#133)
-```
-`sys/`, `inc/common.h`, and `hal/` are **copied** from `mtl/firmware` (the vendored `nabgcc`
-port) - a register fix there may apply here, grep the sibling. Otherwise self-contained; no
-build-time dependency on `mtl/firmware`. `lua/` is vendored upstream. Both: see
-[`PROVENANCE.md`](../../PROVENANCE.md).
-
-## Milestones
-Sub-issues of [#87](https://github.com/rngtng/NabaztagHackKit/issues/87). "HW" = confirmed
-on board `LLC2_4c`; "sim" = simulator-only, hardware confirmation pending.
-
-| | Milestone | Issue | Status |
-|---|---|---|---|
-| M0 | Scaffold build layer | #88 | HW (PC parks in `main`) |
-| M1 | Bare-metal LED blink | #89 | HW + sim |
-| M2 | JTAG flash workflow | #90 | done (`task lua:firmware:flash`) |
-| M3 | UART console | #91 | HW (console became UART0 in #207) |
-| M4 | Lua 5.4 core + REPL | #92 | HW + sim |
-| M5 | Bindings: LEDs, button, ears | #93 | LEDs + button HW; ears -> M10 |
-| M6 | Binding: AT45 flash | #94 | **N/A** - no external flash on `LLC2_4c` (probed `id`/`status`=0). Reverted. |
-| M7 | Reclaim flash budget | #106 | HW - 48 B -> ~32 KB free by moving console + number I/O off newlib |
-| M8 | Audio - VS1003 codec | #116 | HW - `nab.beep` audible; VS1003B on SPI0 |
-| M9 | RFID - CRX14 over I2C | #117 | sim - flash `rfidprobe` to confirm before trusting `nab.rfid()` |
-| M10 | Ear motors - PWM + encoder | #118 | HW at full speed (see `nab.ear_*` caveats) |
-| M11 | WiFi - USB host + RT2501 | #119 | open epic. **M11a done, HW:** USB host stack ported, first live IRQ (1 ms tick), `usbprobe` enumerates the dongle (VID:PID `0db0:6877`, RT2501). Next: rt2501usb driver + 802.11 (prereq #125). |
-| - | LED gamma + background fade engine | #102 | sim (fades animate); HW pending. Gamma-2.2 `led_pack`/`led_flush` re-synced from #45; a background fade engine driven off the M11a 1 ms tick (`sys/src/tick.c`), whose ring-osc reload was corrected (0xF830->0xFC18); adds `nab.led8`/`nab.fade`/`nab.delay` + `../apps/led-demo.lua` (`task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds`). |
-| - | Unicorn simulator | #96 | first cut done |
-| - | `nab.play`/`nab.tone`/`nab.wheel` + wheel-click/jack probe | #123 | sim - hardware-only paths, see below |
-| - | UART0 TX bring-up | #203 | HW - `uartprobe` banner read @115200 on the Pi serial link; RX + `nab.uart` + UART console open |
-| - | `nab.config` - persist wifi creds in the config sector | #214 | built - HW verify pending (sim models flash reads only; write creds, power-cycle, read back) |
-| - | Cooperative event core - `nab.on`/`nab.wait`/`nab.time` | #195 | built - HW verify pending (sim has no timer/RFID model; register `watch()` on the rig, place/remove a tag, press the button) |
-
-## Flashing
-```sh
-task lua:firmware:flash                # the product Lua host (default)
-task lua:firmware:flash EXAMPLE=blink  # visible LED blink (bring-up prog)
-```
-Host-side (JTAG can't run in Docker), via a Raspberry Pi bridge: builds, ships configs + ELF
-to the Pi, drives OpenOCD + gdb, verifies. Setup + wiring:
-[`../tools/openocd/README.md`](../tools/openocd/README.md).
-
-> ⚠️ **Brick risk:** never erase or program internal flash without a verified full backup
-> first. IDCODE `0x3f0f0f0f` over JTAG = the CPU is alive.
-
-## LED map (verified on hardware)
-The raw `LED_RGB_n` -> physical map (`led.h`, inherited from `mtl/firmware`) was unlabeled;
-verified on `LLC2_4c` with the `ledmap` probe:
+### LED map (verified with the `ledmap` probe)
 
 | Channel | Physical | | Channel | Physical |
 |---|---|---|---|---|
@@ -301,182 +239,32 @@ verified on `LLC2_4c` with the `ledmap` probe:
 | `LED_RGB_2` | belly bottom | | `LED_RGB_5` | **nose** |
 | `LED_RGB_3` | belly left | | | |
 
-`blink` drives `LED_RGB_5` (nose). `nab.led` uses this raw `set_led_rgb` map by name. The gamma
-bindings (`nab.led8`/`nab.fade`) go through `led.c`'s `set_led`/`led_fade`, which apply the
-`convled[]` logical remap - so `nab_led_logical()` inverts `convled[]` to hit the same physical
-LEDs by name. All three land on the verified map above.
+`nab.led` uses this raw map; `nab.led8`/`nab.fade` go through `led.c`'s `convled[]` logical
+remap. `main.c` carries one `led_names[]`/`led_sel[]`/`led_logical[]` row per LED so all three
+bindings land on the same physical LED. `led.c` itself is re-synced from `mtl/firmware` (#45):
+gamma-2.2 with no low-end dead zone, and a fade engine stepped from the 1 ms timer ISR — which
+is why led.c's main-context writers mask that IRQ around their SPI flush.
 
-## LED gamma + background fades (#102)
-`src/hal/led.c` was re-synced from `mtl/firmware` (PR #45): a **gamma-2.2** table with **no
-low-end dead zone** (the old table crushed inputs 0..51 to 0, so fades snapped to black over the
-bottom 20%), the generic `led_pack`/`led_flush` packer (verified **bit-identical** to the old
-per-LED mask code over 2M random writes), and a **background fade engine**
-(`led_fade`/`led_fade_tick`). The engine is advanced from the **1 ms System Timer tick**
-(`sys/src/tick.c`) that M11a (#143) already brought up for the USB stack: `tick_handler()` now
-also calls `led_fade_tick()`, and `init_hw()` in `src/main.c` arms it with `init_irq()` ->
-peripherals -> `init_tick()`. `led_fade_tick()` runs in the timer ISR (no main loop during the
-REPL), so led.c's main-context writers mask that IRQ around their SPI flush
-(`irq_disable_save`/`irq_restore`).
+## Layout
 
-Wiring the fades up caught a **calibration bug** in the shared tick: it reloaded `TMRLR=0xF830`
-(1 ms @ 32 MHz, copied from `mtl/firmware`), but V2 never runs `init_pll()` and clocks off the
-**16 MHz ring oscillator**, so every tick - and thus every fade and `DelayMs` - ran ~2x slow on
-hardware. Corrected to `0xFC18` (1 ms @ 16 MHz). (The tick only fires because M11a already moved
-`main` to **System mode**, where `msr cpsr_c` can clear the I-bit that `__enable_interrupt()`
-needs - `mtl/firmware`'s `swi` path is avoided because a SWI collides with the semihosting
-console.)
-
-`../apps/led-demo.lua` showcases both: a smooth breathe (fade all five up and back, no dead
-zone) and a **pinball** ball that hops the belly ring leaving comet trails, with a red nose flash
-per lap. It animates in the sim too (the sim delivers the timer IRQ - see Simulate):
-
-```sh
-task lua:apps:simulate APP=apps/led-demo.lua ARGS=--leds     # live 5-LED view (sim)
-task lua:firmware:flash                                       # flash the product, then...
-task lua:firmware:flash:repl SCRIPT=apps/led-demo.lua        # ...feed apps/led-demo.lua over the HW REPL
+```
+sys/                ARM7TDMI startup, linker script, OKI register defs (copied from mtl/firmware)
+  asm/init.s        reset vector, clock + EMC init, init_pll, stacks, .data/.bss -> main()
+  src/tick.c        1 ms system tick - counter_timer + DelayMs; steps the LED fades
+  src/irq.c         IRQ handler table + init
+src/main.c          product entry: boots Lua 5.4 into a bytecode REPL; all nab.* bindings
+src/hal/            one file per peripheral: spi, led, button, audio (VS1003), adc, i2c,
+                    rfid (CRX14), motor (ears), uart, config (flash sector), ota, wifi
+src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
+src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
+src/utils/          event.c (cooperative event core), fmt.c (number/printf shims), libc_shim.c
+lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
+gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
+examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral
+test/host/          host-side C unit tests under ASan/UBSan (task lua:firmware:test:host)
+test/*.expected     golden transcripts for the bytecode + injection tests
 ```
 
-Sim is instruction-timed, not cycle-accurate, so a hardware pass to confirm the tick rate + a
-good-looking fade is the open item on #102.
-
-## The `nab` module
-The product firmware exposes hardware to Lua via a built-in `nab` module (registered in `src/main.c`):
-
-```lua
-nab.led(name, r, g, b)        -- name: nose|belly|left|right|bottom; r/g/b 0..127 (raw, no gamma)
-nab.led8(name, r, g, b)       -- same LEDs, r/g/b 0..255 through the gamma-2.2 table (#102) - instant
-nab.fade(name, r, g, b, ms)   -- background fade to r/g/b (8-bit gamma) over ms; returns immediately (#102)
-nab.delay(ms)                 -- block ms (timed off the System Timer); paces animations while fades run
-nab.button()                  -- -> true while the head button is held (polled, undebounced)
-nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255, ms ~duration
-nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
-nab.play(data)                -- stream bytes (WAV/MP3/...) over SDI - real decoded audio
-nab.tone()                    -- -> a tiny built-in 8-bit PCM WAV (~200ms square), for nab.play
-nab.record(ms [, gain])       -- -> ~ms of microphone audio as a WAV string (8 kHz IMA ADPCM); blocking
-nab.rec_start([gain])         -- open a cooperative record session (codec encodes, CPU free)
-nab.rec_read()                -- -> a chunk of whole 256-byte ADPCM blocks, or nil; returns immediately
-nab.rec_stop()                -- close the session (codec back to decode mode)
-nab.rec_wav(data)             -- -> concatenated rec_read chunks wrapped as a WAV string
-nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
-nab.rfid()                    -- -> lowercase hex UID string, or nil if no tag (one live scan)
-nab.on(name, fn|nil)          -- register/clear an event callback (#195): "button" -> fn(pressed)
-                              --   on debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
-                              --   (registering starts the background ~750ms scan). Callbacks
-                              --   fire while the REPL prompt idles or inside nab.wait().
-nab.wait(ms)                  -- sleep ~ms on the 1 ms tick, running the event pump meanwhile
-nab.time()                    -- -> ms since boot (wrapping 32-bit tick; 0 in the simulator)
-nab.ear_move(n, dir)          -- n: 1|2 (1 = left ear); dir "forward"|"reverse" (full speed; see #179)
-nab.ear_stop(n)               -- n: 1|2
-nab.ear_pos(n)                -- n: 1|2 -> raw wrapping 16-bit encoder pulse count
-nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open; #124) -> true | nil, msg (M11)
-nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
-nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
-nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
-nab.config()                  -- -> {ssid=,psk=,url=} persisted in the config sector, or nil
-nab.config{ssid=,psk=,url=}   -- persist (survives power cycles); true = written+verified,
-                              --   false = flash already held this record (write skipped)
-```
-
-HW-verified (M5/M8): `nab.led` lights each named LED, `nab.button()` tracks the physical
-button, `nab.beep()` is audible. Caveats:
-
-- **`nab.beep` bypasses `SCI_VOLUME`** (the sine test is a fixed-level diagnostic tone), so
-  `nab.volume` has no effect on it. `nab.beep`'s `ms` is a rough CPU busy-loop, but `nab.delay`
-  (#102) is timed off the 1 ms System Timer (`counter_timer`) - the same clock the LED fades use.
-  The timer is calibrated to the **16 MHz ring oscillator** (firmwareV2 never calls `init_pll()`),
-  so `TMRLR=0xFC18`, not `mtl/firmware`'s 32 MHz `0xF830`; the ring osc isn't crystal-accurate, so
-  `ms` is nominal.
-- **`nab.ear_*` HW-verified at full speed only.** Both motors drive and encoders count. The
-  `speed` parameter is unverified (#179) - `earprobe` now sweeps 255->20 and reports encoder
-  delta; run it to find where movement stops before trusting partial speed. A bug fixed during
-  bring-up: `init_ears` was missing the `PORTSEL3` pin-mux (`0x05550000`) that routes PF0-PF5
-  to FTM; without it the PWM pins stayed GPIO and the motors were silent. `nab.ear_pos` reads
-  the free-running `FTMnC` counter (not `FTMnGR`); it's a raw edge count, not an absolute angle
-  (hole-counting arrival detection lives at the Forth layer, out of scope here).
-- **`nab.play`/`nab.tone`/`nab.wheel` (#123) are unverified on hardware and unrunnable in-sim**
-  (DREQ/ADC unmodeled). `nab.play` streams over SDI so `nab.volume` actually attenuates (VS1003B
-  decodes MP3/WAV per the teardown); the SDI mechanism itself is M8-proven. `nab.wheel` ports
-  `mtl/firmware`'s ADC ch.2 sequence. Flash + listen/probe to confirm.
-- **`nab.record` (#116 mic half) built, sim returns a header-only WAV; unverified on
-  hardware** - see its section below.
-- **`nab.config` (#214) built, not HW-confirmed** - the simulator models flash *reads* only,
-  so the write path (V1's `write_uc_flash_sec` port in `hal/config.c`, erase+program of the
-  last 4 KB internal-flash sector from a `.ramfunc`) needs the rig: write creds from the
-  REPL, power-cycle, read them back. The writer takes no address - the sector base is a
-  compile-time constant, so it cannot touch the firmware below `0x1F000` - but the
-  full-backup rule above still applies before the first live write. A write masks IRQs for
-  ~63 ms (flash supplies no code/data while programming itself), so expect a wifi/tick hiccup.
-- **`nab.rfid()` (#117) built + sim-verified, not HW-confirmed.** A documented chip isn't a
-  *responding* chip until probed (see the M6 AT45 lesson) - run `rfidprobe` first. Reliability
-  fix (#180): `hal/rfid.c` now tracks field state and drops/raises the RF field once instead of
-  per-poll (passive tags were power-cycled every call). #195 closed the two follow-ups: the
-  settle delay is the tick-calibrated `DelayMs(1)` (V1's value), and the event-shaped path is
-  `nab.on('rfid', fn)` - C scans every ~750 ms and calls back only on UID transitions (tag
-  arrive/change -> `fn(uid)`, two consecutive empty scans -> `fn(nil)`).
-- **`nab.on`/`nab.wait` (#195) built, not HW-confirmed** (the sim models neither timer nor
-  RFID, so callbacks can't fire there). Events dispatch only from the cooperative pump: the
-  REPL's between-lines idle loop (RFID scans additionally gated on ~500 ms of console quiet,
-  protecting the 16-byte RX FIFO from a mid-#LC-frame scan stall) and `nab.wait`. A callback
-  error prints and returns to the loop (`lua_pcall`, principle 3). The boot chunk's `watch()`
-  is the demo: `run()`'s tag reactions, event-shaped, with the prompt still usable.
-
-### `nab.record` - the microphone (#116 mic half)
-M8's issue scoped "speaker + mic" but shipped speaker-only. `nab.record(ms [,
-gain])` closes the mic half: it ports `mtl/firmware`'s ADPCM record path
-(`init_adpcm_encode`/`rec_check`/`stop_adpcm_encode` →
-`vlsi_rec_start`/`vlsi_rec_read`/`vlsi_rec_stop` in `src/hal/audio.c`). The
-VS1003 encodes the microphone into 256-byte IMA-ADPCM blocks (505 samples,
-~63 ms each at 8 kHz) that are drained over SCI (`HDAT1` fill level, `HDAT0`
-data), and the binding wraps them in a RIFF header **byte-identical to the V1
-stack's** (`mtl/lib/hw/reclib.mtl`'s `_reclib_mkriff`) - so the returned string is
-a complete WAV file, the same format V1 uploads to its server. `gain`: 1024 =
-1x, 512 = 0.5x, ...; default 0 = automatic gain control (V1's setting).
-Duration needs no timer - it is counted in encoded blocks, so it is
-sample-clock accurate. Blocking; the amplifier is off while recording
-(feedback), and `nab.volume`/playback state is restored by the exit soft-reset.
-
-```lua
-s = nab.record(2000)   -- ~2 s from the mic, AGC
-print(#s)              -- 60-byte WAV header + n*256 bytes of ADPCM
-nab.play(s)            -- the VS1003 also *decodes* IMA ADPCM WAV (datasheet)
-```
-
-`nab.record` is **blocking** - nothing else Lua runs until it returns
-(hardware side-effects continue: a running `nab.ear_move` keeps turning, lit
-LEDs stay lit). For recording *while* doing other work there is the
-cooperative V1-style (`rec_start`/`rec_check`/`rec_stop`) session API: the
-codec encodes into its own ~2 KB FIFO (~half a second at 8 kHz) and the
-script drains it between other duties - `nab.rec_read()` returns immediately,
-with whole 256-byte blocks or `nil`. Overflowing the FIFO drops audio but
-never crashes. The chunks concatenate into exactly the data section of
-`nab.record`'s WAV; `nab.rec_wav` adds the header:
-
-```lua
-chunks = {}
-nab.rec_start()
-while nab.button() do                       -- record while held
-  local c = nab.rec_read()
-  if c then chunks[#chunks + 1] = c end
-  nab.led('nose', 127, 0, 0)                -- ... LEDs/ears/net between polls
-end
-nab.rec_stop()
-nab.play(nab.rec_wav(table.concat(chunks)))
-```
-
-**Unverified on hardware**, same caveat as `nab.play` above: the SCI read/write
-mechanics are M8-proven, what's unconfirmed is the ADPCM mode entry + `HDAT0/1`
-drain on the real chip - and whether the VS1003B accepts its own recording for
-playback (`nab.play(s)`). In the simulator `nab.record` completes (unlike
-`nab.play`): `HDAT1` reads 0 there, so the bounded first-block wait expires and
-it returns a header-only 60-byte WAV with `data` length 0 (sim-verified). On
-hardware the read loop is bounded per block (~20x the ~63 ms block time), so a
-wedged codec ends the recording short rather than hanging - the header always
-says how much real data follows. Flash cost: ~1.1 KB measured (blocking path +
-the cooperative `rec_*` session API).
-
-### SPI0 RX-FIFO + DREQ gotcha
-`WriteSPI` (SPI0) clocks in a byte per write but never consumes it, so a run of SCI writes
-fills the RX FIFO and shifts later `vlsi_read_sci` results - `audio.c` **drains the RX FIFO at
-the end of every `vlsi_write_sci`**. DREQ also dips right after those writes, so the SDI
-control feed **waits for DREQ** (bounded) per byte rather than aborting on DREQ-low. Both were
-the root cause of an initially-silent `nab.beep`.
+`sys/`, `inc/common.h` and `hal/` are **copied** from `mtl/firmware` — a register fix there may
+apply here, so grep the sibling before assuming a divergence is intentional. Otherwise this
+layer is self-contained. Vendoring origins: [`PROVENANCE.md`](../../PROVENANCE.md).

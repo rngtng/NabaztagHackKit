@@ -9,6 +9,11 @@
  * without the Lua app's full init_hw (LED/button/ADC/I2C). Everything is
  * self-contained (its own SCI/SDI helpers) so it does not depend on audio.c.
  *
+ * NB: the answer turned out to be NO for this stream - the VS1003B on this
+ * board decodes MP3 but NOT raw PCM WAV (see inc/tone_mp3.h). Silence here is
+ * the expected result, not a broken chip; the probe is kept for the CLOCKF
+ * readback half. Use nab.tone()'s MP3 to test the decode path instead.
+ *
  * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0 (listen for
  * the tone too):
  *   task lua:firmware:flash EXAMPLE=playprobe
