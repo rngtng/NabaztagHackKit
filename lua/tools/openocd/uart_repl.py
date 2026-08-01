@@ -12,9 +12,21 @@ during the gaps where it does other work. Two such gaps drop bytes for #LC
 bytecode frames (#128): after the `#LC:<len>` header the device runs malloc(len)
 before the hex loop, and after a frame it runs the chunk + prints before reading
 the next header. A blind byte burst overflows the 16-byte FIFO in either gap. So
-input is paced one byte at a time, AND after every newline we pause (`line_gap`)
-to let the device finish that gap - slow, but the REPL is a dev tool and
-correctness beats throughput here.
+within one frame, input is paced one byte at a time, and after every newline we
+pause (`line_gap`) to let the device finish that gap.
+
+#276: a FIXED inter-frame gap is not enough. If a chunk's own execution blocks
+(nab.play() decoding a real clip can run for seconds) the device does not touch
+UART at all for that whole stretch - dispatch_events during a blocking call
+never reads input, only button/rfid/tick - so any fixed gap shorter than that
+blocking call still overflows the 16-byte FIFO the moment the next frame's bytes
+start arriving. Reproduced on apps/mic-test.lua: corruption clusters right after
+the two nab.play() lines, never elsewhere. Fixed by feeding per-FRAME (not one
+blind byte stream): send one frame's bytes (paced, as before), then wait for the
+device's "> " prompt to reappear - which only happens once repl() has finished
+running that chunk and is back at sh_gets() - before sending the next frame's
+header. This bounds each inter-frame wait to exactly as long as that chunk
+actually took, however long that is, instead of guessing a constant.
 
 EOF: the firmware treats EOT (0x04, what Ctrl-D sends) as end-of-input - that is
 what ends the REPL loop and makes it print <<FV_DONE>>. So a fed script is
@@ -63,6 +75,61 @@ def drain(fd, out):
             out.extend(d)
     except BlockingIOError:
         pass
+
+
+PROMPT = b"> "
+
+
+def split_frames(payload: bytes) -> list[bytes]:
+    """Split a replpipe.py stream into its individual #LC frames. A frame is a
+    "#LC:<len>\\n" header line plus every following line up to (but not
+    including) the next header line or EOF - i.e. exactly the bytes one
+    load_lc_frame() call on the device consumes."""
+    lines = payload.splitlines(keepends=True)
+    frames, cur = [], bytearray()
+    for line in lines:
+        if line.startswith(b"#LC:") and cur:
+            frames.append(bytes(cur))
+            cur = bytearray()
+        cur += line
+    if cur:
+        frames.append(bytes(cur))
+    return frames
+
+
+def send_paced(fd, data: bytes, byte_delay, line_gap, out):
+    """Write `data` one byte at a time (flow control), pausing extra after each
+    newline for the device's malloc/hex-loop gap. Drains RX between bytes so
+    output is never missed while we are busy sending."""
+    for byte in data:
+        os.write(fd, bytes([byte]))
+        time.sleep(byte_delay)
+        drain(fd, out)
+        if byte == 0x0A:
+            time.sleep(line_gap)
+            drain(fd, out)
+
+
+def wait_for_prompt(fd, out, timeout):
+    """Block until a FRESH "> " prompt appears in `out` - i.e. repl() has
+    finished running the frame just sent and is back at sh_gets(), ready for
+    the next one (#276: a chunk's own blocking work, e.g. nab.play(), can run
+    far longer than any fixed inter-frame gap, and the device does not touch
+    UART at all meanwhile - waiting for its own readiness signal instead of
+    guessing a duration is what makes this correct for an arbitrary script).
+    `out` already ends with the *previous* prompt when this is called (the
+    device printed it and is now silently receiving raw bytes, with no echo),
+    so simply checking endswith(PROMPT) would fire immediately on that stale
+    tail with nothing new having happened - genuinely new bytes must arrive
+    first. Bounded so a truly wedged chunk does not hang forever."""
+    baseline = len(out)
+    t = time.monotonic()
+    while time.monotonic() - t < timeout:
+        drain(fd, out)
+        if len(out) > baseline and out.endswith(PROMPT):
+            return True
+        time.sleep(0.01)
+    return False
 
 
 def relay(fd, done, byte_delay, line_gap, idle_timeout):
@@ -121,6 +188,10 @@ def main():
                          "after a frame) before more bytes arrive (default 0.08s)")
     ap.add_argument("--boot-wait", type=float, default=1.5,
                     help="seconds to let the app boot to its prompt before feeding")
+    ap.add_argument("--prompt-timeout", type=float, default=20.0,
+                    help="max seconds to wait for the \"> \" prompt between "
+                         "frames before giving up on that frame and sending "
+                         "the next one anyway (default 20s, #276)")
     ap.add_argument("--relay", action="store_true",
                     help="live REPL: bidirectional stdin<->serial pass-through "
                          "(paced), driven by luash.py over ssh. See tools/luac/luash.py")
@@ -145,13 +216,16 @@ def main():
     if a.input:
         with open(a.input, "rb") as fh:
             payload = fh.read()
-        for byte in payload:                          # paced send (flow control)
-            os.write(fd, bytes([byte]))
-            time.sleep(a.byte_delay)
-            drain(fd, out)
-            if byte == 0x0A:                          # newline: let the device
-                time.sleep(a.line_gap)                # finish its no-read gap
-                drain(fd, out)                        # (malloc / run+print)
+        # #276: send one frame at a time, waiting for the device's own "> "
+        # prompt between frames instead of a fixed inter-frame gap - a chunk's
+        # blocking work (nab.play(), a wifi join) can run far longer than any
+        # constant, and the device touches no UART bytes while it does.
+        for frame in split_frames(payload):
+            send_paced(fd, frame, a.byte_delay, a.line_gap, out)
+            if not wait_for_prompt(fd, out, a.prompt_timeout):
+                sys.stderr.write(
+                    f"uart_repl: no prompt within {a.prompt_timeout}s after a "
+                    "frame - sending the next one anyway\n")
         os.write(fd, EOT)                             # EOT -> EOF -> REPL ends
 
     # Read the console until the done-marker or the timeout.

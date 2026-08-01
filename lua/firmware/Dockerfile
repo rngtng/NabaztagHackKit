@@ -19,6 +19,7 @@ RUN apt-get update \
         libc6-dev \
         make \
         python3 \
+        lame \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work

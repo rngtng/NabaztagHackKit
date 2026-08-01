@@ -208,6 +208,13 @@ tasks:
       # BAUD overridable for bring-up diagnostics (e.g. confirming the clock rate).
       - ssh -t {{.PI_HOST}} 'sudo systemctl stop serial-getty@ttyAMA0; sudo stty -F /dev/serial0 {{.BAUD}} raw -echo; echo "[monitor] /dev/serial0 @{{.BAUD}} 8N1 - Ctrl-C to stop"; sudo cat /dev/serial0'
 
+  gen:tone:
+    desc: 'Regenerate inc/tone_mp3.h (the nab.tone() MP3) reproducibly: faded 880 Hz sine -> lame, inside the firmware image (tools/tonegen.py). The header is committed - run only to change the tone. Usage: task lua:firmware:gen:tone'
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [image]
+    cmds:
+      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
+
   test:host:
     desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. SCENARIO=<name> runs one.'
     summary: 'Usage: task lua:firmware:test:host [SCENARIO=rfid-drop]'

@@ -153,7 +153,8 @@ nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> f
                               --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
                               --   (registering starts the background ~750 ms scan)
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
-nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel, believed a pot)
+nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel - an analog pot, HW-verified:
+                              --   255 at rest, smooth 255->0->255 across its travel)
 nab.rfid()                    -- -> lowercase hex UID string, or nil (one live scan)
 nab.ear_move(n, dir)          -- n: 1|2 (1 = left); dir "forward"|"reverse". Full speed only (#179)
 nab.ear_stop(n)               -- n: 1|2
@@ -220,11 +221,18 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 |---|---|
 | LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
-| UART0 console both directions @115200 | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
-| USB host + RT2501 join, WPA2-CCMP | `nab.play`/`nab.tone`/`nab.wheel` — DREQ and the ADC bit are unmodeled in sim (#123) |
-| — | **Streaming playback (#265/#283)** — `nab.play` must sound as it did before it was fed in bursts, `nab.play_feed` must accept bytes at all, and a clip must not underrun while an ear moves or a GET runs |
+| `nab.wheel` — analog pot on ADC ch.2, 255 rest -> 0 full sweep (#123) | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
+| `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates (#123); SCI_VOLUME holds exactly as written through the #265 streaming path too, re-verified post-#283 rebase | |
+| **Streaming playback + ear/net concurrency (#123/#265/#283)** — `nab.play_feed` accepts bytes end to end, plays audibly while `nab.ear_move` spins an ear (no stall either side) and separately while streaming an HTTP GET body over wifi (`lib/net` + `audio.stream`, 25 s clip, mic-confirmed audible, LED chase animating throughout - 184 frames, 28.4 s, twice reproduced) | |
+| UART0 console both directions @115200 | |
+| USB host + RT2501 join, WPA2-CCMP | |
 | 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
+
+Two #123 probe results with no code behind them: the wheel's end-of-travel **click has no
+separate GPIO** (only PD2, the wheel's own ADC line, moves), and the **audio-out jack is a
+mechanical normalled switch** — inserting a plug cuts the speaker without changing any GPIO.
+`nab.play`/`nab.tone`/`nab.wheel` stay unrunnable in-sim (DREQ and the ADC bit are unmodeled).
 
 ## Hardware gotchas
 
@@ -250,6 +258,36 @@ Each of these cost real debugging time. They are not obvious from the datasheet.
 - **A config write masks IRQs for ~63 ms** (flash supplies no code or data while programming
   itself), so expect a wifi/tick hiccup. The writer takes no address — the sector base is a
   compile-time constant, so it physically cannot touch the firmware below `0x1F000`.
+- **Ear motors move noticeably less per second than #179's baseline, on this rig, today** -
+  `examples/earprobe.c`'s `sweep_motor()` (the same tool #179 used) now measures encoder
+  delta 2-3 over ~1.5 s at full duty, where #179 recorded 8-11 under the same test. Two
+  likely-innocent explanations were checked and ruled out: the #269 32 MHz PLL migration
+  (2026-07-26, after #179's 2026-07-12/17 characterization) never touched `motor.c`, so
+  suspected the FTM PWM frequency (APB_CLOCK-derived, "488 Hz @ 32 MHz" per the source
+  comment) had silently quadrupled uncorrected - but `mtl/firmware/src/hal/motor.c` runs
+  the *identical* `FTM2CON`/`MOTOR_SPEED_CONTROL` config at the same 32 MHz on real
+  hardware, and `run_motor()` is byte-identical between the two tracks (diff-verified,
+  modulo CRLF). Neither a clock-migration regression nor a lua-port bug explains it.
+  Leading remaining explanation: physical rig state (motor wear, disassembled-cover
+  friction, or a weaker bench supply than #179's session) - not firmware-fixable, and
+  needs a physical inspection or an mtl-side `earprobe`-equivalent run on this same rig
+  to confirm, not more source archaeology.
+- **`nab.play`/`nab.tone` play far quieter than `nab.beep`'s built-in sine test at the same
+  volume setting (#123) — objectively measured, not just by ear.** A close-range mic capture
+  (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the decoded
+  `nab.tone()` stayed below -40 dBFS throughout its playback window in every take — a 20+ dB
+  gap, sometimes not registering above the room-noise floor at all. Frequency isn't it (880 Hz
+  and 1760 Hz both quiet vs. beep). **FW1's `patchwma` is ruled out as the cause**: ported as
+  `vlsi_patch()` (`init_vlsi()`, `hal/audio.c` — ten `WRAM_ADDR`/`WRAM` writes loading a VLSI
+  microcode patch, the last unported config difference between the two tracks), then A/B'd
+  twice on hardware - once live mid-session (no clear difference by ear) and once by disabling
+  it at boot and re-measuring by mic (same 20+ dB gap either way). Kept the patch in regardless
+  (official VLSI fix, harmless, closes a real config gap between the tracks) - but it is
+  confirmed **not** the loudness lever. **The gap itself is real, quantified, and still
+  unexplained** - the decode path's actual output gain-staging vs. the sine test (which may
+  bypass normal output scaling entirely) needs a dedicated VS1003 datasheet dive to pin down,
+  out of scope for #123's volume-attenuation DoD (which is unaffected - `nab.volume` still
+  correctly attenuates whatever level `nab.play` does produce).
 
 ### LED map (verified with the `ledmap` probe)
 

@@ -3,7 +3,10 @@
 -- mtl/lib/hw/ears.mtl to pure Lua over nab.ear_move/ear_stop/ear_pos.
 --
 -- The encoder is a free-running, wrapping 16-bit edge count - it tells you the
--- ear turned, never where it points. The wheel has EARS_HOLES holes with one
+-- ear turned, never where it points. No mechanical end stop either: the ear
+-- is a wheel, not an arm with a limit - an unstopped nab.ear_move() just keeps
+-- going around, which is why home() has to find a landmark instead of driving
+-- to a stop and zeroing there. The wheel has EARS_HOLES holes with one
 -- double-width gap, and that gap is the only landmark on it: home() spins the
 -- ear until it measures an inter-hole interval about 1.5x the shortest one
 -- seen so far, which puts the ear at hardware zero, then counts OFFZERO more
