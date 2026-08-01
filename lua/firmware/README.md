@@ -223,7 +223,7 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
 | `nab.wheel` — analog pot on ADC ch.2, 255 rest -> 0 full sweep (#123) | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
 | `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates (#123); SCI_VOLUME holds exactly as written through the #265 streaming path too, re-verified post-#283 rebase | |
-| **Streaming playback + ear concurrency (#265/#283)** — `nab.play_feed` accepts bytes end to end, plays audibly while `nab.ear_move` spins the ear simultaneously, no stall observed either side | `nab.play_feed` concurrent with an HTTP GET (net side) — untested |
+| **Streaming playback + ear/net concurrency (#123/#265/#283)** — `nab.play_feed` accepts bytes end to end, plays audibly while `nab.ear_move` spins an ear (no stall either side) and separately while streaming an HTTP GET body over wifi (`lib/net` + `audio.stream`, 25 s clip, mic-confirmed audible, LED chase animating throughout - 184 frames, 28.4 s, twice reproduced) | |
 | UART0 console both directions @115200 | |
 | USB host + RT2501 join, WPA2-CCMP | |
 | 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
