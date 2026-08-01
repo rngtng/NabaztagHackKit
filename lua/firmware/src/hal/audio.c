@@ -112,6 +112,8 @@ void vlsi_ampli(uint8_t on)
     TURN_OFF_AUDIO_AMPLIFIER;
 }
 
+static void vlsi_patch(void); /* defined below */
+
 void init_vlsi(void)
 {
   /* Pin directions: RST/CS_SCI/CS_SDI/AMP are outputs, DREQ (INT_AUDIO) input. */
@@ -157,6 +159,31 @@ void init_vlsi(void)
    * SCI + the SDI feed and is the speed everything here was verified at. */
 
   set_vlsi_volume(0x20);
+  vlsi_patch();
+}
+
+/* VLSI's own microcode patch, applied unconditionally by FW1's init_vlsi()
+ * (mtl/firmware/src/hal/audio.c, named patchwma there) but never ported here.
+ * Ten WRAM_ADDR/WRAM writes loading two short blocks into the codec's X-RAM -
+ * the standard VLSI patch-loading idiom, not a bespoke register poke. #123
+ * A/B'd it by ear against the unpatched decoder for a reported MP3-quieter-
+ * than-nab.beep gap: no clear difference, but it is official and harmless
+ * (X-RAM only, no persistent state), so it stays in as a low-risk default -
+ * matching FW1 costs nothing and rules out a config drift between the two
+ * tracks as a future explanation for any audio difference. */
+static void vlsi_patch(void)
+{
+  static const uint16_t addr_a = 0x800e, data_a[] = {0x2801, 0x3f80, 0x0006, 0x53d7};
+  static const uint16_t addr_b = 0x84fe, data_b[] = {0x2000, 0x0000, 0x3f05, 0xc024};
+  uint8_t i;
+
+  vlsi_write_sci(VS1003_WRAM_ADDR, addr_a);
+  for (i = 0; i < sizeof data_a / sizeof data_a[0]; i++)
+    vlsi_write_sci(VS1003_WRAM, data_a[i]);
+
+  vlsi_write_sci(VS1003_WRAM_ADDR, addr_b);
+  for (i = 0; i < sizeof data_b / sizeof data_b[0]; i++)
+    vlsi_write_sci(VS1003_WRAM, data_b[i]);
 }
 
 void vlsi_sine(uint8_t freq_n, uint8_t on)
