@@ -259,21 +259,21 @@ Each of these cost real debugging time. They are not obvious from the datasheet.
   itself), so expect a wifi/tick hiccup. The writer takes no address — the sector base is a
   compile-time constant, so it physically cannot touch the firmware below `0x1F000`.
 - **`nab.play`/`nab.tone` play far quieter than `nab.beep`'s built-in sine test at the same
-  volume setting (#123) — objectively measured, not just by ear.** A mic capture at close
-  range (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the
-  decoded `nab.tone()` didn't register above the room-noise floor (-50 dBFS) anywhere in
-  its playback window — a 30+ dB gap. Frequency isn't it (880 Hz and 1760 Hz both quiet vs.
-  beep). FW1's `patchwma` (`mtl/firmware/src/hal/audio.c`) — ten `WRAM_ADDR`/`WRAM` writes
-  loading a VLSI microcode patch — was the last unported difference; `vlsi_patch()` now
-  ports it (`init_vlsi()`, `hal/audio.c`); an on-hardware A/B (patch applied live,
-  mid-session) found no clear loudness difference, and an attempt to isolate it by
-  disabling the patch at boot was inconclusive (mic distance changed between rounds,
-  recording clipped short — a `ffmpeg`/`avfoundation` sample-drop quirk seen on both mic
-  rounds, worth knowing about before trusting a wall-clock `-t` duration from this pipeline
-  again). Kept the patch in regardless (official VLSI fix, harmless, closes a config gap
-  between the two tracks). **The 30+ dB gap itself is real, quantified, and still
-  unexplained** - needs a controlled close-mic re-test to pin down whether `patchwma` is
-  actually the lever before ruling it out for good.
+  volume setting (#123) — objectively measured, not just by ear.** A close-range mic capture
+  (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the decoded
+  `nab.tone()` stayed below -40 dBFS throughout its playback window in every take — a 20+ dB
+  gap, sometimes not registering above the room-noise floor at all. Frequency isn't it (880 Hz
+  and 1760 Hz both quiet vs. beep). **FW1's `patchwma` is ruled out as the cause**: ported as
+  `vlsi_patch()` (`init_vlsi()`, `hal/audio.c` — ten `WRAM_ADDR`/`WRAM` writes loading a VLSI
+  microcode patch, the last unported config difference between the two tracks), then A/B'd
+  twice on hardware - once live mid-session (no clear difference by ear) and once by disabling
+  it at boot and re-measuring by mic (same 20+ dB gap either way). Kept the patch in regardless
+  (official VLSI fix, harmless, closes a real config gap between the tracks) - but it is
+  confirmed **not** the loudness lever. **The gap itself is real, quantified, and still
+  unexplained** - the decode path's actual output gain-staging vs. the sine test (which may
+  bypass normal output scaling entirely) needs a dedicated VS1003 datasheet dive to pin down,
+  out of scope for #123's volume-attenuation DoD (which is unaffected - `nab.volume` still
+  correctly attenuates whatever level `nab.play` does produce).
 
 ### LED map (verified with the `ledmap` probe)
 
