@@ -88,6 +88,15 @@ end
 
 nab.on("tick", sched.tick)
 
+-- Generational GC (#283). The allocation profile here is a stream of
+-- short-lived strings - every parsed packet in net/ builds several - against a
+-- 1 MB heap that lives in ExtRAM behind a 16-bit bus. Incremental mode keeps
+-- traversing that whole heap; generational collects the nursery those strings
+-- die in and only rarely walks everything, which is the difference between
+-- predictable pacing and a multi-ms stall landing mid-choreography. Costs no
+-- flash - Lua 5.4 already has both collectors compiled in.
+collectgarbage("generational")
+
 GREEN_UID = "d0021a3506198b86"
 YELLOW_UID = "d0021a35038f3a2f"
 LEFT_MOTOR = 1

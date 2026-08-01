@@ -762,7 +762,22 @@ static int nab_wifi_recv(lua_State *L)
 {
   lua_Integer ms = luaL_optinteger(L, 1, 0);
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  struct rt2501buffer *r = wifi_recv_frame((uint32_t)ms);
+  /* Wait cooperatively (#283). wifi_recv_frame(0) is one driver pump slice, so
+   * running the timeout here - with the event pump and reactor tick between
+   * slices - keeps callbacks firing and ears stopping on target throughout a
+   * DHCP exchange or an HTTP GET. Doing it this way rather than in net/iface.lua
+   * is deliberate: iface is driver-agnostic (drv.time/recv) precisely so its
+   * unit tests run on host lua with no nab at all, and threading the reactor
+   * through it would break that. Every net flow is built on this one binding,
+   * so fixing it here fixes all of them. */
+  uint32_t t0 = counter_timer;
+  struct rt2501buffer *r;
+  for (;;) {
+    r = wifi_recv_frame(0);
+    if (r != NULL || (counter_timer - t0) >= (uint32_t)ms)
+      break;
+    dispatch_events(L, 1);
+  }
   if (r == NULL) {
     lua_pushnil(L);
     return 1;
