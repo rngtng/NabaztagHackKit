@@ -90,6 +90,51 @@ Only one TCP connection exists at a time (`net.iface` tracks a single `conn`),
 so streaming and serving cannot overlap until #262 — a single stream is what
 this issue scopes.
 
+## Recording
+
+There is no `rec.lua` here, and that is the decision, not an omission. The
+microphone path (#116/#266) lives entirely in C — `nab.record(ms [, gain])` for
+the blocking one-shot, `nab.rec_start`/`nab.rec_read`/`nab.rec_stop` for the
+cooperative session, `nab.rec_wav(data)` to wrap drained blocks — including the
+RIFF header #266 had scoped as `string.pack` up here. The flash it costs (~640 B
+all in) is affordable, and it buys a call that hands Lua a **complete playable
+WAV string**.
+
+Which is the whole point for this folder: a recording is a byte string, so it is
+already a first-class `player` source, with nothing to port and nothing to wrap.
+
+```lua
+local p = audio.player.new(audio.nabdrv())
+local chunks = {}
+
+nab.rec_start()                              -- codec encodes into its ~2 KB FIFO
+while nab.button() do                        -- record while held
+  local c = nab.rec_read()                   -- whole 256 B blocks, or nil
+  if c then chunks[#chunks + 1] = c end
+  nab.led('nose', 127, 0, 0)                 -- ...LEDs/ears/net between polls
+end
+nab.rec_stop()
+
+p:play(nab.rec_wav(table.concat(chunks)))    -- plays back like any other source
+while p:busy() do p:step() end
+```
+
+`apps/walkie.lua` is that loop end to end (against blocking `nab.play`);
+`apps/mic-test.lua` is the LED-guided hardware check. Two things the codec
+imposes on any userland built here:
+
+- **Record and playback cannot overlap.** The VS1003 is in record mode or decode
+  mode, never both, so the pattern is capture-then-play — a live capture is not a
+  `:pull()` source.
+- **No VU level binding.** `reclib.mtl` metered the body LEDs off `recVol`; the
+  lua track has no equivalent, and `mic-test.lua` reads the IMA-ADPCM block
+  header's step index by hand instead. A Lua helper here would be the natural
+  home if a demo ever wants one.
+
+Getting a recording **off** the rabbit is still open (#266's last DoD): `lib/net`
+has an HTTP client GET and a server-side request parser, but no client POST, so
+nothing yet uploads a capture the way `reclib`'s app-side split assumed.
+
 ## Not here
 
 - **A C-side ring buffer pumped from `event_pump`** (#265's optional bullet):
