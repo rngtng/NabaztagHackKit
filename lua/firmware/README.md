@@ -258,14 +258,22 @@ Each of these cost real debugging time. They are not obvious from the datasheet.
 - **A config write masks IRQs for ~63 ms** (flash supplies no code or data while programming
   itself), so expect a wifi/tick hiccup. The writer takes no address — the sector base is a
   compile-time constant, so it physically cannot touch the firmware below `0x1F000`.
-- **`nab.play`/`nab.tone` play noticeably quieter than `nab.beep`'s built-in sine test at
-  the same volume setting (#123).** Frequency isn't it (880 Hz and 1760 Hz both quiet vs.
+- **`nab.play`/`nab.tone` play far quieter than `nab.beep`'s built-in sine test at the same
+  volume setting (#123) — objectively measured, not just by ear.** A mic capture at close
+  range (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the
+  decoded `nab.tone()` didn't register above the room-noise floor (-50 dBFS) anywhere in
+  its playback window — a 30+ dB gap. Frequency isn't it (880 Hz and 1760 Hz both quiet vs.
   beep). FW1's `patchwma` (`mtl/firmware/src/hal/audio.c`) — ten `WRAM_ADDR`/`WRAM` writes
   loading a VLSI microcode patch — was the last unported difference; `vlsi_patch()` now
-  ports it (`init_vlsi()`, `hal/audio.c`), but an A/B on hardware found no clear loudness
-  difference. Kept anyway (official VLSI patch, harmless, closes a config gap between the
-  two tracks) — the gap itself stays open, likely inherent to how the decoder normalizes
-  output vs. the sine test bypassing it entirely.
+  ports it (`init_vlsi()`, `hal/audio.c`); an on-hardware A/B (patch applied live,
+  mid-session) found no clear loudness difference, and an attempt to isolate it by
+  disabling the patch at boot was inconclusive (mic distance changed between rounds,
+  recording clipped short — a `ffmpeg`/`avfoundation` sample-drop quirk seen on both mic
+  rounds, worth knowing about before trusting a wall-clock `-t` duration from this pipeline
+  again). Kept the patch in regardless (official VLSI fix, harmless, closes a config gap
+  between the two tracks). **The 30+ dB gap itself is real, quantified, and still
+  unexplained** - needs a controlled close-mic re-test to pin down whether `patchwma` is
+  actually the lever before ruling it out for good.
 
 ### LED map (verified with the `ledmap` probe)
 
