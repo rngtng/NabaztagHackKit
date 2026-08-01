@@ -706,7 +706,10 @@ static int nab_time(lua_State *L)
 /* nab.ear_move(n, dir): drive ear motor n (1 or 2) in dir ("forward"|"reverse")
  * until nab.ear_stop() or another nab.ear_move() call. There is no closed-loop
  * position control here (see hal/motor.h: the encoder is a raw hole counter,
- * not a homed position).
+ * not a homed position). No mechanical end stop either - the ear is a wheel
+ * geared to spin continuously; an unstopped nab.ear_move() just keeps going
+ * around (hw.ears's hole-counting home() exists because there is nothing to
+ * bump into and zero against).
  *
  * Single speed by design (#179): these gearmotors have a hard torque floor
  * (~120/255, ~43% PWM duty) below which they only hum without turning, and
