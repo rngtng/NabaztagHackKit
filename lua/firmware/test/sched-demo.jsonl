@@ -1,0 +1,22 @@
+# Injection timeline (#42) for sched-demo.lua - the #283 acceptance demo.
+#
+# Every gate is a console marker (`after`), never `at_ms`. The simulator's
+# injection clock (elapsed_ms) is not the firmware's counter_timer - it starts
+# ~1500 slices earlier, at reset rather than at init_tick(), and drifts
+# thereafter - so a timestamp gate would land in the wrong part of the
+# scenario. Marks anchor the timeline to the firmware's own progress, and the
+# demo records nab.time() at each mark so latency is measured against the exact
+# injection moment. See the header of sched-demo.lua.
+#
+# Press A - down AND up entirely inside the blocking work (marks 1..2). This is
+# the edge a starved runtime never even samples: the raw level is back to 0 by
+# the time anything polls again, so the press is lost for good rather than
+# delivered late (event.c pump_button only ever sees the settled level).
+{"after": "mark-1", "t": "button", "down": true}
+{"after": "mark-2", "t": "button", "down": false}
+# Press B - down inside the work window (mark 3) but HELD past its end, and
+# released only during the pumped settle (mark 4). Deliberate: a starved
+# runtime does eventually report B, just late, which gives C2 (latency) real
+# data to fail on instead of failing vacuously for lack of any observed edge.
+{"after": "mark-3", "t": "button", "down": true}
+{"after": "mark-4", "t": "button", "down": false}

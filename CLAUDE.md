@@ -79,6 +79,11 @@ Don't restate them here - two copies drift. The rules that bind new work:
 - **`-Os` and Lua 5.5 are NOT levers**, and neither is error-string shaving. The two cheapest
   real ones are demo assets (the `nab.tone()` MP3 and the resident boot chunk) - **product
   decisions, so ask before spending them.**
+- **New blocking bindings must pump the reactor** (#283). `nab.wait`/`nab.delay` (one and the
+  same now), `nab.play` and `nab.wifi_recv` all run the event pump + `nab.on("tick")` slice
+  while they wait; a binding that spins without doing so reopens the hole where no event is
+  sampled, no ear stops on target and no connection is pumped. `task lua:firmware:test:sched`
+  is the gate.
 
 ## Lua track task surface & structure (post-#208)
 - **Leaves, each owning its targets; others delegate (interfaces stay abstract):**

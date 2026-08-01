@@ -235,5 +235,19 @@ function ears.new(drv)
     return true
   end
 
+  -- Hand :step() to the cooperative reactor (#283), so the ears keep being
+  -- pumped from every nab.wait/nab.delay and from the REPL's idle loop - not
+  -- just from a loop the app remembers to write. Without this, any blocking
+  -- call during a move means nothing checks the encoder and the ear sails past
+  -- its target (the motor runs free once nab.ear_move starts it).
+  --
+  -- Guarded because `sched` is a device global: the host unit tests drive a
+  -- fake drv with no reactor in sight, and :step() from a loop stays perfectly
+  -- valid there. Returns self so it chains off new().
+  function self:attach()
+    if sched then sched.pump(function() self:step() end) end
+    return self
+  end
+
   return self
 end

@@ -217,18 +217,16 @@ static int nab_fade(lua_State *L)
   return 0;
 }
 
-/* nab.delay(ms): block for ms, timed off the 1 ms System Timer (counter_timer,
- * #102) - the same clock the background fades use, so a Lua animation's frame
- * pacing and its fades stay in step (a calibrated busy-loop drifts against
- * them, and skewed badly whenever the core clock changed). The sim models the
- * timer too, so this works there as well. Feeds the watchdog while it waits. */
-static int nab_delay(lua_State *L)
-{
-  lua_Integer ms = luaL_checkinteger(L, 1);
-  luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  wait_ms((uint32_t)ms);
-  return 0;
-}
+/* nab.delay is nab.wait (see below). Until #283 it was a bare spin that fed
+ * only the watchdog, so every delay was a hole in which no event was even
+ * sampled, no ear stopped on its target and no connection was pumped - a press
+ * and release inside one was lost for good rather than delivered late. That a
+ * script's frame pacing silently disabled its own callbacks was the bug, not a
+ * feature worth keeping a second primitive for, so the two collapsed into one
+ * and `delay` is now an alias. Both still time off the 1 ms System Timer
+ * (counter_timer, #102), the same clock the background fades use, so animation
+ * pacing and fades stay in step.
+ */
 
 /* nab.button() -> boolean: true while the head button is held (polled). */
 static int nab_button(lua_State *L)
@@ -272,12 +270,120 @@ static int nab_beep(lua_State *L)
 /* nab.play(data): stream a byte buffer (e.g. an MP3 file's bytes) to the
  * VS1003 decoder over SDI. Unlike nab.beep this is real decoded audio and
  * nab.volume actually attenuates it. Blocking: returns once the buffer is fed
- * and flushed. */
+ * and flushed.
+ *
+ * Blocking, but cooperative (#283): it drives #265's stream primitives itself
+ * rather than calling vlsi_play, so the event pump and reactor tick run in the
+ * gaps where the decoder's FIFO is full. Callbacks keep firing and an ear still
+ * stops on its target while a clip plays. vlsi_play stays as-is for callers
+ * with no reactor to pump (the examples/).
+ *
+ * This is the convenience path - one resident buffer, played to completion.
+ * Anything longer than the heap, or played *while* the script does something
+ * else, wants audio.player on nab.play_feed (lua/lib/audio). `data` is anchored
+ * as argument 1 for the whole call, so the collector cannot move it under us. */
+static void dispatch_events(lua_State *L, uint8_t allow_rfid); /* defined below */
+
+/* Give up when the decoder has accepted nothing for this long. Bounded by WALL
+ * TIME, not by a count of fruitless attempts the way hal/audio.c's vlsi_feed_all
+ * is: that one waits on DREQ between tries, so 16 tries is a long time, whereas
+ * a pump returns in microseconds and 16 of them would bail instantly and
+ * truncate the clip. A full 2048-byte FIFO takes ~130 ms to drain at 128 kbps
+ * MP3 and ~500 ms at 8 kHz ADPCM, so a second of no progress means wedged, not
+ * busy. Same silent-truncation contract as vlsi_play - the stream is closed and
+ * the call returns; it does not raise. */
+#define PLAY_STALL_MS 1000
+
+/* Feed `len` bytes cooperatively, pumping whenever the decoder is full.
+ * Returns 0 if it gave up on a stalled decoder. */
+static int play_feed_pumping(lua_State *L, const uint8_t *data, uint32_t len)
+{
+  uint32_t sent = 0;
+  uint32_t last = counter_timer;
+
+  while (sent < len) {
+    uint32_t n = vlsi_stream_feed(data + sent, len - sent);
+    sent += n;
+    if (n != 0) {
+      last = counter_timer;
+    } else {
+      if ((counter_timer - last) >= PLAY_STALL_MS)
+        return 0;
+      dispatch_events(L, 1); /* FIFO full: let everything else run meanwhile */
+    }
+  }
+  return 1;
+}
+
 static int nab_play(lua_State *L)
+{
+  /* One burst of zeros, fed repeatedly, so the end-of-stream tail costs 32 B of
+   * flash rather than 2 KB (same trick as vlsi_play). */
+  static const uint8_t zeros[32] = {0};
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+
+  vlsi_stream_start();
+  if (play_feed_pumping(L, (const uint8_t *)data, (uint32_t)len)) {
+    /* End-of-stream tail: >= 2048 zero endFillBytes through the same path. */
+    for (uint32_t i = 0; i < 2048; i += (uint32_t)sizeof zeros) {
+      if (!play_feed_pumping(L, zeros, (uint32_t)sizeof zeros))
+        break;
+    }
+  }
+  vlsi_stream_stop();
+  return 0;
+}
+
+/* nab.play_start(): open a non-blocking playback stream (#265) - decoder into
+ * decode mode, volume re-asserted, amplifier on. Then push bytes with
+ * nab.play_feed as fast as the decoder takes them, and close with
+ * nab.play_stop. This is what lets the rabbit make a sound AND do something
+ * else: nothing here waits. */
+static int nab_play_start(lua_State *L)
+{
+  (void)L;
+  vlsi_stream_start();
+  return 0;
+}
+
+/* nab.play_feed(data [, i]) -> n: push data (from byte i, 1-based, default 1)
+ * to the decoder and return how many bytes it accepted - 0..#data-i+1. A short
+ * return means the decoder's FIFO is full, NOT an error: keep the rest and
+ * offer it again next turn (`i = i + n`). Returns immediately, always.
+ * End of stream is >= 2048 zero endFillBytes fed through here, then
+ * nab.playing() until the decoder has drained. */
+static int nab_play_feed(lua_State *L)
 {
   size_t len;
   const char *data = luaL_checklstring(L, 1, &len);
-  vlsi_play((const uint8_t *)data, (uint32_t)len);
+  lua_Integer i = luaL_optinteger(L, 2, 1);
+  uint32_t n = 0;
+
+  luaL_argcheck(L, i >= 1, 2, "index must be >= 1");
+  if ((size_t)i <= len)
+    n = vlsi_stream_feed((const uint8_t *)data + (i - 1),
+                         (uint32_t)(len - (size_t)i + 1));
+  lua_pushinteger(L, (lua_Integer)n);
+  return 1;
+}
+
+/* nab.playing() -> boolean: true while the decoder still has a stream to
+ * decode (SCI_HDAT1 != 0) inside an open nab.play_start session. Goes false
+ * once the endFillByte tail has drained - that is "the sound finished". */
+static int nab_playing(lua_State *L)
+{
+  lua_pushboolean(L, vlsi_stream_busy());
+  return 1;
+}
+
+/* nab.play_stop(): close the stream (amplifier off). Whatever was still in the
+ * decoder is not drained - call it after nab.playing() goes false for a clean
+ * ending, or right away to cut playback short. */
+static int nab_play_stop(lua_State *L)
+{
+  (void)L;
+  vlsi_stream_stop();
   return 0;
 }
 
@@ -477,7 +583,7 @@ static int nab_rfid(lua_State *L)
 #define EVENTS_TABLE "nab.events"  /* registry key: {button=fn, rfid=fn} */
 #define CONSOLE_IDLE_MS 500        /* RX quiet this long before a coupler scan */
 
-static const char *const event_names[] = {"button", "rfid", NULL};
+static const char *const event_names[] = {"button", "rfid", "tick", NULL};
 
 static void report(lua_State *L);  /* defined with the REPL below */
 
@@ -521,6 +627,21 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
       report(L);
   }
+  /* Cooperative tick (#283): once the C event queue is drained, hand the Lua
+   * reactor a slice. This is the seam that lets behaviour which must keep
+   * running during a blocking call - an ear stopping on its target, a net
+   * connection being pumped - actually run, without the C layer knowing what
+   * any of it is. Registered with nab.on("tick", fn); under lua_pcall like
+   * every other callback (principle 3), and inside the busy guard, so a
+   * nab.wait() from within the tick cannot recurse into dispatch. Reuses the
+   * callback table already on the stack rather than hashing EVENTS_TABLE again. */
+  lua_getfield(L, cbs, "tick");
+  if (lua_isfunction(L, -1)) {
+    if (lua_pcall(L, 0, 0, 0) != LUA_OK)
+      report(L);
+  } else {
+    lua_pop(L, 1);
+  }
   lua_settop(L, cbs - 1); /* drop the callback table */
   busy = 0;
 }
@@ -529,8 +650,11 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
  * name "button": fn(pressed) on debounced press/release edges. name "rfid":
  * fn(uid) when a new tag lands on the coupler, fn(nil) when it leaves;
  * registering starts the background ~750 ms scan cycle, clearing stops it.
+ * name "tick": fn() on every pump iteration, after the event queue is drained -
+ * the seam the Lua reactor (sched, #283) hangs off. It is not an event source:
+ * nothing is queued for it and it carries no argument.
  * Callbacks fire from the cooperative pump - while the REPL prompt is idle or
- * inside nab.wait() - never from an interrupt (principle 2). */
+ * inside nab.wait()/nab.delay() - never from an interrupt (principle 2). */
 static int nab_on(lua_State *L)
 {
   int which = luaL_checkoption(L, 1, NULL, event_names);
@@ -546,8 +670,9 @@ static int nab_on(lua_State *L)
   return 0;
 }
 
-/* nab.wait(ms): sleep ~ms on the 1 ms tick while running the event pump, so
- * nab.on callbacks fire during the wait - the idiomatic script main loop is
+/* nab.wait(ms) - also exposed as nab.delay(ms), see above: sleep ~ms on the
+ * 1 ms tick while running the event pump, so nab.on callbacks and the reactor
+ * tick fire during the wait - the idiomatic script main loop is
  * `while true do nab.wait(100) end`. If the tick is not advancing at all (IRQs
  * masked, or init_tick not yet run) the wait degrades to DelayMs' bounded busy
  * fallback instead of hanging. */
@@ -745,7 +870,22 @@ static int nab_wifi_recv(lua_State *L)
 {
   lua_Integer ms = luaL_optinteger(L, 1, 0);
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  struct rt2501buffer *r = wifi_recv_frame((uint32_t)ms);
+  /* Wait cooperatively (#283). wifi_recv_frame(0) is one driver pump slice, so
+   * running the timeout here - with the event pump and reactor tick between
+   * slices - keeps callbacks firing and ears stopping on target throughout a
+   * DHCP exchange or an HTTP GET. Doing it this way rather than in net/iface.lua
+   * is deliberate: iface is driver-agnostic (drv.time/recv) precisely so its
+   * unit tests run on host lua with no nab at all, and threading the reactor
+   * through it would break that. Every net flow is built on this one binding,
+   * so fixing it here fixes all of them. */
+  uint32_t t0 = counter_timer;
+  struct rt2501buffer *r;
+  for (;;) {
+    r = wifi_recv_frame(0);
+    if (r != NULL || (counter_timer - t0) >= (uint32_t)ms)
+      break;
+    dispatch_events(L, 1);
+  }
   if (r == NULL) {
     lua_pushnil(L);
     return 1;
@@ -864,11 +1004,15 @@ static const luaL_Reg nab_funcs[] = {
     {"flash_firmware", nab_flash_firmware},
     {"led8", nab_led8},
     {"fade", nab_fade},
-    {"delay", nab_delay},
+    {"delay", nab_wait},   /* alias: a delay pumps the reactor too (#283) */
     {"button", nab_button},
     {"volume", nab_volume},
     {"beep", nab_beep},
     {"play", nab_play},
+    {"play_start", nab_play_start},
+    {"play_feed", nab_play_feed},
+    {"play_stop", nab_play_stop},
+    {"playing", nab_playing},
     {"tone", nab_tone},
     {"record", nab_record},
     {"rec_start", nab_rec_start},
@@ -898,15 +1042,19 @@ static int luaopen_nab(lua_State *L)
 
 /* ---- Lua runtime --------------------------------------------------------- */
 /* Trimmed stdlib for the 124 KB flash budget (see the Makefile's LUA_LIB note):
- * base + string + table only. Dropped: math (pulls ~16 KB of libm trig),
+ * base + string + table + coroutine. Dropped: math (pulls ~16 KB of libm trig),
  * io/os/package/debug/loadlib (no filesystem, OS, or dynamic loading on this
- * target), coroutine, and utf8. base's dofile/loadfile are removed in
- * lua/lbaselib.c. This is the largest set that fits; drop string or table to
- * make room for another (e.g. coroutine or forced float printf). */
+ * target), and utf8. base's dofile/loadfile are removed in lua/lbaselib.c.
+ *
+ * coroutine costs 2,300 B (measured, #283) and buys the cooperative scheduler:
+ * without it every long-running activity has to be hand-unrolled into a state
+ * machine that some other loop remembers to pump, which is exactly why the four
+ * workloads could not compose. */
 static const luaL_Reg loadedlibs[] = {
     {LUA_GNAME, luaopen_base},
     {LUA_TABLIBNAME, luaopen_table},
     {LUA_STRLIBNAME, luaopen_string},
+    {LUA_COLIBNAME, luaopen_coroutine},
     {"nab", luaopen_nab},   /* LEDs + button + audio + RFID + ears */
     {NULL, NULL},
 };

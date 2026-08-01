@@ -41,8 +41,22 @@ end
 -- heap. `nbody` carries the running length so the completion test never needs
 -- an intermediate join. `cap` is the Content-Length to truncate at, or nil to
 -- keep everything (read-to-close).
+--
+-- A `sink` (see http.response) takes the body bytes instead: the response then
+-- holds no body at all, which is what streaming audio (#265) needs - the file
+-- is bigger than the heap. `nbody` still counts, so Content-Length completion
+-- works the same.
 local function body_add(o, s)
-  if s ~= "" then
+  if s == "" then return end
+  if o.sink then
+    if o.length then                    -- never hand the sink past the cap
+      local room = o.length - o.nbody
+      if room <= 0 then return end
+      if #s > room then s = s:sub(1, room) end
+    end
+    o.nbody = o.nbody + #s
+    o.sink(s)
+  else
     o.chunks[#o.chunks + 1] = s
     o.nbody = o.nbody + #s
   end
@@ -56,8 +70,12 @@ end
 
 -- response parser: r:feed(tcp:read()) until r.done (or tcp closes -> r:eof()).
 -- Then r.status (numeric), r.headers, r.body.
-function http.response()
-  local r = {buf = "", headers = {}, chunks = {}, nbody = 0}
+--
+-- o.sink = fn(chunk): stream mode - body bytes are handed over as they arrive
+-- and r.body stays empty (audio.stream, #265). r.nbody still counts them.
+function http.response(o)
+  local r = {buf = "", headers = {}, chunks = {}, nbody = 0,
+             sink = o and o.sink}
 
   function r:feed(s)
     if not self.status then
