@@ -19,6 +19,12 @@ local link, arp, ipv4, udp, dhcp, tcp, http, dns =
 
 local BCAST_IP = "\255\255\255\255"
 
+-- serve() concurrency (#286): a joined phone's captive-portal check opens
+-- several TCP connections in parallel (one per DNS-hijacked hostname it
+-- probes), not one at a time - keep this small, each slot is a full tcp
+-- connection object plus an http.request() parser.
+local MAX_CONNS = 3
+
 -- the real driver: nab.wifi (or nab.wifi_ap) must be up first
 function iface.nabdrv()
   return {mac = nab.wifi_mac(), time = nab.time,
@@ -85,6 +91,25 @@ function iface.new(drv)
       if h then h(d, pkt) end
     elseif pkt.proto == ipv4.TCP and self.conn then
       self:pump(self.conn, self.conn:input(pkt))
+    elseif pkt.proto == ipv4.TCP and self.conns then
+      -- route to the matching established connection, or the one slot still
+      -- in "listen" (there is ever at most one - serve() opens the next as
+      -- soon as this one accepts a SYN) if this is a fresh SYN
+      local s = tcp.parse(pkt)
+      if s then
+        for _, slot in ipairs(self.conns) do
+          local c = slot.c
+          if c.state == "listen" then
+            if (s.flags & tcp.SYN) ~= 0 and (s.flags & tcp.ACK) == 0 then
+              self:pump(c, c:input(pkt))
+              break
+            end
+          elseif c.dst == pkt.src and c.dport == s.sport then
+            self:pump(c, c:input(pkt))
+            break
+          end
+        end
+      end
     end
   end
 
@@ -93,6 +118,9 @@ function iface.new(drv)
     local src, f = self.drv.recv(ms or 0)
     if src then dispatch(self, src, f) end
     if self.conn then self:pump(self.conn) end
+    if self.conns then
+      for _, slot in ipairs(self.conns) do self:pump(slot.c) end
+    end
   end
 
   -- DHCP join: blocks up to timeout ms, then i.ip/mask/router are set.
@@ -244,37 +272,65 @@ function iface.new(drv)
     return r.status, r.body
   end
 
-  -- one-connection-at-a-time HTTP server (the config portal). handler(q) ->
-  -- body [, status [, stop]]; returns once a handler sets stop.
+  -- HTTP server (the config portal), up to MAX_CONNS connections at once
+  -- (#286). handler(q) -> body [, status [, stop]]; returns once a handler
+  -- sets stop and every connection accepted so far has finished its own
+  -- close - a handful of parallel captive-portal probes each get served,
+  -- not just the first while the rest sit on an unanswered SYN.
   function i:serve(port, handler)
-    while true do
+    self.conns = {}
+    local stop
+    local function accept()
+      if stop or #self.conns >= MAX_CONNS then return end
       local c = tcp.listen{src = self.ip, port = port, clock = self.time}
-      self.conn = c
-      local q = http.request()
-      local t0 = self.time()
-      while not q.done and c.state ~= "closed" do
-        if self.time() - t0 > 30000 then break end -- half-open peer: abandon
-        self:poll(50)
-        local d = c:read()
-        if d ~= "" then q:feed(d) end
-      end
-      local stop
-      if q.done then
-        local body, status
-        body, status, stop = handler(q)
-        self:pump(c, c:send(http.response_build(status or "200 OK", body)))
-        t0 = self.time()
-        while (c.rtx or c.state ~= "closed") and self.time() - t0 < 5000 do
-          self:poll(50)
+      self.conns[#self.conns + 1] = {c = c, q = http.request(), phase = "accept"}
+    end
+    accept() -- always keep one socket ready for the next SYN
+    while true do
+      self:poll(50)
+      local n = 1
+      while n <= #self.conns do
+        local s = self.conns[n]
+        local c = s.c
+        if s.phase == "accept" then
+          if stop and c.state == "listen" then
+            s.phase = "done" -- portal finished; drop this idle spare listener
+          elseif c.state ~= "listen" then -- this slot took a SYN; open the next
+            accept()
+            s.t0, s.phase = self.time(), "req"
+          end
+        elseif s.phase == "req" then
+          local d = c:read()
+          if d ~= "" then s.q:feed(d) end
+          if s.q.done then
+            s.phase = "resp"
+          elseif c.state == "closed" or self.time() - s.t0 > 30000 then
+            s.phase = "done" -- half-open peer: abandon
+          end
+        elseif s.phase == "resp" then
+          local body, status, hstop = handler(s.q)
+          if hstop then stop = true end
+          self:pump(c, c:send(http.response_build(status or "200 OK", body)))
+          s.t0, s.phase = self.time(), "close"
+        elseif s.phase == "close" then
           if not c.rtx
              and (c.state == "established" or c.state == "close-wait") then
             self:pump(c, c:close())
           end
+          if (not c.rtx and c.state == "closed")
+             or self.time() - s.t0 > 5000 then
+            s.phase = "done"
+          end
+        end
+        if s.phase == "done" then
+          table.remove(self.conns, n)
+        else
+          n = n + 1
         end
       end
-      self.conn = nil
-      if stop then return end
+      if stop and #self.conns == 0 then break end
     end
+    self.conns = nil
   end
 
   return i

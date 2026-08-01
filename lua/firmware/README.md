@@ -115,12 +115,13 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **116,852 B of 124 KB (~9.9 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **117,516 B of 124 KB (~9.2 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
-~0.65 KB the #235 OTA writer, 552 B the #265 non-blocking audio stream HAL. Everything
-above that last one is Lua in [`../lib/audio/`](../lib/audio/) and costs no flash.
+~0.65 KB the #235 OTA writer, 560 B the #273 `nab.wifi_scan`/`nab.wifi_seen` scan bindings
+(station mode only), 552 B the #265 non-blocking audio stream HAL. Everything above that
+last one is Lua in [`../lib/audio/`](../lib/audio/) and costs no flash.
 
 Two things keep it from being worse, and both are load-bearing:
 
@@ -181,6 +182,10 @@ nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open) -> true | nil, m
 nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
 nab.wifi_up()                 -- cold-boot the dongle without joining, so wifi_mac() is real (#233)
 nab.wifi_mac()                -- -> our 6-byte station MAC (all-zero until the radio is up)
+nab.wifi_scan([ssid])         -- probe every channel (~5 s) -> count | nil, msg; no ssid = broadcast.
+                              --   Station mode only: fails once wifi_ap beacons (#273)
+nab.wifi_seen()               -- -> {{ssid=,bssid=,rssi=,channel=,enc=}, ...} from the last scan,
+                              --   deduped by bssid (max 32); enc 0 = open, 0x40|cipher = WPA2
 nab.wifi_send(dst_mac, data)  -- raw data frame at the 802.3 payload seam; dst_mac = 6-byte string
 nab.wifi_recv([timeout_ms])   -- -> src_mac, payload | nil; bounded main-loop RX buffer
 nab.config()                  -- -> {ssid=,psk=,url=,fails=} from the config sector, or nil

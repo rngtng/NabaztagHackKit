@@ -170,6 +170,65 @@ eq(resp.body, "<form>ok</form>", "phone got the page")
 eq(a.state, "closed", "phone connection fully closed")
 hook = nil
 
+-- serve concurrency (#286): two phones connect around the same time - both
+-- get served (a captive-portal check opens several TCP connections in
+-- parallel), not just the first while the second's SYN sits unanswered ----
+
+t, sent, rxq = 0, {}, {}
+local ca = tcp.client{src = IP_B, dst = IP_A, sport = 52001, dport = 80,
+                      iss = 11, clock = timefn}
+local cb = tcp.client{src = IP_B, dst = IP_A, sport = 52002, dport = 80,
+                      iss = 21, clock = timefn}
+local respa, respb = http.response(), http.response()
+local sentA, sentB, closedA, closedB
+hook = function(_, f5)
+  local et5, p5 = link.decap(f5)
+  if et5 ~= link.ETH_IP then return end
+  local pkt = ipv4.parse(p5)
+  if not pkt or pkt.proto ~= ipv4.TCP then return end
+  local seg = tcp.parse(pkt)
+  local isA = seg and seg.dport == ca.sport
+  local c, resp = isA and ca or cb, isA and respa or respb
+  for _, o in ipairs(c:input(pkt)) do pushpkt(o) end
+  if c.state == "established" and isA and not sentA then
+    sentA = true
+    for _, o in ipairs(ca:send("GET /a HTTP/1.0\r\n\r\n")) do pushpkt(o) end
+  elseif c.state == "established" and not isA and not sentB then
+    sentB = true
+    for _, o in ipairs(cb:send("GET /b HTTP/1.0\r\n\r\n")) do pushpkt(o) end
+  end
+  local d = c:read()
+  if d ~= "" then resp:feed(d) end
+  if c.state == "close-wait" then
+    if isA and not closedA then
+      closedA = true
+      respa:eof()
+      for _, o in ipairs(ca:close()) do pushpkt(o) end
+    elseif not isA and not closedB then
+      closedB = true
+      respb:eof()
+      for _, o in ipairs(cb:close()) do pushpkt(o) end
+    end
+  end
+end
+-- both SYNs queued before the server has served anything, so a
+-- one-connection-at-a-time server would drop the second one
+for _, o in ipairs(ca:connect()) do pushpkt(o) end
+for _, o in ipairs(cb:connect()) do pushpkt(o) end
+local seen = {}
+i2:serve(80, function(rq)
+  seen[#seen + 1] = rq.path
+  return "<p>" .. rq.path .. "</p>", "200 OK", #seen >= 2
+end)
+eq(#seen, 2, "both connections were served, not just the first")
+eq(respa.status, 200, "first phone got a response")
+eq(respa.body, "<p>/a</p>", "first phone got its own page")
+eq(respb.status, 200, "second phone got a response")
+eq(respb.body, "<p>/b</p>", "second phone got its own page")
+eq(ca.state, "closed", "first connection closed")
+eq(cb.state, "closed", "second connection closed")
+hook = nil
+
 -- captive dns: an A query is answered with our ip, unicast to the asker -------
 
 t, sent, rxq = 0, {}, {}
