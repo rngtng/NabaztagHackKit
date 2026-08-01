@@ -235,6 +235,60 @@ function iface.new(drv)
     return got
   end
 
+  -- Blocking SNTP query (#259), shaped like :resolve - one UDP datagram to
+  -- port 123 from an ephemeral port, retried on a 1 s timer until `timeout`
+  -- (default 5 s), carrying a cookie the reply must echo in its originate
+  -- timestamp. `server` is a 4-byte IP (link.ip) or a name/dotted quad, which
+  -- is resolved first. Needs sys/ntp.lua loaded; net owns no clock, so the
+  -- caller stores the reading: sys.time.set(ifc:ntp(server)). Seconds are all
+  -- that comes back - one return value, so that idiom cannot mis-bind - and
+  -- the sub-second fraction stays available from sys.ntp.parse.
+  -- -> unix epoch seconds | nil, err
+  function i:ntp(server, timeout)
+    local ntp = sys and sys.ntp
+    if not ntp then return nil, "sys.ntp not loaded" end
+    if not self.ip then return nil, "no address" end
+    local ip = server
+    if #server ~= 4 then -- anything but a 4-byte binary address is a name
+      local rerr
+      ip, rerr = self:resolve(server)
+      if not ip then return nil, rerr end
+    end
+    local sport = 49152 + (self.time() & 0x3FFF)
+    local req = ntp.build(string.pack(">I4I4", self.time(),
+                                      self.time() ~ 0x5bd1))
+    local function ask()
+      self:ipsend(ip, ipv4.build{src = self.ip, dst = ip, proto = ipv4.UDP,
+        payload = udp.build(self.ip, sport, ip, ntp.PORT, req)})
+    end
+    local got, err, done
+    self.udp_ports[sport] = function(d, pkt)
+      if pkt.src ~= ip or d.sport ~= ntp.PORT then return end
+      local r, perr = ntp.parse(d.payload, req:sub(41))
+      -- A reply failing the cookie is not ours (a stale answer to an earlier
+      -- attempt, or a spoof): keep listening. Anything else is a real refusal
+      -- from our server - stop now rather than retry to the full timeout.
+      if r then got, done = r, true
+      elseif perr ~= "wrong originate" then err, done = perr, true end
+    end
+    ask()
+    local t0, last = self.time(), self.time()
+    while not done do
+      if self.time() - t0 > (timeout or 5000) then
+        self.udp_ports[sport] = nil
+        return nil, "ntp timeout"
+      end
+      self:poll(100)
+      if not done and self.time() - last > 1000 then
+        last = self.time()
+        ask() -- the first send may have been eaten by the ARP round trip
+      end
+    end
+    self.udp_ports[sport] = nil
+    if not got then return nil, err end
+    return got.epoch
+  end
+
   -- Blocking GET. dst_ip nil resolves `host` first (#232) - hostname or dotted
   -- quad; pass an explicit dst_ip to skip DNS entirely. `host` always feeds the
   -- Host header. The timeout bounds the HTTP exchange; a lookup adds its own

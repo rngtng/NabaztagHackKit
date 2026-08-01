@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+  * [#259](https://github.com/rngtng/NabaztagHackKit/issues/259): the lua track can
+    **tell the time**. `nab.time()` was milliseconds since boot and nothing else, so no
+    app that needs a date could exist — no clock face, no scheduled behaviour, no
+    timestamped log line, no HTTP `Date`/`If-Modified-Since`. New **`lua/lib/sys/`**
+    (mirroring `mtl/lib/sys/`), **pure Lua and no C change**: `ntp.lua` is SNTP v4
+    (RFC 4330) request/reply, `time.lua` is the clock — one NTP epoch anchored to the
+    device tick, civil dates without `os.date` (Hinnant's days↔civil pair on a
+    March-based year), a strftime subset (ISO 8601, RFC 1123, human) and a timezone
+    offset with an EU/US DST **rule** instead of mtl's 114-entry city table.
+    `ifc:ntp(server [, timeout])` on `net.iface` is the transport, shaped like
+    `ifc:resolve` — one datagram to port 123, a cookie the reply must echo in its
+    originate timestamp, retried on a 1 s timer; net owns the socket, sys owns the
+    clock, so the reading is handed back (`sys.time.set(ifc:ntp("pool.ntp.org"))`).
+    The 32-bit tick is the interesting half: it goes **negative at 24.8 days and wraps
+    at 49.7**, so differences are taken mod 2^32 and the anchor is re-advanced on every
+    read — both rollovers pass through, and a longer gap holds the clock rather than
+    leaping backwards. The same wrap makes the NTP **era-1 rollover in 2036** a
+    non-event (server counter and our subtraction cancel); the real cliff is 2038, and
+    both ends of the representable window are tested. 214 host assertions under
+    `task lua:lib:test` against fixtures from an independent generator — SNTP packets
+    from `struct.pack` off RFC 4330, civil dates from CPython's `datetime`, every DST
+    instant from the IANA tzdb — including the scripted `ifc:ntp` server, which is
+    pinned to the generator's bytes so it cannot drift into agreeing with `ntp.lua`.
+    `sys/ntp` 917 B, `sys/time` 3813 B, `iface` +1061 B.
+
   * [#283](https://github.com/rngtng/NabaztagHackKit/issues/283): the lua track's four
     workloads — actor events, LED/ear choreography, playback, networking — **compose**.
     Each used to be a loop that owned the CPU, so any two at once was not expressible,

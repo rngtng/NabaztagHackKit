@@ -14,6 +14,10 @@ chunk.
 - **`hw/`** (#263) - the hardware behaviour layer, mirroring `mtl/lib/hw/`:
   `ears.lua` turns the raw encoder edge count into homing and absolute ear
   positions (the state machine `hal/motor.h` points at). See `hw/README.md`.
+- **`sys/`** (#259) - what the rabbit knows about itself: `ntp.lua` (SNTP v4
+  client packets) and `time.lua` (the wall clock — an NTP-set epoch anchored to
+  the wrap-prone 32-bit tick, civil dates without `os.date`, strftime-subset
+  formatting, timezone offset + EU/US DST rule). See `sys/README.md`.
 - **`audio/`** (#265) - non-blocking playback, mirroring `mtl/lib/audio/`:
   `player.lua` keeps the VS1003 fed from the cooperative loop (so sound and
   LEDs/net/REPL coexist), `stream.lua` plays an HTTP body bigger than the heap,
