@@ -258,6 +258,20 @@ Each of these cost real debugging time. They are not obvious from the datasheet.
 - **A config write masks IRQs for ~63 ms** (flash supplies no code or data while programming
   itself), so expect a wifi/tick hiccup. The writer takes no address — the sector base is a
   compile-time constant, so it physically cannot touch the firmware below `0x1F000`.
+- **Ear motors move noticeably less per second than #179's baseline, on this rig, today** -
+  `examples/earprobe.c`'s `sweep_motor()` (the same tool #179 used) now measures encoder
+  delta 2-3 over ~1.5 s at full duty, where #179 recorded 8-11 under the same test. Two
+  likely-innocent explanations were checked and ruled out: the #269 32 MHz PLL migration
+  (2026-07-26, after #179's 2026-07-12/17 characterization) never touched `motor.c`, so
+  suspected the FTM PWM frequency (APB_CLOCK-derived, "488 Hz @ 32 MHz" per the source
+  comment) had silently quadrupled uncorrected - but `mtl/firmware/src/hal/motor.c` runs
+  the *identical* `FTM2CON`/`MOTOR_SPEED_CONTROL` config at the same 32 MHz on real
+  hardware, and `run_motor()` is byte-identical between the two tracks (diff-verified,
+  modulo CRLF). Neither a clock-migration regression nor a lua-port bug explains it.
+  Leading remaining explanation: physical rig state (motor wear, disassembled-cover
+  friction, or a weaker bench supply than #179's session) - not firmware-fixable, and
+  needs a physical inspection or an mtl-side `earprobe`-equivalent run on this same rig
+  to confirm, not more source archaeology.
 - **`nab.play`/`nab.tone` play far quieter than `nab.beep`'s built-in sine test at the same
   volume setting (#123) — objectively measured, not just by ear.** A close-range mic capture
   (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the decoded
