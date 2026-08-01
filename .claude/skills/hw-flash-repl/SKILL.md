@@ -67,6 +67,49 @@ straight to the `> ` prompt - type `run()` for the RFID demo.
 If you write a new probe app, call `init_uart()` first, print via `putst_uart`,
 and emit `<<FV_DONE>>` before it idles.
 
+**Scripted REPL (`SCRIPT=`) is reliable now (#276, fixed).** It used to corrupt
+on any script containing a blocking call (`nab.play()` etc) - a fixed
+inter-frame gap can't work when the device doesn't touch UART at all for
+however long that call blocks. `uart_repl.py` now sends one `#LC` frame,
+waits for the `"> "` prompt to reappear (i.e. the device is done running that
+chunk and back at the prompt), then sends the next - so it's safe for
+long/blocking scripts too, not just quick ones. Load `lib/net`/`lib/audio`
+(or anything else too big for the resident boot chunk) this way rather than
+reaching for the boot-chunk-autorun workaround below.
+
+**Check the flash budget *before* building anything for the resident boot
+chunk.** `task lua:lib:size` reports each module's stripped bytecode size;
+the boot chunk only has ~9.9 KB of headroom (see the flash-budget section of
+`lua/firmware/README.md`). `lib/net`+`lib/audio` alone are ~26 KB even
+trimmed - checking this first (one command) beats discovering a `.rodata
+will not fit in region IntROM` linker error after building a whole test
+around it.
+
+**The boot-chunk-autorun pattern** (temporarily overwrite `lua/boot/boot.lua`
+with self-contained test code, flash with `CAPTURE=1`, read the transcript,
+then restore the original) is still the right tool for something *small*
+that needs to run standalone (no REPL round-trip) or that needs a human
+gate: start with `nab.delay(3000)` (lets the Pi's UART capture attach),
+optionally `nab.beep()` + `while not nab.button() do nab.delay(20) end` +
+a release-debounce loop if a human needs to position something (a mic, their
+ear) before the timed part runs, end with `print('<<FV_DONE>>')`. Always
+back up the original file first and restore it after - never leave a test
+harness sitting in committed `boot.lua`.
+
+**Objective audio verification: a laptop mic beats "did it sound right?".**
+`ffmpeg -f avfoundation -i ":0" -t <secs> out.wav` records from the host's
+built-in mic (macOS; list devices with `-list_devices true -i ""` first).
+Two gotchas learned the hard way: (1) the captured duration reliably comes
+in *shorter* than requested (a `-t 60` often yields ~53s) - request generously
+more than you need, and never assume wall-clock alignment to a script's own
+timing; segment-search the actual waveform instead of trusting an elapsed-time
+offset. (2) ffmpeg's own WAV header can carry a bogus/overflowed `data` chunk
+size - don't trust Python's `wave` module's frame count; parse RIFF chunks
+manually and clamp the `data` size to the actual remaining file bytes. Then a
+simple per-window RMS/peak dBFS scan (bare `struct`, no numpy needed) finds
+real signal above the room-noise floor (typically -60 to -70 dBFS quiet) far
+more reliably than repeated "did that sound different?" A/B rounds.
+
 **Probe retry loops must fit `flash:repl`'s read window.** The UART read is capped
 by `--run-timeout` (120s default), and each failed I2C/SPI call that spins a
 1M-iteration timeout loop burns real seconds - keep probe retries ≤ 5, never
@@ -127,6 +170,16 @@ ExtRAM) triggers constantly.
   GPIO when `MOTOR_SPEED_CONTROL` had already switched motor drive to the FTM
   PWM peripheral. `FTMEN=0x3F` (vs `0x0F`) is the quick on-device tell that
   `MOTOR_SPEED_CONTROL` is active.
+- **A "known broken" claim inherited from prior context is a hypothesis, not a
+  fact - re-verify at the smallest scale before working around it.** #276 was
+  carried forward across sessions as "scripted REPL is broken," which led to
+  building an oversized flash-resident workaround before it overflowed the
+  budget and forced a rethink. A 3-line scripted test would have shown
+  immediately that *simple* scripts already worked fine, narrowing the real
+  bug (blocking calls only) in one cheap round-trip instead of a wasted one.
+  Same applies to a same-symptom re-test across two conditions (Docker image
+  staleness vs. a code change, say): change exactly one variable at a time in
+  a disposable worktree before concluding which one caused it.
 
 ## Never print from IRQ context
 
