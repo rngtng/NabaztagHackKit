@@ -1,6 +1,7 @@
 -- Microphone hardware test (#116 mic half) - LED-guided, no interaction with
--- the console needed. Run on the rig:
---   task lua:firmware:flash:repl APP=lua SCRIPT=apps/mic-test.lua
+-- the console needed. Run on the rig (the default 120 s read window is tight
+-- once a human is following the LEDs):
+--   task lua:firmware:flash:repl SCRIPT=apps/mic-test.lua RUN_TIMEOUT=240
 -- LED legend (nose):  RED = RECORDING, speak/clap now!   BLUE = RECORDING,
 -- stay silent!   WHITE = LISTEN to the speaker.   BLINKING red/blue =
 -- cooperative recording, speak!   At the end:
