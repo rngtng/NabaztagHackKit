@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+  * [#283](https://github.com/rngtng/NabaztagHackKit/issues/283): the lua track's four
+    workloads — actor events, LED/ear choreography, playback, networking — **compose**.
+    Each used to be a loop that owned the CPU, so any two at once was not expressible,
+    and a blocking call during an ear move meant nothing checked the encoder and the ear
+    **overshot its target and kept spinning**. `nab.on("tick", fn)` hands Lua a slice on
+    every pump iteration, and the resident **`sched`** builds `sched.pump(fn)` (for the
+    pull-style `:step()`/`:poll()` machines that already existed and were simply never
+    called during blocking work) and `sched.spawn`/`sched.sleep` (sequential behaviour as
+    a coroutine, 2,300 B measured) on top. `nab.delay` is now an alias of `nab.wait` — a
+    delay that silently disabled a script's own callbacks was the bug, not a second
+    primitive. `nab.wifi_recv`, `nab.play` and `audio.player:attach()`/`hw.ears:attach()`
+    all ride the same seam. Acceptance demo `firmware:test:sched` went 0/3 → 3/3: button
+    edges observed during blocking work 2/4 → 4/4, worst event latency unmeasurable →
+    21 ms, ear overshoot 4408 counts → 0.
+
   * [#265](https://github.com/rngtng/NabaztagHackKit/issues/265): the lua track can
     **make a sound and do something else at the same time**. `vlsi_play()` was one
     blocking call — soft reset, wait on DREQ per byte, flush, return — so nothing else
@@ -11,8 +26,9 @@
     `nab.playing()` / `nab.play_stop()`**: a feed pushes whole 32-byte bursts while DREQ
     is high and returns the moment it drops, so a short return is the flow-control
     signal, not an error. `nab.play` keeps its blocking contract on top of the same
-    primitive, now bounded (16 fruitless DREQ waits, instead of hanging on a wedged
-    codec). **552 B of flash**, measured; ~12.2 KB free.
+    primitive, but is cooperative (#283): it pumps the event loop in the gaps where the
+    decoder's FIFO is full, and gives up after a second of no progress rather than
+    hanging on a wedged codec. **552 B of flash**, measured.
     Everything above it is Lua and costs no flash — new **`lua/lib/audio/`**, mirroring
     `mtl/lib/audio/`: `player.lua` (a queue of sources fed a burst per `:step()` from the
     caller's loop, 2048-byte endFillByte tail, HDAT1 drain detection, stall bail-out on

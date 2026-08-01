@@ -202,5 +202,20 @@ function player.new(drv)
     return self.err == nil
   end
 
+  -- Hand :step() to the cooperative reactor (#283), so the decoder keeps being
+  -- fed from every nab.wait/nab.delay and from the REPL's idle loop - not only
+  -- from a loop the app remembers to write. This is what makes "play a sound
+  -- AND do something else" hold even when the something else is itself a
+  -- blocking call: without it, an HTTP GET or an ear move starves the feed and
+  -- the decoder underruns mid-clip.
+  --
+  -- Guarded because `sched` is a device global: the host unit tests drive a
+  -- fake decoder with no reactor in sight, and pumping :step() from a loop
+  -- stays perfectly valid there. Returns self so it chains off new().
+  function p:attach()
+    if sched then sched.pump(function() self:step() end) end
+    return self
+  end
+
   return p
 end

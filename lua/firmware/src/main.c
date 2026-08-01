@@ -270,12 +270,68 @@ static int nab_beep(lua_State *L)
 /* nab.play(data): stream a byte buffer (e.g. an MP3 file's bytes) to the
  * VS1003 decoder over SDI. Unlike nab.beep this is real decoded audio and
  * nab.volume actually attenuates it. Blocking: returns once the buffer is fed
- * and flushed. */
+ * and flushed.
+ *
+ * Blocking, but cooperative (#283): it drives #265's stream primitives itself
+ * rather than calling vlsi_play, so the event pump and reactor tick run in the
+ * gaps where the decoder's FIFO is full. Callbacks keep firing and an ear still
+ * stops on its target while a clip plays. vlsi_play stays as-is for callers
+ * with no reactor to pump (the examples/).
+ *
+ * This is the convenience path - one resident buffer, played to completion.
+ * Anything longer than the heap, or played *while* the script does something
+ * else, wants audio.player on nab.play_feed (lua/lib/audio). `data` is anchored
+ * as argument 1 for the whole call, so the collector cannot move it under us. */
+static void dispatch_events(lua_State *L, uint8_t allow_rfid); /* defined below */
+
+/* Give up when the decoder has accepted nothing for this long. Bounded by WALL
+ * TIME, not by a count of fruitless attempts the way hal/audio.c's vlsi_feed_all
+ * is: that one waits on DREQ between tries, so 16 tries is a long time, whereas
+ * a pump returns in microseconds and 16 of them would bail instantly and
+ * truncate the clip. A full 2048-byte FIFO takes ~130 ms to drain at 128 kbps
+ * MP3 and ~500 ms at 8 kHz ADPCM, so a second of no progress means wedged, not
+ * busy. Same silent-truncation contract as vlsi_play - the stream is closed and
+ * the call returns; it does not raise. */
+#define PLAY_STALL_MS 1000
+
+/* Feed `len` bytes cooperatively, pumping whenever the decoder is full.
+ * Returns 0 if it gave up on a stalled decoder. */
+static int play_feed_pumping(lua_State *L, const uint8_t *data, uint32_t len)
+{
+  uint32_t sent = 0;
+  uint32_t last = counter_timer;
+
+  while (sent < len) {
+    uint32_t n = vlsi_stream_feed(data + sent, len - sent);
+    sent += n;
+    if (n != 0) {
+      last = counter_timer;
+    } else {
+      if ((counter_timer - last) >= PLAY_STALL_MS)
+        return 0;
+      dispatch_events(L, 1); /* FIFO full: let everything else run meanwhile */
+    }
+  }
+  return 1;
+}
+
 static int nab_play(lua_State *L)
 {
+  /* One burst of zeros, fed repeatedly, so the end-of-stream tail costs 32 B of
+   * flash rather than 2 KB (same trick as vlsi_play). */
+  static const uint8_t zeros[32] = {0};
   size_t len;
   const char *data = luaL_checklstring(L, 1, &len);
-  vlsi_play((const uint8_t *)data, (uint32_t)len);
+
+  vlsi_stream_start();
+  if (play_feed_pumping(L, (const uint8_t *)data, (uint32_t)len)) {
+    /* End-of-stream tail: >= 2048 zero endFillBytes through the same path. */
+    for (uint32_t i = 0; i < 2048; i += (uint32_t)sizeof zeros) {
+      if (!play_feed_pumping(L, zeros, (uint32_t)sizeof zeros))
+        break;
+    }
+  }
+  vlsi_stream_stop();
   return 0;
 }
 

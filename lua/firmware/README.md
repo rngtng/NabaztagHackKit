@@ -35,7 +35,7 @@ that breaks one needs a stated reason.**
 4. **Partial-update-friendly script structure.** *(target)* Remote loading should swap small
    `luac` payloads, not reflash. **Open gap:** script slots need versioning + rollback, and
    `LLC2_4c` has **no external flash** (#94, `CS_FLASH` unpopulated) — a slot region must come
-   out of the ~13.6 KB free internal flash or the volatile 1 MB ExtRAM.
+   out of the ~9.9 KB free internal flash or the volatile 1 MB ExtRAM.
 5. **Sandbox by construction.** *(partly established)* Stdlib is trimmed to `base + string +
    table + coroutine` (the reactor's, 2,300 B measured) — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
    parser-less image hardens this further: with no on-device compiler the rabbit cannot `eval`
@@ -115,9 +115,12 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **113,072 B of 124 KB (~13.6 KB free)**. Roughly: ~23 KB the USB +
-802.11/WPA2 stack, ~2.1 KB the #234 provisioning plumbing, ~1.5 KB the #195 event core,
-836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings, ~0.65 KB the #235 OTA writer.
+`bin/firmware.elf` uses **116,852 B of 124 KB (~9.9 KB free)**. Roughly: ~23 KB the USB +
+802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
+`sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
+~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
+~0.65 KB the #235 OTA writer, 552 B the #265 non-blocking audio stream HAL. Everything
+above that last one is Lua in [`../lib/audio/`](../lib/audio/) and costs no flash.
 
 Two things keep it from being worse, and both are load-bearing:
 
@@ -157,7 +160,13 @@ nab.ear_stop(n)               -- n: 1|2
 nab.ear_pos(n)                -- -> raw wrapping 16-bit encoder edge count, NOT an angle
 nab.volume(v)                 -- 0 = loudest .. 254 = quietest (SCI_VOLUME)
 nab.beep(freq, ms)            -- VS1003 sine test: freq = pitch byte 0..255. Bypasses SCI_VOLUME
-nab.play(data)                -- stream bytes over SDI - real decoded audio, nab.volume applies
+nab.play(data)                -- stream bytes over SDI - real decoded audio, nab.volume applies.
+                              -- Blocking, but pumps the reactor between feeds (#283)
+nab.play_start()              -- open a non-blocking stream (#265); nothing here waits
+nab.play_feed(data [, i])     -- -> bytes accepted (0..n). Short = FIFO full, NOT an error:
+                              -- keep the rest and offer it again next turn (i = i + n)
+nab.playing()                 -- -> true while the decoder still has a stream to decode
+nab.play_stop()               -- close the stream, amplifier off
 nab.tone()                    -- -> a built-in ~0.25 s 880 Hz MP3, for nab.play. MP3, not PCM
                               --   WAV - the VS1003B does not decode WAV.
 nab.record(ms [, gain])       -- -> ~ms of mic audio as a complete WAV (8 kHz IMA ADPCM). Blocking.
@@ -213,6 +222,7 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
 | UART0 console both directions @115200 | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
 | USB host + RT2501 join, WPA2-CCMP | `nab.play`/`nab.tone`/`nab.wheel` — DREQ and the ADC bit are unmodeled in sim (#123) |
+| — | **Streaming playback (#265/#283)** — `nab.play` must sound as it did before it was fed in bursts, `nab.play_feed` must accept bytes at all, and a clip must not underrun while an ear moves or a GET runs |
 | 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
 
