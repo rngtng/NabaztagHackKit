@@ -222,8 +222,9 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 | LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
 | `nab.wheel` — analog pot on ADC ch.2, 255 rest -> 0 full sweep (#123) | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
-| UART0 console both directions @115200 | `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates, DREQ+ADC unmodeled in sim (#123; verified pre-#265, needs a re-check against the new streaming `nab.play`) |
-| USB host + RT2501 join, WPA2-CCMP | **Streaming playback (#265/#283)** — `nab.play` must sound as it did before it was fed in bursts, `nab.play_feed` must accept bytes at all, and a clip must not underrun while an ear moves or a GET runs |
+| `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates (#123); SCI_VOLUME holds exactly as written through the #265 streaming path too, re-verified post-#283 rebase | |
+| UART0 console both directions @115200 | **Streaming playback concurrency (#265/#283)** — `nab.play_feed` accepts bytes end to end (re-verified), but a clip not underrunning while an ear moves or a GET runs is untested |
+| USB host + RT2501 join, WPA2-CCMP | |
 | 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
 
