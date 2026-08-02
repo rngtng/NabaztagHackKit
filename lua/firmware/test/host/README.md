@@ -24,7 +24,7 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | Test | Source under test | Guards |
 |---|---|---|
 | `event_test.c` | `src/utils/event.c` | #242 — a dropped `event_post()` must not lose the edge permanently |
-| `fmt_test.c` | `src/utils/fmt.c` | #245 (no stray NUL on stderr), #254 (`fmt_hex8`), plus first-ever coverage of the hand-rolled `vsnprintf` |
+| `fmt_test.c` | `src/utils/fmt.c` | #245 (no stray NUL on stderr), #254 (`fmt_hex8`), the `num-large` digit-buffer bound, plus first-ever coverage of the hand-rolled `vsnprintf` |
 | `rfid_test.c` | `src/hal/rfid.c` | #253 — a wedged bus must fail fast, not retry for minutes |
 | `i2c_test.c` | `src/hal/i2c.c` | #246 (mask nesting), #252 (polls must not run masked) |
 

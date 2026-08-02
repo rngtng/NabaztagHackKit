@@ -19,6 +19,19 @@ includes:
     internal: true
 
 tasks:
+  test:
+    desc: 'Host-side unit tests for the resident boot chunk - `sched`, the cooperative reactor (#283) every :attach()ed ears/player/net pump composes through. Pure Lua over three nab primitives, so it runs under the tools/luac host `lua` (same vendored tree + LUA_32BITS luaconf.h as the device) in milliseconds, with the test owning the clock.'
+    summary: 'Usage: task lua:boot:test'
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      # Mount to /mnt, NOT /lib: /lib is the container's glibc loader dir, and
+      # shadowing it breaks exec of every dynamically-linked binary (same rule
+      # as lib:test).
+      - docker run --rm -v "$(realpath .):/mnt:ro" --entrypoint lua nabaztag-sdk-luac /mnt/test/run.lua
+
   compile:
     desc: 'Compile the resident boot chunk (boot.lua) to the embeddable C header the product firmware bakes (parallels apps:compile). Standalone this doubles as a compile/lint check. Usage: task lua:boot:compile [OUT=boot_lc.h]'
     dir: '{{.TASKFILE_DIR}}'
