@@ -236,6 +236,19 @@ tasks:
           {{- if or .TEST .SCENARIO}} && ./{{.TEST | default "event_test"}} {{.SCENARIO}}
           {{- else}} check{{end}}"'
 
+  test:bytecode:
+    desc: 'Robustness of the bytecode loading path (#128): corrupt a luac chunk one byte at a time and require lundump to refuse or contain each one, never to die. This is the firmware''s ONLY input surface - every #LC console frame, the resident boot chunk, and principle 4''s future remote script slots - and the #LC frame carries no integrity check over a UART with no flow control. Runs on the tools/luac host lua (same vendored tree + LUA_32BITS luaconf.h as the device); each candidate runs in a child process so a crash is a countable result. FULL=1 widens the corruption value set.'
+    summary: 'Usage: task lua:firmware:test:bytecode [FULL=1]'
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      # Mount to /mnt, NOT /lib (the container's glibc loader dir), same rule as
+      # lib:test. Read-only: the harness writes its subject chunk to os.tmpname().
+      - 'docker run --rm -v "$(realpath test/bytecode):/mnt:ro" --entrypoint lua
+          nabaztag-sdk-luac /mnt/run.lua{{if .FULL}} --full{{end}}'
+
   test:
     desc: 'Firmware tests. Today: the #128 bytecode-pipeline golden - compile a Lua app off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden (exercises luac -> frame -> lundump -> run -> print end to end). REGEN=1 rewrites the golden.'
     summary: 'Usage: task lua:firmware:test [APP=test/luac-roundtrip.lua] [EXPECT=test/luac-roundtrip.expected] [REGEN=1]'

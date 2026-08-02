@@ -38,8 +38,12 @@ that breaks one needs a stated reason.**
    out of the ~9.9 KB free internal flash or the volatile 1 MB ExtRAM.
 5. **Sandbox by construction.** *(partly established)* Stdlib is trimmed to `base + string +
    table + coroutine` (the reactor's, 2,300 B measured) — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
-   parser-less image hardens this further: with no on-device compiler the rabbit cannot `eval`
-   source, only run bytecode it is handed. New bindings are bounded `nab.*` calls; don't re-add
+   parser-less image hardens this further *for source*: with no on-device compiler the rabbit
+   cannot `eval` a typed-in program. It does **not** harden the bytecode side - dropping
+   `lparser`/`llex` removed a front end that rejects malformed input by construction and left
+   `lundump`, which PUC-Rio documents as unchecked ("maliciously crafted binary chunks can
+   crash the interpreter"), as the whole input surface. `task lua:firmware:test:bytecode`
+   measures it; the `#LC` frame carrying no integrity check is the cheap half to close. New bindings are bounded `nab.*` calls; don't re-add
    a general-purpose library without a security review.
 
 > ⚠️ [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)'s hardware list is partly
@@ -325,6 +329,7 @@ lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral
 test/host/          host-side C unit tests under ASan/UBSan (task lua:firmware:test:host)
+test/bytecode/      malformed-bytecode robustness of the loader (task lua:firmware:test:bytecode)
 test/*.expected     golden transcripts for the bytecode + injection tests
 ```
 

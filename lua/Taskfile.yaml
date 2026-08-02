@@ -30,6 +30,7 @@ tasks:
       - task: check:docs      # cheap, fail-fast: catch stale `task lua:…` doc refs before the slow builds
       - task: firmware:test:host   # native C unit tests under ASan - no sim, seconds
       - task: boot:test            # host-lua unit tests for `sched`, the resident reactor
+      - task: firmware:test:bytecode  # the only input surface: malformed bytecode must not kill the runtime
       - task: lib:test
       - task: firmware:build
       - task: firmware:test
