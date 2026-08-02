@@ -28,6 +28,7 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | `rfid_test.c` | `src/hal/rfid.c` | #253 — a wedged bus must fail fast, not retry for minutes |
 | `i2c_test.c` | `src/hal/i2c.c` | #246 (mask nesting), #252 (polls must not run masked) |
 | `ieee80211_test.c` | `src/net/ieee80211.c` | the probe-request builder must not overrun its frame on an over-long SSID (`nab.wifi`/`nab.wifi_scan` cap nothing), and the **receive** path must survive hostile IE lengths — a probe request's SSID copy, the IE walk's off-by-one, the RSN suite count, and the probe-response frame that is never freed |
+| `eapol_test.c` | `src/net/eapol.c` | the WPA2 4-way handshake must bound its reads by the RECEIVED length, not by the lengths the frame declares (`body_length` drives the MIC computation pre-authentication; `key_data_length` drives the GTK unwrap post-MIC) |
 | `adc_test.c` | `src/hal/adc.c` | the wheel read must terminate on a converter that never finishes (it feeds the watchdog while it waits, so a hang has no reboot) |
 
 `stubs/ml674061.h` (and `stubs/ml60842.h` for the USB block) shadows the real register map with a plain RAM array, so a
