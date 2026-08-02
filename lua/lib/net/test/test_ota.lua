@@ -83,3 +83,62 @@ local bbody, bstatus, bstop, bimg = ota.handle({method = "POST", body = "junk"})
 eq(bstop, nil, "a bad upload does not stop the portal")
 eq(bimg, nil, "a bad upload yields no image to flash")
 ok(bbody:find("Upload failed"), "a bad upload re-serves the form with the error")
+
+-- verifying a real-sized image must be cheap enough, and interruptible -------
+--
+-- ota.verify's cost is ota.crc32, and ota.crc32 is a bit-at-a-time CRC-32:
+-- eight iterations of shift/xor/and/negate per byte. On a real 117,516-byte
+-- image that is measured below at ~6.7M Lua VM instructions - on a 32 MHz
+-- ARM7TDMI whose heap sits in ExtRAM behind a 16-bit bus, seconds of work, not
+-- milliseconds. Two things follow, and both matter on the one path this code
+-- exists for: a phone POSTing firmware to the setup portal.
+--
+--   1. It is ~5x more work than it needs to be. The standard byte-table form
+--      of the same polynomial costs ~1.3M VM instructions for the identical
+--      result, and the 256-entry table is built once into the heap - this lib
+--      is loaded as bytecode over the REPL, so it costs no flash at all.
+--   2. It is one uninterruptible call. iface:serve calls the handler, the
+--      handler calls ota.verify, and nothing polls the interface, feeds the
+--      decoder, steps an ear or drains an event until it returns. That is
+--      exactly the hole #283 closed for nab.wait/nab.play/nab.wifi_recv, still
+--      open here - and it sits between the phone's upload and its response,
+--      with the phone's TCP retransmitting into a stack that is not listening.
+--      Chunking the loop costs nothing measurable (~1.298M vs ~1.297M for
+--      4 KB slices) and yields ~29 places to let the caller run.
+--
+-- Both assertions are deterministic: the budget is counted in VM instructions
+-- via debug.sethook, not wall time, so it does not depend on how loaded the
+-- machine is. Test-side use of debug is fine - the FORBIDDEN lint in run.lua
+-- guards the MODULE sources, which is what has to fit the device stdlib.
+
+local FW_BYTES = 117516        -- the real bin/firmware.elf image size
+local BIG = string.rep("\165\90\1\254", FW_BYTES // 4)
+
+local function vm_instructions(fn, ...)
+  local n = 0
+  debug.sethook(function() n = n + 1 end, "", 1000)
+  fn(...)
+  debug.sethook()
+  return n * 1000
+end
+
+-- Sanity first, so the budget below cannot pass by measuring nothing: the
+-- shipped crc32 must still be correct on a buffer this size.
+local BIG_CRC = ota.crc32(BIG)
+eq(BIG_CRC, ota.crc32(BIG:sub(1, #BIG)), "crc32 is stable on a full-size image")
+ok(BIG_CRC ~= 0, "crc32 of the full-size fixture is a real value")
+
+local cost = vm_instructions(ota.crc32, BIG)
+ok(cost > 100000, "the VM-instruction probe actually measured the hash")
+ok(cost <= 2500000,
+   ("verifying a %d-byte image costs %d VM instructions, budget 2500000")
+   :format(FW_BYTES, cost))
+
+-- ...and it must hand the caller the reactor back while it works. Behaviour,
+-- not mechanism: any bounded-slice form passes, whether that is a callback
+-- here or a stepper object underneath it.
+local pumped = 0
+ota.verify(fw(BIG), {pump = function() pumped = pumped + 1 end})
+ok(pumped >= 8,
+   ("verify called the caller's pump %d times over %d bytes; a blocking hash "
+    .. "calls it 0"):format(pumped, FW_BYTES))
