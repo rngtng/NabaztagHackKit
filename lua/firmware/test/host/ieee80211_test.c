@@ -45,8 +45,17 @@
  *
  * Scenarios (argv[1] selects one; all run by default):
  *
- *   short   a legal 32-byte SSID must build cleanly (the non-vacuous half)
- *   long    an over-long SSID must not run off the probe allocation
+ *   short     a legal 32-byte SSID must build cleanly (the non-vacuous half)
+ *   long      an over-long SSID must not run off the probe allocation
+ *   rx-legal  a well-formed probe request is answered (the non-vacuous half)
+ *   rx-ssid   AP mode: a probe request's SSID IE length comes off the air
+ *   rx-walk   the IE walk must not step past the end of the frame
+ *   rx-rsn    STA scan: an RSN IE's suite count comes off the air
+ *
+ * The rx-* scenarios are the serious ones, and they are not local: a probe
+ * request is unauthenticated management traffic, so anything in radio range can
+ * send one, and rt2501_receive hands it straight to ieee80211_input. AP mode is
+ * exactly what net.setup.run puts the rabbit in to be provisioned.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -73,6 +82,7 @@ uint32_t ptk_tsc;
 
 static unsigned tx_calls;
 static unsigned malloc_calls;
+static unsigned free_calls;
 
 void *hcd_malloc(uint32_t size, uint8_t type, uint8_t tag)
 {
@@ -81,7 +91,7 @@ void *hcd_malloc(uint32_t size, uint8_t type, uint8_t tag)
   return malloc(size);
 }
 
-void hcd_free(void *p) { free(p); }
+void hcd_free(void *p) { free_calls++; free(p); }
 
 void DelayMs(uint16_t ms) { (void)ms; }   /* the 350 ms per-channel dwell */
 
@@ -185,12 +195,173 @@ static void scen_long(void)
         "an over-long SSID is either refused or clamped, never overrun");
 }
 
+/* --- received frames ------------------------------------------------------ */
+/* ieee80211_input takes a raw 802.11 frame. These build the two management
+ * subtypes that carry information elements, with every field the parser reads
+ * set the way a real radio would - only the IE length bytes are hostile. */
+
+#define FC0_MGT_PROBE_REQ  (IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_PROBE_REQ)
+#define FC0_MGT_BEACON     (IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_BEACON)
+
+/* Built oversized, then handed to ieee80211_input in an EXACTLY-sized heap
+ * copy: on the device a frame arrives in an hcd_malloc'd buffer of its own
+ * length, so a parser that walks past frame_end walks into the next allocation.
+ * A generous static buffer would hide precisely that. */
+static uint8_t rxbuf[2048];
+
+static void rx_input(uint32_t len, int16_t rssi)
+{
+  uint8_t *exact = malloc(len);
+  memcpy(exact, rxbuf, len);
+  ieee80211_input(exact, len, rssi);
+  free(exact);
+}
+
+/* Fill the 802.11 header and return the offset where the IEs begin. */
+static uint32_t mgt_header(uint8_t fc0)
+{
+  struct ieee80211_frame *fr = (struct ieee80211_frame *)rxbuf;
+  memset(rxbuf, 0, sizeof rxbuf);
+  fr->i_fc[0] = fc0;
+  fr->i_fc[1] = IEEE80211_FC1_DIR_NODS;   /* mgt frames must be "No DS" */
+  memset(fr->i_addr1, 0xFF, IEEE80211_ADDR_LEN);
+  memset(fr->i_addr2, 0x22, IEEE80211_ADDR_LEN);   /* the sender */
+  memset(fr->i_addr3, 0x33, IEEE80211_ADDR_LEN);
+  return sizeof(struct ieee80211_frame);
+}
+
+/* Append one information element with an explicit length byte. `declared` is
+ * what goes on the wire; `actual` is how many payload bytes really follow. A
+ * real sender sets them equal - the point of these tests is that the parser
+ * must not trust `declared`. */
+static uint32_t put_ie(uint32_t at, uint8_t id, uint8_t declared, uint32_t actual,
+                       uint8_t fill)
+{
+  rxbuf[at] = id;
+  rxbuf[at + 1] = declared;
+  memset(rxbuf + at + 2, fill, actual);
+  return at + 2 + actual;
+}
+
+/* --- rx-legal: a well-formed probe request is answered -------------------- */
+
+static void scen_rx_legal(void)
+{
+  uint32_t n;
+
+  printf("scenario rx-legal: a well-formed probe request gets a response\n");
+
+  as_station();
+  rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
+  tx_calls = malloc_calls = free_calls = 0;
+
+  n = mgt_header(FC0_MGT_PROBE_REQ);
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');   /* honest length */
+  memcpy(rxbuf + n - 7, "nabtest", 7);
+  rx_input(n, -40);
+
+  /* Proves the AP-mode probe-request path really executes here, so an ASan
+   * report in rx-ssid is that path and not some earlier bail-out. */
+  CHECK(tx_calls == 1, "a matching probe request is answered with a response");
+
+  /* ieee80211_send_probe_response hcd_mallocs its frame and never frees it, on
+   * any path - unlike rt2501_scan, which frees each probe after the TX. In AP
+   * mode every answered probe request therefore leaks ~115 bytes of COMRAM
+   * permanently, and a phone scanning nearby sends probe requests continuously
+   * for as long as net.setup.run sits in its serve loop. COMRAM is a small
+   * fixed pool shared with the USB transfer descriptors, so exhausting it takes
+   * the radio down, not just the portal. (Present in mtl/firmware's copy of
+   * this file too - a fix belongs in both.) */
+  CHECK(free_calls == malloc_calls,
+        "the probe-response frame is released after it is sent");
+}
+
+/* --- rx-ssid: the SSID IE length is attacker-controlled ------------------- */
+
+static void scen_rx_ssid(void)
+{
+  uint32_t n;
+
+  printf("scenario rx-ssid: a probe request must not overflow the SSID buffer\n");
+
+  as_station();
+  rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
+
+  /* The parser copies frame_current[1] bytes into a char ssid[33] on its own
+   * stack, with no check. 200 is a legal byte to put in a length field and a
+   * legal frame to transmit; nothing about it is malformed at the radio layer. */
+  n = mgt_header(FC0_MGT_PROBE_REQ);
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 200, 200, 'A');
+  rx_input(n, -40);
+
+  CHECK(1 == 1, "reaching here means the copy was bounded");
+}
+
+/* --- rx-walk: the IE walk must stay inside the frame ---------------------- */
+
+static void scen_rx_walk(void)
+{
+  uint32_t n;
+
+  printf("scenario rx-walk: the IE walk must not step past the frame end\n");
+
+  as_station();
+  rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
+
+  /* The walk tests `frame_current < frame_end` and then reads BOTH
+   * frame_current[0] and frame_current[1]. One trailing byte after the 802.11
+   * header satisfies the condition while the length byte it then reads is
+   * already past the end of the frame. Nothing exotic: that is what a frame
+   * with a single pad byte, or one clipped by a byte, looks like. */
+  n = mgt_header(FC0_MGT_PROBE_REQ);
+  rxbuf[n] = IEEE80211_ELEMID_RATES;   /* an element id, and then nothing */
+  n += 1;
+  rx_input(n, -40);
+
+  CHECK(1 == 1, "reaching here means the walk was bounded");
+}
+
+/* --- rx-rsn: the RSN suite count is attacker-controlled ------------------- */
+
+static void scen_rx_rsn(void)
+{
+  uint32_t n, at;
+
+  printf("scenario rx-rsn: a beacon's RSN suite count must be bounded\n");
+
+  /* The scan path, reached on every nab.wifi() join - not AP mode. */
+  as_station();
+  ieee80211_state = IEEE80211_S_SCAN;
+  ieee80211_mode = IEEE80211_M_MANAGED;
+
+  n = mgt_header(FC0_MGT_BEACON);
+  n += 12;                          /* timestamp + beacon interval + capinfo */
+  at = n;
+  /* An RSN IE whose group-suite count says 0x4000 while the IE carries four
+   * bytes. The parser reads the count out of the frame and walks 4 bytes per
+   * iteration with nothing checked against frame_end. */
+  rxbuf[at] = IEEE80211_ELEMID_RSN;
+  rxbuf[at + 1] = 8;
+  rxbuf[at + 2] = 0x00; rxbuf[at + 3] = 0x40;         /* group suite count */
+  rxbuf[at + 4] = 0x00; rxbuf[at + 5] = 0x0F;
+  rxbuf[at + 6] = 0xAC; rxbuf[at + 7] = 0x04;         /* one CCMP suite */
+  rxbuf[at + 8] = 0x00; rxbuf[at + 9] = 0x00;
+  n = at + 10;
+  rx_input(n, -40);
+
+  CHECK(1 == 1, "reaching here means the suite walk was bounded");
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
 
-  if (!only || strcmp(only, "short") == 0) scen_short();
-  if (!only || strcmp(only, "long") == 0)  scen_long();
+  if (!only || strcmp(only, "short") == 0)    scen_short();
+  if (!only || strcmp(only, "long") == 0)     scen_long();
+  if (!only || strcmp(only, "rx-legal") == 0) scen_rx_legal();
+  if (!only || strcmp(only, "rx-ssid") == 0)  scen_rx_ssid();
+  if (!only || strcmp(only, "rx-walk") == 0)  scen_rx_walk();
+  if (!only || strcmp(only, "rx-rsn") == 0)   scen_rx_rsn();
 
   if (failures) {
     printf("ieee80211_test: %d check(s) FAILED\n", failures);
