@@ -27,13 +27,18 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | `fmt_test.c` | `src/utils/fmt.c` | #245 (no stray NUL on stderr), #254 (`fmt_hex8`), the `num-large` digit-buffer bound, plus first-ever coverage of the hand-rolled `vsnprintf` |
 | `rfid_test.c` | `src/hal/rfid.c` | #253 — a wedged bus must fail fast, not retry for minutes |
 | `i2c_test.c` | `src/hal/i2c.c` | #246 (mask nesting), #252 (polls must not run masked) |
+| `ieee80211_test.c` | `src/net/ieee80211.c` | `rt2501_scan`'s probe-request builder must not overrun its fixed frame on an over-long SSID (reachable from `nab.wifi`/`nab.wifi_scan`, neither of which caps it) |
 | `adc_test.c` | `src/hal/adc.c` | the wheel read must terminate on a converter that never finishes (it feeds the watchdog while it waits, so a hang has no reboot) |
 
-`stubs/ml674061.h` shadows the real register map with a plain RAM array, so a
+`stubs/ml674061.h` (and `stubs/ml60842.h` for the USB block) shadows the real register map with a plain RAM array, so a
 register-only driver runs natively. It models **only** what the drivers under
 test touch — deliberately: a stub mirroring the whole 1068-line header would
 rot silently against it, whereas this one fails to compile the moment a driver
 reaches for something new.
+
+Vendored sources can live here too — `ieee80211_test.c` links `src/net/ieee80211.c` as-is,
+which needs only 25 externals, all of them board or driver entry points. Vendored files
+are exempt from our `-Werror` set, so their rule adds `-w`.
 
 What still can't live here: code inside `main.c` (it carries `main()`, so
 nothing else can link it — this is why the printf shims were split out to
