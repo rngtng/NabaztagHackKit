@@ -265,13 +265,26 @@ static void scen_rx_legal(void)
   CHECK(tx_calls == 1, "a matching probe request is answered with a response");
 
   /* ieee80211_send_probe_response hcd_mallocs its frame and never frees it, on
-   * any path - unlike rt2501_scan, which frees each probe after the TX. In AP
-   * mode every answered probe request therefore leaks ~115 bytes of COMRAM
-   * permanently, and a phone scanning nearby sends probe requests continuously
-   * for as long as net.setup.run sits in its serve loop. COMRAM is a small
-   * fixed pool shared with the USB transfer descriptors, so exhausting it takes
-   * the radio down, not just the portal. (Present in mtl/firmware's copy of
-   * this file too - a fix belongs in both.) */
+   * any path - unlike rt2501_scan, which frees each probe after the TX. The
+   * pool this comes out of is not large: hcd.c does
+   *
+   *     hcd_malloc_init(ComRAMAddr, ComRAMSize, 16, COMRAM);   // 0x1000 = 4 KB
+   *
+   * and the leaked frame is 115 bytes, rounded to the allocator's 16-byte
+   * boundary = 128. So roughly THIRTY-TWO answered probe requests exhaust
+   * COMRAM - fewer in practice, since the OHCI descriptors, endpoint state and
+   * RX/TX buffers already live there.
+   *
+   * Thirty-two is nothing. The parser answers a probe request whose SSID
+   * matches OR that carries no SSID IE at all (`!ssid_present`, line 1025) -
+   * i.e. every broadcast probe from every scanning device in range - and
+   * net.setup.run sits in its serve loop for as long as it takes the user to
+   * find the network, open the page and type a password. One phone scanning
+   * nearby drains the pool before that. What runs dry is the USB allocator, so
+   * what stops is the radio, not just the portal.
+   *
+   * (mtl/firmware's copy of this file has the same leak - a fix belongs in
+   * both.) */
   CHECK(free_calls == malloc_calls,
         "the probe-response frame is released after it is sent");
 }
