@@ -216,16 +216,25 @@ tasks:
       - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
 
   test:host:
-    desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. SCENARIO=<name> runs one.'
-    summary: 'Usage: task lua:firmware:test:host [SCENARIO=rfid-drop]'
+    desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core, the fmt shims, the register-only HAL drivers) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. TEST=<binary> runs one test, SCENARIO=<name> one scenario within it.'
+    summary: 'Usage: task lua:firmware:test:host [TEST=rfid_test] [SCENARIO=wedged]'
     dir: '{{.TASKFILE_DIR}}'
     deps: [image]
     cmds:
       # Sources are bind-mounted (like every other target here); the image only
       # supplies the host gcc + sanitizer runtime.
+      #
+      # SCENARIO used to be pasted onto a hard-coded ./event_test, so asking for
+      # a scenario belonging to any other binary ran event_test with an argument
+      # it does not recognise - which its main() treats as "no scenario matched"
+      # and reports as a pass. A green run that tested nothing is exactly what
+      # the repo testing rule forbids, so the binary is selectable now and
+      # SCENARIO alone still means event_test, as documented.
       - 'docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work/test/host
           {{.FV_IMAGE}}
-          sh -c "make clean >/dev/null && make {{if .SCENARIO}}&& ./event_test {{.SCENARIO}}{{else}}check{{end}}"'
+          sh -c "make clean >/dev/null && make
+          {{- if or .TEST .SCENARIO}} && ./{{.TEST | default "event_test"}} {{.SCENARIO}}
+          {{- else}} check{{end}}"'
 
   test:
     desc: 'Firmware tests. Today: the #128 bytecode-pipeline golden - compile a Lua app off-device (luac -> #LC frames) and run it on the parser-less sim; the console transcript must match the committed golden (exercises luac -> frame -> lundump -> run -> print end to end). REGEN=1 rewrites the golden.'

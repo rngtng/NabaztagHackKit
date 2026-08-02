@@ -27,6 +27,7 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | `fmt_test.c` | `src/utils/fmt.c` | #245 (no stray NUL on stderr), #254 (`fmt_hex8`), the `num-large` digit-buffer bound, plus first-ever coverage of the hand-rolled `vsnprintf` |
 | `rfid_test.c` | `src/hal/rfid.c` | #253 — a wedged bus must fail fast, not retry for minutes |
 | `i2c_test.c` | `src/hal/i2c.c` | #246 (mask nesting), #252 (polls must not run masked) |
+| `adc_test.c` | `src/hal/adc.c` | the wheel read must terminate on a converter that never finishes (it feeds the watchdog while it waits, so a hang has no reboot) |
 
 `stubs/ml674061.h` shadows the real register map with a plain RAM array, so a
 register-only driver runs natively. It models **only** what the drivers under
@@ -50,4 +51,11 @@ stay sim-tested (`firmware:test`, `firmware:test:inject`) or hardware-tested.
   while testing nothing.
 - **One scenario per `argv[1]`**, so an ASan abort in one can't mask the rest
   (`./event_test rfid-drop`, or `task lua:firmware:test:host SCENARIO=rfid-drop`).
+  `SCENARIO=` alone means `event_test`; name the binary for any other
+  (`task lua:firmware:test:host TEST=adc_test SCENARIO=wedged`). An unknown
+  scenario name matches nothing and the binary exits 0 — so a `SCENARIO` sent to
+  the wrong `TEST` reports a pass having run nothing. Check the pair.
+- **A hang is a legitimate assertion.** `adc_test`'s `wedged` scenario arms
+  `alarm(2)` and reports the timeout, because "this loop terminates" cannot be
+  asserted on the return value of a call that never returns.
 - A new test is a new `.c` here plus one line in the `Makefile`'s `TESTS`.
