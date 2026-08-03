@@ -475,14 +475,50 @@ static void eapol_input_msg1(uint8_t *frame, uint32_t length)
  * @param [in]  frame   Frame buffer
  * @param [in]  length  Frame length
  */
-static int8_t eapol_install_gtk(struct eapol_frame *fr_in);
+/**
+ * @brief Bytes the MIC is computed over, or 0 when the frame does not carry them.
+ *
+ * The MIC runs over [protocol_version .. end of key data], i.e. 4 + body_length
+ * bytes starting at frame+LLC_LENGTH. `body_length` comes off the wire, so the
+ * RECEIVED length is the only thing that can bound it - and computing the MIC is
+ * what the comparison against the received MIC is for, so this read happens
+ * before the frame is authenticated. A frame claiming more than it carries is
+ * dropped here rather than hashed off the end of the buffer (#292).
+ *
+ * eapol_input has already refused anything shorter than the base structure, so
+ * length > LLC_LENGTH holds.
+ */
+static uint32_t eapol_mic_span(const struct eapol_frame *fr, uint32_t length)
+{
+  uint32_t span = (uint32_t)((fr->body_length[0] << 8) | fr->body_length[1]) + 4;
+
+  if(span > length - LLC_LENGTH)
+    return 0;
+  return span;
+}
+
+/**
+ * @brief Bytes of key data the frame actually carries, capped at `want`.
+ *
+ * key_data is the last field of struct eapol_frame, so its offset is
+ * sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH and a real msg3 runs past the
+ * struct (56-88 bytes of wrapped KDEs is normal). key_data_length is off the
+ * wire; this is what keeps it inside the frame (#292).
+ */
+static uint32_t eapol_key_data_avail(uint32_t length)
+{
+  const uint32_t off = (uint32_t)(sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH);
+
+  return (length > off) ? length - off : 0;
+}
+
+static int8_t eapol_install_gtk(struct eapol_frame *fr_in, uint32_t length);
 
 static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 {
-  // FIXME Check length before cast ?
-  (void)length;
   struct eapol_frame *fr_in = (struct eapol_frame *)frame;
   uint8_t old_mic[EAPOL_KEYMIC_LENGTH];
+  uint32_t mic_span;
   struct {
     struct eapol_frame llc_eapol;
   } fr_out;
@@ -507,7 +543,13 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 
   DBG_WIFI("ANonce OK"EOL);
 
-  /* Check MIC */
+  /* Check MIC. The span is validated against the received length first: this
+   * hash is the pre-authentication read (#292). */
+  mic_span = eapol_mic_span(fr_in, length);
+  if(mic_span == 0) {
+    DBG_WIFI("body_length exceeds the received frame, drop"EOL);
+    return;
+  }
   memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
   memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
   {
@@ -516,7 +558,7 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
     //dump((uint8_t *)&fr_out+LLC_LENGTH,sizeof(struct eapol_frame)+rsn_size-LLC_LENGTH);
      hmac_sha1(ptk.s.kck, EAPOL_MICK_LENGTH,
      frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      kt);
     //DBG_WIFI("MIC:");
     //dump(kt,EAPOL_MICK_LENGTH);
@@ -606,7 +648,7 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
    * addressed frame (broadcast ARP, broadcast DHCP) stayed ciphertext
    * (#228). A WPA1-style AP that really does send a group message next is
    * still handled: stay in EAPOL_S_GROUP when msg3 carried no GTK. */
-  if(eapol_install_gtk(fr_in))
+  if(eapol_install_gtk(fr_in, length))
     eapol_state = EAPOL_S_RUN;
   else
     eapol_state = EAPOL_S_GROUP;
@@ -629,7 +671,7 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
  *
  * @return 1 when a GTK was installed, 0 otherwise.
  */
-static int8_t eapol_install_gtk(struct eapol_frame *fr_in)
+static int8_t eapol_install_gtk(struct eapol_frame *fr_in, uint32_t length)
 {
   uint16_t kdlen = (fr_in->key_frame.key_data_length[0] << 8)
                    | fr_in->key_frame.key_data_length[1];
@@ -641,8 +683,11 @@ static int8_t eapol_install_gtk(struct eapol_frame *fr_in)
     return 0;
 
   /* key_data holds AES-Key-Wrapped KDEs: (n+1) 8-byte blocks, so >= 16
-   * bytes; bound it to our scratch buffer. */
-  if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8) {
+   * bytes; bound it to our scratch buffer AND to what the frame actually
+   * carries (#292 - the scratch-buffer cap alone let a short frame declare 112
+   * bytes and hand them all to aes128_unwrap). */
+  if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8
+     || kdlen > eapol_key_data_avail(length)) {
     DBG_WIFI("GTK key data length invalid"EOL);
     return 0;
   }
@@ -698,10 +743,9 @@ static int8_t eapol_install_gtk(struct eapol_frame *fr_in)
  */
 static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
 {
-  // FIXME Check length before cast ?
-  (void)length;
   struct eapol_frame *fr_in = (struct eapol_frame *)frame;
   uint8_t old_mic[EAPOL_KEYMIC_LENGTH];
+  uint32_t mic_span;
   struct eapol_frame fr_out;
 
   DBG_WIFI("Received GTK message"EOL);
@@ -713,15 +757,20 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
     return;
   }
 
-  /* Check MIC */
+  /* Check MIC - bounded by the received length, as in msg3 (#292). */
+  mic_span = eapol_mic_span(fr_in, length);
+  if(mic_span == 0) {
+    DBG_WIFI("body_length exceeds the received frame, drop"EOL);
+    return;
+  }
   memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
   memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
   {
     uint8_t kt[20]={0};
     //DBG_WIFI("Before MIC"EOL);
-    //dump((uint8_t *)&frame+LLC_LENGTH,((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4);
+    //dump((uint8_t *)&frame+LLC_LENGTH,mic_span);
      hmac_sha1(ptk.s.kck, EAPOL_MICK_LENGTH, frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      kt);
     //DBG_WIFI("MIC:");
     //dump(kt,EAPOL_MICK_LENGTH);
@@ -802,7 +851,7 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
 
   /* Decipher and install GTK (CCMP only - the RC4-encrypted TKIP GTK went
    * with WEP/WPA1/TKIP support, #124) */
-  eapol_install_gtk(fr_in);
+  eapol_install_gtk(fr_in, length);
   eapol_state = EAPOL_S_RUN;
   ieee80211_state = IEEE80211_S_RUN;
   ieee80211_timeout = IEEE80211_RUN_TIMEOUT;
