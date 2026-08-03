@@ -42,6 +42,26 @@ Vendored sources can live here too — `ieee80211_test.c` links `src/net/ieee802
 which needs only 25 externals, all of them board or driver entry points. Vendored files
 are exempt from our `-Werror` set, so their rule adds `-w`.
 
+### Is a file host-testable? Probe, don't guess
+
+"That one needs hardware" is usually wrong. Two commands settle it — run them
+**from the repo root**, the paths here are repo-relative:
+
+```sh
+gcc -fsyntax-only -std=gnu11 -D_NAB_SIM \
+    -Ilua/firmware/inc -Ilua/firmware/test/host/stubs -Ilua/firmware/sys/inc \
+    -w lua/firmware/src/net/ieee80211.c
+
+gcc -c -std=gnu11 -D_NAB_SIM -Ilua/firmware/inc \
+    -Ilua/firmware/test/host/stubs -Ilua/firmware/sys/inc -w \
+    -o /tmp/probe.o lua/firmware/src/net/eapol.c && nm -u /tmp/probe.o
+```
+
+Under ~30 undefined symbols, all of them board or driver entry points, means the
+file links here against stubs and runs under ASan. Four findings in the #291
+review were code-reading suspicions until this probe turned them into ASan-proven
+defects. If a register is missing from `stubs/`, add just that one symbol.
+
 What still can't live here: code inside `main.c` (it carries `main()`, so
 nothing else can link it — this is why the printf shims were split out to
 `src/utils/fmt.c` in #245), and anything needing a live peripheral peer. Those
@@ -66,3 +86,7 @@ stay sim-tested (`firmware:test`, `firmware:test:inject`) or hardware-tested.
   `alarm(2)` and reports the timeout, because "this loop terminates" cannot be
   asserted on the return value of a call that never returns.
 - A new test is a new `.c` here plus one line in the `Makefile`'s `TESTS`.
+- **Run every command from the repo root**, including a hand-rolled `docker run`.
+  The mount paths are repo-relative, so a `$(realpath lua/firmware)` evaluated after
+  `cd lua/firmware` resolves to nothing, mounts an empty directory, and reports *every*
+  test as FAIL — a failure mode that looks like a real regression.

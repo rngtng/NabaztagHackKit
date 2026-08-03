@@ -119,6 +119,9 @@ Don't restate them here - two copies drift. The rules that bind new work:
   Claude Code remote sandbox only — bakes the egress proxy's CA into the
   `python:3.12-slim`/`debian:bookworm-slim` base images so `apt-get`/`pip` inside
   our Dockerfiles can reach the network. No-ops everywhere else.
+  **`Cannot connect to the Docker daemon` means the daemon died, not that the
+  setup was wrong — just re-run the script.** It happens several times in a long
+  session; it is one command, not a diagnosis.
 - **The MTL build/simulate tasks (`mtl:<layer>:build`/`:simulate`) and `task mtl:lib:test` always
   exit 0** — the MTL compiler and simulator report fatal errors on stderr but never fail the
   process. Both are wrapped to scan their own output for
@@ -141,6 +144,12 @@ Don't restate them here - two copies drift. The rules that bind new work:
 - **Never vendor secrets.** Strip credential-bearing files (e.g. `conf.bin` → keep only the
   sanitized `*.sample`; git- *and* docker-ignore the real one).
 - Exclude build artifacts via `.gitignore` **and** `.dockerignore`; rebuild in Docker.
+- **Never reformat a vendored file — preserve its line endings.** The `mtl/` and `lua/`
+  copies of `net/ieee80211.c` and `net/eapol.c` are **CRLF**; Python's
+  `read_text()`/`write_text()` silently rewrites them as LF, which turns a 167-line fix
+  into a 6,109-line diff and destroys the backport bridge. Edit vendored files in place,
+  or in Python go through `read_bytes()`/`write_bytes()`. **Check `git diff --stat` after
+  any scripted edit** — a small change with a huge line count means you rewrote the file.
 
 ## Toolchain & languages
 - **Single toolchain:** `mtl_linux` is the compiler **and** simulator. Prefer one toolchain
@@ -160,6 +169,15 @@ lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/l
   and passed on `empty == empty` when the app hung before the REPL — a green test that
   validated nothing (#207). Require a known marker in the output before comparing; an
   all-empty run must fail.
+- **The vacuous-pass rule covers the runner, not just the test.** A selector the runner
+  silently ignores reports a pass having run nothing — `SCENARIO=num-large` sent to the
+  wrong `TEST` printed "all checks passed" while executing a different binary. After
+  adding a scenario, run it and confirm the output names *your* scenario; an unmatched
+  selector should fail, not exit 0.
+- **New non-wiring logic in `main.c` goes in its own TU.** `main.c` carries `main()`, so
+  nothing can link it and nothing in it is unit-testable — that is why `fmt.c` (#245) and
+  `lcframe.c` (#298) were split out. `main.c` keeps wiring; anything with a rule to it
+  gets a file and a `test/host/` test.
 
 ## MTL language gotchas
 
