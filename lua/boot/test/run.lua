@@ -42,9 +42,15 @@ end
 NAB_CB = {}          -- the C-side callback table (registry key "nab.events")
 local clock = 0
 
+-- main.c's nab_on: one callback per name, replaced silently. Kept as its own
+-- local so boot_reload can put it back - boot.lua wraps nab.on to own the
+-- "tick" seam, and re-running the chunk over its own wrapper would model a
+-- device that booted twice, which is not a thing.
+local function raw_on(name, fn) NAB_CB[name] = fn end
+
 nab = {
   time = function() return clock end,
-  on = function(name, fn) NAB_CB[name] = fn end,
+  on = raw_on,
   -- everything boot.lua's demo helpers touch at load time; no-ops here
   led = function() end,
   led8 = function() end,
@@ -86,6 +92,7 @@ local src = runfile(BOOT)
 -- callback table too, so each scenario starts from a bare device.
 function boot_reload()
   NAB_CB = {}
+  nab.on = raw_on      -- a fresh device: nab.on is the C binding
   runfile(BOOT)
 end
 

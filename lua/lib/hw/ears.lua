@@ -248,7 +248,20 @@ function ears.new(drv)
   -- fake drv with no reactor in sight, and :step() from a loop stays perfectly
   -- valid there. Returns self so it chains off new().
   function self:attach()
-    if sched then sched.pump(function() self:step() end) end
+    if sched and not self.pumped then
+      self.pumped = sched.pump(function() self:step() end)
+    end
+    return self
+  end
+
+  -- Give the slice back. Idempotent, and safe to call on a never-attached
+  -- object: without it every ears/player ever created stayed in the reactor for
+  -- the session, pinning itself and everything it references (#297).
+  function self:detach()
+    if self.pumped then
+      sched.unpump(self.pumped)
+      self.pumped = nil
+    end
     return self
   end
 

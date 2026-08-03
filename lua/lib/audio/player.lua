@@ -213,7 +213,18 @@ function player.new(drv)
   -- fake decoder with no reactor in sight, and pumping :step() from a loop
   -- stays perfectly valid there. Returns self so it chains off new().
   function p:attach()
-    if sched then sched.pump(function() self:step() end) end
+    if sched and not self.pumped then
+      self.pumped = sched.pump(function() self:step() end)
+    end
+    return self
+  end
+
+  -- Counterpart to :attach(); see hw.ears for why it exists (#297).
+  function p:detach()
+    if self.pumped then
+      sched.unpump(self.pumped)
+      self.pumped = nil
+    end
     return self
   end
 

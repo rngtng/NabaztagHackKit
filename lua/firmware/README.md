@@ -119,7 +119,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **117,900 B of 124 KB (~8.9 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **118,296 B of 124 KB (~8.5 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -139,7 +139,7 @@ Two things keep it from being worse, and both are load-bearing:
 
 `-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
 4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
-boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 2,387 B — `run`/`watch`/`ledshow` plus
+boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,620 B — `run`/`watch`/`ledshow` plus
 two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
 decisions, not refactors. `task lua:firmware:build` fails loudly on overflow.
 
@@ -156,7 +156,9 @@ nab.time()                    -- -> ms since boot (wrapping 32-bit tick)
 nab.wait(ms)                  -- sleep ~ms while running the event pump, so nab.on callbacks fire
 nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> fn(pressed) on
                               --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
-                              --   (registering starts the background ~750 ms scan)
+                              --   (registering starts the background ~750 ms scan); "tick" ->
+                              --   fn() every pump iteration. boot.lua wraps this so "tick" is
+                              --   routed through sched and does NOT displace the reactor (#297)
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
 nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel - an analog pot, HW-verified:
                               --   255 at rest, smooth 255->0->255 across its travel)
