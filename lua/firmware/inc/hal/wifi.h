@@ -97,6 +97,12 @@ int32_t wifi_state(void);
 
 /* Largest wifi_send payload (the 802.3 payload after the MAC header; an
  * Ethernet-MTU-sized bound well under the driver's 2048-byte frame cap). */
+/* Caps the nab.wifi* bindings and this HAL both enforce (#296). WIFI_SSID_MAX
+ * is the 802.11 limit; WIFI_PSK_MAX matches hal/config.h's CONFIG_PSK_MAX, so
+ * anything the config sector can hold is joinable. */
+#define WIFI_SSID_MAX 32
+#define WIFI_PSK_MAX  64
+
 #define WIFI_SEND_MAX 1500
 
 /* Switch the radio to master (AP) mode: beacon `ssid` (<= 32 chars) on

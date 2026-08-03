@@ -119,7 +119,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **117,620 B of 124 KB (~9.2 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **117,900 B of 124 KB (~8.9 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -182,6 +182,7 @@ nab.rec_read()                -- -> whole 256-byte ADPCM blocks, or nil. Returns
 nab.rec_stop()                -- close the session (codec back to decode mode)
 nab.rec_wav(data)             -- wrap concatenated rec_read chunks as a WAV string
 nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open) -> true | nil, msg, reason
+                              --   ssid <= 32, psk <= 64 bytes (#296); over-long raises
                               --   reason: "radio"|"notfound"|"auth"|"timeout" (#234 branches on it)
 nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
 nab.wifi_up()                 -- cold-boot the dongle without joining, so wifi_mac() is real (#233)

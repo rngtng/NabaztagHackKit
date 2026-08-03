@@ -24,10 +24,28 @@ void init_adc(void)
   put_hvalue(ADCON2, ADCON2_CLK32);  /* conversion clock: 33MHz/32, >=800ns/conv */
 }
 
+/* Give up on a converter that never reports done. A select-mode conversion at
+ * ADCON2_CLK32 takes under a microsecond, so this bound is ~5 orders of
+ * magnitude of slack - it only bites when the ADC is wedged.
+ *
+ * The bound is the point (#296): the poll fed the watchdog while it waited, so
+ * a converter that never answered was not a slow read but a permanent hang with
+ * the one thing that could have broken it explicitly suppressed. hal/rfid.c was
+ * bounded for the same reason in #253, and audio.c's wait_dreq() carries its own
+ * guard count. The reach is wider than a script calling nab.wheel(): lib/audio's
+ * volume knob is written to be handed to sched.pump, so the wheel is read from
+ * inside every nab.wait/nab.delay/nab.play and from the REPL's idle loop. */
+#define ADC_POLL_MAX 100000UL
+
 uint8_t adc_read_ch2(void)
 {
+  unsigned long guard = ADC_POLL_MAX;
+
   set_hbit(ADCON1, ADCON1_STS | ADCON1_CH2);
-  while (get_hvalue(ADCON1) & ADCON1_STS)
+  while ((get_hvalue(ADCON1) & ADCON1_STS) && --guard)
     CLR_WDT;
+  /* Out of budget: report the last conversion result rather than invent one -
+   * ADR2 still holds whatever the ADC last completed, and the caller (a volume
+   * knob) wants a plausible reading, not a sentinel it has no way to spot. */
   return (uint8_t)(get_hvalue(ADR2) >> 2);
 }

@@ -1720,9 +1720,17 @@ void rt2501_scan(const uint8_t *ssid, rt2501_scan_callback callback, void *userp
 		write_ptr = probe->probe;
 		/* TAGGED PARAMETERS */
 		if(ssid != NULL) {
-			/* SSID */
+			/* SSID. probe[] is sized for exactly IEEE80211_SSID_MAXLEN, so the
+			   length is clamped here rather than trusted from the caller (#296) -
+			   hal/wifi.c bounds its entry points too, but this is the buffer, so
+			   this is where the bound cannot be bypassed. Computed in a size_t
+			   first: `j` is a uint8_t, so a 256-byte SSID used to truncate to a
+			   zero-length IE. */
+			size_t ssid_len = strlen((char*)ssid);
+
+			if(ssid_len > IEEE80211_SSID_MAXLEN) ssid_len = IEEE80211_SSID_MAXLEN;
+			j = (uint8_t)ssid_len;
 			*(write_ptr++) = IEEE80211_ELEMID_SSID;
-			j = strlen((char*)ssid);
 			*(write_ptr++) = j;
 			for(i=0;i<j;i++)
 				*(write_ptr++) = ssid[i];

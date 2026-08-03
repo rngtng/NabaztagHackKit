@@ -779,10 +779,36 @@ static int nab_sciw(lua_State *L)
  * provisioning flow (#234) branches on to pick an LED/message. The whole USB +
  * 802.11 stack is pulled into the image only because this binding references
  * it (see hal/wifi.c). */
+/* Bounded string argument for the radio bindings (#296). The 802.11 SSID and
+ * the WPA passphrase both land in fixed-size C buffers - rt2501_scan's probe
+ * frame, the PBKDF2 - so the cap belongs here, at the seam, exactly as
+ * nab.config already enforces its own field caps (principle 5: bindings are
+ * bounded nab.* calls). The HAL re-checks; neither layer is the only guard. */
+static const char *check_bounded(lua_State *L, int arg, size_t max,
+                                 const char *what)
+{
+  size_t len;
+  const char *s = luaL_checklstring(L, arg, &len);
+
+  luaL_argcheck(L, len <= max, arg, what);
+  return s;
+}
+
+static const char *opt_bounded(lua_State *L, int arg, const char *def,
+                               size_t max, const char *what)
+{
+  size_t len;
+  const char *s = luaL_optlstring(L, arg, def, &len);
+
+  if (s != NULL)
+    luaL_argcheck(L, len <= max, arg, what);
+  return s;
+}
+
 static int nab_wifi(lua_State *L)
 {
-  const char *ssid = luaL_checkstring(L, 1);
-  const char *psk = luaL_optstring(L, 2, "");
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is 1..32 bytes");
+  const char *psk = opt_bounded(L, 2, "", WIFI_PSK_MAX, "PSK is at most 64 bytes");
   wifi_fail_t why = WIFI_OK;
   if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
     /* (nil, message, reason): reason is a stable machine-readable tag the
@@ -811,7 +837,7 @@ static int nab_wifi(lua_State *L)
  * arrive via nab.wifi_recv(). */
 static int nab_wifi_ap(lua_State *L)
 {
-  const char *ssid = luaL_checkstring(L, 1);
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is 1..32 bytes");
   lua_Integer ch = luaL_optinteger(L, 2, 1);
   luaL_argcheck(L, ch >= 1 && ch <= 14, 2, "1..14");
   if (wifi_ap(ssid, (uint8_t)ch) != 0) {
@@ -852,7 +878,8 @@ static int nab_wifi_up(lua_State *L)
  * hops all 14 channels, so an existing association does not survive it. */
 static int nab_wifi_scan(lua_State *L)
 {
-  const char *ssid = luaL_optstring(L, 1, NULL);
+  const char *ssid = opt_bounded(L, 1, NULL, WIFI_SSID_MAX,
+                                 "SSID is at most 32 bytes");
   if (ssid != NULL && *ssid == '\0')
     ssid = NULL;                        /* "" = broadcast, not a hidden SSID */
   if (wifi_state() == RT2501_S_MASTER) {
