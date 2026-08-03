@@ -1249,50 +1249,41 @@ static void skip_to_eol(void)
   }
 }
 
-/* Parse a "#LC:<len>" header (already read into `line`), stream the following
- * 2*len hex chars into a fresh buffer, and load it as a Lua chunk. Leaves the
- * compiled chunk on the stack on success (like load_line), else pushes an error
- * message and returns non-LUA_OK. No strtol - a manual digit loop keeps newlib
- * out. The buffer comes from the external-RAM heap (_sbrk). */
-/* One hex digit -> 0..15, or -1. */
-static int hexval(char c)
+/* Throw away a frame's payload: 2*len hex chars plus its trailing newline.
+ *
+ * Rejecting a frame is only half of rejecting it. The payload is already on the
+ * wire behind the header, so a path that returns without consuming it leaves
+ * sh_gets reading bytecode hex as REPL lines - one spurious error per wrapped
+ * line, for every frame a sender gets wrong. That is what made a single
+ * checksum-less frame from tools/simui look like ten failures. */
+static void drop_lc_payload(long len)
 {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
+  for (long i = 0; i < 2 * len; i++) {
+    if (read_hex_nibble() < 0)
+      return;   /* EOF or non-hex: the frame was short, nothing left to drop */
+  }
+  skip_to_eol();
 }
 
+/* Parse a "#LC:<len>:<sum>" header (already read into `line`), stream the
+ * following 2*len hex chars into a fresh buffer, verify the checksum and load
+ * it as a Lua chunk. Leaves the compiled chunk on the stack on success (like
+ * load_line), else pushes an error message and returns non-LUA_OK. Either way
+ * the frame's payload is consumed, so the console stays in sync. The buffer
+ * comes from the external-RAM heap (_sbrk).
+ *
+ * The header parse itself is utils/lcframe.c - it is the part with a rule to
+ * it, so it lives where a test can link it. */
 static int load_lc_frame(lua_State *L, const char *line)
 {
-  const char *p = line + 4; /* past "#LC:" */
-  if (*p < '0' || *p > '9') {
-    lua_pushliteral(L, "malformed #LC frame header");
-    return LUA_ERRSYNTAX;
-  }
-  long len = 0;
-  for (; *p >= '0' && *p <= '9'; p++) {
-    len = len * 10 + (*p - '0');
-    if (len > LC_MAX) {
-      lua_pushliteral(L, "#LC frame too large");
-      return LUA_ERRSYNTAX;
-    }
-  }
+  long len;
+  uint32_t want;
+  lcframe_status st = lcframe_parse_header(line, LC_MAX, &len, &want);
 
-  /* ":<8 hex>" - the sender's Fletcher-32 over the chunk (#298). Required: an
-   * unverifiable frame is exactly what this exists to refuse. */
-  uint32_t want = 0;
-  if (*p++ != ':') {
-    lua_pushliteral(L, "#LC frame header carries no checksum");
+  if (st != LCFRAME_OK) {
+    drop_lc_payload(len);   /* len is what the sender queued; 0 = nothing to drop */
+    lua_pushstring(L, lcframe_strerror(st));
     return LUA_ERRSYNTAX;
-  }
-  for (int i = 0; i < 8; i++) {
-    int v = hexval(*p++);
-    if (v < 0) {
-      lua_pushliteral(L, "malformed #LC frame checksum");
-      return LUA_ERRSYNTAX;
-    }
-    want = (want << 4) | (uint32_t)v;
   }
 
   char *buf = (len > 0) ? malloc((size_t)len) : NULL;

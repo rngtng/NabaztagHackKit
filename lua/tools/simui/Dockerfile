@@ -18,6 +18,10 @@ COPY --from=luac /usr/local/bin/luac /usr/local/bin/luac
 
 WORKDIR /sim
 COPY tools/simulator/simulate.py /sim/simulate.py
+# The #LC framing (header + Fletcher-32, #298) comes from replpipe.py rather than
+# being reimplemented here: this file already drifted once, emitting pre-#298
+# checksum-less frames that the firmware then refused. One sender, one format.
+COPY tools/luac/replpipe.py /sim/replpipe.py
 COPY tools/simui/app.py /sim/app.py
 
 EXPOSE 8080

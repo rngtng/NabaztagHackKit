@@ -29,6 +29,7 @@ from nicegui import ui
 
 sys.path.insert(0, os.path.dirname(__file__))
 from simulate import Sim, LED_PHYS_NAME  # the embedded machine model (#42/#96)
+from replpipe import emit_frame          # the one #LC framer (header + checksum)
 
 ELF = os.environ.get("FV_ELF", "/mnt/firmware.elf")
 FRAMES = os.environ.get("FV_FRAMES", "/in.lua")
@@ -74,14 +75,23 @@ def compile_line(line: bytes):
     return _luac(line)
 
 
+class _QueueWriter:
+    """Minimal text sink so replpipe.emit_frame can write straight into RX."""
+    def write(self, s: str):
+        for b in s.encode():
+            RX.put(b)
+
+
 def send_frame(chunk: bytes):
-    """Push one #LC frame (header line + 64-col hex payload) onto the RX queue,
-    byte by byte - the exact format the firmware's load_lc_frame decodes."""
-    hexs = chunk.hex()
-    body = f"#LC:{len(chunk)}\n" + "\n".join(
-        hexs[i:i + 64] for i in range(0, len(hexs), 64)) + "\n"
-    for b in body.encode():
-        RX.put(b)
+    """Push one #LC frame onto the RX queue, byte by byte.
+
+    The framing itself is replpipe.emit_frame, so this shares one implementation
+    with the pipe and ssh senders. It used to be a local copy, and #298's
+    checksum landed in the other two only - every line typed here came back
+    "#LC frame header carries no checksum". Nothing covers simui, so lua:verify
+    stayed green through it.
+    """
+    emit_frame(_QueueWriter(), chunk)
 
 # The 4 belly LEDs -> (cx, cy, r) on the 240x360 cone-body SVG (a row of three
 # plus one below, like the real device's belly lights). The 5th, "nose", is

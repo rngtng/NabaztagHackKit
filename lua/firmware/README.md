@@ -327,13 +327,14 @@ src/hal/            one file per peripheral: spi, led, button, audio (VS1003), a
                     rfid (CRX14), motor (ears), uart, config (flash sector), ota, wifi
 src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
 src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
-src/utils/          event.c (cooperative event core), fmt.c (number/printf shims), libc_shim.c
+src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
+                    lcframe.c (#LC header parse + checksum), libc_shim.c
 lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral
 test/host/          host-side C unit tests under ASan/UBSan (task lua:firmware:test:host)
 test/bytecode/      malformed-bytecode robustness of the loader (task lua:firmware:test:bytecode)
-test/*.expected     golden transcripts for the bytecode + injection tests
+test/*.expected     golden transcripts for the bytecode / desync / injection tests
 ```
 
 `sys/`, `inc/common.h` and `hal/` are **copied** from `mtl/firmware` — a register fix there may

@@ -21,6 +21,7 @@
  *
  *   vectors   fixed inputs keep their values
  *   damage    every single-nibble flip in a chunk-sized buffer is detected
+ *   header    a REJECTED header still reports the payload behind it
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -111,12 +112,73 @@ static void scen_damage(void)
   }
 }
 
+/* Rejecting a frame is only half of rejecting it.
+ *
+ * The payload rides the console right behind the header, so whoever refuses a
+ * header still has to consume 2*len hex chars or the next sh_gets reads bytecode
+ * as REPL input - one spurious error per wrapped line, and the prompt never
+ * recovers until the frame runs out. #298 added two new refusal paths (no
+ * checksum, malformed checksum) and both returned early, which is why a single
+ * checksum-less frame from tools/simui produced ten errors.
+ *
+ * So what this pins is not that a bad header is rejected - that is easy and was
+ * never broken. It is that `*len` comes back with the payload size ANYWAY, for
+ * every status where a real sender has already put one on the wire. */
+static void scen_header(void)
+{
+  long len;
+  uint32_t sum;
+  lcframe_status st;
+
+  printf("scenario header: a rejected header still reports its payload\n");
+
+  st = lcframe_parse_header("#LC:174:05c301ef", 65536, &len, &sum);
+  CHECK(st == LCFRAME_OK, "a well-formed header parses");
+  CHECK(len == 174, "...with its length");
+  eq_u32(sum, 0x05C301EFu, "...and its checksum");
+
+  /* Exactly what tools/simui emitted: a valid frame in the pre-#298 format. */
+  st = lcframe_parse_header("#LC:174", 65536, &len, &sum);
+  CHECK(st == LCFRAME_ERR_NOSUM, "a checksum-less header is refused");
+  CHECK(len == 174, "...and still reports 174 bytes of payload to drop");
+
+  st = lcframe_parse_header("#LC:174:zzzzzzzz", 65536, &len, &sum);
+  CHECK(st == LCFRAME_ERR_BADSUM, "a non-hex checksum is refused");
+  CHECK(len == 174, "...and still reports its payload");
+
+  st = lcframe_parse_header("#LC:174:05c3", 65536, &len, &sum);
+  CHECK(st == LCFRAME_ERR_BADSUM, "a short checksum is refused");
+  CHECK(len == 174, "...and still reports its payload");
+
+  /* No parseable length means no sender: this is something typed at the prompt,
+   * and there is no payload queued behind it. Draining here would eat the
+   * user's next line. */
+  st = lcframe_parse_header("#LC:oops", 65536, &len, &sum);
+  CHECK(st == LCFRAME_ERR_LEN, "a header with no length is refused");
+  CHECK(len == 0, "...and reports no payload, so nothing is eaten");
+
+  /* Over the cap: the length is not credible, and draining it would mean
+   * reading it all off the console to stay in sync. */
+  st = lcframe_parse_header("#LC:99999999:05c301ef", 65536, &len, &sum);
+  CHECK(st == LCFRAME_ERR_TOOLONG, "an over-long frame is refused");
+  CHECK(len == 0, "...and is not drained");
+
+  /* A zero-length frame is well-formed and has nothing behind it. */
+  st = lcframe_parse_header("#LC:0:ffffffff", 65536, &len, &sum);
+  CHECK(st == LCFRAME_OK, "an empty frame is well-formed");
+  CHECK(len == 0, "...with no payload");
+  eq_u32(sum, 0xFFFFFFFFu, "...and the empty checksum");
+
+  CHECK(lcframe_strerror(LCFRAME_ERR_NOSUM) != NULL, "every status has a message");
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
 
   if (!only || strcmp(only, "vectors") == 0) scen_vectors();
   if (!only || strcmp(only, "damage") == 0)  scen_damage();
+  if (!only || strcmp(only, "header") == 0)  scen_header();
 
   if (failures) {
     printf("lcframe_test: %d check(s) FAILED\n", failures);

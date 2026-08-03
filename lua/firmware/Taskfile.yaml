@@ -350,6 +350,79 @@ tasks:
           exit 1
         fi
 
+  test:desync:
+    desc: 'Console resync golden (#306): feed a frame whose header carries no checksum - what tools/simui emitted, and what any sender predating #298 still emits - and require the firmware to refuse it ONCE and keep reading frames. A refusal path that returns before consuming the 2*len hex chars behind the header leaves sh_gets reading bytecode as REPL lines: one spurious error per wrapped line. The golden pins the count. REGEN=1 rewrites it.'
+    summary: 'Usage: task lua:firmware:test:desync [APP=test/desync-probe.lua] [EXPECT=test/desync-probe.expected] [REGEN=1]'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      APP: '{{.APP | default "test/desync-probe.lua"}}'
+      EXPECT: '{{.EXPECT | default "test/desync-probe.expected"}}'
+    deps:
+      - task: build                 # the product firmware -> bin/firmware.elf
+      - task: simulator:image
+        vars: {WORKDIR: '{{.REPO}}'}
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - |
+        set -e
+        SIM={{.SIM_IMAGE}}
+        BIN="$(realpath bin)"
+        EXP="{{.TASKFILE_DIR}}/{{.EXPECT}}"
+        FR="$(mktemp "{{.REPO}}/.luacframe.XXXXXX")"; trap 'rm -f "$FR"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' "{{.TASKFILE_DIR}}/{{.APP}}" -o "$FR"
+        # Downgrade the FIRST frame to the pre-#298 wire format: "#LC:<len>",
+        # no ":<sum>". Every later frame stays well-formed, so the transcript
+        # shows whether the console came back.
+        #
+        # replpipe frames one chunk per SOURCE LINE, so the fixture deliberately
+        # carries no comments: a leading comment line is its own frame, and the
+        # downgrade would land on that instead of on a frame whose payload
+        # matters. The "first frame" guard below is what enforces that.
+        sed -i '0,/^#LC:/s/^\(#LC:[0-9]*\):[0-9a-f]*$/\1/' "$FR"
+        grep -q '^#LC:[0-9]*$' "$FR" || {
+          echo "test:desync: the fixture still has a checksum on every frame -"
+          echo "  the sed did not match, so this would pass having tested nothing ✗"
+          exit 1; }
+        GOT="$(docker run --rm -v "$BIN:/mnt:ro" -v "$FR:/in:ro" "$SIM" \
+                 --console-only -n 120000000 --input-file /in /mnt/firmware.elf)"
+        # Guard a false pass twice over: the run must reach the LAST frame (so
+        # the console really did resync), and it must contain the refusal (so we
+        # are not silently accepting the bad frame instead).
+        case "$GOT" in
+          *"console still in sync"*) : ;;
+          *) echo "test:desync: the console never recovered - later frames never ran ✗"
+             printf '%s\n' "$GOT"; exit 1 ;;
+        esac
+        case "$GOT" in
+          *"carries no checksum"*) : ;;
+          *) echo "test:desync: the checksum-less frame was not refused ✗"
+             printf '%s\n' "$GOT"; exit 1 ;;
+        esac
+        # ...and the frame that was downgraded is the one that prints "first
+        # frame", so it must NOT have run. If it did, the sed landed on some
+        # other frame (a comment line added to the fixture) and this test is
+        # measuring nothing.
+        case "$GOT" in
+          *"first frame"*)
+             echo "test:desync: the downgraded frame ran - the sed hit the wrong"
+             echo "  frame, so the refusal path was never exercised ✗"
+             printf '%s\n' "$GOT"; exit 1 ;;
+        esac
+        if [ -n "{{.REGEN}}" ]; then
+          printf '%s\n' "$GOT" > "$EXP"
+          echo "test:desync: regenerated golden $EXP ✓"
+          exit 0
+        fi
+        if [ "$GOT" = "$(cat "$EXP")" ]; then
+          echo "test:desync: one refusal, then the console reads frames again ✓"
+        else
+          echo "test:desync MISMATCH (golden $EXP vs run):"
+          diff <(cat "$EXP") <(printf '%s\n' "$GOT") || true
+          echo "If the change is intended: task lua:firmware:test:desync REGEN=1"
+          exit 1
+        fi
+
   test:sched:
     desc: 'Cooperative-scheduler acceptance demo (#283): run test/sched-demo.lua in the sim with a button timeline while an ear move and blocking work overlap, and require all three criteria to pass. Part of lua:verify: a regression here means a blocking call has gone back to being a hole in which nothing else runs.'
     summary: 'Usage: task lua:firmware:test:sched [APP=test/sched-demo.lua] [INJECT=test/sched-demo.jsonl]'
