@@ -90,6 +90,48 @@ Only one TCP connection exists at a time (`net.iface` tracks a single `conn`),
 so streaming and serving cannot overlap until #262 — a single stream is what
 this issue scopes.
 
+## Recording
+
+There is no `rec.lua` here, and that is the decision, not an omission. The
+microphone path (#116/#266) lives entirely in C — `nab.record(ms [, gain])` for
+the blocking one-shot, `nab.rec_start`/`nab.rec_read`/`nab.rec_stop` for the
+cooperative session, `nab.rec_wav(data)` to wrap drained blocks — including the
+RIFF header #266 had scoped as `string.pack` up here. Moving it up would buy back
+a fraction of the record path's flash — the cost and the arithmetic live in the
+[budget](../../firmware/README.md#flash-budget), not here — and would cost every
+capture a module load before it is playable. So it stays: `nab.record` hands Lua
+a **complete playable WAV string**.
+
+Which is the whole point for this folder: a recording is a byte string, so it is
+already a first-class `player` source, with nothing to port and nothing to wrap.
+Drain a session the way [`../../firmware/README.md`](../../firmware/README.md#the-nab-module)
+shows, then hand the result over like any other source:
+
+```lua
+p:play(nab.rec_wav(table.concat(chunks)))
+while p:busy() do p:step() end
+```
+
+`apps/walkie.lua` is a capture loop end to end (against blocking `nab.play`);
+`apps/mic-test.lua` is the LED-guided hardware check. Two things the codec
+imposes on any userland built here:
+
+- **Record and playback cannot overlap.** The VS1003 is in record mode or decode
+  mode, never both, so the pattern is capture-then-play — a live capture is not a
+  `:pull()` source.
+- **No VU level binding.** `reclib.mtl` metered the body LEDs off `recVol`; the
+  lua track has no equivalent, and `mic-test.lua` reads the IMA-ADPCM block
+  header's step index by hand instead. A Lua helper here would be the natural
+  home if a demo ever wants one.
+
+Getting a recording **off** the rabbit — #266's last open DoD — is an app away,
+not a plumbing gap: `net.iface`'s `:serve(port, handler)` can hand a WAV to
+`curl` on a laptop over GET today (it passes no content type, so the body goes
+out as `text/html` — fine for `curl -o rec.wav`, not for a browser preview).
+What genuinely does not exist is the *upload* direction: `lib/net` has no HTTP
+client POST, so `reclib`'s app-side POST split has nothing to build on. Until
+one of the two is written, every capture has been judged by ear on the device.
+
 ## Not here
 
 - **A C-side ring buffer pumped from `event_pump`** (#265's optional bullet):
