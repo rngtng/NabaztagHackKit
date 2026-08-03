@@ -976,8 +976,20 @@ static void ieee80211_send_probe_response(uint8_t *dest_mac)
 
 	if(!rt2501_tx(presp, sizeof(TXD_STRUC)+frame_length)) {
 		DBG_WIFI("TX error in ieee80211_send_probe_response"EOL);
-		return;
 	}
+
+	/* Release the frame on BOTH paths (#295). It was never freed at all: in AP
+	   mode every answered probe request leaked ~115 bytes of COMRAM, and the
+	   pool hcd.c hands out is 4 KB (ComRAMSize), so ~32 answers exhausted it -
+	   fewer, since the OHCI descriptors and RX/TX buffers live there too. The
+	   parser answers every broadcast probe from every scanning device in range,
+	   and net.setup.run sits in its serve loop for as long as it takes a user to
+	   type a password, so the pool drained before the portal was ever used - and
+	   what runs dry is the USB allocator, so what stops is the radio.
+	   rt2501_scan has always freed its probe the same way. */
+	disable_ohci_irq();
+	hcd_free(presp);
+	enable_ohci_irq();
 }
 
 static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
