@@ -204,6 +204,25 @@ end
 eq(i:ntp(SERVER), T, "a stale reply is skipped and the retry is accepted")
 ok(attempts >= 2, "which took a retransmit")
 
+-- Fresh cookie per attempt (as :resolve re-rolls its transaction id): this
+-- server always answers with the *previous* attempt's cookie, i.e. every reply
+-- is a late one. Reusing a single cookie across retries would install a stale
+-- reading here; instead nothing is ever adopted.
+i = fresh()
+local prev, cookies = H"0000000000000000", {}
+hook = function(mac, f)
+  local d = udp.parse(ipv4.parse(select(2, link.decap(f))))
+  local cur = d.payload:sub(41)
+  cookies[#cookies + 1] = cur
+  answer{cookie = prev}(mac, f)
+  prev = cur
+end
+epoch, err = i:ntp(SERVER, 3000)
+eq(epoch, nil, "a reply echoing a superseded cookie is never adopted")
+eq(err, "ntp timeout", "so a stale time is refused, not installed")
+ok(#cookies >= 2, "which took more than one attempt")
+ok(cookies[1] ~= cookies[2], "and every attempt carried a fresh cookie")
+
 -- a definitive refusal stops immediately, before the timeout
 i = fresh()
 hook = answer{stratum = 0}
@@ -222,6 +241,30 @@ eq(err, "ntp timeout", "and reports the timeout")
 eq(next(i.udp_ports), nil, "the port is unregistered on timeout too")
 ok(#sent >= 3, "the request was retransmitted about once a second")
 
+-- a hostname: :resolve and then the SNTP exchange, over the same fake wire
+-- (the sinkhole server answers every A query with SERVER's own address)
+net.dns.forget()
+i = fresh()
+i.dns = SERVER
+local dnsd = net.dns.server(SERVER)
+hook = function(mac, f)
+  local et, p = link.decap(f)
+  if et ~= link.ETH_IP then return end
+  local pkt = ipv4.parse(p)
+  if not pkt or pkt.proto ~= ipv4.UDP then return end
+  local d = udp.parse(pkt)
+  if d and d.dport == 53 then
+    local r = dnsd:input(d.payload)
+    rxq[#rxq + 1] = {MAC_B, link.encap(link.ETH_IP, ipv4.build{
+      src = SERVER, dst = IP_A, proto = ipv4.UDP,
+      payload = udp.build(SERVER, 53, IP_A, d.sport, r)})}
+  else
+    answer()(mac, f)
+  end
+end
+eq(i:ntp("ntp.example"), T, "a hostname is resolved first, then queried")
+eq(net.dns.cached("ntp.example", 0), SERVER, "and the lookup really happened")
+
 -- preconditions
 i = fresh()
 i.ip = nil
@@ -229,3 +272,4 @@ eq(select(2, i:ntp(SERVER)), "no address", "no lease, no NTP")
 i = fresh()
 eq(select(2, i:ntp("pool.ntp.org")), "no dns server",
    "a hostname goes through :resolve, which needs a resolver")
+eq(select(2, i:ntp()), "bad server", "no server at all is an error, not a crash")

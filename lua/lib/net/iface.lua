@@ -25,6 +25,42 @@ local BCAST_IP = "\255\255\255\255"
 -- connection object plus an http.request() parser.
 local MAX_CONNS = 3
 
+-- The blocking UDP request/reply loop both question flows share (:resolve,
+-- :ntp): register a demux handler on our ephemeral port, send, then poll and
+-- re-ask on a 1 s timer until an answer arrives or `timeout` (default 5 s)
+-- runs out. The port is unregistered on every exit path.
+--
+--   ask()         -> nil, or an error string that aborts before sending
+--   judge(d, pkt) -> the answer, or nil + err for a *definitive* refusal.
+--                    Plain nil keeps waiting - that is what lets a datagram
+--                    which is not ours (wrong id, wrong cookie, another
+--                    sender) be ignored instead of ending the lookup early.
+-- -> answer | nil, err
+local function query(self, sport, ask, judge, timeout, label)
+  local got, err, done
+  self.udp_ports[sport] = function(d, pkt)
+    local v, e = judge(d, pkt)
+    if v then got, done = v, true
+    elseif e then err, done = e, true end
+  end
+  err = ask()
+  local t0, last = self.time(), self.time()
+  while not err and not done do
+    if self.time() - t0 > (timeout or 5000) then
+      err = label
+      break
+    end
+    self:poll(100)
+    if not done and self.time() - last > 1000 then
+      last = self.time()
+      ask() -- the first send may also have been eaten by the ARP round trip
+    end
+  end
+  self.udp_ports[sport] = nil
+  if got then return got end
+  return nil, err
+end
+
 -- the real driver: nab.wifi (or nab.wifi_ap) must be up first
 function iface.nabdrv()
   return {mac = nab.wifi_mac(), time = nab.time,
@@ -193,7 +229,7 @@ function iface.new(drv)
     if not self.dns then return nil, "no dns server" end
     local server = self.dns
     local sport = 49152 + (self.time() & 0x3FFF)
-    local id, got, ttl
+    local id, ttl
     local function ask()
       -- fresh id per attempt: a late answer to the previous one no longer
       -- matches, so a retry can never adopt a stale reply
@@ -204,32 +240,16 @@ function iface.new(drv)
         proto = ipv4.UDP,
         payload = udp.build(self.ip, sport, server, 53, q)})
     end
-    local bad = ask()
-    if bad then return nil, bad end
-    local err, done
-    self.udp_ports[sport] = function(d, pkt)
+    local got, err = query(self, sport, ask, function(d, pkt)
       if pkt.src ~= server or d.sport ~= 53 then return end
       local ip, t, definitive = dns.answer(d.payload, id, host)
-      if ip then got, ttl, done = ip, t, true
       -- A definitive negative (NXDOMAIN, TC, no A) is our answer: stop now with
       -- its error instead of retrying to the full timeout. Anything dns.answer
-      -- is unsure is ours (wrong id, spoofed question) leaves `done` unset, so
+      -- is unsure is ours (wrong id, spoofed question) returns plain nil, so
       -- the loop keeps listening.
-      elseif definitive then err, done = t, true end
-    end
-    local t0, last = self.time(), self.time()
-    while not done do
-      if self.time() - t0 > (timeout or 5000) then
-        self.udp_ports[sport] = nil
-        return nil, "dns timeout"
-      end
-      self:poll(100)
-      if not done and self.time() - last > 1000 then
-        last = self.time()
-        ask() -- the first send may also have been eaten by the ARP round trip
-      end
-    end
-    self.udp_ports[sport] = nil
+      if ip then ttl = t; return ip end
+      if definitive then return nil, t end
+    end, timeout, "dns timeout")
     if not got then return nil, err end
     dns.remember(host, got, ttl, self.time())
     return got
@@ -247,6 +267,7 @@ function iface.new(drv)
   function i:ntp(server, timeout)
     local ntp = sys and sys.ntp
     if not ntp then return nil, "sys.ntp not loaded" end
+    if type(server) ~= "string" then return nil, "bad server" end
     if not self.ip then return nil, "no address" end
     local ip = server
     if #server ~= 4 then -- anything but a 4-byte binary address is a name
@@ -255,36 +276,24 @@ function iface.new(drv)
       if not ip then return nil, rerr end
     end
     local sport = 49152 + (self.time() & 0x3FFF)
-    local req = ntp.build(string.pack(">I4I4", self.time(),
-                                      self.time() ~ 0x5bd1))
+    local req
     local function ask()
+      -- fresh cookie per attempt, for the same reason :resolve re-rolls its
+      -- transaction id: a late reply to the previous attempt no longer
+      -- matches, so a retry can never adopt a stale - and by then wrong - time
+      req = ntp.build(string.pack(">I4I4", self.time(), self.time() ~ 0x5bd1))
       self:ipsend(ip, ipv4.build{src = self.ip, dst = ip, proto = ipv4.UDP,
         payload = udp.build(self.ip, sport, ip, ntp.PORT, req)})
     end
-    local got, err, done
-    self.udp_ports[sport] = function(d, pkt)
+    local got, err = query(self, sport, ask, function(d, pkt)
       if pkt.src ~= ip or d.sport ~= ntp.PORT then return end
       local r, perr = ntp.parse(d.payload, req:sub(41))
       -- A reply failing the cookie is not ours (a stale answer to an earlier
-      -- attempt, or a spoof): keep listening. Anything else is a real refusal
-      -- from our server - stop now rather than retry to the full timeout.
-      if r then got, done = r, true
-      elseif perr ~= "wrong originate" then err, done = perr, true end
-    end
-    ask()
-    local t0, last = self.time(), self.time()
-    while not done do
-      if self.time() - t0 > (timeout or 5000) then
-        self.udp_ports[sport] = nil
-        return nil, "ntp timeout"
-      end
-      self:poll(100)
-      if not done and self.time() - last > 1000 then
-        last = self.time()
-        ask() -- the first send may have been eaten by the ARP round trip
-      end
-    end
-    self.udp_ports[sport] = nil
+      -- attempt, or a spoof): plain nil keeps us listening. Anything else is a
+      -- real refusal from our server - stop now, do not retry to the timeout.
+      if r then return r end
+      if perr ~= "wrong originate" then return nil, perr end
+    end, timeout, "ntp timeout")
     if not got then return nil, err end
     return got.epoch
   end

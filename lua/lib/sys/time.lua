@@ -121,18 +121,13 @@ end
 -- represent. A longer gap reads as negative and the clock holds its last value
 -- instead of jumping backwards; the next sync repairs it.
 
-local function tick_now(tick)
-  if tick then return tick end
-  return nab.time()
-end
-
 -- Set the wall clock from an NTP (or any) Unix-seconds reading, anchored to
 -- `tick` (default: now). -> epoch | nil, err
 function time.set(epoch, tick)
   if type(epoch) ~= "number" or epoch ~= epoch // 1 then
     return nil, "bad epoch"
   end
-  tick = tick_now(tick)
+  tick = tick or nab.time() -- 0 is a legitimate tick, and truthy in Lua
   -- `| 0` turns a whole-valued float into a real integer, so every later
   -- addition stays integer arithmetic
   time.base, time.tick, time.synced = epoch | 0, tick, tick
@@ -143,7 +138,7 @@ end
 function time.now(tick)
   local base = time.base
   if not base then return nil end
-  local d = tick_now(tick) - time.tick
+  local d = (tick or nab.time()) - time.tick
   if d >= 1000 then
     local secs = d // 1000
     base = base + secs
@@ -159,7 +154,7 @@ function time.valid() return time.base ~= nil end
 -- calls ifc:ntp() itself, so nothing here owns a timer or a socket.
 function time.due(tick)
   if not time.base then return true end
-  local d = tick_now(tick) - time.synced
+  local d = (tick or nab.time()) - time.synced
   return d < 0 or d >= time.RESYNC -- negative: >24.8 d unsynced, so overdue
 end
 
@@ -175,7 +170,7 @@ function time.reset() time.base, time.tick, time.synced = nil, nil, nil end
 -- the offset and leave the rule off.
 
 time.tz = {offset = 0, dst = nil} -- minutes east of UTC (standard time), rule
-time.DST_MINUTES = 60
+local SUMMER = 60 -- every zone modelled here shifts by a whole hour
 
 -- Unix seconds of 00:00 UTC on the n-th Sunday of a month; n < 0 counts back
 -- from the end (-1 = the last Sunday).
@@ -216,7 +211,7 @@ end
 function time.offset(epoch)
   local off = time.tz.offset or 0
   local rule = time.tz.dst and time.DST[time.tz.dst]
-  if rule and epoch and rule(epoch, off) then off = off + time.DST_MINUTES end
+  if rule and epoch and rule(epoch, off) then off = off + SUMMER end
   return off
 end
 

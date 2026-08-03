@@ -20,12 +20,13 @@
     read — both rollovers pass through, and a longer gap holds the clock rather than
     leaping backwards. The same wrap makes the NTP **era-1 rollover in 2036** a
     non-event (server counter and our subtraction cancel); the real cliff is 2038, and
-    both ends of the representable window are tested. 214 host assertions under
+    both ends of the representable window are tested. 221 host assertions under
     `task lua:lib:test` against fixtures from an independent generator — SNTP packets
     from `struct.pack` off RFC 4330, civil dates from CPython's `datetime`, every DST
     instant from the IANA tzdb — including the scripted `ifc:ntp` server, which is
     pinned to the generator's bytes so it cannot drift into agreeing with `ntp.lua`.
-    `sys/ntp` 917 B, `sys/time` 3813 B, `iface` +1061 B.
+    `sys/ntp` 928 B, `sys/time` 3774 B, `iface` +1074 B (the retry loop `:ntp`
+    shares with `:resolve` is now written once).
 
   * [#283](https://github.com/rngtng/NabaztagHackKit/issues/283): the lua track's four
     workloads — actor events, LED/ear choreography, playback, networking — **compose**.

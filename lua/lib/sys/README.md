@@ -45,11 +45,22 @@ uses. `sys.ntp` is a soft dependency of `iface` — `ifc:ntp` says
 `sys.ntp not loaded` rather than failing to load.
 
 **Replies are not trusted.** The request plants an 8-byte cookie in its
-transmit timestamp; a reply must echo it in the originate field, or it is a
-stale answer to an earlier attempt (or a spoof) and the loop keeps waiting.
-Mode, version, stratum and the leap-indicator alarm are all checked — a
+transmit timestamp, **re-rolled on every attempt** (exactly as `:resolve`
+re-rolls its transaction id); a reply must echo the current one in the
+originate field, or it is a late answer to a superseded attempt — carrying a
+time that is by now wrong — or a spoof, and the loop keeps waiting. Mode,
+version, stratum and the leap-indicator alarm are all checked; a
 kiss-of-death packet or an unsynchronised server is a **definitive** refusal
 that ends the call immediately instead of retrying to the timeout.
+
+`set` refuses anything that is not whole seconds, so the one-liner above
+degrades to a no-op if the sync failed. Take the two lines when you want to
+see *why*:
+
+```lua
+local e, err = ifc:ntp(server)
+if e then sys.time.set(e) else print("no time:", err) end
+```
 
 ## The clock between syncs
 
@@ -139,7 +150,7 @@ Unix timestamp; feed it to `date()`/`format()`, never back into `set()`.
 
 `task lua:lib:test` runs `test/run.lua` under the `tools/luac` host `lua` (same
 vendored tree + `LUA_32BITS` `luaconf.h` as the device, so the 32-bit tick and
-epoch wrap exactly as they do on the rabbit). 214 assertions.
+epoch wrap exactly as they do on the rabbit). 221 assertions.
 
 Fixtures come from an **independent** Python generator (`scratchpad
 ntpfix.py`): SNTP packets from `struct.pack` straight off RFC 4330's field
@@ -160,7 +171,7 @@ to end — success, a stale-cookie reply skipped and the retry accepted, a
 definitive refusal stopping early, a timeout, and the port unregistered on
 every path.
 
-`task lua:lib:size` (as of #259): `sys/ntp` 917 B, `sys/time` 3813 B.
+`task lua:lib:size` (as of #259): `sys/ntp` 928 B, `sys/time` 3774 B.
 
 ## On device
 

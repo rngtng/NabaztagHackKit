@@ -25,8 +25,10 @@ ntp.PORT = 123
 -- signed lua_Integer.
 local EPOCH_1900 = 0x83AA7E80
 
--- LI 0 (no warning), VN 4, mode 3 (client)
-local HEADER = "\35"
+-- LI 0 (no warning), VN 4, mode 3 (client), then 39 bytes of zeroed fields up
+-- to the transmit timestamp at offset 40
+local HEAD = "\35" .. ("\0"):rep(39)
+local NOCOOKIE = ("\0"):rep(8)
 
 -- `cookie` (optional, exactly 8 bytes) is planted in the transmit timestamp;
 -- a server echoes it back in the originate field, which is what parse()
@@ -35,7 +37,7 @@ function ntp.build(cookie)
   if cookie ~= nil and (type(cookie) ~= "string" or #cookie ~= 8) then
     return nil, "bad cookie"
   end
-  return HEADER .. ("\0"):rep(39) .. (cookie or ("\0"):rep(8))
+  return HEAD .. (cookie or NOCOOKIE)
 end
 
 -- reply datagram -> {epoch=,ms=,stratum=,li=} | nil, err. `cookie`, when

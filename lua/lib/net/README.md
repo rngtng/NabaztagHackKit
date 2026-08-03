@@ -73,7 +73,11 @@ Passing an explicit `dst_ip` still skips DNS entirely.
 `ifc:ntp(server [, timeout])` is the same shape one layer over: one SNTP
 datagram to port 123 from an ephemeral port, retried on a 1 s timer, returning
 `unix seconds | nil, err`. `server` is a 4-byte address or a name (resolved
-through `:resolve` first). The packets and the clock itself live in
+through `:resolve` first). Literally the same shape — both flows now run on one
+private `query()` helper (send, poll, re-ask each second, unregister the port
+on every exit path), so the "a datagram that is not confidently ours keeps the
+loop waiting, a definitive refusal ends it" contract is written once. The
+packets and the clock itself live in
 [`lua/lib/sys/`](../sys/README.md) — net owns the socket, sys owns the time,
 and the reading is handed back to the caller rather than stored: `sys.ntp` is
 a **soft** dependency here (`ifc:ntp` reports `sys.ntp not loaded` instead of
@@ -222,8 +226,8 @@ content, never just that two runs agree.
 
 `task lua:lib:size` - stripped `.lc` bytes per module. As of #259: link 1502,
 arp 1220, ipv4 1385, udp 788, dns 3123, dhcp 3420, tcp 5142, http 2296, iface
-6219, setup 4111, provision 1597, ota 3445 — **34,248 B total**. (`iface` 5158
-→ 6219 is #259's `:ntp`, ~1 KB; the sys modules it drives are counted under
+6232, setup 4111, provision 1597, ota 3445 — **34,261 B total**. (`iface` 5158
+→ 6232 is #259's `:ntp`, ~1 KB; the sys modules it drives are counted under
 `lua/lib/sys/`.)
 
 (The previous listing was stamped "as of #235" but had already drifted — several
