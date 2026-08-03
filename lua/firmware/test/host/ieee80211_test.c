@@ -342,10 +342,15 @@ static void scen_rx_rsn(void)
 
   printf("scenario rx-rsn: a beacon's RSN suite count must be bounded\n");
 
-  /* The scan path, reached on every nab.wifi() join - not AP mode. */
+  /* The scan path, reached on every nab.wifi() join - not AP mode.
+   * rt2501_scan is run first because it is what installs the result callback
+   * (a file-static in ieee80211.c); it leaves the state at IDLE, so the scan
+   * state is re-armed afterwards to hand this frame to the scan branch. */
   as_station();
+  run_scan(NULL);
   ieee80211_state = IEEE80211_S_SCAN;
   ieee80211_mode = IEEE80211_M_MANAGED;
+  scan_hits = 0;
 
   n = mgt_header(FC0_MGT_BEACON);
   n += 12;                          /* timestamp + beacon interval + capinfo */
@@ -362,7 +367,10 @@ static void scen_rx_rsn(void)
   n = at + 10;
   rx_input(n, -40);
 
-  CHECK(1 == 1, "reaching here means the suite walk was bounded");
+  /* Reaching here is the assertion - ASan reports the over-read otherwise.
+   * The result must also have been delivered, so the scenario cannot pass by
+   * the parser bailing out before it ever reads the suite counts. */
+  CHECK(scan_hits == 1, "the beacon was parsed through to a scan result");
 }
 
 int main(int argc, char **argv)

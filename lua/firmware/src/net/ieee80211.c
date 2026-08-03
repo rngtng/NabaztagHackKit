@@ -1111,6 +1111,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
               case IEEE80211_ELEMID_RSN:
               {
                 uint8_t *current;
+                uint8_t *ie_end;
                 uint16_t count;
                 uint8_t found;
 
@@ -1118,17 +1119,23 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 //DBG_WIFI("RSN Information"EOL);
                 //dump(frame_current,frame_current[1]);
                 #endif
-                //frame_current += frame_current[1];
 
                 current = &frame_current[2];
+                /* Every suite count below is a u16 off the air, and every walk
+                   used to run `count` iterations of 4 bytes with nothing checked
+                   against the frame - 0x4000 suites walked 256 KB past it (#294).
+                   The enclosing walk has already proved this IE is inside the
+                   frame, so its own end is the bound. */
+                ie_end = current + frame_current[1];
                 /* CCMP only (#124): a TKIP group or pairwise suite no longer
                  * counts as supported - the join path can't key it. */
                 /* Element 1: Group cipher suites (OUIs) */
+                if(current + 2 > ie_end) break;   /* truncated RSN IE */
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
                 scan_result.encryption = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
@@ -1145,10 +1152,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 2: Pairwise cipher suites (OUIs) */
+                if(current + 2 > ie_end) break;
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
@@ -1165,10 +1173,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 5: Auth key management suites (OUIs) */
+                if(current + 2 > ie_end) break;
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_AUTH_PSK)
@@ -1183,7 +1192,12 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 
                 scan_result.encryption |= IEEE80211_CRYPT_WPA2;
                 DBG_WIFI("WPA2 supported"EOL);
-                frame_current += frame_current[1];
+                /* No advance here (#294): the walk below already steps over the
+                   whole IE. This extra step made the success path skip
+                   2*ie_len+2 bytes AND take its length byte from a position that
+                   had already moved - so the byte it added was payload, not a
+                   length. Every other case in this switch leaves the advance to
+                   the walk; this one now does too. */
                 break;
               }
 							default:
