@@ -34,6 +34,32 @@ EOT = b"\x04"
 DEBUG = bool(os.environ.get("LUASH_DEBUG"))
 
 
+def fletcher32(data: bytes) -> int:
+    """Fletcher-32 over the chunk bytes; must match firmware/src/utils/lcframe.c.
+
+    The `#LC` frame had no integrity check at all (#298), and the console it
+    rides is 115200 8N1 with no hardware flow control - the same reason the
+    sender has to pace bytes in the first place. The loader on the other side
+    does not check what it is handed (lua/lundump.c), so a flipped nibble went
+    straight into it. This is a checksum, not a signature: it catches a damaged
+    frame, not a chosen one.
+    """
+    a = b = 0xFFFF
+    i, n = 0, len(data)
+    while n:
+        blk = min(n, 359)          # longest run that cannot overflow before the fold
+        n -= blk
+        for _ in range(blk):
+            a += data[i]
+            b += a
+            i += 1
+        a = (a & 0xFFFF) + (a >> 16)
+        b = (b & 0xFFFF) + (b >> 16)
+    a = (a & 0xFFFF) + (a >> 16)
+    b = (b & 0xFFFF) + (b >> 16)
+    return ((b << 16) | a) & 0xFFFFFFFF
+
+
 def dbg(msg):
     if DEBUG:
         sys.stderr.write(f"[luash] {msg}\n")
@@ -53,7 +79,7 @@ def compile_line(line: bytes, image: str):
 def send_frame(w, chunk: bytes) -> None:
     """Write one #LC frame to the console input: header line + hex payload
     wrapped at 64 cols (the format load_lc_frame decodes). Bytes, not text."""
-    w.write(f"#LC:{len(chunk)}\n".encode())
+    w.write(f"#LC:{len(chunk)}:{fletcher32(chunk):08x}\n".encode())
     hexs = chunk.hex()
     for i in range(0, len(hexs), 64):
         w.write((hexs[i:i + 64] + "\n").encode())

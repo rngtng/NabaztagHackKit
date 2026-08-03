@@ -33,6 +33,7 @@
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
 #include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
+#include "utils/lcframe.h" /* #LC frame integrity check (#298) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
@@ -1199,12 +1200,20 @@ static void report(lua_State *L)
  * compiles every REPL line off-device and ships the chunk here as a framed hex
  * payload:
  *
- *     #LC:<len>\n            header line (len = chunk size in bytes, decimal)
+ *     #LC:<len>:<sum>\n      header line (len = chunk bytes, decimal;
+ *                            sum = Fletcher-32 of the chunk, 8 lowercase hex)
  *     <2*len hex chars>      the chunk, whitespace/newlines ignored (wrapped 64c)
  *
  * Raw bytecode can't ride this line-oriented console directly (chunks contain
  * '\n'/NUL and sh_gets is line-based), hence the hex framing. #LC frames are the
- * only executable input the REPL accepts; anything else is rejected (see repl). */
+ * only executable input the REPL accepts; anything else is rejected (see repl).
+ *
+ * The checksum (#298) is the transport guard: this console has no hardware flow
+ * control and a 16-byte RX FIFO, and the loader behind it does not check what it
+ * is given (lua/lundump.c; see task lua:firmware:test:bytecode for what a
+ * corrupted chunk costs). A frame that does not verify is reported and NOT
+ * loaded. It is a checksum, not a signature - it catches a damaged frame, not a
+ * chosen one. */
 #define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
 
 /* Read the next hex digit off the console, skipping the whitespace the sender
@@ -1245,6 +1254,15 @@ static void skip_to_eol(void)
  * compiled chunk on the stack on success (like load_line), else pushes an error
  * message and returns non-LUA_OK. No strtol - a manual digit loop keeps newlib
  * out. The buffer comes from the external-RAM heap (_sbrk). */
+/* One hex digit -> 0..15, or -1. */
+static int hexval(char c)
+{
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
 static int load_lc_frame(lua_State *L, const char *line)
 {
   const char *p = line + 4; /* past "#LC:" */
@@ -1259,6 +1277,22 @@ static int load_lc_frame(lua_State *L, const char *line)
       lua_pushliteral(L, "#LC frame too large");
       return LUA_ERRSYNTAX;
     }
+  }
+
+  /* ":<8 hex>" - the sender's Fletcher-32 over the chunk (#298). Required: an
+   * unverifiable frame is exactly what this exists to refuse. */
+  uint32_t want = 0;
+  if (*p++ != ':') {
+    lua_pushliteral(L, "#LC frame header carries no checksum");
+    return LUA_ERRSYNTAX;
+  }
+  for (int i = 0; i < 8; i++) {
+    int v = hexval(*p++);
+    if (v < 0) {
+      lua_pushliteral(L, "malformed #LC frame checksum");
+      return LUA_ERRSYNTAX;
+    }
+    want = (want << 4) | (uint32_t)v;
   }
 
   char *buf = (len > 0) ? malloc((size_t)len) : NULL;
@@ -1277,6 +1311,13 @@ static int load_lc_frame(lua_State *L, const char *line)
     buf[i] = (char)((hi << 4) | lo);
   }
   skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
+
+  /* Verify before the loader ever sees it (#298). */
+  if (lcframe_checksum((const uint8_t *)buf, (size_t)len) != want) {
+    free(buf);
+    lua_pushliteral(L, "#LC frame checksum mismatch - frame corrupted in transit");
+    return LUA_ERRSYNTAX;
+  }
 
   /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
    * starts with LUA_SIGNATURE, so lua_load takes the lundump (bytecode) branch;

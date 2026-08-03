@@ -17,7 +17,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc -I$(FW)/l
 CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
-TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test
+TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test lcframe_test
 
 all: $(TESTS)
 
@@ -63,6 +63,9 @@ ieee80211_test: ieee80211_test.c $(FW)/src/net/ieee80211.c
 eapol_test: eapol_test.c $(FW)/src/net/eapol.c
 	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -w -Istubs -I$(FW)/sys/inc \
 	      -o $@ $^ $(LDFLAGS)
+
+lcframe_test: lcframe_test.c $(FW)/src/utils/lcframe.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)
 	@rc=0; for t in $(TESTS); do \
