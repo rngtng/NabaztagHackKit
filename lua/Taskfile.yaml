@@ -25,7 +25,7 @@ includes:
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #306) and the workloads still compose under blocking work (firmware:test:sched, #283).'
+    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
     cmds:
       - task: check:docs      # cheap, fail-fast: catch stale `task lua:…` doc refs before the slow builds
       - task: firmware:test:host   # native C unit tests under ASan - no sim, seconds
@@ -34,7 +34,7 @@ tasks:
       - task: lib:test
       - task: firmware:build
       - task: firmware:test
-      - task: firmware:test:desync  # #306: a refused frame must not leave the console reading its payload
+      - task: firmware:test:desync  # #308: a refused frame must not leave the console reading its payload
       - task: firmware:test:inject
       - task: firmware:test:sched  # #283: events, choreography and blocking work must still overlap
 

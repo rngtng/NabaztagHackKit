@@ -351,7 +351,7 @@ tasks:
         fi
 
   test:desync:
-    desc: 'Console resync golden (#306): feed a frame whose header carries no checksum - what tools/simui emitted, and what any sender predating #298 still emits - and require the firmware to refuse it ONCE and keep reading frames. A refusal path that returns before consuming the 2*len hex chars behind the header leaves sh_gets reading bytecode as REPL lines: one spurious error per wrapped line. The golden pins the count. REGEN=1 rewrites it.'
+    desc: 'Console resync golden (#308): feed a frame whose header carries no checksum - what tools/simui emitted, and what any sender predating #298 still emits - and require the firmware to refuse it ONCE and keep reading frames. A refusal path that returns before consuming the 2*len hex chars behind the header leaves sh_gets reading bytecode as REPL lines: one spurious error per wrapped line. The golden pins the count. REGEN=1 rewrites it.'
     summary: 'Usage: task lua:firmware:test:desync [APP=test/desync-probe.lua] [EXPECT=test/desync-probe.expected] [REGEN=1]'
     dir: '{{.TASKFILE_DIR}}'
     vars:
