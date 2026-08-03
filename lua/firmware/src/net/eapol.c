@@ -498,7 +498,7 @@ static uint32_t eapol_mic_span(const struct eapol_frame *fr, uint32_t length)
 }
 
 /**
- * @brief Bytes of key data the frame actually carries, capped at `want`.
+ * @brief Bytes of key data the frame actually carries.
  *
  * key_data is the last field of struct eapol_frame, so its offset is
  * sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH and a real msg3 runs past the

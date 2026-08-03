@@ -808,7 +808,7 @@ static const char *opt_bounded(lua_State *L, int arg, const char *def,
 
 static int nab_wifi(lua_State *L)
 {
-  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is 1..32 bytes");
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
   const char *psk = opt_bounded(L, 2, "", WIFI_PSK_MAX, "PSK is at most 64 bytes");
   wifi_fail_t why = WIFI_OK;
   if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
@@ -838,7 +838,7 @@ static int nab_wifi(lua_State *L)
  * arrive via nab.wifi_recv(). */
 static int nab_wifi_ap(lua_State *L)
 {
-  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is 1..32 bytes");
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
   lua_Integer ch = luaL_optinteger(L, 2, 1);
   luaL_argcheck(L, ch >= 1 && ch <= 14, 2, "1..14");
   if (wifi_ap(ssid, (uint8_t)ch) != 0) {
