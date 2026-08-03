@@ -119,18 +119,25 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
-~0.65 KB the #235 OTA writer, ~640 B the #116/#266 mic-record path (ADPCM record HAL, the
-four `rec_*` bindings and the RIFF header they emit — 240 B blocking + 400 B cooperative,
-measured), 560 B the #273 `nab.wifi_scan`/`nab.wifi_seen` scan bindings (station mode only),
-552 B the #265 non-blocking audio stream HAL. Everything above that last one is Lua in
+~1.0 KB the #116/#266 mic-record path (ADPCM record HAL, the five `rec_*`/`record` bindings
+and the RIFF header they emit), ~0.65 KB the #235 OTA writer, 560 B the #273
+`nab.wifi_scan`/`nab.wifi_seen` scan bindings (station mode only), 552 B the #265
+non-blocking audio stream HAL. Everything above that last one is Lua in
 [`../lib/audio/`](../lib/audio/) and costs no flash.
 
 The RIFF header is the one place a byte-shuffling job stayed in C rather than moving up to
-Lua (#266 scoped it as `string.pack` in `lib/audio/rec.lua`). Deliberate: it is ~a few dozen
-bytes of the record path's 640, it keeps `nab.record` a single call that returns a complete
-playable WAV, and the budget is not tight enough to buy the split back. The Lua layer
-consumes the C output rather than reimplementing it — see
+Lua (#266 scoped it as `string.pack` in `lib/audio/rec.lua`). Deliberate: `wav_adpcm_header`
+is 185 B of that ~1.0 KB and the `nab.rec_wav` binding another 129 B, so the whole split
+buys back ~314 B — Lua was the workaround for a flash squeeze that did not materialise. In
+exchange `nab.record` hands back a complete playable WAV in one call, instead of a raw ADPCM
+blob that only becomes playable once a Lua module is loaded. The Lua layer consumes the C
+output rather than reimplementing it — see
 [`../lib/audio/README.md`](../lib/audio/README.md#recording).
+
+Those are symbol sizes out of `obj/firmware.map`, which is where a per-feature number should
+come from: the deltas quoted in a feature's own commit message (this one said 240 B + 400 B)
+are whole-image diffs, and alignment and `--gc-sections` make them drift from what the code
+actually occupies.
 
 Two things keep it from being worse, and both are load-bearing:
 
@@ -240,7 +247,7 @@ documented chip is not a *responding* chip until you have seen it answer (the M6
 | **Streaming playback + ear/net concurrency (#123/#265/#283)** — `nab.play_feed` accepts bytes end to end, plays audibly while `nab.ear_move` spins an ear (no stall either side) and separately while streaming an HTTP GET body over wifi (`lib/net` + `audio.stream`, 25 s clip, mic-confirmed audible, LED chase animating throughout - 184 frames, 28.4 s, twice reproduced) | |
 | UART0 console both directions @115200 | |
 | USB host + RT2501 join, WPA2-CCMP | |
-| **Mic record (#116/#266)** — `nab.record` and the cooperative `rec_start`/`rec_read`/`rec_wav` session, once #275's `PORTSEL4` mux fix landed: 8 s of room music captured and played back recognisably (32,572 B WAV, full payload), plus hold-to-record/release-to-play (`apps/walkie.lua`). Still unheard off-device — nothing pulls a recording off the rabbit yet (no HTTP client POST in `lib/net`) | |
+| **Mic record (#116/#266)** — `nab.record` and the cooperative `rec_start`/`rec_read`/`rec_wav` session, once #275's `PORTSEL4` mux fix landed: 8 s of room music captured and played back recognisably (32,572 B WAV, full payload), plus hold-to-record/release-to-play (`apps/walkie.lua`). Judged by ear on the device only — no app has yet served or uploaded a capture, which is #266's last open DoD | |
 | 32 MHz PLL clock (#269) | |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
 
