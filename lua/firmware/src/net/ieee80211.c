@@ -1003,14 +1003,30 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 				char ssid[IEEE80211_SSID_MAXLEN+1];
 
 				ssid_present = 0;
-				while(frame_current < frame_end) {
+				/* Initialised before the walk (#293): a frame with no SSID IE
+				   left this array untouched and `ssid[0]` was still read below. */
+				ssid[0] = 0;
+				/* An IE needs its id AND its length byte inside the frame before
+				   either can be read, and its payload inside the frame before it
+				   can be copied. The old walk tested only `frame_current <
+				   frame_end` and then read both bytes, so one trailing byte -
+				   a pad, or a frame clipped by one - read past the end (#293). */
+				while(frame_current + 2 <= frame_end) {
+					uint8_t ie_len = frame_current[1];
+
+					if(frame_current + 2 + ie_len > frame_end) break;
 					if(frame_current[0] == IEEE80211_ELEMID_SSID) {
-						ssid_present = 1;
-						for(i=0;i<frame_current[1];i++)
-							ssid[i] = frame_current[i+2];
-						ssid[i] = 0;
+						/* The length byte comes off the air. The scan path below
+						   has always bounded this copy; this one did not, and
+						   ssid[] is 33 bytes on our own stack (#293). */
+						if(ie_len <= IEEE80211_SSID_MAXLEN) {
+							ssid_present = 1;
+							for(i=0;i<ie_len;i++)
+								ssid[i] = frame_current[i+2];
+							ssid[i] = 0;
+						}
 					}
-					frame_current += (frame_current[1] + 2);
+					frame_current += (ie_len + 2);
 				}
 				if(ssid[0] == 0) ssid_present = 0;
 
@@ -1064,7 +1080,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 					else
 						scan_result.encryption = IEEE80211_CRYPT_NONE;
 
-					while(frame_current < frame_end) {
+					/* Same bound as the AP-mode walk above (#293): the id and
+					   the length byte must both be inside the frame before either
+					   is read, and the payload before it is consumed. */
+					while(frame_current + 2 <= frame_end
+					      && frame_current + 2 + frame_current[1] <= frame_end) {
 						switch(frame_current[0]) {
 							case IEEE80211_ELEMID_SSID:
 								if(frame_current[1] < sizeof(scan_result.ssid)) {
@@ -1074,7 +1094,9 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								}
 								break;
 							case IEEE80211_ELEMID_DSPARMS:
-								scan_result.channel = frame_current[2];
+								/* one-byte IE; a zero-length one carries no channel */
+								if(frame_current[1] >= 1)
+									scan_result.channel = frame_current[2];
 								break;
 							case IEEE80211_ELEMID_RATES:
 							case IEEE80211_ELEMID_XRATES:
