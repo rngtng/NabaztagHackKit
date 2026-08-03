@@ -22,19 +22,62 @@ ota.MAX_IMAGE = 0x1F000  -- below the config sector (matches hal/ota.h)
 
 -- Standard zlib/IEEE CRC-32 (poly 0xEDB88320, init/final ~0), so the device
 -- recomputes exactly what tools/otaimage.py (zlib.crc32) stamped.
-function ota.crc32(s)
-  local crc = 0xFFFFFFFF
-  for i = 1, #s do
-    crc = crc ~ s:byte(i)
+--
+-- Byte table, built once on first use. The bit-at-a-time form this replaced ran
+-- eight shift/xor/and/negate iterations per byte: measured at 6,725,000 Lua VM
+-- instructions for a real 117,516-byte image against 1,297,000 for the identical
+-- result here (#304). The table is 256 integers in the heap and this lib ships
+-- as bytecode over the REPL, so it costs no flash at all.
+local CRC_T
+
+local function crc_table()
+  if CRC_T then return CRC_T end
+  local t = {}
+  for i = 0, 255 do
+    local c = i
     for _ = 1, 8 do
-      crc = (crc >> 1) ~ (0xEDB88320 & -(crc & 1))
+      c = (c >> 1) ~ (0xEDB88320 & -(c & 1))
     end
+    t[i] = c
+  end
+  CRC_T = t
+  return t
+end
+
+-- Bytes hashed between two calls to `pump`. 4 KB measured at ~29 hand-backs
+-- over a full image for no measurable extra work (1,298,000 vs 1,297,000).
+ota.CHUNK = 4096
+
+-- crc32(s [, pump]) -> u32. `pump` (optional) is called after every CHUNK bytes.
+--
+-- The chunking is not about speed, it is about not being a hole. ota.verify runs
+-- inside iface:serve's handler, between a phone's firmware POST and its
+-- response, and while it ran nothing polled the interface, fed the decoder,
+-- stepped an ear or drained an event - with the phone's TCP retransmitting into
+-- a stack that was not listening. That is the hole #283 closed for
+-- nab.wait/nab.play/nab.wifi_recv, and it was still open here (#304).
+function ota.crc32(s, pump)
+  local t = crc_table()
+  local byte = string.byte
+  local crc = 0xFFFFFFFF
+  local n, i = #s, 1
+
+  while i <= n do
+    local stop = i + ota.CHUNK - 1
+    if stop > n then stop = n end
+    for j = i, stop do
+      crc = (crc >> 8) ~ t[(crc ~ byte(s, j)) & 0xFF]
+    end
+    i = stop + 1
+    if pump then pump() end
   end
   return (~crc) & 0xFFFFFFFF
 end
 
 -- Parse + verify blob (= header .. image). opts.hw_id overrides the expected
--- target. -> image, meta{version,len,crc} | nil, errmsg. Touches no hardware.
+-- target; opts.pump (optional) is handed back the caller's reactor every
+-- ota.CHUNK bytes of hashing, so a portal can keep serving while it verifies
+-- (#304). -> image, meta{version,len,crc} | nil, errmsg. Touches no hardware.
 function ota.verify(blob, opts)
   opts = opts or {}
   if #blob < ota.HDR_LEN then
@@ -58,7 +101,7 @@ function ota.verify(blob, opts)
   if #image ~= ilen then
     return nil, ("length mismatch (header %d, got %d)"):format(ilen, #image)
   end
-  local got = ota.crc32(image)
+  local got = ota.crc32(image, opts.pump)
   if got ~= icrc then
     return nil, ("checksum mismatch (header %08x, got %08x)"):format(icrc, got)
   end

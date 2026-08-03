@@ -80,9 +80,19 @@ function dhcp.client(mac, xid)
     return say(dhcp.DISCOVER, {{55, PARAMS}})
   end
 
+  -- Replies are filtered on op, xid AND chaddr. Every reply here rides
+  -- broadcast (dhcp.build hard-sets flags 0x8000, deliberately - the stack has
+  -- no address yet), so a client in `selecting` sees every other host's OFFER
+  -- and ACK on the segment. Without the chaddr check the only thing between us
+  -- and adopting someone else's lease was the xid not colliding, and iface:dhcp
+  -- derives that from the ms tick - very nearly the same number on two rabbits
+  -- powered from one switch. RFC 2131 4.4.1 requires this. Taking a foreign
+  -- lease means two hosts answering ARP for one address (#303).
   function c:input(dgram)
     local r = dhcp.parse(dgram)
-    if not r or r.op ~= 2 or r.xid ~= self.xid then return nil end
+    if not r or r.op ~= 2 or r.xid ~= self.xid or r.mac ~= self.mac then
+      return nil
+    end
     if self.state == "selecting" and r.msgtype == dhcp.OFFER then
       self.state = "requesting"
       return say(dhcp.REQUEST,
