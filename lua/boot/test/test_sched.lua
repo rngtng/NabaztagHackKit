@@ -247,6 +247,37 @@ do
   eq(c, 1, "sched: the pump shifted into the vacated slot still runs this slice")
 end
 
+do
+  -- ...and the two halves TOGETHER: a pump that removes another pump and then
+  -- raises. `table.remove(pumps, i)` on the error path assumed the raising
+  -- pump was still at index i - but its own unpump() had already shifted the
+  -- list, so i pointed at an INNOCENT pump. The offender stayed registered and
+  -- raised on every following tick (DEFECT 1 again, by another route) while the
+  -- pump behind it was dropped instead. Removing by identity fixes both ends.
+  --
+  -- Not as exotic as it reads: an activity whose step() tears down a sibling it
+  -- owns - a controller stopping the player it drives - and then trips over the
+  -- half-torn-down state is exactly this shape.
+  boot_reload()
+  nab_set_time(1000)
+
+  local ahead, raises, behind = 0, 0, 0
+  local h_ahead
+  h_ahead = sched.pump(function() ahead = ahead + 1 end)
+  sched.pump(function() raises = raises + 1; sched.unpump(h_ahead); error("stepped on it") end)
+  sched.pump(function() behind = behind + 1 end)
+
+  eq(nab_pump(), nil, "sched: a pump that removes another and raises stays contained")
+  eq(ahead, 1, "sched: the pump ahead of the offender had already run this slice")
+  eq(behind, 1, "sched: the pump behind the offender still ran in the SAME slice")
+
+  nab_advance(10)
+  nab_pump()
+  eq(raises, 1, "sched: the RAISING pump was dropped, wherever it had moved to")
+  eq(ahead, 1, "sched.unpump: the pump it removed is not called again")
+  eq(behind, 2, "sched: the innocent pump keeps running on later ticks")
+end
+
 -- ---------------------------------------------------------------------------
 -- DEFECT 3 - the reactor hangs off a single-slot callback that boot.lua claims
 -- at startup, and any app that uses the documented seam silently unhooks it.

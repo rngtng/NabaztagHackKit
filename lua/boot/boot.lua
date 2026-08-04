@@ -59,11 +59,15 @@ end
 -- Remove a pump by its handle. Removing one that is already gone is a no-op,
 -- not an error: a :detach() must be safe to call from a stop() path and from a
 -- finaliser without either having to know which ran first.
+--
+-- Returns the index it removed from, or false if the handle was not registered
+-- (both truthy/falsy as before - no caller reads more than that). sched.tick
+-- needs the index to keep its cursor aligned when it drops a pump (#309).
 function sched.unpump(h)
   for i = 1, #pumps do
     if pumps[i] == h then
       table.remove(pumps, i)
-      return true
+      return i
     end
   end
   return false
@@ -101,21 +105,28 @@ function sched.tick()
     local fn = pumps[i]
     local ok, err = pcall(fn)
     if not ok then
+      -- Drop the offender by IDENTITY, not by index (#309). `table.remove(pumps, i)`
+      -- assumed the raising pump was still at i; if it had removed another pump
+      -- first, i pointed at an innocent one - which then got dropped while the
+      -- offender stayed registered and raised again on every following tick.
+      -- Removing from BELOW the cursor shifts everything down with it, so the
+      -- cursor follows, or the pump that moved into the vacated slot loses its
+      -- slice.
       blame(err)
+      local k = sched.unpump(fn)
+      if k and k < i then
+        i = i - 1
+      end
     end
-    -- Advance only if the list did not shift under us (#309). A pump may call
+    -- Advance only if the list did not shift under us. A pump may call
     -- sched.unpump on itself from inside its own body - :detach() from a
     -- finished :step() is the natural way to end an animation - and that
     -- table.remove pulls the NEXT pump down into index i, which a blind
     -- i = i + 1 would then step over for the rest of the slice. If fn is still
-    -- at i it is ours to advance past (or, having raised, to drop); if it is
-    -- not, i already holds a pump that has not run yet.
+    -- at i it is ours to advance past; if it is not, i already holds a pump
+    -- that has not run yet.
     if pumps[i] == fn then
-      if ok then
-        i = i + 1
-      else
-        table.remove(pumps, i)
-      end
+      i = i + 1
     end
   end
   i = 1
