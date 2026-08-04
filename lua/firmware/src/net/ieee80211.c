@@ -905,16 +905,24 @@ static void ieee80211_input_shared_auth(uint16_t algorithm,
 			frame_end = tagged_parameters + tagged_length;
 
 			/* The one walk #293 did not reach, and it checked NEITHER bound
-			   (#317). `frame_current < frame_end` proves only that the element's
-			   FIRST byte is in range, and the body then read frame_current[1] - so
-			   a tagged section ending in a single byte read one past the end. Not
-			   the 255-byte read it looks like: ieee80211_send_challenge_reply
-			   refuses any length that is not IEEE80211_CHALLENGE_LEN, so the
-			   effects are a 1-byte over-read (deterministic, remote), a 128-byte
-			   one only if that stray byte happens to read as 128, and an attempt
-			   left hanging in S_AUTH instead of failed. Unreachable in this build
-			   (ieee80211_authmode is only ever OPEN since #124 dropped WEP) but
-			   live in mtl, which still does shared-key auth - see #307. */
+			   (#317): `frame_current < frame_end` proves only that an element's
+			   FIRST byte is in range, and nothing checked the body against
+			   frame_end at all. An IE that DECLARES IEEE80211_CHALLENGE_LEN and
+			   delivers none of it left `challenge` pointing at the end of the
+			   frame with challenge_length = 128 - which is the one value
+			   send_challenge_reply accepts, so it copied 128 bytes from past the
+			   buffer into the reply AND TRANSMITTED them. Neighbouring COMRAM is
+			   the USB allocator's descriptors and other in-flight frames; the WEP
+			   encryption on the reply is all that stood between that and a remote
+			   memory disclosure. Attacker-controlled, not luck: declare 128 and
+			   truncate. A tagged section of one byte is the same missing check
+			   read one past the end, and an over-long IE leaves the attempt stuck
+			   in S_AUTH instead of failed.
+
+			   Needs S_AUTH + authmode SHARED + all three addresses matched, so it
+			   is an AP-spoof inside the join window, not passive pre-auth.
+			   Unreachable in this build (authmode is only ever OPEN since #124
+			   dropped WEP) but live in mtl - see #307. */
 			while(ieee80211_ie_next(&frame_current, frame_end, &ie)) {
 				if(ie.id == IEEE80211_ELEMID_CHALLENGE) {
 					challenge = ie.body;

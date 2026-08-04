@@ -688,19 +688,54 @@ static void scen_auth_challenge(void)
   CHECK(ieee80211_state != IEEE80211_S_AUTH,
         "a challenge IE longer than the frame ends the auth attempt");
 
-  /* (2) The memory-safety half, and the deterministic one. A tagged section of
-   * exactly ONE byte: the old loop's `frame_current < frame_end` says that byte
-   * is in range, and the body then reads frame_current[1] - the length - which
-   * is one past the end. On the device that frame is an hcd_malloc'd COMRAM
-   * block with the USB allocator's own bookkeeping behind it and no MMU to
-   * object, and the byte it picks up decides both how the walk advances and,
-   * if it happens to read as IEEE80211_CHALLENGE_LEN, whether a further 128
-   * bytes are copied from past the end. Attacker-triggerable: it needs only an
-   * auth frame whose tagged parameters stop mid-element.
+  /* (2) The one that matters, and it is not subtle once driven rather than
+   * read: a challenge IE that DECLARES IEEE80211_CHALLENGE_LEN and delivers
+   * none of it. The old walk never checked the body against frame_end, so
+   * `challenge` points at the end of the frame and challenge_length is 128 -
+   * which is exactly the value send_challenge_reply demands, so its length
+   * check waves it through and it copies 128 bytes from past the buffer into
+   * the reply. Fully attacker-controlled: declare 128, truncate, done.
    *
-   * ASan reports "READ of size 1" against HEAD; the iterator needs two bytes
-   * before it reads either, so it stops. Last in the scenario because the abort
-   * ends the process. */
+   * And the reply is TRANSMITTED, so those 128 bytes of whatever sits after
+   * the frame go out over the air. On the device the frame is an hcd_malloc'd
+   * COMRAM block and its neighbours are the USB allocator's own descriptors
+   * and other in-flight frames. The reply is WEP-encrypted under the
+   * configured key, which is the only thing between this and a clean remote
+   * memory disclosure - and shared-key auth is itself the classic way to
+   * recover that keystream.
+   *
+   * Preconditions are real: the station must be in S_AUTH with authmode
+   * SHARED, and the frame must match all three addresses - so the attacker is
+   * spoofing the AP during the join window. Not passive, not pre-auth.
+   *
+   * ASan: "READ of size 1 ... 0 bytes after" inside send_challenge_reply. */
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 7] = IEEE80211_CHALLENGE_LEN;      /* declares 128, delivers none */
+  rx_input(n + 8, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a challenge IE whose body is absent is rejected, not echoed back");
+
+  /* (3) The other half of the same missing check: a tagged section of exactly
+   * ONE byte. `frame_current < frame_end` says that byte is in range and the
+   * body then reads frame_current[1], one past the end. Cheaper to trigger,
+   * far less interesting in effect - it only steers the walk. */
   as_station();
   rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
               IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
@@ -726,6 +761,175 @@ static void scen_auth_challenge(void)
   ieee80211_authmode = IEEE80211_AUTH_OPEN;   /* leave the module as we found it */
 }
 
+/* --- fuzz: mutate real frames and require the parser to survive ----------- */
+/* Every defect in this file so far (#293, #294, #310, #317) was a length field
+ * off the air that the parser believed. Those are pinned one fixture at a time,
+ * which proves the cases we thought of. This drives the same three entry points
+ * with deliberately damaged frames instead, so the ones we did not think of get
+ * a chance to show up - and it is the measurement that says whether the RSN
+ * sub-parse still has anything in it, rather than assuming either way.
+ *
+ * Deterministic: a fixed-seed xorshift, so a failure is reproducible from the
+ * scenario name alone and CI cannot go red on a Tuesday. Mutations are biased
+ * towards the boundary values that matter here (0, 1, 0x7F, 0x80, 0xFF) and
+ * towards TRUNCATION, which is what every real defect turned out to be.
+ *
+ * The assertion is survival under ASan/UBSan. The two controls either side make
+ * that non-vacuous: a well-formed beacon must parse into a scan result BEFORE
+ * the storm and again AFTER it, so a parser that has quietly stopped parsing -
+ * or a harness that stopped delivering frames - fails rather than reports a
+ * clean run over nothing. */
+static uint32_t rnd_state;
+
+static uint32_t rnd(void)
+{
+  rnd_state ^= rnd_state << 13;
+  rnd_state ^= rnd_state >> 17;
+  rnd_state ^= rnd_state << 5;
+  return rnd_state;
+}
+
+/* A byte worth trying: boundaries far more often than uniform noise. */
+static uint8_t rnd_byte(void)
+{
+  static const uint8_t edge[] = {0x00, 0x01, 0x02, 0x04, 0x7F, 0x80, 0xFE, 0xFF};
+  uint32_t r = rnd();
+  return (r & 1) ? edge[(r >> 1) % sizeof edge] : (uint8_t)(r >> 8);
+}
+
+/* A full WPA2-PSK beacon: fixed fields, then SSID / RATES / DSPARMS / RSN. */
+static uint32_t build_beacon(void)
+{
+  uint32_t n = mgt_header(FC0_MGT_BEACON);
+
+  n += 12;                                    /* timestamp, interval, capinfo */
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');
+  memcpy(rxbuf + n - 7, "nabtest", 7);
+  n = put_ie(n, IEEE80211_ELEMID_RATES, 4, 4, 0x82);
+  n = put_ie(n, IEEE80211_ELEMID_DSPARMS, 1, 1, 6);
+  n = put_rsn(n, 1);
+  return n;
+}
+
+static uint32_t build_probe_req(void)
+{
+  uint32_t n = mgt_header(FC0_MGT_PROBE_REQ);
+
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');
+  memcpy(rxbuf + n - 7, "nabtest", 7);
+  n = put_ie(n, IEEE80211_ELEMID_RATES, 4, 4, 0x82);
+  return n;
+}
+
+static const uint8_t fz_mac[IEEE80211_ADDR_LEN]   = {0x22, 0, 0, 0, 0, 1};
+static const uint8_t fz_bssid[IEEE80211_ADDR_LEN] = {0x33, 0, 0, 0, 0, 1};
+
+static uint32_t build_auth(void)
+{
+  uint32_t n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  struct ieee80211_frame *fr = (struct ieee80211_frame *)rxbuf;
+
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, fz_mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, fz_bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  n += 6;
+  rxbuf[n] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 1] = IEEE80211_CHALLENGE_LEN;
+  memset(rxbuf + n + 2, 0x5A, IEEE80211_CHALLENGE_LEN);
+  return n + 2 + IEEE80211_CHALLENGE_LEN;
+}
+
+#define FUZZ_ITERS 20000
+
+static void scen_fuzz(void)
+{
+  uint8_t tmpl[sizeof rxbuf];
+  uint32_t tmpl_len, len, i, k, delivered = 0;
+  int kind;
+
+  printf("scenario fuzz: damaged frames must not walk out of the buffer\n");
+
+  rnd_state = 0x1BADB002;          /* fixed seed: reproducible failures */
+  as_station();
+  run_scan(NULL);
+  ieee80211_mode = IEEE80211_M_MANAGED;
+
+  /* Control BEFORE: the canonical beacon must parse, or the storm proves
+   * nothing about a parser that was already refusing everything. */
+  ieee80211_state = IEEE80211_S_SCAN;
+  scan_hits = 0; scan_enc = 0;
+  len = build_beacon();
+  rx_input(len, -40);
+  CHECK(scan_hits == 1 && scan_enc == RSN_WPA2_CCMP,
+        "the control beacon parses as WPA2/CCMP before the fuzz run");
+
+  for (i = 0; i < FUZZ_ITERS; i++) {
+    kind = (int)(rnd() % 3);
+    switch (kind) {
+      case 0:  tmpl_len = build_beacon();    break;
+      case 1:  tmpl_len = build_probe_req(); break;
+      default: tmpl_len = build_auth();      break;
+    }
+    memcpy(tmpl, rxbuf, tmpl_len);
+
+    /* 1..4 byte mutations, anywhere from the fixed fields on - the header
+     * itself is left alone so the frame keeps reaching a parser at all. */
+    for (k = 0; k < 1 + rnd() % 4; k++) {
+      uint32_t off = sizeof(struct ieee80211_frame)
+                   + rnd() % (tmpl_len - sizeof(struct ieee80211_frame));
+      tmpl[off] = rnd_byte();
+    }
+    /* Half the time, cut it short somewhere past the header. Truncation is
+     * what #293/#310/#317 all turned out to be. */
+    len = tmpl_len;
+    if (rnd() & 1)
+      len = sizeof(struct ieee80211_frame)
+          + rnd() % (tmpl_len - sizeof(struct ieee80211_frame) + 1);
+
+    memcpy(rxbuf, tmpl, len);
+
+    /* Put the state machine where each frame type is actually parsed. */
+    if (kind == 0) {
+      ieee80211_mode = IEEE80211_M_MANAGED;
+      ieee80211_state = IEEE80211_S_SCAN;
+      ieee80211_authmode = IEEE80211_AUTH_OPEN;
+    } else if (kind == 1) {
+      rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
+    } else {
+      as_station();
+      rt2501_auth((const uint8_t *)"nabtest", fz_mac, fz_bssid, 1,
+                  IEEE80211_RATEMASK_1, IEEE80211_AUTH_OPEN,
+                  IEEE80211_CRYPT_NONE, NULL);
+      ieee80211_authmode = IEEE80211_AUTH_SHARED;
+    }
+
+    rx_input(len, -40);
+    usb_complete_pending();   /* retire any frame the AP path queued */
+    delivered++;
+  }
+
+  CHECK(delivered == FUZZ_ITERS, "every fuzz iteration was delivered");
+
+  /* Control AFTER: the parser still works. Catches a run that survived by
+   * wedging the state machine rather than by handling the input. */
+  ieee80211_authmode = IEEE80211_AUTH_OPEN;
+  as_station();
+  run_scan(NULL);
+  ieee80211_mode = IEEE80211_M_MANAGED;
+  ieee80211_state = IEEE80211_S_SCAN;
+  scan_hits = 0; scan_enc = 0;
+  len = build_beacon();
+  rx_input(len, -40);
+  CHECK(scan_hits == 1 && scan_enc == RSN_WPA2_CCMP,
+        "the control beacon still parses as WPA2/CCMP after the fuzz run");
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
@@ -745,6 +949,7 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "rx-rsn-version") == 0) scen_rx_rsn_version();
   if (!only || strcmp(only, "assoc-ssid") == 0)     scen_assoc_ssid();
   if (!only || strcmp(only, "auth-challenge") == 0) scen_auth_challenge();
+  if (!only || strcmp(only, "fuzz") == 0)           scen_fuzz();
 
   /* Retire whatever a scenario left queued. Every TX here is now owned by the
    * URB completion, so without this a scenario run on its own (the point of the
