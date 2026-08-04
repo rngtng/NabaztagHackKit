@@ -85,6 +85,22 @@ static uint16_t ieee80211_txrate;
 /* filled at auth and when entering Master mode, does not change */
 static uint16_t ieee80211_lowest_txrate;
 
+/* Store the SSID we are beaconing / associated with, bounded AT THE BUFFER
+   (#310). Both callers below used strcpy() into ieee80211_assoc_ssid, a
+   33-byte global, with the length checked - where it was checked at all - a
+   layer up, in the VM's net glue. Not reachable with an over-long SSID today,
+   but this is the copy, so this is where the bound cannot be bypassed:
+   exactly the argument #296 used to justify clamping inside rt2501_scan's
+   probe[], applied there and not here. */
+static void ieee80211_set_assoc_ssid(const uint8_t *ssid)
+{
+	uint32_t len = strlen((const char*)ssid);
+
+	if(len > IEEE80211_SSID_MAXLEN) len = IEEE80211_SSID_MAXLEN;
+	memcpy(ieee80211_assoc_ssid, ssid, len);
+	ieee80211_assoc_ssid[len] = 0;
+}
+
 static uint16_t ieee80211_rate_to_mask(uint8_t rate)
 {
 	switch(rate) {
@@ -1201,36 +1217,62 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                    The enclosing walk has already proved this IE is inside the
                    frame, so its own end is the bound. */
                 ie_end = current + frame_current[1];
-                /* Element 1: Group cipher suites (OUIs) */
+                /* Element 1: Version (u16). NOT a suite count (#310): per
+                   802.11 the RSN IE opens with its version and the single
+                   group cipher suite follows it, with no count in front. This
+                   block was labelled "group cipher suites" and ran the version
+                   as its iteration count - which lands on exactly the right
+                   four bytes only because the version is always 1. An IE
+                   declaring 2 walked two "suites", eating the group suite plus
+                   the pairwise count, and read every field after it at the
+                   wrong offset. The value itself is not checked: nothing but 1
+                   is defined, and the layout below is what we parse either
+                   way. */
                 if(current + 2 > ie_end) break;   /* truncated RSN IE */
-                count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
+                /* Element 2: Group cipher suite (one OUI). Both bounds above
+                   break BEFORE the encryption label is cleared, so a truncated
+                   IE keeps the conservative label the capinfo PRIVACY bit
+                   already set (WEP = legacy/unsupported). Clearing it first
+                   would report a privacy-flagged AP with a clipped RSN IE as
+                   OPEN. */
+                if(current + IEEE80211_OUI_LEN > ie_end) break;
                 found = 0;
                 scan_result.encryption = 0;
-                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
-                  if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
+                if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
+                {
+                  if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
                   {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
-                    {
-                      found = 1;
-                      scan_result.encryption |= IEEE80211_CIPHER_TKIP<<1;
-                      DBG_WIFI("GROUP TKIP supported"EOL);
-                    }
-                    else if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
-                    {
-                      found = 1;
-                      scan_result.encryption |= IEEE80211_CIPHER_CCMP<<1;
-                      DBG_WIFI("GROUP CCMP supported"EOL);
-                    }
+                    found = 1;
+                    scan_result.encryption |= IEEE80211_CIPHER_TKIP<<1;
+                    DBG_WIFI("GROUP TKIP supported"EOL);
                   }
-                  current += IEEE80211_OUI_LEN;
+                  else if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
+                  {
+                    found = 1;
+                    scan_result.encryption |= IEEE80211_CIPHER_CCMP<<1;
+                    DBG_WIFI("GROUP CCMP supported"EOL);
+                  }
                 }
+                current += IEEE80211_OUI_LEN;
                 if(!found) {
                   scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
                   break;
                 }
-                /* Element 2: Pairwise cipher suites (OUIs) */
-                if(current + 2 > ie_end) break;
+                /* Element 3: Pairwise cipher suite count + list (OUIs) */
+                /* Truncated here, the label built so far is the group cipher
+                   bit and nothing else - and `encryption & 0xF0` is what
+                   rt2501_auth switches on, so 0x08 and 0x04 both land in its
+                   `case IEEE80211_CRYPT_NONE:` arm: authmode OPEN,
+                   rt2501_set_key(NONE), and rt2501_assoc then takes its own
+                   `default:` arm and sends an association request carrying no
+                   RSN IE at all. A privacy-flagged AP would be joined as an
+                   open one (#310). Every bail-out past this point says
+                   UNSUPPORTED, like the !found ones do. */
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
@@ -1256,8 +1298,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
                   break;
                 }
-                /* Element 5: Auth key management suites (OUIs) */
-                if(current + 2 > ie_end) break;
+                /* Element 4: AKM suite count + list (OUIs) */
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
@@ -1312,7 +1357,18 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								DBG_WIFI("WPA supported"EOL);
 
 								/* Element 1: Multicast cipher suite (OUI) */
-								if(current + IEEE80211_OUI_LEN > ie_end) break;
+								/* Truncated here is a WPA IE we could not parse, which is
+								   what the memcmp failure just below already calls
+								   UNSUPPORTED - so it says the same rather than walking out
+								   on a label built from half an IE (#310). Unlike the RSN
+								   block this one never clears scan_result.encryption, so a
+								   bare `break` left the capinfo label rather than CRYPT_NONE;
+								   this is consistency with the neighbouring bail-outs, not a
+								   downgrade being closed. */
+								if(current + IEEE80211_OUI_LEN > ie_end) {
+									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+									break;
+								}
 								if(memcmp(current, ieee80211_wpa_oui, IEEE80211_OUI_LEN-1) != 0) {
 									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
 									break;
@@ -1320,7 +1376,10 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								current += IEEE80211_OUI_LEN;
 
 								/* Element 2: Number of unicast cipher suites, 2 bytes */
-								if(current + 2 > ie_end) break;
+								if(current + 2 > ie_end) {
+									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+									break;
+								}
 								count = (current[0] << 0)|(current[1] << 8);
 								current += 2;
 
@@ -1341,7 +1400,10 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								}
 
 								/* Element 4: Number of auth key management suites, 2 bytes */
-								if(current + 2 > ie_end) break;
+								if(current + 2 > ie_end) {
+									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+									break;
+								}
 								count = (current[0] << 0)|(current[1] << 8);
 								current += 2;
 
@@ -1786,7 +1848,7 @@ void rt2501_setmode(int32_t mode, const uint8_t *ssid, uint8_t channel)
 			disable_ohci_irq();
 			ieee80211_state = IEEE80211_S_RUN;
 			ieee80211_mode = IEEE80211_M_MASTER;
-			strcpy((char*)ieee80211_assoc_ssid, (char*)ssid);
+			ieee80211_set_assoc_ssid(ssid);
 			memcpy(ieee80211_assoc_bssid, rt2501_mac, IEEE80211_ADDR_LEN);
 			ieee80211_assoc_channel = channel;
 			for(i=0;i<RT2501_MAX_ASSOCIATED_STA;i++)
@@ -1965,7 +2027,7 @@ void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 
 	memcpy(ieee80211_assoc_mac, mac, IEEE80211_ADDR_LEN);
 	memcpy(ieee80211_assoc_bssid, bssid, IEEE80211_ADDR_LEN);
-	strcpy((char*)ieee80211_assoc_ssid, (char*)ssid);
+	ieee80211_set_assoc_ssid(ssid);
 
 	ieee80211_assoc_channel = channel;
 

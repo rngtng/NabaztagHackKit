@@ -55,8 +55,10 @@ nothing.
 | `rx-legal` | AP mode answers a well-formed probe request **and frees the frame** (#295) |
 | `rx-ssid` | AP mode: the SSID IE length byte comes off the air (#293) |
 | `rx-walk` | the IE walk must not read a length byte past the frame end (#293) |
-| `rx-rsn` | STA scan: the RSN IE's suite counts come off the air (#294) |
+| `rx-rsn` | STA scan: the RSN IE's pairwise suite count comes off the air (#294) |
 | `rx-rsn-adv` | an accepted RSN IE leaves the walk on the next IE, not two bytes into it (#294) |
+| `rx-rsn-ver` | the RSN IE's first field is the **Version**, not a suite count — and no bail-out in that parse may report an encrypted AP as open (#310) |
+| `assoc-ssid` | the SSID stored at `rt2501_setmode` / `rt2501_auth` is bounded at the 33-byte global (#310) |
 | `rx-wpa1` | STA scan: the WPA1 vendor IE's suite counts, likewise — **mtl only**, the lua track dropped that parser in #124 |
 
 `eapol_test`
@@ -77,15 +79,21 @@ run **completes**. When the bound is missing, ASan aborts inside the stubbed
 `hmac_sha1` / `aes128_unwrap` / `memcmp`, which is not the stub misbehaving —
 an HMAC over N bytes reads N bytes, and N came from the code under test.
 
-The baselines (`msg1`, `short`, `rx-legal`, `rx-rsn-adv`, `msg3-gtk`) assert
-positive content, so a guard cannot pass by the parser bailing out before it
-reaches the read.
+The baselines (`msg1`, `short`, `rx-legal`, `rx-rsn-adv`, `rx-rsn-ver`,
+`msg3-gtk`) assert positive content, so a guard cannot pass by the parser
+bailing out before it reaches the read.
 
 A guard also has to fail against the **original** source, not just against the
-previous commit. `gtk-kd` declares 56 bytes of key data rather than the current
-112-byte cap for exactly that reason: the scratch buffer was 48+8 bytes before
-#230 enlarged it, so a larger value would be refused by the old code for the
-wrong reason and the guard would pass having proved nothing.
+previous commit. Two places where that bit:
+
+- `gtk-kd` declares 56 bytes of key data rather than the current 112-byte cap:
+  the scratch buffer was 48+8 bytes before #230 enlarged it, so a larger value
+  would be refused by the old code for the wrong reason.
+- `rx-rsn` puts its hostile `0x4000` on the **pairwise** suite count. It used
+  to sit on the IE's first two bytes, which #310 established are the Version
+  field and not a count — there is no walk there any more, so the fixture had
+  to move to a field that is still a count, and was re-checked against the
+  pre-#307 source afterwards.
 
 ## Scope
 

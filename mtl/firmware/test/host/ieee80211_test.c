@@ -29,6 +29,9 @@
  *   rx-walk     the IE walk must not step past the end of the frame
  *   rx-rsn      STA scan: an RSN IE's suite count comes off the air
  *   rx-rsn-adv  STA scan: an accepted RSN IE must not derail the walk after it
+ *   rx-rsn-ver  STA scan: the RSN IE's first field is Version, not a count -
+ *               and no bail-out in that parse may report an encrypted AP open
+ *   assoc-ssid  the stored SSID is copied into a 33-byte global
  *   rx-wpa1     STA scan: the WPA1 vendor IE's suite counts (mtl only)
  *
  * The `short`, `long`, `rx-legal` and `rx-rsn-adv` scenarios also carry the
@@ -63,14 +66,39 @@ static unsigned tx_calls;
 static unsigned malloc_calls;
 static unsigned free_calls;
 
+/* Live hcd_malloc blocks. rt2501_auth() hcd_mallocs its auth frame and returns
+ * without ever freeing it - the leak shape rx-legal describes for probe
+ * responses, on a path that still has it - so a scenario that drives the join
+ * would fail the whole binary on a LeakSanitizer report that belongs to the
+ * vendored driver rather than to the test. hcd_drain() releases whatever the
+ * driver still holds, and the malloc/free counters stay exact for rx-legal. */
+#define HCD_LIVE_MAX 16
+static void *hcd_live[HCD_LIVE_MAX];
+
 void *hcd_malloc(uint32_t size, uint8_t type, uint8_t tag)
 {
+  void *p = malloc(size);
+
   (void)type; (void)tag;
   malloc_calls++;
-  return malloc(size);
+  for (int i = 0; i < HCD_LIVE_MAX; i++)
+    if (hcd_live[i] == NULL) { hcd_live[i] = p; break; }
+  return p;
 }
 
-void hcd_free(void *p) { free_calls++; free(p); }
+void hcd_free(void *p)
+{
+  free_calls++;
+  for (int i = 0; i < HCD_LIVE_MAX; i++)
+    if (hcd_live[i] == p) { hcd_live[i] = NULL; break; }
+  free(p);
+}
+
+static void hcd_drain(void)
+{
+  for (int i = 0; i < HCD_LIVE_MAX; i++)
+    if (hcd_live[i] != NULL) { free(hcd_live[i]); hcd_live[i] = NULL; }
+}
 
 void DelayMs(uint16_t ms) { (void)ms; }   /* the 350 ms per-channel dwell */
 
@@ -334,16 +362,24 @@ static void scen_rx_rsn(void)
   n = mgt_header(FC0_MGT_BEACON);
   n += 12;                          /* timestamp + beacon interval + capinfo */
   at = n;
-  /* An RSN IE whose group-suite count says 0x4000 while the IE carries four
-   * bytes. The parser reads the count out of the frame and walks 4 bytes per
-   * iteration with nothing checked against frame_end (#294). */
+  /* A well-formed RSN IE up to the PAIRWISE suite count, which says 0x4000
+   * while the IE carries one suite. The parser reads that count out of the
+   * frame and walks 4 bytes per iteration; before #294 nothing was checked
+   * against the IE's end, so 0x4000 suites walked 256 KB past it.
+   *
+   * The hostile value sits on the pairwise count because that is a count. It
+   * used to sit on the IE's first two bytes, which the parser called the group
+   * suite count and 802.11 calls the Version field (#310) - the walk there is
+   * gone now, so a hostile value in it no longer means anything. */
   rxbuf[at] = IEEE80211_ELEMID_RSN;
-  rxbuf[at + 1] = 8;
-  rxbuf[at + 2] = 0x00; rxbuf[at + 3] = 0x40;         /* group suite count */
+  rxbuf[at + 1] = 12;
+  rxbuf[at + 2] = 0x01; rxbuf[at + 3] = 0x00;         /* RSN version 1 */
   rxbuf[at + 4] = 0x00; rxbuf[at + 5] = 0x0F;
-  rxbuf[at + 6] = 0xAC; rxbuf[at + 7] = 0x04;         /* one CCMP suite */
-  rxbuf[at + 8] = 0x00; rxbuf[at + 9] = 0x00;
-  n = at + 10;
+  rxbuf[at + 6] = 0xAC; rxbuf[at + 7] = 0x04;         /* group suite: CCMP */
+  rxbuf[at + 8] = 0x00; rxbuf[at + 9] = 0x40;         /* pairwise count: 0x4000 */
+  rxbuf[at + 10] = 0x00; rxbuf[at + 11] = 0x0F;
+  rxbuf[at + 12] = 0xAC; rxbuf[at + 13] = 0x04;       /* one CCMP suite */
+  n = at + 14;
   rx_input(n, -40);
 
   /* Reaching here is the assertion - ASan reports the over-read otherwise.
@@ -399,6 +435,155 @@ static void scen_rx_rsn_adv(void)
         "the RSN IE was accepted as WPA2");
   CHECK(strcmp((char *)last_result.ssid, "wpa2net") == 0,
         "the IE after the RSN IE is parsed from its own start");
+}
+
+/* --- rx-rsn-version: the first two bytes of an RSN IE are the Version ------ */
+
+/* Append an RSN IE declaring `version`, one CCMP group suite, one CCMP
+ * pairwise suite, one PSK AKM suite and empty capabilities - a WPA2-PSK AP's
+ * beacon, byte for byte, apart from the version value. */
+static uint32_t put_rsn(uint32_t at, uint8_t version)
+{
+  static const uint8_t body[] = {
+    0x00, 0x00,                     /* [0..1] version, patched below */
+    0x00, 0x0F, 0xAC, 0x04,         /* group cipher suite: CCMP */
+    0x01, 0x00,                     /* pairwise suite count */
+    0x00, 0x0F, 0xAC, 0x04,         /* pairwise cipher suite: CCMP */
+    0x01, 0x00,                     /* AKM suite count */
+    0x00, 0x0F, 0xAC, 0x02,         /* AKM suite: PSK */
+    0x00, 0x00,                     /* RSN capabilities */
+  };
+
+  rxbuf[at] = IEEE80211_ELEMID_RSN;
+  rxbuf[at + 1] = (uint8_t)sizeof body;
+  memcpy(rxbuf + at + 2, body, sizeof body);
+  rxbuf[at + 2] = version;
+  return at + 2 + sizeof body;
+}
+
+/* The three bits the RSN branch ORs together on a full WPA2-PSK/CCMP match. */
+#define RSN_WPA2_CCMP \
+  ((uint8_t)((IEEE80211_CIPHER_CCMP << 1) | (IEEE80211_CIPHER_CCMP >> 1) \
+             | IEEE80211_CRYPT_WPA2))
+
+/* A beacon with the capinfo PRIVACY bit set, carrying an RSN IE truncated to
+ * `keep` payload bytes. Returns the frame length. */
+static uint32_t privacy_beacon_rsn(const uint8_t *body, uint8_t keep)
+{
+  uint32_t n = mgt_header(FC0_MGT_BEACON);
+
+  rxbuf[n + 10] = IEEE80211_CAPINFO_PRIVACY & 0xFF;   /* capinfo, little-endian */
+  rxbuf[n + 11] = IEEE80211_CAPINFO_PRIVACY >> 8;
+  n += 12;
+  rxbuf[n] = IEEE80211_ELEMID_RSN;
+  rxbuf[n + 1] = keep;
+  memcpy(rxbuf + n + 2, body, keep);
+  return n + 2 + keep;
+}
+
+static void scen_rx_rsn_version(void)
+{
+  uint32_t n;
+  /* version + group suite + pairwise count + pairwise suite. */
+  static const uint8_t body[] = {
+    0x01, 0x00,
+    0x00, 0x0F, 0xAC, 0x04,
+    0x01, 0x00,
+    0x00, 0x0F, 0xAC, 0x04,
+  };
+  /* 2 = version and nothing else (dies at the group suite); 6 = + group suite
+   * (dies at the pairwise count); 12 = + pairwise count and suite (dies at the
+   * AKM count). All three are legal byte counts to put in a length field. */
+  static const uint8_t trunc_at[] = {2, 6, 12};
+  unsigned t;
+
+  printf("scenario rx-rsn-version: the RSN Version field is not a suite count\n");
+
+  /* Control: version 1, the only value that exists in the wild. The parse has
+   * always got this one right - by accident, since running a "group suite
+   * count" of 1 for one iteration lands on exactly the four bytes that are in
+   * fact the group suite. It is here so the version-2 check below cannot pass
+   * on a parser that has simply stopped finding CCMP anywhere. */
+  as_scanning();
+  n = mgt_header(FC0_MGT_BEACON);
+  n += 12;
+  n = put_rsn(n, 1);
+  rx_input(n, -40);
+  CHECK(scan_hits == 1, "the version-1 beacon reached a scan result");
+  CHECK(last_result.encryption == RSN_WPA2_CCMP,
+        "a version-1 RSN IE is read as WPA2/CCMP");
+
+  /* The same IE with the Version field set to 2. Per 802.11 the group cipher
+   * suite follows the version and there is no count in front of it, so nothing
+   * about this IE's layout has moved - only the value of a field the parser
+   * should not be walking on. Reading it as a count walks TWO 4-byte "group
+   * suites", which eats the real group suite plus the pairwise count and the
+   * first half of the pairwise suite, and every field after it is then read at
+   * the wrong offset. */
+  as_scanning();
+  n = mgt_header(FC0_MGT_BEACON);
+  n += 12;
+  n = put_rsn(n, 2);
+  rx_input(n, -40);
+  CHECK(scan_hits == 1, "the version-2 beacon reached a scan result");
+  CHECK(last_result.encryption == RSN_WPA2_CCMP,
+        "the RSN suites are read at the same offsets whatever the version says");
+
+  /* Every point the RSN parse can run out of IE has to leave the encryption
+   * label no weaker than the capinfo PRIVACY bit already made it. The
+   * bail-outs walk out carrying a half-built label - group CCMP bit set, no
+   * CRYPT_WPA2 - and `encryption & 0xF0` is what rt2501_auth switches on
+   * (ieee80211.c:1975), so 0x08 and 0x0A both land in its
+   * `case IEEE80211_CRYPT_NONE:` arm: authmode OPEN, rt2501_set_key(NONE).
+   * rt2501_assoc's own switch (line 683) then takes its `default:` arm and
+   * sends an association request with no RSN IE at all. A privacy-flagged AP
+   * would be joined as an open one (#310). */
+  for (t = 0; t < sizeof trunc_at / sizeof *trunc_at; t++) {
+    as_scanning();
+    n = privacy_beacon_rsn(body, trunc_at[t]);
+    rx_input(n, -40);
+
+    CHECK(scan_hits == 1, "the truncated-RSN beacon reached a scan result");
+    CHECK((last_result.encryption & 0xF0) != IEEE80211_CRYPT_NONE,
+          "a truncated RSN IE must not downgrade an encrypted AP to open");
+  }
+}
+
+/* --- assoc-ssid: the stored SSID is copied into a 33-byte global ---------- */
+
+static void scen_assoc_ssid(void)
+{
+  /* Long enough to run well past ieee80211_assoc_ssid[IEEE80211_SSID_MAXLEN+1]
+   * and short of the 256 where a uint8_t length would wrap. */
+  char ssid[65];
+  static const uint8_t mac[IEEE80211_ADDR_LEN]   = {0x22, 0, 0, 0, 0, 1};
+  static const uint8_t bssid[IEEE80211_ADDR_LEN] = {0x33, 0, 0, 0, 0, 1};
+  static const uint8_t key[16] = {0};
+
+  printf("scenario assoc-ssid: the stored SSID must not overrun its global\n");
+
+  memset(ssid, 'a', sizeof ssid - 1);
+  ssid[sizeof ssid - 1] = '\0';
+
+  /* AP mode. Both stores are strcpy() into a 33-byte global with the length
+   * checked - where it is checked at all - a layer up, in the VM's netAP /
+   * netConnect glue. This is the buffer, so this is where the bound cannot be
+   * bypassed: the argument #296 used to justify clamping inside rt2501_scan's
+   * probe[], which was not applied here. ASan reports the
+   * global-buffer-overflow. */
+  as_station();
+  rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)ssid, 1);
+  CHECK(strlen((char *)ieee80211_assoc_ssid) == IEEE80211_SSID_MAXLEN,
+        "AP mode clamps the stored SSID to 32 bytes");
+
+  /* The join path: rt2501_auth's callers pass a parser-bounded
+   * scan_result.ssid today, so this is the same latent copy one layer over. */
+  as_station();
+  rt2501_auth((const uint8_t *)ssid, mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, key);
+  CHECK(strlen((char *)ieee80211_assoc_ssid) == IEEE80211_SSID_MAXLEN,
+        "the join path clamps the stored SSID to 32 bytes");
+  hcd_drain();                      /* rt2501_auth keeps its auth frame */
 }
 
 /* --- rx-wpa1: the WPA1 vendor IE's suite counts, likewise (mtl only) ------ */
@@ -459,6 +644,8 @@ int main(int argc, char **argv)
   RUN("rx-walk",    scen_rx_walk);
   RUN("rx-rsn",     scen_rx_rsn);
   RUN("rx-rsn-adv", scen_rx_rsn_adv);
+  RUN("rx-rsn-ver", scen_rx_rsn_version);
+  RUN("assoc-ssid", scen_assoc_ssid);
   RUN("rx-wpa1",    scen_rx_wpa1);
 
   /* An unmatched selector must FAIL, not report a pass having run nothing -
