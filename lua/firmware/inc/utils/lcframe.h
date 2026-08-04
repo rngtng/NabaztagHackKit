@@ -61,6 +61,14 @@ typedef enum {
  * LCFRAME_ERR_TOOLONG: that length is over the cap by definition, and draining
  * it would mean reading megabytes off the console to stay in sync. Desync is
  * the lesser evil there, and a real sender never declares one.
+ *
+ * The accepted cost: a *hand-typed* header that does parse a length but has no
+ * payload - `#LC:5` typed at the prompt and nothing after it - reports 5, so
+ * the caller consumes from the next line. The console has no pushback, so
+ * read_hex_nibble stops on the first non-hex byte having eaten it: one lost
+ * character on the following line. That is the right trade - a machine sender
+ * ALWAYS has a payload queued, and the frames this exists for come from
+ * machines - but it is a trade, not a free win.
  */
 lcframe_status lcframe_parse_header(const char *line, long max,
                                     long *len, uint32_t *sum);

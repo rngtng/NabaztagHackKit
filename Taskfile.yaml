@@ -22,6 +22,12 @@ includes:
     taskfile: ./lua/Taskfile.yaml
 
 tasks:
+  verify:
+    desc: 'Definition of done for the WHOLE repo: mtl:verify + lua:verify. A change that only passes one track can still break the other, so this is what runs before a commit that touches both.'
+    cmds:
+      - task: mtl:verify
+      - task: lua:verify
+
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
     cmds:

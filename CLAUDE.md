@@ -130,8 +130,9 @@ Don't restate them here - two copies drift. The rules that bind new work:
 - **`task mtl:verify` is the definition of done for the mtl track. Run before every mtl commit** —
   chains `mtl:app-{piper,template,sse}:build` + `mtl:boot:build` + `mtl:bootV2:build` +
   `mtl:lib:test` + `mtl:firmware:test` (vm smoke + ASan bugs + crypto KAT). All must be green.
-- **`task lua:verify` (== root `task verifyV2`) is the definition of done for the lua track. Run
-  before every lua commit** — chains `lua:firmware:build`.
+- **`task lua:verify` is the definition of done for the lua track. Run before every lua
+  commit** — chains `check:docs` + `firmware:test:host` + `boot:test` +
+  `firmware:test:bytecode` + `lib:test` + `firmware:build` + `firmware:test{,:desync,:inject,:sched}`.
 - **`task verify` runs both tracks** (`mtl:verify` + `lua:verify`). A change that only passes
   `mtl:lib:test` can still break a build.
 - For simulator e2e checks: `task mtl:<app>:simulate`/`mtl:boot:simulate` in the background,
