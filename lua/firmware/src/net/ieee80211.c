@@ -1171,10 +1171,15 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                    either way. */
                 if(current + 2 > ie_end) break;   /* truncated RSN IE */
                 current += 2;
+                /* Element 2: Group cipher suite (one OUI). Both bounds
+                   above break BEFORE the encryption label is cleared, so a
+                   truncated IE keeps the conservative label the capinfo
+                   PRIVACY bit already set (WEP = legacy/unsupported, which
+                   rt2501_auth rejects). Clearing it first would report a
+                   privacy-flagged AP with a clipped RSN IE as OPEN. */
+                if(current + IEEE80211_OUI_LEN > ie_end) break;
                 found = 0;
                 scan_result.encryption = 0;
-                /* Element 2: Group cipher suite (one OUI) */
-                if(current + IEEE80211_OUI_LEN > ie_end) break;
                 if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                 {
                   if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)

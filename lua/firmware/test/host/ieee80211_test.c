@@ -479,6 +479,28 @@ static void scen_rx_rsn_version(void)
   CHECK(scan_hits == 1, "the version-2 beacon reached a scan result");
   CHECK(scan_enc == RSN_WPA2_CCMP,
         "the RSN suites are read at the same offsets whatever the version says");
+
+  /* An RSN IE clipped to just its version, on an AP whose capinfo says
+   * PRIVACY. Every bail-out in the RSN parse has to leave the encryption label
+   * no weaker than the capinfo bit already made it: dropping out with the
+   * label cleared would report an encrypted AP as OPEN, which rt2501_auth
+   * would then try to join with no key at all. (The old walk could not reach
+   * this - it fell out of a zero-iteration loop into the UNSUPPORTED arm - so
+   * this is the ordering the version fix has to preserve.) */
+  ieee80211_state = IEEE80211_S_SCAN;
+  scan_hits = 0; scan_enc = 0;
+  n = mgt_header(FC0_MGT_BEACON);
+  rxbuf[n + 10] = IEEE80211_CAPINFO_PRIVACY & 0xFF;   /* capinfo, little-endian */
+  rxbuf[n + 11] = IEEE80211_CAPINFO_PRIVACY >> 8;
+  n += 12;
+  rxbuf[n] = IEEE80211_ELEMID_RSN;
+  rxbuf[n + 1] = 2;                                   /* version and nothing else */
+  rxbuf[n + 2] = 0x01; rxbuf[n + 3] = 0x00;
+  n += 4;
+  rx_input(n, -40);
+  CHECK(scan_hits == 1, "the truncated-RSN beacon reached a scan result");
+  CHECK(scan_enc != IEEE80211_CRYPT_NONE,
+        "a truncated RSN IE must not downgrade an encrypted AP to open");
 }
 
 /* --- assoc-ssid: the stored SSID is copied into a 33-byte global ---------- */
