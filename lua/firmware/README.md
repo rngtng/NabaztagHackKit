@@ -119,7 +119,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **119,204 B of 124 KB (~7.6 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **119,332 B of 124 KB (~7.5 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,

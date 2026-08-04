@@ -54,6 +54,7 @@
  *   rx-rsn    STA scan: an RSN IE's suite count comes off the air
  *   rx-rsn-version  STA scan: the RSN IE's first field is Version, not a count
  *   assoc-ssid      the stored SSID is copied into a 33-byte global
+ *   auth-challenge  the shared-key challenge IE walk stays inside the frame
  *
  * The rx-* scenarios are the serious ones, and they are not local: a probe
  * request is unauthenticated management traffic, so anything in radio range can
@@ -623,6 +624,108 @@ static void scen_assoc_ssid(void)
   CHECK(hcd_live_count() == 0, "the join path leaves no frame unowned");
 }
 
+/* --- auth-challenge: the last unbounded IE walk (#317) -------------------- */
+/* The shared-key AUTH reply's tagged parameters. This walk was the one #293
+ * did not reach, and it checked NEITHER bound: the loop tested only that an
+ * element's first byte was in range, then read the id and length bytes, and
+ * took challenge_length - up to 255 - without checking the body fitted.
+ *
+ * It is unreachable in THIS build: ieee80211_authmode is only ever assigned
+ * IEEE80211_AUTH_OPEN since #124 dropped WEP, and AUTH_OPEN is 0 so even the
+ * zero-initialised default takes the open branch. The test reaches it the only
+ * way anything can - by setting the mode the way mtl's WEP path does, which is
+ * exactly the configuration #307 has to fix there. So this scenario is lua's
+ * regression guard for a walk lua cannot currently execute, and mtl's proof
+ * once the same iterator lands there.
+ *
+ * rt2501_auth() sets up state (S_AUTH) and the peer addresses the handler
+ * matches on, so the frame below is the real thing minus the radio. */
+static void scen_auth_challenge(void)
+{
+  static const uint8_t mac[IEEE80211_ADDR_LEN]   = {0x22, 0, 0, 0, 0, 1};
+  static const uint8_t bssid[IEEE80211_ADDR_LEN] = {0x33, 0, 0, 0, 0, 1};
+  struct ieee80211_frame *fr;
+  uint32_t n;
+
+  printf("scenario auth-challenge: the challenge IE walk must stay in the frame\n");
+
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  CHECK(ieee80211_state == IEEE80211_S_AUTH,
+        "the join path is waiting for an auth reply");
+
+  /* What mtl's WEP path does, and what makes the walk below execute. */
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);   /* addressed to us */
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);        /* from "the AP" */
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;       /* algorithm */
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF; /* auth_seq */
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;        /* status */
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+
+  /* (1) An element declaring 255 bytes of body with 2 delivered. The old walk
+   * believed the length: it set challenge_length = 255 and advanced past the
+   * end, so the list ended with a challenge it had never validated. It did not
+   * read 255 bytes - ieee80211_send_challenge_reply rejects any length that is
+   * not IEEE80211_CHALLENGE_LEN - so the damage here is state, not memory: the
+   * reply is refused and the attempt is left hanging in S_AUTH rather than
+   * failed. The iterator rejects the element instead, so `challenge` stays NULL
+   * and the "no challenge" path ends the attempt properly. */
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 7] = 255;
+  rxbuf[n + 8] = 0xAA;
+  rxbuf[n + 9] = 0xBB;
+  rx_input(n + 10, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a challenge IE longer than the frame ends the auth attempt");
+
+  /* (2) The memory-safety half, and the deterministic one. A tagged section of
+   * exactly ONE byte: the old loop's `frame_current < frame_end` says that byte
+   * is in range, and the body then reads frame_current[1] - the length - which
+   * is one past the end. On the device that frame is an hcd_malloc'd COMRAM
+   * block with the USB allocator's own bookkeeping behind it and no MMU to
+   * object, and the byte it picks up decides both how the walk advances and,
+   * if it happens to read as IEEE80211_CHALLENGE_LEN, whether a further 128
+   * bytes are copied from past the end. Attacker-triggerable: it needs only an
+   * auth frame whose tagged parameters stop mid-element.
+   *
+   * ASan reports "READ of size 1" against HEAD; the iterator needs two bytes
+   * before it reads either, so it stops. Last in the scenario because the abort
+   * ends the process. */
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;   /* an id with no length byte */
+  rx_input(n + 7, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a one-byte tagged section is rejected without reading its length");
+
+  ieee80211_authmode = IEEE80211_AUTH_OPEN;   /* leave the module as we found it */
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
@@ -641,6 +744,7 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "rx-rsn") == 0)   scen_rx_rsn();
   if (!only || strcmp(only, "rx-rsn-version") == 0) scen_rx_rsn_version();
   if (!only || strcmp(only, "assoc-ssid") == 0)     scen_assoc_ssid();
+  if (!only || strcmp(only, "auth-challenge") == 0) scen_auth_challenge();
 
   /* Retire whatever a scenario left queued. Every TX here is now owned by the
    * URB completion, so without this a scenario run on its own (the point of the

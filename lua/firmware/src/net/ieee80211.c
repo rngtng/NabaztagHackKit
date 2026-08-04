@@ -102,6 +102,43 @@ static void ieee80211_set_assoc_ssid(const uint8_t *ssid)
 	ieee80211_assoc_ssid[len] = 0;
 }
 
+/* Bounds-checked walk over an 802.11 information-element list (#317).
+
+   Every IE walk in this file needs the same two facts and re-derived them
+   separately: the id and length bytes must both be inside the frame before
+   either is read, and the body must be inside it before it is consumed. #293
+   fixed two walks that way; the shared-auth challenge one still had the
+   original form that checked neither. One iterator, so a fourth site cannot
+   get it wrong - there is nothing left to get wrong.
+
+   It works on the REMAINING LENGTH rather than on `p + 2 + p[1] <= end`. That
+   idiom is correct in effect but forms a pointer past the end of the object
+   before comparing it, which is undefined behaviour - benign on this target,
+   flagged by the UBSan the host tests run under, and never necessary.
+
+   Returns 0 for the end of the list AND for a malformed element, which is the
+   same thing to every caller here: after a length byte that does not fit,
+   nothing further in the list can be trusted. */
+struct ieee80211_ie {
+	uint8_t  id;
+	uint8_t  len;
+	uint8_t *body;
+};
+
+static int ieee80211_ie_next(uint8_t **pp, uint8_t *end, struct ieee80211_ie *out)
+{
+	uint8_t *p = *pp;
+	uint32_t left = (uint32_t)(end - p);
+
+	if(left < 2) return 0;
+	if((uint32_t)p[1] + 2 > left) return 0;
+	out->id   = p[0];
+	out->len  = p[1];
+	out->body = p + 2;
+	*pp = p + 2 + p[1];
+	return 1;
+}
+
 static uint16_t ieee80211_rate_to_mask(uint8_t rate)
 {
 	switch(rate) {
@@ -858,6 +895,7 @@ static void ieee80211_input_shared_auth(uint16_t algorithm,
 			uint8_t *frame_current, *frame_end;
 			uint8_t *challenge;
 			uint8_t challenge_length;
+			struct ieee80211_ie ie;
 
 			DBG_WIFI("Received challenge"EOL);
 
@@ -866,12 +904,22 @@ static void ieee80211_input_shared_auth(uint16_t algorithm,
 			frame_current = tagged_parameters;
 			frame_end = tagged_parameters + tagged_length;
 
-			while(frame_current < frame_end) {
-				if(frame_current[0] == IEEE80211_ELEMID_CHALLENGE) {
-					challenge = &frame_current[2];
-					challenge_length = frame_current[1];
+			/* The one walk #293 did not reach, and it checked NEITHER bound
+			   (#317). `frame_current < frame_end` proves only that the element's
+			   FIRST byte is in range, and the body then read frame_current[1] - so
+			   a tagged section ending in a single byte read one past the end. Not
+			   the 255-byte read it looks like: ieee80211_send_challenge_reply
+			   refuses any length that is not IEEE80211_CHALLENGE_LEN, so the
+			   effects are a 1-byte over-read (deterministic, remote), a 128-byte
+			   one only if that stray byte happens to read as 128, and an attempt
+			   left hanging in S_AUTH instead of failed. Unreachable in this build
+			   (ieee80211_authmode is only ever OPEN since #124 dropped WEP) but
+			   live in mtl, which still does shared-key auth - see #307. */
+			while(ieee80211_ie_next(&frame_current, frame_end, &ie)) {
+				if(ie.id == IEEE80211_ELEMID_CHALLENGE) {
+					challenge = ie.body;
+					challenge_length = ie.len;
 				}
-				frame_current += (frame_current[1] + 2);
 			}
 
 			if((challenge == NULL) || (challenge_length == 0)) {
@@ -1019,6 +1067,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 {
 	struct ieee80211_frame *fr = (struct ieee80211_frame *)frame;
 	uint8_t *frame_current, *frame_end;
+	struct ieee80211_ie ie;
 	uint32_t i;
 
 	if(length < sizeof(struct ieee80211_frame)) return;
@@ -1041,27 +1090,22 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 				/* Initialised before the walk (#293): a frame with no SSID IE
 				   left this array untouched and `ssid[0]` was still read below. */
 				ssid[0] = 0;
-				/* An IE needs its id AND its length byte inside the frame before
-				   either can be read, and its payload inside the frame before it
-				   can be copied. The old walk tested only `frame_current <
-				   frame_end` and then read both bytes, so one trailing byte -
-				   a pad, or a frame clipped by one - read past the end (#293). */
-				while(frame_current + 2 <= frame_end) {
-					uint8_t ie_len = frame_current[1];
-
-					if(frame_current + 2 + ie_len > frame_end) break;
-					if(frame_current[0] == IEEE80211_ELEMID_SSID) {
+				/* #293 bounded this walk in place; the iterator now carries that
+				   rule for it (#317), including dropping the `frame_current + 2 +
+				   ie_len > frame_end` form, which had to build a pointer past the
+				   frame before it could reject it. */
+				while(ieee80211_ie_next(&frame_current, frame_end, &ie)) {
+					if(ie.id == IEEE80211_ELEMID_SSID) {
 						/* The length byte comes off the air. The scan path below
 						   has always bounded this copy; this one did not, and
 						   ssid[] is 33 bytes on our own stack (#293). */
-						if(ie_len <= IEEE80211_SSID_MAXLEN) {
+						if(ie.len <= IEEE80211_SSID_MAXLEN) {
 							ssid_present = 1;
-							for(i=0;i<ie_len;i++)
-								ssid[i] = frame_current[i+2];
+							for(i=0;i<ie.len;i++)
+								ssid[i] = ie.body[i];
 							ssid[i] = 0;
 						}
 					}
-					frame_current += (ie_len + 2);
 				}
 				if(ssid[0] == 0) ssid_present = 0;
 
@@ -1115,28 +1159,28 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 					else
 						scan_result.encryption = IEEE80211_CRYPT_NONE;
 
-					/* Same bound as the AP-mode walk above (#293): the id and
-					   the length byte must both be inside the frame before either
-					   is read, and the payload before it is consumed. */
-					while(frame_current + 2 <= frame_end
-					      && frame_current + 2 + frame_current[1] <= frame_end) {
-						switch(frame_current[0]) {
+					/* #293 bounded this walk in place; the iterator carries the
+					   rule now (#317). The old condition had to form
+					   `frame_current + 2 + frame_current[1]` - a pointer past the
+					   frame - before it could reject it. */
+					while(ieee80211_ie_next(&frame_current, frame_end, &ie)) {
+						switch(ie.id) {
 							case IEEE80211_ELEMID_SSID:
-								if(frame_current[1] < sizeof(scan_result.ssid)) {
-									for(i=0;i<frame_current[1];i++)
-										scan_result.ssid[i] = frame_current[i+2];
+								if(ie.len < sizeof(scan_result.ssid)) {
+									for(i=0;i<ie.len;i++)
+										scan_result.ssid[i] = ie.body[i];
 									scan_result.ssid[i] = 0;
 								}
 								break;
 							case IEEE80211_ELEMID_DSPARMS:
 								/* one-byte IE; a zero-length one carries no channel */
-								if(frame_current[1] >= 1)
-									scan_result.channel = frame_current[2];
+								if(ie.len >= 1)
+									scan_result.channel = ie.body[0];
 								break;
 							case IEEE80211_ELEMID_RATES:
 							case IEEE80211_ELEMID_XRATES:
-								for(i=0;i<frame_current[1];i++) {
-									scan_result.rateset |= ieee80211_rate_to_mask(frame_current[i+2] & 0x7f);
+								for(i=0;i<ie.len;i++) {
+									scan_result.rateset |= ieee80211_rate_to_mask(ie.body[i] & 0x7f);
 #ifdef DEBUG_WIFI
 									//sprintf(dbg_buffer, "supported rate:0x%02x"EOL, frame_current[i+2]);
 									//DBG_WIFI(dbg_buffer);
@@ -1155,13 +1199,13 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 //dump(frame_current,frame_current[1]);
                 #endif
 
-                current = &frame_current[2];
+                current = ie.body;
                 /* Every suite count below is a u16 off the air, and every walk
                    used to run `count` iterations of 4 bytes with nothing checked
                    against the frame - 0x4000 suites walked 256 KB past it (#294).
                    The enclosing walk has already proved this IE is inside the
                    frame, so its own end is the bound. */
-                ie_end = current + frame_current[1];
+                ie_end = ie.body + ie.len;
                 /* CCMP only (#124): a TKIP group or pairwise suite no longer
                  * counts as supported - the join path can't key it. */
                 /* Element 1: Version (u16). NOT a suite count (#310): per
@@ -1264,7 +1308,6 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 							default:
 								break;
 						}
-						frame_current += (frame_current[1] + 2);
 					}
 					if(scan_result.rateset == 0) scan_result.rateset = IEEE80211_RATEMASK_1;
 
