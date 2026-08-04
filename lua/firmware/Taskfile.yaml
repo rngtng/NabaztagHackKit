@@ -215,6 +215,37 @@ tasks:
     cmds:
       - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
 
+  check:
+    desc: 'Syntax-check one firmware TU with the real cross-compiler, without building anything (#319). SRC=<path relative to lua/firmware> selects it; the default is src/main.c, the one TU nothing else ever compiles - it carries main(), so no host test links it and the full ARM build is otherwise the only thing that reads it. Seconds instead of minutes, and it is -Werror like the build, so a clean exit means clean. Not part of verify: firmware:build subsumes it.'
+    summary: 'Usage: task lua:firmware:check [SRC=src/net/ieee80211.c]'
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [image]
+    vars:
+      SRC: '{{.SRC | default "src/main.c"}}'
+    cmds:
+      # Same compiler and the same -I set as the Makefile, so this cannot pass on
+      # something the build would reject. -fsyntax-only stops after parsing, which
+      # is what makes it fast; it will not catch anything the linker decides.
+      #
+      # -Igen is included because src/main.c includes the generated boot_lc.h,
+      # so this needs a prior `task lua:firmware:build`. Vendored dirs are exempt
+      # from our -Werror set in the Makefile, so this mirrors that with -w for
+      # anything under src/net, src/usb or lua/ and stays strict elsewhere.
+      - |
+        docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work {{.FV_IMAGE}} sh -c '
+          set -e
+          if [ ! -f gen/boot_lc.h ]; then
+            echo "check: gen/boot_lc.h missing - run task lua:firmware:build first" >&2
+            exit 1
+          fi
+          case "{{.SRC}}" in
+            src/net/*|src/usb/*|lua/*) STRICT="-w" ;;
+            *) STRICT="-Wall -Wextra -Wpedantic -Wpointer-arith -Wcast-align -Werror" ;;
+          esac
+          arm-none-eabi-gcc -fsyntax-only -std=gnu11 -mcpu=arm7tdmi -mthumb -mthumb-interwork \
+            $STRICT -Iinc/ -Isys/inc -Ilua -Igen "{{.SRC}}"
+          echo "check: {{.SRC}} is clean"'
+
   test:host:
     desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core, the fmt shims, the register-only HAL drivers) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. TEST=<binary> runs one test, SCENARIO=<name> one scenario within it.'
     summary: 'Usage: task lua:firmware:test:host [TEST=rfid_test] [SCENARIO=wedged]'

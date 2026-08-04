@@ -40,7 +40,15 @@ Two questions that repeatedly found things here:
 
 ## 2. Decide what is testable — do not assume
 
-Before writing off a file as "needs hardware", **probe it**:
+Two different questions, and reaching for the wrong tool answers neither:
+
+- **"Does my edit still compile for the target?"** — `task lua:firmware:check
+  [SRC=…]`. Real cross-compiler, the Makefile's own flags, seconds. Use it after
+  editing any firmware TU, and *especially* `main.c`, where the full ARM build is
+  otherwise the only reader (§4).
+- **"Could this file be host-tested at all?"** — the probe below. A one-off
+  assessment with throwaway flags, which is why it stays a raw command rather
+  than a task.
 
 ```sh
 gcc -fsyntax-only -std=gnu11 -D_NAB_SIM \
