@@ -991,22 +991,28 @@ static void ieee80211_send_probe_response(uint8_t *dest_mac)
 	0				/* PacketId */
 	);
 
+	/* A QUEUED frame belongs to the USB stack, not to us. rt2501_tx() hands the
+	   buffer to usbh_bulk_transfer_async(), which installs usbh_free_urb_callback
+	   as the URB completion; when the OHCI TD retires, hcd_bulk_transfer_done()
+	   calls it and it does hcd_free(urb->buffer). So the ONLY case that needs a
+	   free here is the one where the queue attempt failed and no callback will
+	   ever run.
+
+	   #295 read the missing free as a COMRAM leak and freed on both paths. There
+	   was no leak: what the host harness saw was its own rt2501_tx stub, which
+	   returned success without modelling that ownership transfer. Freeing after a
+	   successful queue is worse than the leak it replaced - the block goes back to
+	   the pool while the controller is still reading the frame out of it, and the
+	   completion then frees it a second time, unlinking whatever was handed that
+	   address in between. rt2501_scan does the same thing and gets away with it
+	   only because a DelayMs(350) follows with nothing allocating in the window;
+	   it is fixed alongside this, not cited as precedent. */
 	if(!rt2501_tx(presp, sizeof(TXD_STRUC)+frame_length)) {
 		DBG_WIFI("TX error in ieee80211_send_probe_response"EOL);
+		disable_ohci_irq();
+		hcd_free(presp);
+		enable_ohci_irq();
 	}
-
-	/* Release the frame on BOTH paths (#295). It was never freed at all: in AP
-	   mode every answered probe request leaked ~115 bytes of COMRAM, and the
-	   pool hcd.c hands out is 4 KB (ComRAMSize), so ~32 answers exhausted it -
-	   fewer, since the OHCI descriptors and RX/TX buffers live there too. The
-	   parser answers every broadcast probe from every scanning device in range,
-	   and net.setup.run sits in its serve loop for as long as it takes a user to
-	   type a password, so the pool drained before the portal was ever used - and
-	   what runs dry is the USB allocator, so what stops is the radio.
-	   rt2501_scan has always freed its probe the same way. */
-	disable_ohci_irq();
-	hcd_free(presp);
-	enable_ohci_irq();
 }
 
 static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
@@ -1815,12 +1821,17 @@ void rt2501_scan(const uint8_t *ssid, rt2501_scan_callback callback, void *userp
 		0				/* PacketId */
 					 );
 
+		/* Only on the failure path: a queued frame is the USB stack's to free
+		   (see ieee80211_send_probe_response). Freeing it here regardless was
+		   the vendored original, and it is the same double free - survivable
+		   only because the DelayMs(350) below leaves the window empty. */
 		if(!rt2501_tx(probe, frame_length+sizeof(TXD_STRUC)))
     {
 			DBG_WIFI("Unable to send probe request !"EOL);
+			disable_ohci_irq();
+			hcd_free(probe);
+			enable_ohci_irq();
     }
-
-    hcd_free(probe);
 
 		DelayMs(350);
 	}

@@ -47,7 +47,8 @@
  *
  *   short     a legal 32-byte SSID must build cleanly (the non-vacuous half)
  *   long      an over-long SSID must not run off the probe allocation
- *   rx-legal  a well-formed probe request is answered (the non-vacuous half)
+ *   rx-legal  a well-formed probe request is answered, and the frame that
+ *             answers it is owned by the URB completion, not by its sender
  *   rx-ssid   AP mode: a probe request's SSID IE length comes off the air
  *   rx-walk   the IE walk must not step past the end of the frame
  *   rx-rsn    STA scan: an RSN IE's suite count comes off the air
@@ -86,12 +87,9 @@ static unsigned tx_calls;
 static unsigned malloc_calls;
 static unsigned free_calls;
 
-/* Live hcd_malloc blocks. rt2501_auth() hcd_mallocs its auth frame and returns
- * without ever freeing it - the leak shape rx-legal describes for probe
- * responses, on a path that still has it - so a scenario that drives the join
- * would fail the whole binary on a LeakSanitizer report that belongs to the
- * vendored driver rather than to the test. hcd_drain() releases whatever the
- * driver still holds, and the malloc/free counters stay exact for rx-legal. */
+/* Live hcd_malloc blocks, so a scenario can release whatever is still queued
+ * at its end (see usb_complete_pending) without LeakSanitizer failing the
+ * binary on a frame the USB stack would have freed on a real completion. */
 #define HCD_LIVE_MAX 16
 static void *hcd_live[HCD_LIVE_MAX];
 
@@ -114,13 +112,21 @@ void hcd_free(void *p)
   free(p);
 }
 
-static void hcd_drain(void)
+static int hcd_live_count(void)
 {
+  int n = 0;
   for (int i = 0; i < HCD_LIVE_MAX; i++)
-    if (hcd_live[i] != NULL) { free(hcd_live[i]); hcd_live[i] = NULL; }
+    if (hcd_live[i] != NULL) n++;
+  return n;
 }
 
-void DelayMs(uint16_t ms) { (void)ms; }   /* the 350 ms per-channel dwell */
+static void usb_complete_pending(void);
+
+/* The 350 ms per-channel dwell. Time passing is exactly when a queued transfer
+ * retires, so this is where rt2501_scan's probes come back - modelling the
+ * dwell as a no-op would leave every probe queued for the whole scan and hide
+ * whether the driver frees a frame it no longer owns. */
+void DelayMs(uint16_t ms) { (void)ms; usb_complete_pending(); }
 
 void eapol_init(void) {}
 uint8_t rt2501_beacon(void *b, uint32_t len) { (void)b; (void)len; return 1; }
@@ -132,8 +138,42 @@ uint8_t rt2501_set_bssid(const uint8_t *b) { (void)b; return 1; }
 int32_t rt2501_set_key(uint8_t i, uint8_t *k, uint8_t *tx, uint8_t *rx, uint8_t c)
 { (void)i; (void)k; (void)tx; (void)rx; (void)c; return 1; }
 void rt2501_switch_channel(uint8_t ch) { (void)ch; }
+
+/* rt2501_tx TAKES OWNERSHIP of the frame. usb/rt2501usb.c hands it to
+ * usbh_bulk_transfer_async(), which installs usbh_free_urb_callback as the URB
+ * completion; when the OHCI TD retires, hcd_bulk_transfer_done() (usb/hcd.c)
+ * calls it and it does hcd_free(urb->buffer). Queue it here and release it in
+ * usb_complete_pending() the way that IRQ would.
+ *
+ * The stub this replaced returned success and did nothing, which made a frame
+ * the USB stack owns look unfreed. That is what #295 read as a COMRAM leak in
+ * ieee80211_send_probe_response, and the free it added on the success path was
+ * a double free on real silicon. A stub that models a seam conveniently rather
+ * than faithfully does not merely miss defects - it invents them. */
+#define URB_PENDING_MAX 8
+static void *urb_pending[URB_PENDING_MAX];
+static unsigned urb_completions;
+
 int8_t rt2501_tx(void *frame, uint32_t len)
-{ (void)frame; (void)len; tx_calls++; return 1; }
+{
+  (void)len;
+  tx_calls++;
+  for (int i = 0; i < URB_PENDING_MAX; i++)
+    if (urb_pending[i] == NULL) { urb_pending[i] = frame; return 1; }
+  return 0;   /* no URB slot: nothing queued, so the caller keeps the buffer */
+}
+
+/* Retire every queued TX, as the OHCI completion IRQ does. */
+static void usb_complete_pending(void)
+{
+  for (int i = 0; i < URB_PENDING_MAX; i++)
+    if (urb_pending[i] != NULL) {
+      void *b = urb_pending[i];
+      urb_pending[i] = NULL;
+      urb_completions++;
+      hcd_free(b);            /* usbh_free_urb_callback's hcd_free(urb->buffer) */
+    }
+}
 uint16_t rt2501_txtime(uint32_t len, uint8_t rate) { (void)len; (void)rate; return 100; }
 uint8_t rt2501_write(PDEVINFO dev, uint16_t reg, uint32_t val)
 { (void)dev; (void)reg; (void)val; return 1; }
@@ -282,7 +322,7 @@ static void scen_rx_legal(void)
 
   as_station();
   rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
-  tx_calls = malloc_calls = free_calls = 0;
+  tx_calls = malloc_calls = free_calls = urb_completions = 0;
 
   n = mgt_header(FC0_MGT_PROBE_REQ);
   n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');   /* honest length */
@@ -293,29 +333,31 @@ static void scen_rx_legal(void)
    * report in rx-ssid is that path and not some earlier bail-out. */
   CHECK(tx_calls == 1, "a matching probe request is answered with a response");
 
-  /* ieee80211_send_probe_response hcd_mallocs its frame and never frees it, on
-   * any path - unlike rt2501_scan, which frees each probe after the TX. The
-   * pool this comes out of is not large: hcd.c does
+  /* A QUEUED frame is the USB stack's, so the sender must leave it alone.
    *
-   *     hcd_malloc_init(ComRAMAddr, ComRAMSize, 16, COMRAM);   // 0x1000 = 4 KB
+   * #295 read the absent free as a COMRAM leak and freed on both paths. It was
+   * not a leak: rt2501_tx hands the buffer to usbh_bulk_transfer_async, whose
+   * usbh_free_urb_callback frees it when the OHCI TD retires. What made it look
+   * like one was this harness - the old rt2501_tx stub returned success and did
+   * nothing, so nothing ever released a frame the driver had correctly given
+   * away, and `free_calls == malloc_calls` asserted a contract the device does
+   * not have. On silicon that free returned the block to a 4 KB pool while the
+   * controller was still reading the frame out of it, and the completion then
+   * freed it a second time - unlinking whatever had been handed that address in
+   * between. Worse than the leak it was written to fix, on the AP path
+   * net.setup.run puts the rabbit in to be provisioned.
    *
-   * and the leaked frame is 115 bytes, rounded to the allocator's 16-byte
-   * boundary = 128. So roughly THIRTY-TWO answered probe requests exhaust
-   * COMRAM - fewer in practice, since the OHCI descriptors, endpoint state and
-   * RX/TX buffers already live there.
-   *
-   * Thirty-two is nothing. The parser answers a probe request whose SSID
-   * matches OR that carries no SSID IE at all (`!ssid_present`, line 1025) -
-   * i.e. every broadcast probe from every scanning device in range - and
-   * net.setup.run sits in its serve loop for as long as it takes the user to
-   * find the network, open the page and type a password. One phone scanning
-   * nearby drains the pool before that. What runs dry is the USB allocator, so
-   * what stops is the radio, not just the portal.
-   *
-   * (mtl/firmware's copy of this file has the same leak - a fix belongs in
-   * both.) */
+   * Both halves are asserted, because only the pair pins the contract: before
+   * the completion the frame must still be live, and after it, gone. Against
+   * the pre-fix source the first CHECK fails and the completion below aborts
+   * under ASan with attempting-double-free. */
+  CHECK(free_calls == 0,
+        "a successfully queued frame is not freed by its sender");
+
+  usb_complete_pending();
+  CHECK(urb_completions == 1, "the queued frame really was queued");
   CHECK(free_calls == malloc_calls,
-        "the probe-response frame is released after it is sent");
+        "the URB completion releases the probe-response frame");
 }
 
 /* --- rx-ssid: the SSID IE length is attacker-controlled ------------------- */
@@ -570,12 +612,26 @@ static void scen_assoc_ssid(void)
               IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
   CHECK(strlen((char *)ieee80211_assoc_ssid) == IEEE80211_SSID_MAXLEN,
         "the join path clamps the stored SSID to 32 bytes");
-  hcd_drain();                      /* rt2501_auth keeps its auth frame */
+
+  /* rt2501_auth hands its auth frame to rt2501_tx and returns without freeing
+   * it. That is CORRECT - the URB completion owns it from there - and retiring
+   * the transfer proves it rather than assuming it. #312 read LeakSanitizer's
+   * report here as a real leak "on a path that still has it" and drained the
+   * block to keep the binary green; the drain hid that the contract was already
+   * being kept, and the same reading is what put a double free next door. */
+  usb_complete_pending();
+  CHECK(hcd_live_count() == 0, "the join path leaves no frame unowned");
 }
 
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
+
+  /* Unbuffered: these scenarios are expected to abort under ASan when they
+   * regress, and an abort discards whatever is still sitting in stdout's block
+   * buffer - which is every scenario banner and every FAIL line printed before
+   * it. That turns "which check was this?" into a guess. */
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   if (!only || strcmp(only, "short") == 0)    scen_short();
   if (!only || strcmp(only, "long") == 0)     scen_long();
@@ -585,6 +641,12 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "rx-rsn") == 0)   scen_rx_rsn();
   if (!only || strcmp(only, "rx-rsn-version") == 0) scen_rx_rsn_version();
   if (!only || strcmp(only, "assoc-ssid") == 0)     scen_assoc_ssid();
+
+  /* Retire whatever a scenario left queued. Every TX here is now owned by the
+   * URB completion, so without this a scenario run on its own (the point of the
+   * argv selector) would exit with frames still in flight and LeakSanitizer
+   * would fail it for the driver keeping its side of the contract. */
+  usb_complete_pending();
 
   if (failures) {
     printf("ieee80211_test: %d check(s) FAILED\n", failures);
