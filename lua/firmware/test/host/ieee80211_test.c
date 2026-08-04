@@ -501,6 +501,42 @@ static void scen_rx_rsn_version(void)
   CHECK(scan_hits == 1, "the truncated-RSN beacon reached a scan result");
   CHECK(scan_enc != IEEE80211_CRYPT_NONE,
         "a truncated RSN IE must not downgrade an encrypted AP to open");
+
+  /* The same requirement at EVERY other point the parse can run out of IE.
+   * The bail-outs deeper in walk out carrying a half-built label - CCMP group
+   * bit set, no CRYPT_WPA2 - and `encryption & 0xF0` is what rt2501_auth
+   * switches on to choose an auth mode, so 0x08 and 0x0A both land in its
+   * `case IEEE80211_CRYPT_NONE:` arm: authmode OPEN, rt2501_set_key(NONE).
+   * A privacy-flagged AP would be associated with as an open one.
+   *
+   * Truncation lengths: 6 = version + group suite (dies at the pairwise
+   * count), 12 = + pairwise count and suite (dies at the AKM count). Both are
+   * legal byte counts to put in a length field. */
+  static const uint8_t trunc_at[] = {6, 12};
+  for (unsigned t = 0; t < sizeof trunc_at / sizeof *trunc_at; t++) {
+    static const uint8_t body[] = {
+      0x01, 0x00,                   /* version 1 */
+      0x00, 0x0F, 0xAC, 0x04,       /* group cipher suite: CCMP */
+      0x01, 0x00,                   /* pairwise suite count */
+      0x00, 0x0F, 0xAC, 0x04,       /* pairwise cipher suite: CCMP */
+    };
+
+    ieee80211_state = IEEE80211_S_SCAN;
+    scan_hits = 0; scan_enc = 0;
+    n = mgt_header(FC0_MGT_BEACON);
+    rxbuf[n + 10] = IEEE80211_CAPINFO_PRIVACY & 0xFF;
+    rxbuf[n + 11] = IEEE80211_CAPINFO_PRIVACY >> 8;
+    n += 12;
+    rxbuf[n] = IEEE80211_ELEMID_RSN;
+    rxbuf[n + 1] = trunc_at[t];
+    memcpy(rxbuf + n + 2, body, trunc_at[t]);
+    n += 2 + trunc_at[t];
+    rx_input(n, -40);
+
+    CHECK(scan_hits == 1, "the part-truncated RSN beacon reached a scan result");
+    CHECK((scan_enc & 0xF0) != IEEE80211_CRYPT_NONE,
+          "an RSN IE truncated mid-parse must not read as an open network");
+  }
 }
 
 /* --- assoc-ssid: the stored SSID is copied into a 33-byte global ---------- */

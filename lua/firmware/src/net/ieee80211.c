@@ -1195,7 +1195,16 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 3: Pairwise cipher suite count + list (OUIs) */
-                if(current + 2 > ie_end) break;
+                /* Truncated here, the label built so far is the group CCMP bit
+                   and nothing else - and `encryption & 0xF0` is what rt2501_auth
+                   switches on, so a partial label lands in its CRYPT_NONE arm and
+                   a privacy-flagged AP gets associated with as an open one (#310).
+                   Every bail-out past this point says UNSUPPORTED, like the
+                   !found ones do. */
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
@@ -1216,7 +1225,10 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 4: AKM suite count + list (OUIs) */
-                if(current + 2 > ie_end) break;
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
