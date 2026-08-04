@@ -25,7 +25,7 @@
     from `struct.pack` off RFC 4330, civil dates from CPython's `datetime`, every DST
     instant from the IANA tzdb — including the scripted `ifc:ntp` server, which is
     pinned to the generator's bytes so it cannot drift into agreeing with `ntp.lua`.
-    `sys/ntp` 928 B, `sys/time` 3774 B, `iface` +1074 B (the retry loop `:ntp`
+    `sys/ntp` 928 B, `sys/time` 3774 B, `iface` +1001 B (the retry loop `:ntp`
     shares with `:resolve` is now written once).
 
   * [#283](https://github.com/rngtng/NabaztagHackKit/issues/283): the lua track's four
