@@ -29,9 +29,11 @@ event_test: event_test.c $(FW)/src/utils/event.c
 # -Wno-format*: gcc checks the format strings against GLIBC's printf, but the
 # calls here deliberately exercise our own - truncation, a NULL %s, an unknown
 # conversion - which are the contracts under test, not mistakes.
+# -lm: the `parity` scenario referees fmt.c's two float paths against glibc's
+# own printf, and needs trunc() to state the contract (integer part, truncated).
 fmt_test: fmt_test.c $(FW)/src/utils/fmt.c
 	$(CC) $(CFLAGS) -U_FORTIFY_SOURCE -Wno-format -Wno-format-truncation \
-	      -o $@ $^ $(LDFLAGS)
+	      -o $@ $^ $(LDFLAGS) -lm
 
 # rfid.c drives the coupler purely through write_i2c/read_i2c, so the whole
 # scan runs host-native with that boundary stubbed. -std=gnu11: common.h's
