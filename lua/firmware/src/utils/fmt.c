@@ -114,8 +114,11 @@ static void pf_pad(char **d, char *end, size_t *n, char c, int count)
  * the exact inverse of the promotion that put the value in the varargs: on this
  * target LUA_32BITS makes lua_Number a float, so every float that reaches a
  * "..." arrived as one. Rounds to nearest with ties to even and saturates to
- * inf outside the float range - i.e. exactly what the cast would have done, so
- * "%f" and print() of the same value render the same digits. */
+ * inf on overflow, as the cast would, so "%f" and print() of the same value
+ * render the same digits. It differs from a true cast in one place that cannot
+ * reach the output: anything below the float's NORMAL range flushes to zero
+ * instead of becoming a subnormal, and every such value is < 1, which this
+ * shim prints as "0.0" either way. */
 static float pf_d2f(uint64_t u)
 {
   union { float f; uint32_t u; } fv;
@@ -132,11 +135,12 @@ static float pf_d2f(uint64_t u)
     int fe = e - 1023 + 127;                        /* rebias */
     uint32_t rest = (uint32_t)(frac & 0x1FFFFFFFu); /* the 29 bits dropped above */
 
-    if (rest > 0x10000000u || (rest == 0x10000000u && (m & 1u)))
+    if (rest > 0x10000000u || (rest == 0x10000000u && (m & 1u))) {
       if (++m == 0x800000u) {                       /* the carry left the field */
         m = 0;
         fe++;
       }
+    }
     if (fe >= 0xFF)
       fv.u = sign | 0x7F800000u;                    /* overflows the float range */
     else if (fe <= 0)
