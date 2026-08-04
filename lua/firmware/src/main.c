@@ -1268,9 +1268,20 @@ static void drop_lc_payload(long len)
 /* Parse a "#LC:<len>:<sum>" header (already read into `line`), stream the
  * following 2*len hex chars into a fresh buffer, verify the checksum and load
  * it as a Lua chunk. Leaves the compiled chunk on the stack on success (like
- * load_line), else pushes an error message and returns non-LUA_OK. Either way
- * the frame's payload is consumed, so the console stays in sync. The buffer
+ * load_line), else pushes an error message and returns non-LUA_OK. The buffer
  * comes from the external-RAM heap (_sbrk).
+ *
+ * The payload is consumed on every path but ONE, and the exception is
+ * deliberate: LCFRAME_ERR_TOOLONG leaves *len at 0 (see lcframe.c) precisely so
+ * a header claiming 4 GB cannot make us read 8 GB of hex, which means
+ * drop_lc_payload eats only the first line and the rest of that frame's hex is
+ * then read as REPL input - one "bytecode-only build" reply per wrapped line,
+ * the #308 desync in its remaining corner. It takes a chunk over LC_MAX (64 KB)
+ * to reach, which no sender here produces. Draining to the first non-hex byte
+ * instead would resync without trusting the length, but that is a loop over
+ * attacker-paced input in main.c, where nothing can link it to test it - so it
+ * is written down rather than half-done. This comment used to claim the console
+ * stayed in sync either way, which was simply not true.
  *
  * The header parse itself is utils/lcframe.c - it is the part with a rule to
  * it, so it lives where a test can link it. */

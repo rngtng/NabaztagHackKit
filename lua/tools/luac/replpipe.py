@@ -75,12 +75,26 @@ def fletcher32(data: bytes) -> int:
     return ((b << 16) | a) & 0xFFFFFFFF
 
 
-def emit_frame(out, chunk: bytes) -> None:
-    """Write one #LC frame: header line + hex payload wrapped at 64 columns."""
-    out.write(f"#LC:{len(chunk)}:{fletcher32(chunk):08x}\n")
+def frame_bytes(chunk: bytes) -> bytes:
+    """One complete #LC frame: header line + hex payload wrapped at 64 columns,
+    exactly what one load_lc_frame() call on the device consumes.
+
+    THE definition of the wire format for both senders. luash.py used to carry
+    its own byte-for-byte copy of this and of fletcher32() - two encoders for a
+    format whose whole job is that both ends agree, in one directory, where
+    luash.py already imports from this module. A checksum that drifts between
+    senders is not a checksum.
+    """
+    out = [f"#LC:{len(chunk)}:{fletcher32(chunk):08x}\n"]
     hexs = chunk.hex()
     for i in range(0, len(hexs), 64):
-        out.write(hexs[i:i + 64] + "\n")
+        out.append(hexs[i:i + 64] + "\n")
+    return "".join(out).encode()
+
+
+def emit_frame(out, chunk: bytes) -> None:
+    """Write one #LC frame to a TEXT stream (see frame_bytes)."""
+    out.write(frame_bytes(chunk).decode())
 
 
 def frame_lua_source(path: str, image: str, out) -> int:

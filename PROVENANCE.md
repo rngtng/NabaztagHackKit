@@ -38,3 +38,18 @@ protection (#154), WPA2/CCMP GTK unwrap (#152, KAT-verified via `task mtl:firmwa
 the boot USB init drops VBUS and retries the controller/host re-init cycle up to 3x, so an
 RT2573 that fails to enumerate - or is wedged on stale 8051 state - gets a real cold boot.
 Both tracks now run the same sequence; a change to one belongs in the other.
+
+**TX frame ownership** (`lua/firmware/src/net/ieee80211.c`, `src/usb/rt2501usb.c`) - a
+lua-track divergence, and the one place the two copies of `ieee80211.c` must NOT be
+reconciled by copying. `rt2501_tx()` hands the buffer to `usbh_bulk_transfer_async()`,
+which installs `usbh_free_urb_callback`; that callback does `hcd_free(urb->buffer)` when
+the OHCI TD retires. So a *queued* frame belongs to the USB stack, and freeing it in the
+sender returns it to a 4 KB pool the controller is still reading from, then frees it again
+on completion. The contract was undocumented, which is how #295 came to add exactly that
+free to `ieee80211_send_probe_response` on the strength of a host stub that returned
+success without modelling the hand-off. It is now stated at `rt2501_tx` and both sites free
+only when the queue attempt failed. The vendored original had the same bug in `rt2501_scan`
+(**still present in `mtl/firmware`'s copy at `rt2501_scan`**, where a following
+`DelayMs(350)` leaves the window empty and hides it). **#307's backport of #292-#296 into
+mtl must not carry #295's free across** - mtl's `ieee80211_send_probe_response` is correct
+as it stands, and only its `rt2501_scan` needs this fix.

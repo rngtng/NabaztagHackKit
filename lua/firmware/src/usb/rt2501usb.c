@@ -1095,7 +1095,15 @@ void rt2501_make_tx_descriptor(
   txd->Burst2 = txd->Burst = Fragment;
 }
 
-/* Buffer must be in COMRAM */
+/* Buffer must be in COMRAM.
+
+   OWNERSHIP: on success this hands `buffer` to usbh_bulk_transfer_async(),
+   which installs usbh_free_urb_callback as the URB completion - and that
+   callback does hcd_free(urb->buffer). The caller must therefore NOT free a
+   buffer this accepted; doing so returns it to the pool while the controller
+   is still reading from it, and the completion frees it a second time. Free it
+   ONLY when this returns 0, where nothing was queued and no callback will run.
+   Undocumented before, which is how #295 came to add exactly that free. */
 int8_t rt2501_tx(void *buffer, uint32_t length)
 {
   int8_t ret;

@@ -47,12 +47,14 @@
  *
  *   short     a legal 32-byte SSID must build cleanly (the non-vacuous half)
  *   long      an over-long SSID must not run off the probe allocation
- *   rx-legal  a well-formed probe request is answered (the non-vacuous half)
+ *   rx-legal  a well-formed probe request is answered, and the frame that
+ *             answers it is owned by the URB completion, not by its sender
  *   rx-ssid   AP mode: a probe request's SSID IE length comes off the air
  *   rx-walk   the IE walk must not step past the end of the frame
  *   rx-rsn    STA scan: an RSN IE's suite count comes off the air
  *   rx-rsn-version  STA scan: the RSN IE's first field is Version, not a count
  *   assoc-ssid      the stored SSID is copied into a 33-byte global
+ *   auth-challenge  the shared-key challenge IE walk stays inside the frame
  *
  * The rx-* scenarios are the serious ones, and they are not local: a probe
  * request is unauthenticated management traffic, so anything in radio range can
@@ -86,12 +88,9 @@ static unsigned tx_calls;
 static unsigned malloc_calls;
 static unsigned free_calls;
 
-/* Live hcd_malloc blocks. rt2501_auth() hcd_mallocs its auth frame and returns
- * without ever freeing it - the leak shape rx-legal describes for probe
- * responses, on a path that still has it - so a scenario that drives the join
- * would fail the whole binary on a LeakSanitizer report that belongs to the
- * vendored driver rather than to the test. hcd_drain() releases whatever the
- * driver still holds, and the malloc/free counters stay exact for rx-legal. */
+/* Live hcd_malloc blocks, so a scenario can release whatever is still queued
+ * at its end (see usb_complete_pending) without LeakSanitizer failing the
+ * binary on a frame the USB stack would have freed on a real completion. */
 #define HCD_LIVE_MAX 16
 static void *hcd_live[HCD_LIVE_MAX];
 
@@ -114,13 +113,21 @@ void hcd_free(void *p)
   free(p);
 }
 
-static void hcd_drain(void)
+static int hcd_live_count(void)
 {
+  int n = 0;
   for (int i = 0; i < HCD_LIVE_MAX; i++)
-    if (hcd_live[i] != NULL) { free(hcd_live[i]); hcd_live[i] = NULL; }
+    if (hcd_live[i] != NULL) n++;
+  return n;
 }
 
-void DelayMs(uint16_t ms) { (void)ms; }   /* the 350 ms per-channel dwell */
+static void usb_complete_pending(void);
+
+/* The 350 ms per-channel dwell. Time passing is exactly when a queued transfer
+ * retires, so this is where rt2501_scan's probes come back - modelling the
+ * dwell as a no-op would leave every probe queued for the whole scan and hide
+ * whether the driver frees a frame it no longer owns. */
+void DelayMs(uint16_t ms) { (void)ms; usb_complete_pending(); }
 
 void eapol_init(void) {}
 uint8_t rt2501_beacon(void *b, uint32_t len) { (void)b; (void)len; return 1; }
@@ -132,8 +139,42 @@ uint8_t rt2501_set_bssid(const uint8_t *b) { (void)b; return 1; }
 int32_t rt2501_set_key(uint8_t i, uint8_t *k, uint8_t *tx, uint8_t *rx, uint8_t c)
 { (void)i; (void)k; (void)tx; (void)rx; (void)c; return 1; }
 void rt2501_switch_channel(uint8_t ch) { (void)ch; }
+
+/* rt2501_tx TAKES OWNERSHIP of the frame. usb/rt2501usb.c hands it to
+ * usbh_bulk_transfer_async(), which installs usbh_free_urb_callback as the URB
+ * completion; when the OHCI TD retires, hcd_bulk_transfer_done() (usb/hcd.c)
+ * calls it and it does hcd_free(urb->buffer). Queue it here and release it in
+ * usb_complete_pending() the way that IRQ would.
+ *
+ * The stub this replaced returned success and did nothing, which made a frame
+ * the USB stack owns look unfreed. That is what #295 read as a COMRAM leak in
+ * ieee80211_send_probe_response, and the free it added on the success path was
+ * a double free on real silicon. A stub that models a seam conveniently rather
+ * than faithfully does not merely miss defects - it invents them. */
+#define URB_PENDING_MAX 8
+static void *urb_pending[URB_PENDING_MAX];
+static unsigned urb_completions;
+
 int8_t rt2501_tx(void *frame, uint32_t len)
-{ (void)frame; (void)len; tx_calls++; return 1; }
+{
+  (void)len;
+  tx_calls++;
+  for (int i = 0; i < URB_PENDING_MAX; i++)
+    if (urb_pending[i] == NULL) { urb_pending[i] = frame; return 1; }
+  return 0;   /* no URB slot: nothing queued, so the caller keeps the buffer */
+}
+
+/* Retire every queued TX, as the OHCI completion IRQ does. */
+static void usb_complete_pending(void)
+{
+  for (int i = 0; i < URB_PENDING_MAX; i++)
+    if (urb_pending[i] != NULL) {
+      void *b = urb_pending[i];
+      urb_pending[i] = NULL;
+      urb_completions++;
+      hcd_free(b);            /* usbh_free_urb_callback's hcd_free(urb->buffer) */
+    }
+}
 uint16_t rt2501_txtime(uint32_t len, uint8_t rate) { (void)len; (void)rate; return 100; }
 uint8_t rt2501_write(PDEVINFO dev, uint16_t reg, uint32_t val)
 { (void)dev; (void)reg; (void)val; return 1; }
@@ -282,7 +323,7 @@ static void scen_rx_legal(void)
 
   as_station();
   rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
-  tx_calls = malloc_calls = free_calls = 0;
+  tx_calls = malloc_calls = free_calls = urb_completions = 0;
 
   n = mgt_header(FC0_MGT_PROBE_REQ);
   n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');   /* honest length */
@@ -293,29 +334,31 @@ static void scen_rx_legal(void)
    * report in rx-ssid is that path and not some earlier bail-out. */
   CHECK(tx_calls == 1, "a matching probe request is answered with a response");
 
-  /* ieee80211_send_probe_response hcd_mallocs its frame and never frees it, on
-   * any path - unlike rt2501_scan, which frees each probe after the TX. The
-   * pool this comes out of is not large: hcd.c does
+  /* A QUEUED frame is the USB stack's, so the sender must leave it alone.
    *
-   *     hcd_malloc_init(ComRAMAddr, ComRAMSize, 16, COMRAM);   // 0x1000 = 4 KB
+   * #295 read the absent free as a COMRAM leak and freed on both paths. It was
+   * not a leak: rt2501_tx hands the buffer to usbh_bulk_transfer_async, whose
+   * usbh_free_urb_callback frees it when the OHCI TD retires. What made it look
+   * like one was this harness - the old rt2501_tx stub returned success and did
+   * nothing, so nothing ever released a frame the driver had correctly given
+   * away, and `free_calls == malloc_calls` asserted a contract the device does
+   * not have. On silicon that free returned the block to a 4 KB pool while the
+   * controller was still reading the frame out of it, and the completion then
+   * freed it a second time - unlinking whatever had been handed that address in
+   * between. Worse than the leak it was written to fix, on the AP path
+   * net.setup.run puts the rabbit in to be provisioned.
    *
-   * and the leaked frame is 115 bytes, rounded to the allocator's 16-byte
-   * boundary = 128. So roughly THIRTY-TWO answered probe requests exhaust
-   * COMRAM - fewer in practice, since the OHCI descriptors, endpoint state and
-   * RX/TX buffers already live there.
-   *
-   * Thirty-two is nothing. The parser answers a probe request whose SSID
-   * matches OR that carries no SSID IE at all (`!ssid_present`, line 1025) -
-   * i.e. every broadcast probe from every scanning device in range - and
-   * net.setup.run sits in its serve loop for as long as it takes the user to
-   * find the network, open the page and type a password. One phone scanning
-   * nearby drains the pool before that. What runs dry is the USB allocator, so
-   * what stops is the radio, not just the portal.
-   *
-   * (mtl/firmware's copy of this file has the same leak - a fix belongs in
-   * both.) */
+   * Both halves are asserted, because only the pair pins the contract: before
+   * the completion the frame must still be live, and after it, gone. Against
+   * the pre-fix source the first CHECK fails and the completion below aborts
+   * under ASan with attempting-double-free. */
+  CHECK(free_calls == 0,
+        "a successfully queued frame is not freed by its sender");
+
+  usb_complete_pending();
+  CHECK(urb_completions == 1, "the queued frame really was queued");
   CHECK(free_calls == malloc_calls,
-        "the probe-response frame is released after it is sent");
+        "the URB completion releases the probe-response frame");
 }
 
 /* --- rx-ssid: the SSID IE length is attacker-controlled ------------------- */
@@ -570,12 +613,332 @@ static void scen_assoc_ssid(void)
               IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
   CHECK(strlen((char *)ieee80211_assoc_ssid) == IEEE80211_SSID_MAXLEN,
         "the join path clamps the stored SSID to 32 bytes");
-  hcd_drain();                      /* rt2501_auth keeps its auth frame */
+
+  /* rt2501_auth hands its auth frame to rt2501_tx and returns without freeing
+   * it. That is CORRECT - the URB completion owns it from there - and retiring
+   * the transfer proves it rather than assuming it. #312 read LeakSanitizer's
+   * report here as a real leak "on a path that still has it" and drained the
+   * block to keep the binary green; the drain hid that the contract was already
+   * being kept, and the same reading is what put a double free next door. */
+  usb_complete_pending();
+  CHECK(hcd_live_count() == 0, "the join path leaves no frame unowned");
+}
+
+/* --- auth-challenge: the last unbounded IE walk (#317) -------------------- */
+/* The shared-key AUTH reply's tagged parameters. This walk was the one #293
+ * did not reach, and it checked NEITHER bound: the loop tested only that an
+ * element's first byte was in range, then read the id and length bytes, and
+ * took challenge_length - up to 255 - without checking the body fitted.
+ *
+ * It is unreachable in THIS build: ieee80211_authmode is only ever assigned
+ * IEEE80211_AUTH_OPEN since #124 dropped WEP, and AUTH_OPEN is 0 so even the
+ * zero-initialised default takes the open branch. The test reaches it the only
+ * way anything can - by setting the mode the way mtl's WEP path does, which is
+ * exactly the configuration #307 has to fix there. So this scenario is lua's
+ * regression guard for a walk lua cannot currently execute, and mtl's proof
+ * once the same iterator lands there.
+ *
+ * rt2501_auth() sets up state (S_AUTH) and the peer addresses the handler
+ * matches on, so the frame below is the real thing minus the radio. */
+static void scen_auth_challenge(void)
+{
+  static const uint8_t mac[IEEE80211_ADDR_LEN]   = {0x22, 0, 0, 0, 0, 1};
+  static const uint8_t bssid[IEEE80211_ADDR_LEN] = {0x33, 0, 0, 0, 0, 1};
+  struct ieee80211_frame *fr;
+  uint32_t n;
+
+  printf("scenario auth-challenge: the challenge IE walk must stay in the frame\n");
+
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  CHECK(ieee80211_state == IEEE80211_S_AUTH,
+        "the join path is waiting for an auth reply");
+
+  /* What mtl's WEP path does, and what makes the walk below execute. */
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);   /* addressed to us */
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);        /* from "the AP" */
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;       /* algorithm */
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF; /* auth_seq */
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;        /* status */
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+
+  /* (1) An element declaring 255 bytes of body with 2 delivered. The old walk
+   * believed the length: it set challenge_length = 255 and advanced past the
+   * end, so the list ended with a challenge it had never validated. It did not
+   * read 255 bytes - ieee80211_send_challenge_reply rejects any length that is
+   * not IEEE80211_CHALLENGE_LEN - so the damage here is state, not memory: the
+   * reply is refused and the attempt is left hanging in S_AUTH rather than
+   * failed. The iterator rejects the element instead, so `challenge` stays NULL
+   * and the "no challenge" path ends the attempt properly. */
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 7] = 255;
+  rxbuf[n + 8] = 0xAA;
+  rxbuf[n + 9] = 0xBB;
+  rx_input(n + 10, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a challenge IE longer than the frame ends the auth attempt");
+
+  /* (2) The one that matters, and it is not subtle once driven rather than
+   * read: a challenge IE that DECLARES IEEE80211_CHALLENGE_LEN and delivers
+   * none of it. The old walk never checked the body against frame_end, so
+   * `challenge` points at the end of the frame and challenge_length is 128 -
+   * which is exactly the value send_challenge_reply demands, so its length
+   * check waves it through and it copies 128 bytes from past the buffer into
+   * the reply. Fully attacker-controlled: declare 128, truncate, done.
+   *
+   * And the reply is TRANSMITTED, so those 128 bytes of whatever sits after
+   * the frame go out over the air. On the device the frame is an hcd_malloc'd
+   * COMRAM block and its neighbours are the USB allocator's own descriptors
+   * and other in-flight frames. The reply is WEP-encrypted under the
+   * configured key, which is the only thing between this and a clean remote
+   * memory disclosure - and shared-key auth is itself the classic way to
+   * recover that keystream.
+   *
+   * Preconditions are real: the station must be in S_AUTH with authmode
+   * SHARED, and the frame must match all three addresses - so the attacker is
+   * spoofing the AP during the join window. Not passive, not pre-auth.
+   *
+   * ASan: "READ of size 1 ... 0 bytes after" inside send_challenge_reply. */
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 7] = IEEE80211_CHALLENGE_LEN;      /* declares 128, delivers none */
+  rx_input(n + 8, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a challenge IE whose body is absent is rejected, not echoed back");
+
+  /* (3) The other half of the same missing check: a tagged section of exactly
+   * ONE byte. `frame_current < frame_end` says that byte is in range and the
+   * body then reads frame_current[1], one past the end. Cheaper to trigger,
+   * far less interesting in effect - it only steers the walk. */
+  as_station();
+  rt2501_auth((const uint8_t *)"nabtest", mac, bssid, 1, IEEE80211_RATEMASK_1,
+              IEEE80211_AUTH_OPEN, IEEE80211_CRYPT_NONE, NULL);
+  ieee80211_authmode = IEEE80211_AUTH_SHARED;
+
+  n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  fr = (struct ieee80211_frame *)rxbuf;
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  rxbuf[n + 6] = IEEE80211_ELEMID_CHALLENGE;   /* an id with no length byte */
+  rx_input(n + 7, -40);
+
+  CHECK(ieee80211_state != IEEE80211_S_AUTH,
+        "a one-byte tagged section is rejected without reading its length");
+
+  ieee80211_authmode = IEEE80211_AUTH_OPEN;   /* leave the module as we found it */
+}
+
+/* --- fuzz: mutate real frames and require the parser to survive ----------- */
+/* Every defect in this file so far (#293, #294, #310, #317) was a length field
+ * off the air that the parser believed. Those are pinned one fixture at a time,
+ * which proves the cases we thought of. This drives the same three entry points
+ * with deliberately damaged frames instead, so the ones we did not think of get
+ * a chance to show up - and it is the measurement that says whether the RSN
+ * sub-parse still has anything in it, rather than assuming either way.
+ *
+ * Deterministic: a fixed-seed xorshift, so a failure is reproducible from the
+ * scenario name alone and CI cannot go red on a Tuesday. Mutations are biased
+ * towards the boundary values that matter here (0, 1, 0x7F, 0x80, 0xFF) and
+ * towards TRUNCATION, which is what every real defect turned out to be.
+ *
+ * The assertion is survival under ASan/UBSan. The two controls either side make
+ * that non-vacuous: a well-formed beacon must parse into a scan result BEFORE
+ * the storm and again AFTER it, so a parser that has quietly stopped parsing -
+ * or a harness that stopped delivering frames - fails rather than reports a
+ * clean run over nothing. */
+static uint32_t rnd_state;
+
+static uint32_t rnd(void)
+{
+  rnd_state ^= rnd_state << 13;
+  rnd_state ^= rnd_state >> 17;
+  rnd_state ^= rnd_state << 5;
+  return rnd_state;
+}
+
+/* A byte worth trying: boundaries far more often than uniform noise. */
+static uint8_t rnd_byte(void)
+{
+  static const uint8_t edge[] = {0x00, 0x01, 0x02, 0x04, 0x7F, 0x80, 0xFE, 0xFF};
+  uint32_t r = rnd();
+  return (r & 1) ? edge[(r >> 1) % sizeof edge] : (uint8_t)(r >> 8);
+}
+
+/* A full WPA2-PSK beacon: fixed fields, then SSID / RATES / DSPARMS / RSN. */
+static uint32_t build_beacon(void)
+{
+  uint32_t n = mgt_header(FC0_MGT_BEACON);
+
+  n += 12;                                    /* timestamp, interval, capinfo */
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');
+  memcpy(rxbuf + n - 7, "nabtest", 7);
+  n = put_ie(n, IEEE80211_ELEMID_RATES, 4, 4, 0x82);
+  n = put_ie(n, IEEE80211_ELEMID_DSPARMS, 1, 1, 6);
+  n = put_rsn(n, 1);
+  return n;
+}
+
+static uint32_t build_probe_req(void)
+{
+  uint32_t n = mgt_header(FC0_MGT_PROBE_REQ);
+
+  n = put_ie(n, IEEE80211_ELEMID_SSID, 7, 7, 'n');
+  memcpy(rxbuf + n - 7, "nabtest", 7);
+  n = put_ie(n, IEEE80211_ELEMID_RATES, 4, 4, 0x82);
+  return n;
+}
+
+static const uint8_t fz_mac[IEEE80211_ADDR_LEN]   = {0x22, 0, 0, 0, 0, 1};
+static const uint8_t fz_bssid[IEEE80211_ADDR_LEN] = {0x33, 0, 0, 0, 0, 1};
+
+static uint32_t build_auth(void)
+{
+  uint32_t n = mgt_header(IEEE80211_FC0_TYPE_MGT | IEEE80211_FC0_SUBTYPE_AUTH);
+  struct ieee80211_frame *fr = (struct ieee80211_frame *)rxbuf;
+
+  memcpy(fr->i_addr1, rt2501_mac, IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr2, fz_mac,   IEEE80211_ADDR_LEN);
+  memcpy(fr->i_addr3, fz_bssid, IEEE80211_ADDR_LEN);
+  rxbuf[n + 0] = IEEE80211_AUTH_ALG_SHARED & 0xFF;
+  rxbuf[n + 1] = IEEE80211_AUTH_ALG_SHARED >> 8;
+  rxbuf[n + 2] = IEEE80211_AUTH_SHARED_CHALLENGE & 0xFF;
+  rxbuf[n + 3] = IEEE80211_AUTH_SHARED_CHALLENGE >> 8;
+  rxbuf[n + 4] = IEEE80211_STATUS_SUCCESS & 0xFF;
+  rxbuf[n + 5] = IEEE80211_STATUS_SUCCESS >> 8;
+  n += 6;
+  rxbuf[n] = IEEE80211_ELEMID_CHALLENGE;
+  rxbuf[n + 1] = IEEE80211_CHALLENGE_LEN;
+  memset(rxbuf + n + 2, 0x5A, IEEE80211_CHALLENGE_LEN);
+  return n + 2 + IEEE80211_CHALLENGE_LEN;
+}
+
+#define FUZZ_ITERS 20000
+
+static void scen_fuzz(void)
+{
+  uint8_t tmpl[sizeof rxbuf];
+  uint32_t tmpl_len, len, i, k, delivered = 0;
+  int kind;
+
+  printf("scenario fuzz: damaged frames must not walk out of the buffer\n");
+
+  rnd_state = 0x1BADB002;          /* fixed seed: reproducible failures */
+  as_station();
+  run_scan(NULL);
+  ieee80211_mode = IEEE80211_M_MANAGED;
+
+  /* Control BEFORE: the canonical beacon must parse, or the storm proves
+   * nothing about a parser that was already refusing everything. */
+  ieee80211_state = IEEE80211_S_SCAN;
+  scan_hits = 0; scan_enc = 0;
+  len = build_beacon();
+  rx_input(len, -40);
+  CHECK(scan_hits == 1 && scan_enc == RSN_WPA2_CCMP,
+        "the control beacon parses as WPA2/CCMP before the fuzz run");
+
+  for (i = 0; i < FUZZ_ITERS; i++) {
+    kind = (int)(rnd() % 3);
+    switch (kind) {
+      case 0:  tmpl_len = build_beacon();    break;
+      case 1:  tmpl_len = build_probe_req(); break;
+      default: tmpl_len = build_auth();      break;
+    }
+    memcpy(tmpl, rxbuf, tmpl_len);
+
+    /* 1..4 byte mutations, anywhere from the fixed fields on - the header
+     * itself is left alone so the frame keeps reaching a parser at all. */
+    for (k = 0; k < 1 + rnd() % 4; k++) {
+      uint32_t off = sizeof(struct ieee80211_frame)
+                   + rnd() % (tmpl_len - sizeof(struct ieee80211_frame));
+      tmpl[off] = rnd_byte();
+    }
+    /* Half the time, cut it short somewhere past the header. Truncation is
+     * what #293/#310/#317 all turned out to be. */
+    len = tmpl_len;
+    if (rnd() & 1)
+      len = sizeof(struct ieee80211_frame)
+          + rnd() % (tmpl_len - sizeof(struct ieee80211_frame) + 1);
+
+    memcpy(rxbuf, tmpl, len);
+
+    /* Put the state machine where each frame type is actually parsed. */
+    if (kind == 0) {
+      ieee80211_mode = IEEE80211_M_MANAGED;
+      ieee80211_state = IEEE80211_S_SCAN;
+      ieee80211_authmode = IEEE80211_AUTH_OPEN;
+    } else if (kind == 1) {
+      rt2501_setmode(IEEE80211_M_MASTER, (const uint8_t *)"nabtest", 1);
+    } else {
+      as_station();
+      rt2501_auth((const uint8_t *)"nabtest", fz_mac, fz_bssid, 1,
+                  IEEE80211_RATEMASK_1, IEEE80211_AUTH_OPEN,
+                  IEEE80211_CRYPT_NONE, NULL);
+      ieee80211_authmode = IEEE80211_AUTH_SHARED;
+    }
+
+    rx_input(len, -40);
+    usb_complete_pending();   /* retire any frame the AP path queued */
+    delivered++;
+  }
+
+  CHECK(delivered == FUZZ_ITERS, "every fuzz iteration was delivered");
+
+  /* Control AFTER: the parser still works. Catches a run that survived by
+   * wedging the state machine rather than by handling the input. */
+  ieee80211_authmode = IEEE80211_AUTH_OPEN;
+  as_station();
+  run_scan(NULL);
+  ieee80211_mode = IEEE80211_M_MANAGED;
+  ieee80211_state = IEEE80211_S_SCAN;
+  scan_hits = 0; scan_enc = 0;
+  len = build_beacon();
+  rx_input(len, -40);
+  CHECK(scan_hits == 1 && scan_enc == RSN_WPA2_CCMP,
+        "the control beacon still parses as WPA2/CCMP after the fuzz run");
 }
 
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
+
+  /* Unbuffered: these scenarios are expected to abort under ASan when they
+   * regress, and an abort discards whatever is still sitting in stdout's block
+   * buffer - which is every scenario banner and every FAIL line printed before
+   * it. That turns "which check was this?" into a guess. */
+  setvbuf(stdout, NULL, _IONBF, 0);
 
   if (!only || strcmp(only, "short") == 0)    scen_short();
   if (!only || strcmp(only, "long") == 0)     scen_long();
@@ -585,6 +948,14 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "rx-rsn") == 0)   scen_rx_rsn();
   if (!only || strcmp(only, "rx-rsn-version") == 0) scen_rx_rsn_version();
   if (!only || strcmp(only, "assoc-ssid") == 0)     scen_assoc_ssid();
+  if (!only || strcmp(only, "auth-challenge") == 0) scen_auth_challenge();
+  if (!only || strcmp(only, "fuzz") == 0)           scen_fuzz();
+
+  /* Retire whatever a scenario left queued. Every TX here is now owned by the
+   * URB completion, so without this a scenario run on its own (the point of the
+   * argv selector) would exit with frames still in flight and LeakSanitizer
+   * would fail it for the driver keeping its side of the contract. */
+  usb_complete_pending();
 
   if (failures) {
     printf("ieee80211_test: %d check(s) FAILED\n", failures);

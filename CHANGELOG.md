@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+  * [#315](https://github.com/rngtng/NabaztagHackKit/issues/315): **a queued 802.11 TX
+    frame belongs to the USB stack, not to its sender.** `rt2501_tx()` hands the buffer
+    to `usbh_bulk_transfer_async()`, which installs `usbh_free_urb_callback` — and that
+    callback frees it when the OHCI descriptor retires. #295 read the absent free as a
+    COMRAM leak and freed the probe response on both paths; there was no leak, and the
+    free returned a live block to a 4 KB pool while the controller was still reading the
+    frame out of it, with the completion freeing it a second time. What made a correctly
+    handed-off frame look leaked was our own host stub, which returned success without
+    modelling the hand-off. Both sites now free only when the queue attempt failed, the
+    ownership rule is written down at `rt2501_tx`, and the harness models the URB
+    completion — under which `rt2501_auth`, reported as still leaking in #312, comes out
+    correct.
+
+  * [#317](https://github.com/rngtng/NabaztagHackKit/issues/317): **one bounds-checked
+    iterator for the 802.11 information-element walks.** Three hand-rolled walks, each
+    re-deriving the same rule, were the source of #293, #294, #310 and #315. Two were
+    already correct; the third — the shared-key auth challenge — checked neither bound,
+    so an IE declaring `IEEE80211_CHALLENGE_LEN` and delivering none of it made the
+    parser copy 128 bytes from past the frame into a reply **and transmit them**. Dead
+    code here since #124 dropped WEP, live in `mtl/` (#307). The iterator also works on
+    the remaining length instead of `p + 2 + p[1] <= end`, which had to build a pointer
+    past the object before rejecting it. Flash +128 B. A deterministic mutation fuzzer
+    over all three receive entry points (1.6M damaged frames across four seeds, ASan +
+    UBSan) says the RSN sub-parse needs no equivalent rewrite; it ships as the `fuzz`
+    scenario, 20,000 iterations in 46 ms, and it independently rediscovers both #315 and
+    the walk above when pointed at the pre-fix sources.
+
+  * [#273](https://github.com/rngtng/NabaztagHackKit/issues/273): the setup portal's SSID
+    **drop-down works**. `setup.scan_ssids()` guarded on `nab.wifi_scan`/`nab.wifi_seen`,
+    which did not exist, so the datalist was scaffolded but always dark. Both bindings now
+    sit over the scan the join path already ran; the list dedupes by name and drops hidden
+    APs, and the scan happens *before* `nab.wifi_ap`, since `rt2501_scan` is a no-op once
+    the radio is beaconing.
+
+  * [#123](https://github.com/rngtng/NabaztagHackKit/issues/123): `nab.volume` **verified
+    on hardware** and the tone generator cleaned up. `SCI_VOL` holds through an ExtRAM/Lua
+    heap churn without re-assert (it read back 0x0000 before #275), and the loud/quiet A/B
+    is audible by ear. Closes the #123 volume definition-of-done; `tonegen.py` replaces the
+    distorted resident tone, and `volume-demo` / `wheel-volume-demo` exercise it.
+
+  * [#291](https://github.com/rngtng/NabaztagHackKit/issues/291): **17 defects from a deep
+    review of the lua track**, each pinned by a test that failed before its fix — five
+    pre-authentication remote memory-safety bugs in the vendored 802.11/EAPOL parsers
+    (#292–#296), the cooperative reactor's fragility (#297), `#LC` frame integrity (#298),
+    a `luai_num2str` buffer overflow and silent 32-bit wrap (#301), `iface:serve` going
+    deaf after a full-capacity burst (#302), `dhcp.client` accepting another host's lease
+    (#303), and `ota.verify` doing 5x the work uninterruptibly (#304). Follow-ups #306,
+    #309, #310 and #311 cleared separately.
+
   * [#259](https://github.com/rngtng/NabaztagHackKit/issues/259): the lua track can
     **tell the time**. `nab.time()` was milliseconds since boot and nothing else, so no
     app that needs a date could exist — no clock face, no scheduled behaviour, no
