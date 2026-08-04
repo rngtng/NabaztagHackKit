@@ -46,6 +46,7 @@ print(net.link.ntoa(ifc.ip))
 st, body = ifc:http_get(net.link.ip("192.168.0.10"), "srv", "/app.lc")
 print(net.link.ntoa(ifc:resolve("example.com")))  -- DNS (#232)
 st, body = ifc:http_get(nil, "example.com", "/app.lc")  -- ... or by name
+sys.time.set(ifc:ntp("pool.ntp.org"))        -- wall clock (#259)
 ```
 
 AP config mode (#218): `nab.wifi_ap("Nabaztag")`, then `ifc:dhcpd{ip=...,
@@ -66,6 +67,21 @@ without branching.
 `ifc:http_get(nil, host, path)` resolves `host` first — that is what lets #219's
 boot URL and any public endpoint be a hostname instead of a dotted quad.
 Passing an explicit `dst_ip` still skips DNS entirely.
+
+### Time of day (#259)
+
+`ifc:ntp(server [, timeout])` is the same shape one layer over: one SNTP
+datagram to port 123 from an ephemeral port, retried on a 1 s timer, returning
+`unix seconds | nil, err`. `server` is a 4-byte address or a name (resolved
+through `:resolve` first). Literally the same shape — both flows now run on one
+private `query()` helper (send, poll, re-ask each second, unregister the port
+on every exit path), so the "a datagram that is not confidently ours keeps the
+loop waiting, a definitive refusal ends it" contract is written once. The
+packets and the clock itself live in
+[`lua/lib/sys/`](../sys/README.md) — net owns the socket, sys owns the time,
+and the reading is handed back to the caller rather than stored: `sys.ntp` is
+a **soft** dependency here (`ifc:ntp` reports `sys.ntp not loaded` instead of
+failing to load).
 
 Deliberately a first cut: A records only, one server, no failover and no
 periodic refresh task (the mtl reference's `dns.mtl` is 504 lines of exactly
@@ -208,15 +224,18 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of #232: link 1502,
-arp 1220, ipv4 1385, udp 788, dns 3061, dhcp 3420, tcp 5142, http 2126, iface
-5158, setup 4111, provision 1597, ota 3445 — **32,955 B total**.
+`task lua:lib:size` - stripped `.lc` bytes per module. As of #259: link 1502,
+arp 1220, ipv4 1385, udp 788, dns 3123, dhcp 3441, tcp 5142, http 2296, iface
+7214, setup 4156, provision 1597, ota 3721 — **35,585 B total**. (Of `iface`'s
+growth since #232, #259's `:ntp` is 6213 → 7214, +1001 B; the rest is #286/#302's
+multi-connection `serve()`. The sys modules `:ntp` drives are counted under
+`lua/lib/sys/`.)
 
 (The previous listing was stamped "as of #235" but had already drifted — several
 modules grew after it; these numbers are re-measured, not patched.)
 
-The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 15.6 KB,
-20.7 KB once `iface` is counted) is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM
+The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 15.8 KB,
+23.0 KB once `iface` is counted) is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM
 execution) is the lever. `setup.lua` + `ota.lua` are **not** in that subset
 (they run only in setup mode); `provision.lua` is small and boot-critical (it
 decides between join and setup every boot), so it joins the resident subset.
