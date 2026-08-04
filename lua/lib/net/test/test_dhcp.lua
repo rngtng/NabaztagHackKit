@@ -80,6 +80,46 @@ c2:discover()
 eq(c2:input(OFFER), nil, "foreign xid ignored")
 eq(c2.state, "selecting", "state unchanged by foreign xid")
 
+-- ...and a reply addressed to somebody else's hardware address is not ours
+-- either, even when the transaction id happens to match.
+--
+-- c:input filters on op and xid only. Every DHCP reply here rides broadcast
+-- (dhcp.build hard-sets flags 0x8000, deliberately - the stack has no address
+-- yet), so a rabbit in `selecting` sees every other client's OFFER and ACK on
+-- the segment. dhcp.parse already lifts chaddr out for us and nothing looks at
+-- it, so the only thing standing between us and adopting a lease that belongs
+-- to another host is the xid not colliding - and iface:dhcp derives that xid
+-- from `self.time() ~ 0x5bd1`, i.e. the ms tick, which is very nearly the same
+-- number on two rabbits powered from the same switch. RFC 2131 4.4.1 requires
+-- the client to check chaddr for exactly this reason.
+--
+-- Taking a foreign lease is not a lost packet: both hosts then answer ARP for
+-- the same address, and it is the kind of fault that looks like flaky Wi-Fi.
+local OTHER_MAC = H"00095b8f3a99"
+local function with_chaddr(p, mac)
+  return p:sub(1, 28) .. mac .. p:sub(35)
+end
+eq(dhcp.parse(with_chaddr(OFFER, OTHER_MAC)).mac, OTHER_MAC,
+   "fixture rewrite really does change chaddr")
+
+local c4 = dhcp.client(MAC_A, XID)
+c4:discover()
+-- compared as a boolean: a failure here otherwise dumps a whole binary frame
+eq(c4:input(with_chaddr(OFFER, OTHER_MAC)) == nil, true,
+   "an OFFER for another client's mac produces no REQUEST")
+eq(c4.state, "selecting", "state unchanged by another client's OFFER")
+
+-- ...and the same at the ACK step: our own OFFER moved us to `requesting`, so
+-- a foreign ACK arriving in that window must not bind us to its address.
+local c5 = dhcp.client(MAC_A, XID)
+c5:discover()
+c5:input(OFFER)
+eq(c5.state, "requesting", "our own offer still advances the client")
+local f5, lease5 = c5:input(with_chaddr(ACK, OTHER_MAC))
+eq(f5 == nil, true, "another client's ACK sends nothing")
+eq(lease5 == nil, true, "another client's ACK does not hand us a lease")
+eq(c5.state, "requesting", "state unchanged by another client's ACK")
+
 -- server: single fixed lease, NAK on a stale address
 local s = dhcp.server{ip = IP_B, client_ip = IP_A}
 local off = dhcp.parse(unwrap(s:input(dhcp.build{

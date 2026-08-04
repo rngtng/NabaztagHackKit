@@ -17,7 +17,7 @@ CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc -I$(FW)/l
 CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
-TESTS := event_test fmt_test rfid_test i2c_test
+TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test lcframe_test
 
 all: $(TESTS)
 
@@ -44,6 +44,28 @@ rfid_test: rfid_test.c $(FW)/src/hal/rfid.c
 # path to shadow the real absolute peripheral addresses (see that header).
 i2c_test: i2c_test.c $(FW)/src/hal/i2c.c
 	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -Istubs -I$(FW)/sys/inc -o $@ $^ $(LDFLAGS)
+
+# adc.c is register-only too, so the same shadowing stub serves it. It links
+# no other firmware source: the wheel read is the whole driver.
+adc_test: adc_test.c $(FW)/src/hal/adc.c
+	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -Istubs -I$(FW)/sys/inc -o $@ $^ $(LDFLAGS)
+
+# ieee80211.c is VENDORED, so it is exempt from our -Werror set (see the
+# firmware Makefile) - -w keeps the vendor's warnings from failing this build
+# while the test file itself stays under the strict flags via CFLAGS. It also
+# needs stubs/ml60842.h to shadow the absolute USB register window that
+# hcd.h's disable_ohci_irq() dereferences.
+ieee80211_test: ieee80211_test.c $(FW)/src/net/ieee80211.c
+	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -w -Istubs -I$(FW)/sys/inc \
+	      -o $@ $^ $(LDFLAGS)
+
+# eapol.c is vendored too - same -w + stub-shadowing rule as ieee80211_test.
+eapol_test: eapol_test.c $(FW)/src/net/eapol.c
+	$(CC) $(CFLAGS) -std=gnu11 -D_NAB_SIM -w -Istubs -I$(FW)/sys/inc \
+	      -o $@ $^ $(LDFLAGS)
+
+lcframe_test: lcframe_test.c $(FW)/src/utils/lcframe.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)
 	@rc=0; for t in $(TESTS); do \

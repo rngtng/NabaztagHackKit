@@ -198,6 +198,12 @@ int32_t wifi_scan(const char *ssid)
   int pass;
   uint32_t t0;
 
+  /* rt2501_scan builds its probe request into a frame sized for a 32-byte SSID
+   * and copies strlen(ssid) bytes in with no check of its own, so the cap has
+   * to be here - as it already is in wifi_ap (#296). */
+  if(ssid != NULL && strlen(ssid) > IEEE80211_SSID_MAXLEN)
+    return -1;
+
   scan_hits = 0;
   target_hit = 0;
   scan_target_ssid = ssid;
@@ -283,6 +289,15 @@ int8_t wifi_connect_ex(const char *ssid, const char *psk, uint32_t timeout_ms,
 
   if (why)
     *why = WIFI_OK;
+  /* Bounded before the radio is touched (#296): the SSID reaches rt2501_scan's
+   * fixed probe frame, and the PSK reaches the PBKDF2. WIFI_PSK_MAX matches
+   * hal/config.h's CONFIG_PSK_MAX, so a credential that fits the config sector
+   * always fits here too. */
+  if (ssid == NULL || strlen(ssid) > IEEE80211_SSID_MAXLEN
+      || (psk != NULL && strlen(psk) > WIFI_PSK_MAX)) {
+    if (why) *why = WIFI_FAIL_NOTFOUND;
+    return -1;
+  }
   if (wifi_up() != 0) {
     if (why) *why = WIFI_FAIL_RADIO;
     return -1;

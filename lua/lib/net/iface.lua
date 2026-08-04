@@ -280,8 +280,17 @@ function iface.new(drv)
   function i:serve(port, handler)
     self.conns = {}
     local stop
+    local function listening()
+      for _, s in ipairs(self.conns) do
+        if s.c.state == "listen" then return true end
+      end
+      return false
+    end
+    -- Opens a listener unless one is already waiting or we are at capacity.
+    -- The `listening()` guard is what lets this be called from anywhere it
+    -- might be needed without opening a second idle socket (#302).
     local function accept()
-      if stop or #self.conns >= MAX_CONNS then return end
+      if stop or #self.conns >= MAX_CONNS or listening() then return end
       local c = tcp.listen{src = self.ip, port = port, clock = self.time}
       self.conns[#self.conns + 1] = {c = c, q = http.request(), phase = "accept"}
     end
@@ -324,6 +333,17 @@ function iface.new(drv)
         end
         if s.phase == "done" then
           table.remove(self.conns, n)
+          -- A freed slot has to put the listener back (#302). accept() used to
+          -- be reachable only from the "this slot took a SYN" branch above, and
+          -- both call sites are capacity-guarded - so MAX_CONNS simultaneous
+          -- connections left nothing in "listen", and when they finished
+          -- nothing re-opened one. dispatch() routes a fresh SYN only to a
+          -- listening slot, so from then on every connection was dropped while
+          -- this loop spun on an empty list forever: its only exit is
+          -- `stop and #conns == 0`, and stop comes from a handler that could no
+          -- longer be reached. That is a phone's captive-portal burst, and the
+          -- tap that would have opened the form is the connection lost.
+          accept()
         else
           n = n + 1
         end

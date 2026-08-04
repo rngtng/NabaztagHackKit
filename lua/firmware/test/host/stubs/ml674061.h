@@ -28,8 +28,23 @@
 extern volatile uint32_t nab_regs[64];
 #define NAB_REG_BASE ((uintptr_t)nab_regs)
 
-/* Port mux (init_i2c's pin setup) */
+/* Port mux (init_i2c's / init_adc's pin setup) */
 #define PORTSEL1        (NAB_REG_BASE + 0x00)
+#define PORTSEL2        (NAB_REG_BASE + 0x04)
+
+/* ADC block - offsets mirror the real header's ADC_BASE + n */
+#define ADC_BASE        (NAB_REG_BASE + 0x60)
+#define ADCON0          (ADC_BASE + 0x00)  /* control 0 */
+#define ADCON1          (ADC_BASE + 0x04)  /* control 1: channel + start/busy */
+#define ADCON2          (ADC_BASE + 0x08)  /* conversion clock */
+#define ADR2            (ADC_BASE + 0x1C)  /* channel 2 result */
+
+/* ADCON1: CH0..CH3 are a 2-bit FIELD (0..3), not one-hot bits */
+#define ADCON1_CH2          0x0002
+#define ADCON1_STS          0x0010  /* start; reads back as "converting" */
+
+/* ADCON2 conversion-clock field */
+#define ADCON2_CLK32        0x0004
 
 /* I2C block - offsets mirror the real header's I2C_BASE + n */
 #define I2C_BASE        (NAB_REG_BASE + 0x20)

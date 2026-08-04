@@ -46,8 +46,27 @@
 sched = {}
 local pumps, tasks = {}, {}
 
+-- Returns a handle. Without one there was no way to undo a registration, so
+-- :attach() was not idempotent, a finished player/ears was stepped for the rest
+-- of the session, the list grew unbounded (each closure pinning a whole player,
+-- its queue and its 2 KB tail), and a raising pump had no recovery path (#297).
+-- The function itself is the handle: unique per closure, and it costs nothing.
 function sched.pump(fn)
   pumps[#pumps + 1] = fn
+  return fn
+end
+
+-- Remove a pump by its handle. Removing one that is already gone is a no-op,
+-- not an error: a :detach() must be safe to call from a stop() path and from a
+-- finaliser without either having to know which ran first.
+function sched.unpump(h)
+  for i = 1, #pumps do
+    if pumps[i] == h then
+      table.remove(pumps, i)
+      return true
+    end
+  end
+  return false
 end
 
 function sched.spawn(fn)
@@ -60,20 +79,40 @@ function sched.sleep(ms)
   coroutine.yield(nab.time() + ms)
 end
 
--- One slice: every pump, then every task whose deadline has come. A task that
--- errors or finishes is dropped; an error is printed and the rest keep running
--- (principle 3 - one broken activity must not take the runtime down).
+-- The app's own "tick" callback, if it registered one. See the nab.on wrapper.
+local app_tick
+
+-- Report a broken activity without taking the runtime down (principle 3).
+local function blame(err)
+  print("sched: " .. tostring(err))
+end
+
+-- One slice: every pump, then every task whose deadline has come, then the
+-- app's tick. A pump or task that errors is dropped and the rest keep running.
+--
+-- The pumps used to be called bare while the tasks were wrapped in
+-- coroutine.resume, so one raising pump aborted the slice at its index - every
+-- later pump and every task skipped - and, never being removed, repeated that
+-- on every pump iteration forever (#297). Both halves are protected now, and
+-- both drop the offender.
 function sched.tick()
-  for i = 1, #pumps do
-    pumps[i]()
-  end
   local i = 1
+  while i <= #pumps do
+    local ok, err = pcall(pumps[i])
+    if ok then
+      i = i + 1
+    else
+      blame(err)
+      table.remove(pumps, i)
+    end
+  end
+  i = 1
   while i <= #tasks do
     local t = tasks[i]
     if (nab.time() - t.due) >= 0 then
       local ok, due = coroutine.resume(t.co)
       if not ok then
-        print("sched: " .. tostring(due))
+        blame(due)
       end
       if not ok or coroutine.status(t.co) == "dead" then
         table.remove(tasks, i)
@@ -84,9 +123,33 @@ function sched.tick()
     end
     i = i + 1
   end
+  if app_tick then
+    local ok, err = pcall(app_tick)
+    if not ok then
+      blame(err)
+      app_tick = nil        -- as for a pump: drop the offender
+    end
+  end
 end
 
-nab.on("tick", sched.tick)
+-- "tick" is the reactor's seam, not a free slot. The C nab.on holds ONE
+-- callback per name and replaces it silently, so an app doing what the nab
+-- module table documents - nab.on("tick", fn) - used to unhook sched.tick
+-- outright: every :attach()ed ears and player stopped being stepped and every
+-- spawned choreography froze, with no error and nothing to see it from (#297).
+-- Route it through sched instead and leave sched.tick as the registered
+-- callback. Everything else goes straight through.
+local raw_on = nab.on
+
+function nab.on(name, fn)
+  if name == "tick" then
+    app_tick = fn
+    return
+  end
+  return raw_on(name, fn)
+end
+
+raw_on("tick", sched.tick)
 
 -- Generational GC (#283). The allocation profile here is a stream of
 -- short-lived strings - every parsed packet in net/ builds several - against a

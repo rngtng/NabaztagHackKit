@@ -300,27 +300,86 @@ void fmt_hex8(char out[17], const uint8_t uid[8])
  * future work), with the integer part taken from the float's own bits so no
  * double ever exists. snprintf contract: truncate to sz, NUL-terminate,
  * return the untruncated length. */
+/* Decimal digits of (v << shift), most significant first, into out[]. Returns
+ * the digit count.
+ *
+ * The shift is done in DECIMAL. `v` is at most 24 bits, so pf_utoa converts it
+ * with an ordinary 32-bit divide, and the value is then doubled `shift` times
+ * by adding it to itself digit by digit - the /10 and %10 in that loop are by a
+ * constant, which the compiler turns into a multiply, not a library call.
+ *
+ * The point is exactness on BOTH widths (#301). The old
+ * `(unsigned long)mant << (fexp - 23)` inherited the width of `unsigned long`:
+ * it wrapped at 2^32 on the rabbit, so print(1e10) came out as 1410065408.0 -
+ * 1e10 mod 2^32, not an approximation of anything - and on a 64-bit host it
+ * produced up to 17 digits and ran off the caller's buffer. Accumulating in
+ * uint64_t is the other way to fix it and is not free here: pf_utoa's /= and %=
+ * would link libgcc's __aeabi_uldivmod. */
+#define NUM2STR_DIGITS 44   /* FLT_MAX is 39 digits; the widest 2^129 is 39 */
+
+static int dec_shifted(char *out, uint32_t v, int shift)
+{
+  char d[NUM2STR_DIGITS];   /* least-significant digit first */
+  int n, i, j;
+
+  n = pf_utoa(out, v, 10, 0);          /* MSB-first, at most 8 digits */
+  for (i = 0; i < n; i++)              /* flip to LSB-first for the carries */
+    d[i] = (char)(out[n - 1 - i] - '0');
+
+  while (shift-- > 0) {
+    int carry = 0;
+
+    for (i = 0; i < n; i++) {
+      int t = d[i] * 2 + carry;
+
+      d[i] = (char)(t % 10);
+      carry = t / 10;
+    }
+    while (carry && n < NUM2STR_DIGITS) {
+      d[n++] = (char)(carry % 10);
+      carry /= 10;
+    }
+  }
+
+  for (i = 0, j = n - 1; j >= 0; i++, j--)
+    out[i] = (char)('0' + d[j]);
+  return n;
+}
+
 int luai_num2str(char *s, size_t sz, float n)
 {
   union { float f; uint32_t u; } fv;
   fv.f = n;
   int fexp = (int)((fv.u >> 23) & 0xFF) - 127;
   uint32_t mant = (fv.u & 0x7FFFFF) | (1UL << 23);
-  unsigned long uv;
-  if (fexp < 0)
-    uv = 0;                                      /* |x| < 1, subnormals, 0 */
-  else if (fexp <= 23)
-    uv = mant >> (23 - fexp);
-  else                                           /* huge/inf/nan: low bits */
-    uv = (fexp - 23 < 32) ? (unsigned long)mant << (fexp - 23) : 0;
-
-  char body[16];                                 /* -,10 digits,.,0 = 13 max */
+  char body[NUM2STR_DIGITS + 4];       /* sign + digits + ".0" */
   int blen = 0;
+
   if (fv.u >> 31)
     body[blen++] = '-';
-  blen += pf_utoa(body + blen, uv, 10, 0);
-  body[blen++] = '.';
-  body[blen++] = '0';
+
+  if (fexp == 128) {
+    /* Exponent all-ones: infinity or NaN. Printing the mantissa as a number
+     * would claim a magnitude that does not exist - the old code printed "0.0"
+     * for an infinity, which is worse than saying so. */
+    const char *w = (fv.u & 0x7FFFFF) ? "nan" : "inf";
+
+    if (w[0] == 'n')
+      blen = 0;                        /* NaN has no sign worth printing */
+    while (*w)
+      body[blen++] = *w++;
+  } else if (fexp < 0) {
+    body[blen++] = '0';                /* |x| < 1, subnormals, zero */
+    body[blen++] = '.';
+    body[blen++] = '0';
+  } else {
+    if (fexp <= 23)
+      blen += pf_utoa(body + blen, mant >> (23 - fexp), 10, 0);
+    else
+      blen += dec_shifted(body + blen, mant, fexp - 23);
+    body[blen++] = '.';
+    body[blen++] = '0';
+  }
 
   size_t copy = (sz > 0) ? (size_t)blen : 0;
   if (copy > 0 && copy > sz - 1)

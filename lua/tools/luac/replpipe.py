@@ -5,7 +5,8 @@ The parser-less firmware (#128) only loads luac bytecode, so the REPL is fed
 compiled chunks instead of source. Raw bytecode can't ride the line-oriented
 UART console (chunks contain '\\n'/NUL), so each chunk is framed as:
 
-    #LC:<len>\\n            header line, len = chunk size in bytes (decimal)
+    #LC:<len>:<sum>\\n      header line: len = chunk bytes (decimal),
+                           sum = Fletcher-32 of the chunk (8 lowercase hex, #298)
     <2*len hex chars>      the chunk, wrapped at 64 cols (device skips whitespace)
 
 Two input modes, chosen by extension (override with --lua/--lc):
@@ -47,9 +48,36 @@ def luac_compile(src: bytes, image: str) -> tuple[bytes | None, str]:
     return proc.stdout, proc.stderr.decode("utf-8", "replace")
 
 
+
+def fletcher32(data: bytes) -> int:
+    """Fletcher-32 over the chunk bytes; must match firmware/src/utils/lcframe.c.
+
+    The `#LC` frame had no integrity check at all (#298), and the console it
+    rides is 115200 8N1 with no hardware flow control - the same reason the
+    sender has to pace bytes in the first place. The loader on the other side
+    does not check what it is handed (lua/lundump.c), so a flipped nibble went
+    straight into it. This is a checksum, not a signature: it catches a damaged
+    frame, not a chosen one.
+    """
+    a = b = 0xFFFF
+    i, n = 0, len(data)
+    while n:
+        blk = min(n, 359)          # longest run that cannot overflow before the fold
+        n -= blk
+        for _ in range(blk):
+            a += data[i]
+            b += a
+            i += 1
+        a = (a & 0xFFFF) + (a >> 16)
+        b = (b & 0xFFFF) + (b >> 16)
+    a = (a & 0xFFFF) + (a >> 16)
+    b = (b & 0xFFFF) + (b >> 16)
+    return ((b << 16) | a) & 0xFFFFFFFF
+
+
 def emit_frame(out, chunk: bytes) -> None:
     """Write one #LC frame: header line + hex payload wrapped at 64 columns."""
-    out.write(f"#LC:{len(chunk)}\n")
+    out.write(f"#LC:{len(chunk)}:{fletcher32(chunk):08x}\n")
     hexs = chunk.hex()
     for i in range(0, len(hexs), 64):
         out.write(hexs[i:i + 64] + "\n")

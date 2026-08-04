@@ -42,13 +42,29 @@ the sibling `lua/` tree — the same trick `mtl/tools/testvm` uses.
 Raw bytecode can't ride the line-oriented UART console (chunks contain
 `\n`/NUL; the device's `sh_gets` is line-based). Each chunk is framed as:
 
-    #LC:<len>\n            header line; len = chunk size in bytes (decimal)
+    #LC:<len>:<sum>\n      header line; len = chunk bytes (decimal),
+                           sum = Fletcher-32 of the chunk (8 lowercase hex)
     <2*len hex chars>      the chunk, wrapped at 64 cols (device skips whitespace)
 
 The device (`lua/firmware/src/main.c`, `load_lc_frame`) mallocs `len` bytes
-off the external-RAM heap (with a sanity cap), hex-decodes the payload, then
-`luaL_loadbuffer(..., "=stdin")` and runs it through pcall+echo. A non-`#LC` line
-is rejected — the device has no parser. `replpipe.py`/`luash.py` are the senders.
+off the external-RAM heap (with a sanity cap), hex-decodes the payload, **verifies
+the checksum**, then `luaL_loadbuffer(..., "=stdin")` and runs it through
+pcall+echo. A non-`#LC` line is rejected — the device has no parser.
+`replpipe.py`/`luash.py` are the senders.
+
+The checksum (#298) is the transport guard. This console is 115200 8N1 with no
+hardware flow control and a 16-byte RX FIFO — the same reason the senders pace
+bytes — and the loader behind it does not check what it is handed
+(`lua/lundump.c`; `task lua:firmware:test:bytecode` measures that 13% of
+single-byte corruptions kill the runtime, and there is no MMU on this part, so
+they corrupt the heap rather than stopping). A frame that does not verify is
+reported and not loaded.
+
+It is a **checksum, not a signature**: it catches a damaged frame, not a chosen
+one. Three implementations share it — `firmware/src/utils/lcframe.c`,
+`replpipe.py`, `luash.py` — pinned by `lcframe_test`'s vectors and proved to
+agree end to end by the simulator round-trips (`lua:firmware:test`,
+`:test:inject`, `:test:sched` all pipe real frames into a real image).
 
 ## Tasks
 

@@ -38,8 +38,12 @@ that breaks one needs a stated reason.**
    out of the ~9.9 KB free internal flash or the volatile 1 MB ExtRAM.
 5. **Sandbox by construction.** *(partly established)* Stdlib is trimmed to `base + string +
    table + coroutine` (the reactor's, 2,300 B measured) — no `os`/`io`/`package`/`debug`/`loadlib`, `dofile`/`loadfile` removed. The
-   parser-less image hardens this further: with no on-device compiler the rabbit cannot `eval`
-   source, only run bytecode it is handed. New bindings are bounded `nab.*` calls; don't re-add
+   parser-less image hardens this further *for source*: with no on-device compiler the rabbit
+   cannot `eval` a typed-in program. It does **not** harden the bytecode side - dropping
+   `lparser`/`llex` removed a front end that rejects malformed input by construction and left
+   `lundump`, which PUC-Rio documents as unchecked ("maliciously crafted binary chunks can
+   crash the interpreter"), as the whole input surface. `task lua:firmware:test:bytecode`
+   measures it; the `#LC` frame carrying no integrity check is the cheap half to close. New bindings are bounded `nab.*` calls; don't re-add
    a general-purpose library without a security review.
 
 > ⚠️ [#184](https://github.com/rngtng/NabaztagHackKit/issues/184)'s hardware list is partly
@@ -115,7 +119,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **117,516 B of 124 KB (~9.2 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **118,984 B of 124 KB (~7.8 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -135,7 +139,7 @@ Two things keep it from being worse, and both are load-bearing:
 
 `-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
 4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
-boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 2,387 B — `run`/`watch`/`ledshow` plus
+boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,620 B — `run`/`watch`/`ledshow` plus
 two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
 decisions, not refactors. `task lua:firmware:build` fails loudly on overflow.
 
@@ -152,7 +156,9 @@ nab.time()                    -- -> ms since boot (wrapping 32-bit tick)
 nab.wait(ms)                  -- sleep ~ms while running the event pump, so nab.on callbacks fire
 nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> fn(pressed) on
                               --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
-                              --   (registering starts the background ~750 ms scan)
+                              --   (registering starts the background ~750 ms scan); "tick" ->
+                              --   fn() every pump iteration. boot.lua wraps this so "tick" is
+                              --   routed through sched and does NOT displace the reactor (#297)
 nab.button()                  -- -> true while the head button is held (polled, undebounced)
 nab.wheel()                   -- -> 0..255, ADC ch.2 (the back wheel - an analog pot, HW-verified:
                               --   255 at rest, smooth 255->0->255 across its travel)
@@ -178,6 +184,7 @@ nab.rec_read()                -- -> whole 256-byte ADPCM blocks, or nil. Returns
 nab.rec_stop()                -- close the session (codec back to decode mode)
 nab.rec_wav(data)             -- wrap concatenated rec_read chunks as a WAV string
 nab.wifi(ssid [, psk])        -- join an AP (WPA2-CCMP or open) -> true | nil, msg, reason
+                              --   ssid <= 32, psk <= 64 bytes (#296); over-long raises
                               --   reason: "radio"|"notfound"|"auth"|"timeout" (#234 branches on it)
 nab.wifi_ap(ssid [, ch])      -- master (AP) mode: beacon an OPEN network on ch (default 1) (#216)
 nab.wifi_up()                 -- cold-boot the dongle without joining, so wifi_mac() is real (#233)
@@ -320,12 +327,14 @@ src/hal/            one file per peripheral: spi, led, button, audio (VS1003), a
                     rfid (CRX14), motor (ears), uart, config (flash sector), ota, wifi
 src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
 src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
-src/utils/          event.c (cooperative event core), fmt.c (number/printf shims), libc_shim.c
+src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
+                    lcframe.c (#LC header parse + checksum), libc_shim.c
 lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral
 test/host/          host-side C unit tests under ASan/UBSan (task lua:firmware:test:host)
-test/*.expected     golden transcripts for the bytecode + injection tests
+test/bytecode/      malformed-bytecode robustness of the loader (task lua:firmware:test:bytecode)
+test/*.expected     golden transcripts for the bytecode / desync / injection tests
 ```
 
 `sys/`, `inc/common.h` and `hal/` are **copied** from `mtl/firmware` — a register fix there may

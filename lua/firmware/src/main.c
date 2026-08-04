@@ -33,6 +33,7 @@
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
 #include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
+#include "utils/lcframe.h" /* #LC frame integrity check (#298) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
@@ -779,10 +780,36 @@ static int nab_sciw(lua_State *L)
  * provisioning flow (#234) branches on to pick an LED/message. The whole USB +
  * 802.11 stack is pulled into the image only because this binding references
  * it (see hal/wifi.c). */
+/* Bounded string argument for the radio bindings (#296). The 802.11 SSID and
+ * the WPA passphrase both land in fixed-size C buffers - rt2501_scan's probe
+ * frame, the PBKDF2 - so the cap belongs here, at the seam, exactly as
+ * nab.config already enforces its own field caps (principle 5: bindings are
+ * bounded nab.* calls). The HAL re-checks; neither layer is the only guard. */
+static const char *check_bounded(lua_State *L, int arg, size_t max,
+                                 const char *what)
+{
+  size_t len;
+  const char *s = luaL_checklstring(L, arg, &len);
+
+  luaL_argcheck(L, len <= max, arg, what);
+  return s;
+}
+
+static const char *opt_bounded(lua_State *L, int arg, const char *def,
+                               size_t max, const char *what)
+{
+  size_t len;
+  const char *s = luaL_optlstring(L, arg, def, &len);
+
+  if (s != NULL)
+    luaL_argcheck(L, len <= max, arg, what);
+  return s;
+}
+
 static int nab_wifi(lua_State *L)
 {
-  const char *ssid = luaL_checkstring(L, 1);
-  const char *psk = luaL_optstring(L, 2, "");
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
+  const char *psk = opt_bounded(L, 2, "", WIFI_PSK_MAX, "PSK is at most 64 bytes");
   wifi_fail_t why = WIFI_OK;
   if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
     /* (nil, message, reason): reason is a stable machine-readable tag the
@@ -811,7 +838,7 @@ static int nab_wifi(lua_State *L)
  * arrive via nab.wifi_recv(). */
 static int nab_wifi_ap(lua_State *L)
 {
-  const char *ssid = luaL_checkstring(L, 1);
+  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
   lua_Integer ch = luaL_optinteger(L, 2, 1);
   luaL_argcheck(L, ch >= 1 && ch <= 14, 2, "1..14");
   if (wifi_ap(ssid, (uint8_t)ch) != 0) {
@@ -852,7 +879,8 @@ static int nab_wifi_up(lua_State *L)
  * hops all 14 channels, so an existing association does not survive it. */
 static int nab_wifi_scan(lua_State *L)
 {
-  const char *ssid = luaL_optstring(L, 1, NULL);
+  const char *ssid = opt_bounded(L, 1, NULL, WIFI_SSID_MAX,
+                                 "SSID is at most 32 bytes");
   if (ssid != NULL && *ssid == '\0')
     ssid = NULL;                        /* "" = broadcast, not a hidden SSID */
   if (wifi_state() == RT2501_S_MASTER) {
@@ -1172,12 +1200,20 @@ static void report(lua_State *L)
  * compiles every REPL line off-device and ships the chunk here as a framed hex
  * payload:
  *
- *     #LC:<len>\n            header line (len = chunk size in bytes, decimal)
+ *     #LC:<len>:<sum>\n      header line (len = chunk bytes, decimal;
+ *                            sum = Fletcher-32 of the chunk, 8 lowercase hex)
  *     <2*len hex chars>      the chunk, whitespace/newlines ignored (wrapped 64c)
  *
  * Raw bytecode can't ride this line-oriented console directly (chunks contain
  * '\n'/NUL and sh_gets is line-based), hence the hex framing. #LC frames are the
- * only executable input the REPL accepts; anything else is rejected (see repl). */
+ * only executable input the REPL accepts; anything else is rejected (see repl).
+ *
+ * The checksum (#298) is the transport guard: this console has no hardware flow
+ * control and a 16-byte RX FIFO, and the loader behind it does not check what it
+ * is given (lua/lundump.c; see task lua:firmware:test:bytecode for what a
+ * corrupted chunk costs). A frame that does not verify is reported and NOT
+ * loaded. It is a checksum, not a signature - it catches a damaged frame, not a
+ * chosen one. */
 #define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
 
 /* Read the next hex digit off the console, skipping the whitespace the sender
@@ -1213,25 +1249,41 @@ static void skip_to_eol(void)
   }
 }
 
-/* Parse a "#LC:<len>" header (already read into `line`), stream the following
- * 2*len hex chars into a fresh buffer, and load it as a Lua chunk. Leaves the
- * compiled chunk on the stack on success (like load_line), else pushes an error
- * message and returns non-LUA_OK. No strtol - a manual digit loop keeps newlib
- * out. The buffer comes from the external-RAM heap (_sbrk). */
+/* Throw away a frame's payload: 2*len hex chars plus its trailing newline.
+ *
+ * Rejecting a frame is only half of rejecting it. The payload is already on the
+ * wire behind the header, so a path that returns without consuming it leaves
+ * sh_gets reading bytecode hex as REPL lines - one spurious error per wrapped
+ * line, for every frame a sender gets wrong. That is what made a single
+ * checksum-less frame from tools/simui look like ten failures. */
+static void drop_lc_payload(long len)
+{
+  for (long i = 0; i < 2 * len; i++) {
+    if (read_hex_nibble() < 0)
+      return;   /* EOF or non-hex: the frame was short, nothing left to drop */
+  }
+  skip_to_eol();
+}
+
+/* Parse a "#LC:<len>:<sum>" header (already read into `line`), stream the
+ * following 2*len hex chars into a fresh buffer, verify the checksum and load
+ * it as a Lua chunk. Leaves the compiled chunk on the stack on success (like
+ * load_line), else pushes an error message and returns non-LUA_OK. Either way
+ * the frame's payload is consumed, so the console stays in sync. The buffer
+ * comes from the external-RAM heap (_sbrk).
+ *
+ * The header parse itself is utils/lcframe.c - it is the part with a rule to
+ * it, so it lives where a test can link it. */
 static int load_lc_frame(lua_State *L, const char *line)
 {
-  const char *p = line + 4; /* past "#LC:" */
-  if (*p < '0' || *p > '9') {
-    lua_pushliteral(L, "malformed #LC frame header");
+  long len;
+  uint32_t want;
+  lcframe_status st = lcframe_parse_header(line, LC_MAX, &len, &want);
+
+  if (st != LCFRAME_OK) {
+    drop_lc_payload(len);   /* len is what the sender queued; 0 = nothing to drop */
+    lua_pushstring(L, lcframe_strerror(st));
     return LUA_ERRSYNTAX;
-  }
-  long len = 0;
-  for (; *p >= '0' && *p <= '9'; p++) {
-    len = len * 10 + (*p - '0');
-    if (len > LC_MAX) {
-      lua_pushliteral(L, "#LC frame too large");
-      return LUA_ERRSYNTAX;
-    }
   }
 
   char *buf = (len > 0) ? malloc((size_t)len) : NULL;
@@ -1250,6 +1302,13 @@ static int load_lc_frame(lua_State *L, const char *line)
     buf[i] = (char)((hi << 4) | lo);
   }
   skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
+
+  /* Verify before the loader ever sees it (#298). */
+  if (lcframe_checksum((const uint8_t *)buf, (size_t)len) != want) {
+    free(buf);
+    lua_pushliteral(L, "#LC frame checksum mismatch - frame corrupted in transit");
+    return LUA_ERRSYNTAX;
+  }
 
   /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
    * starts with LUA_SIGNATURE, so lua_load takes the lundump (bytecode) branch;

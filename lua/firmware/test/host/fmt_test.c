@@ -16,6 +16,7 @@
  *   writestringerror  #245 - the over-long message must not emit a stray NUL
  *   printf            the conversions Lua actually emits
  *   num               float <-> string, pow and fmod
+ *   num-large         a big float must stay inside luai_num2str's digit buffer
  *   hex8              #254 - UID formatting, especially zero nibbles
  */
 #include <stdint.h>
@@ -216,6 +217,71 @@ static void scen_num(void)
 }
 
 /* ---------------------------------------------------------------------------
+ * Large floats: luai_num2str writes its digits into a fixed char body[16] whose
+ * size assumes the widest thing pf_utoa can produce is a 32-bit `unsigned long`
+ * (10 digits + sign + ".0" = 13). Nothing in the function enforces that, and
+ * `uv` is a plain `unsigned long`:
+ *
+ *     uv = (fexp - 23 < 32) ? (unsigned long)mant << (fexp - 23) : 0;
+ *
+ * so the width of the output is the width of the target's `unsigned long`. Two
+ * manifestations of the one defect:
+ *
+ *   * On any 64-bit host - i.e. right here, where this file is the only thing
+ *     that ever executes fmt.c natively - the shift produces up to 2^55, which
+ *     is 17 digits, and the writes at fmt.c's `body[blen++] = '.'` run past the
+ *     end of body[]. ASan reports a stack-buffer-overflow.
+ *   * On the device (`unsigned long` is 32 bits) the shift wraps instead, so
+ *     the buffer holds but the number is silently wrong: print(1e10) renders
+ *     "1410065408.0" - 1e10 mod 2^32 - not an approximation of 1e10. "Float
+ *     printing is approximate" (#213) is the documented contract for the
+ *     FRACTION; dropping the high bits of the integer part is not that.
+ *
+ * The assertions below pin the values that are exactly representable and fit,
+ * then require the output to stay inside the buffer for one that does not. A
+ * fix has to bound the digit count and the buffer together (and, if the
+ * integer part cannot be represented at all, say so rather than print a
+ * wrapped one) - note that widening pf_utoa to 64 bits is not free on ARM7:
+ * it links libgcc's __aeabi_uldivmod for the /= and %= in the digit loop.
+ * ------------------------------------------------------------------------- */
+static void scen_num_large(void)
+{
+  char b[64];
+  int n;
+
+  printf("scenario num-large: a big float must stay inside the digit buffer\n");
+
+  /* 2^24 - the first float above the contiguous-integer range, and the first
+   * value to take the `fexp > 23` shift branch at all. */
+  luai_num2str(b, sizeof b, 16777216.0f);
+  eq_str(b, "16777216.0", "num2str 2^24");
+
+  /* The largest float below 2^32: the widest integer part the device's
+   * `unsigned long` can still hold, so this must be exact on both widths. */
+  luai_num2str(b, sizeof b, 4294967040.0f);
+  eq_str(b, "4294967040.0", "num2str largest value that fits unsigned long");
+
+  /* Just over that: exactly representable as a float (10^10 = 2^10 * 5^10, and
+   * 5^10 < 2^24), so the correct rendering is exact digits. This is the value
+   * that comes out as "1410065408.0" on the 32-bit target. */
+  luai_num2str(b, sizeof b, 1.0e10f);
+  eq_str(b, "10000000000.0", "num2str 1e10 keeps its high digits");
+
+  /* Wide enough that the digits cannot fit body[16] on a 64-bit host. Whatever
+   * the shim decides to print, it must print it inside its own buffer and
+   * report the length it wrote. */
+  memset(b, 0, sizeof b);
+  n = luai_num2str(b, sizeof b, 1.0e15f);
+  eq_int(n, (long)strlen(b), "num2str returns the length it actually wrote");
+  CHECK(n > 0 && n < (int)sizeof b, "num2str output stays bounded for a huge float");
+
+  /* The same bits go through vsnprintf's %f branch (into a char tmp[32]) - it
+   * is wide enough today, and this pins that it stays so. */
+  snprintf(b, sizeof b, "%f", 1.0e15);
+  CHECK(strlen(b) > 0 && strlen(b) < sizeof b, "%f stays bounded for a huge double");
+}
+
+/* ---------------------------------------------------------------------------
  * #254: fmt_hex8 replaced eight snprintf("%02x") calls. This is an
  * optimisation, not a bug fix, so the test's job is to pin the exact output -
  * especially the zero-padding, which is the behaviour a hand-rolled version
@@ -256,6 +322,7 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "writestringerror") == 0) scen_writestringerror();
   if (!only || strcmp(only, "printf") == 0)           scen_printf();
   if (!only || strcmp(only, "num") == 0)              scen_num();
+  if (!only || strcmp(only, "num-large") == 0)        scen_num_large();
   if (!only || strcmp(only, "hex8") == 0)             scen_hex8();
 
   if (failures) {

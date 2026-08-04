@@ -229,6 +229,110 @@ eq(ca.state, "closed", "first connection closed")
 eq(cb.state, "closed", "second connection closed")
 hook = nil
 
+-- serve: the listen slot must be replenished once a connection finishes -------
+--
+-- serve() calls accept() from exactly two places: once before the loop, and
+-- once when the slot that was listening takes a SYN. Both are guarded by
+-- `#self.conns >= MAX_CONNS`, so a burst of MAX_CONNS simultaneous connections
+-- leaves NO slot in "listen" - and nothing calls accept() again when those
+-- slots later finish and are removed. dispatch() only routes a fresh SYN to a
+-- slot whose state is "listen", so from that moment every new connection is
+-- dropped on the floor while the loop spins on an empty conns list forever
+-- (its only exit is `stop and #self.conns == 0`, and `stop` comes from a
+-- handler that can no longer be reached).
+--
+-- This is the exact traffic #286 was written for. A phone joining the open
+-- setup AP fires its captive-portal check at several hostnames at once - the
+-- DNS hijack (i:dnsd) points them all at us - so the burst that wedges the
+-- portal arrives before the user has seen the form, and the tap that would
+-- open it is the connection that gets dropped. Recovery is a power cycle.
+--
+-- The scenario: MAX_CONNS phones connect at once and are served, then one more
+-- arrives. The fourth must be served too. The fake driver raises past a
+-- generous simulated deadline so a wedged serve() fails the run instead of
+-- hanging it.
+
+t, sent, rxq = 0, {}, {}
+local deadline
+local drvd = {
+  mac = MAC_A, time = timefn, send = drv.send,
+  recv = function(ms)
+    t = t + (ms or 0)
+    if deadline and t > deadline then error("serve never returned", 0) end
+    local e = table.remove(rxq, 1)
+    if e then return e[1], e[2] end
+  end,
+}
+local i6 = iface.new(drvd)
+i6.ip = IP_A
+
+-- MAX_CONNS is deliberately not imported: the burst below is sized from the
+-- observed behaviour (fill every slot), and the assertion is about the slot
+-- AFTER the burst, whatever the cap happens to be.
+local BURST = 3
+local phones, byport = {}, {}
+for k = 1, BURST + 1 do
+  local c = tcp.client{src = IP_B, dst = IP_A, sport = 53000 + k, dport = 80,
+                       iss = 100 * k, clock = timefn}
+  local ph = {c = c, resp = http.response(), path = "/p" .. k}
+  phones[k], byport[c.sport] = ph, ph
+end
+
+hook = function(_, f6)
+  local et6, p6 = link.decap(f6)
+  if et6 ~= link.ETH_IP then return end
+  local pkt = ipv4.parse(p6)
+  if not pkt or pkt.proto ~= ipv4.TCP then return end
+  local seg = tcp.parse(pkt)
+  local ph = seg and byport[seg.dport]
+  if not ph then return end
+  for _, o in ipairs(ph.c:input(pkt)) do pushpkt(o) end
+  if ph.c.state == "established" and not ph.sent then
+    ph.sent = true
+    for _, o in ipairs(ph.c:send("GET " .. ph.path .. " HTTP/1.0\r\n\r\n")) do
+      pushpkt(o)
+    end
+  end
+  local d6 = ph.c:read()
+  if d6 ~= "" then ph.resp:feed(d6) end
+  if ph.c.state == "close-wait" and not ph.closed then
+    ph.closed = true
+    ph.resp:eof()
+    for _, o in ipairs(ph.c:close()) do pushpkt(o) end
+  end
+end
+
+for k = 1, BURST do
+  for _, o in ipairs(phones[k].c:connect()) do pushpkt(o) end
+end
+
+local seen = {}
+deadline = t + 600000
+local served_ok = pcall(function()
+  i6:serve(80, function(rq)
+    seen[#seen + 1] = rq.path
+    if #seen == BURST then
+      -- the captive-portal burst has been answered; now the user taps through
+      -- to the portal itself. Queued several times over, as a real client
+      -- retransmits an unanswered SYN - so a dropped one is the server's doing.
+      local syn = phones[BURST + 1].c:connect()
+      for _ = 1, 5 do
+        for _, o in ipairs(syn) do pushpkt(o) end
+      end
+    end
+    return "<p>" .. rq.path .. "</p>", "200 OK", #seen >= BURST + 1
+  end)
+end)
+hook = nil
+
+eq(#seen, BURST + 1,
+   "serve keeps accepting after a full-capacity burst has drained")
+eq(served_ok, true, "serve returns instead of spinning with no listener open")
+eq(phones[BURST + 1].resp.status, 200,
+   "the connection after the burst got a response")
+eq(phones[BURST + 1].resp.body, "<p>/p4</p>",
+   "the connection after the burst got its own page")
+
 -- captive dns: an A query is answered with our ip, unicast to the asker -------
 
 t, sent, rxq = 0, {}, {}
