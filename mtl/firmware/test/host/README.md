@@ -65,7 +65,8 @@ nothing.
 |---|---|
 | `msg1` | a well-formed message 1/4 is answered (non-vacuous baseline) |
 | `msg3-mic` | msg3's `body_length` must be bounded by the received length (#292) |
-| `gtk-kd` | the group message's `key_data_length`, likewise (#292) |
+| `msg3-gtk` | msg3's key data is walked past the leading RSN IE and its GTK KDE installed (#230) |
+| `gtk-kd` | the group message's `key_data_length`, likewise bounded (#292) |
 | `group-tkip` | the WPA1/TKIP branch's RC4 GTK read, likewise — **mtl only**, #124 removed that branch from the lua twin (#292) |
 | `group-mic` | the group-key message's `body_length`, likewise (#292) |
 
@@ -76,12 +77,20 @@ run **completes**. When the bound is missing, ASan aborts inside the stubbed
 `hmac_sha1` / `aes128_unwrap` / `memcmp`, which is not the stub misbehaving —
 an HMAC over N bytes reads N bytes, and N came from the code under test.
 
-The baselines (`msg1`, `short`, `rx-legal`, `rx-rsn-adv`) assert positive
-content, so a guard cannot pass by the parser bailing out before it reaches
-the read.
+The baselines (`msg1`, `short`, `rx-legal`, `rx-rsn-adv`, `msg3-gtk`) assert
+positive content, so a guard cannot pass by the parser bailing out before it
+reaches the read.
+
+A guard also has to fail against the **original** source, not just against the
+previous commit. `gtk-kd` declares 56 bytes of key data rather than the current
+112-byte cap for exactly that reason: the scratch buffer was 48+8 bytes before
+#230 enlarged it, so a larger value would be refused by the old code for the
+wrong reason and the guard would pass having proved nothing.
 
 ## Scope
 
 Everything here is the 802.11 receive path with the radio, the USB host
 controller and the crypto stubbed. It says nothing about behaviour against a
-real AP; that needs the JTAG rig.
+real AP; that needs the JTAG rig. `msg3-gtk` in particular proves the KDE walk
+and the install call, **not** that a WPA2 join keys broadcasts correctly on
+hardware — see #230.

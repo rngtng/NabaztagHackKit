@@ -51,6 +51,7 @@ Fixes that have crossed, newest first:
 | Fix | lua | mtl | Notes |
 |---|---|---|---|
 | Pre-auth OOB reads in the WPA handshake and the 802.11 IE walks (#292/#293/#294/#295/#296) | `4e6c9cf` | #307 | Ported, not copied. The mtl port adds two hunks with no lua counterpart, both the same defect class in the WPA1/TKIP code #124 deleted there: a bound on `eapol.c`'s RC4 GTK read, and on `ieee80211.c`'s WPA1 vendor-IE suite counts. |
+| WPA2 GTK from 4-way msg3 (#228) | `818bd15` | #230 | mtl's group handler keeps the RC4/TKIP branch, so the CCMP unwrap is factored out *around* it (a `switch` case) rather than replacing it as on lua. **Not hardware-verified on mtl** - the host test covers the KDE walk and the install call, nothing more. |
 | WPA2 PMK 40-byte-into-32 overflow (#228) | `818bd15` | `1a8c48c` | Fixed twin-wide; mtl's was in `vinterp.c`'s netPmk path. |
 
 Host-native ASan coverage exists on **both** sides now and is the cheapest way

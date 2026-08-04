@@ -43,9 +43,15 @@
  *
  *   msg1        a well-formed message 1/4 is answered (the non-vacuous half)
  *   msg3-mic    message 3/4's body_length must be bounded by the frame
- *   gtk-kd      the group message's key_data_length, likewise
+ *   msg3-gtk    message 3/4's key data is walked and its GTK KDE installed
+ *   gtk-kd      the group message's key_data_length, likewise bounded
  *   group-tkip  the WPA1/TKIP branch's RC4 GTK read, likewise (mtl only)
  *   group-mic   the group-key message's body_length, likewise
+ *
+ * `msg3-gtk` is the odd one out: it is a FUNCTIONAL test of #230, not a bounds
+ * guard, and it proves the KDE walk and the install call with the crypto and
+ * the radio stubbed. It does not - cannot, here - prove that a real WPA2 join
+ * keys broadcasts correctly on hardware. See #230.
  *
  * The guards drive a real msg1 first, because that is how a supplicant reaches
  * the state where msg3 is accepted. They differ in what they need from the
@@ -99,8 +105,20 @@ void hcd_free(void *p) { free(p); }
 void dump(uint8_t *d, int32_t n) { (void)d; (void)n; }
 void usbhost_events(void) {}
 struct rt2501buffer *rt2501_receive(void) { return NULL; }
+static unsigned set_key_calls;
+static uint8_t  set_key_index;
+static uint8_t  set_key_cipher;
+static uint8_t  set_key_material[EAPOL_EK_LENGTH];
+
 int32_t rt2501_set_key(uint8_t i, uint8_t *k, uint8_t *tx, uint8_t *rx, uint8_t c)
-{ (void)i; (void)k; (void)tx; (void)rx; (void)c; return 1; }
+{
+  (void)tx; (void)rx;
+  set_key_calls++;
+  set_key_index = i;
+  set_key_cipher = c;
+  memcpy(set_key_material, k, EAPOL_EK_LENGTH);
+  return 1;
+}
 void set_led(uint8_t l, uint32_t c) { (void)l; (void)c; }
 
 int32_t rt2501_send(const uint8_t *data, uint32_t len, const uint8_t *dst,
@@ -135,16 +153,30 @@ void hmac_md5(const uint8_t *key, uint32_t key_len, const uint8_t *data,
               uint32_t data_len, uint8_t *out)
 { (void)key; (void)key_len; hash_read(data, data_len, out, 16); }
 
-/* Likewise: unwrapping N bytes means reading N bytes. */
+/* Likewise: unwrapping N bytes means reading N bytes.
+ *
+ * By default the integrity check FAILS - the unwrap itself is covered by
+ * `task mtl:firmware:test:crypto`'s RFC 3394 known-answer test, and a failing
+ * unwrap is what the bounds guards want, since the read has already happened
+ * by then. `unwrap_plain` opts into a successful unwrap yielding a chosen
+ * plaintext, for the scenarios about what the KEY DATA parser does with it. */
+static const uint8_t *unwrap_plain;
+static uint16_t unwrap_plain_len;
+
 int aes128_unwrap(const uint8_t *kek, const uint8_t *in, uint16_t len,
                   uint8_t *out)
 {
   volatile uint8_t sink = 0;
+  uint16_t outlen = len > 8 ? (uint16_t)(len - 8) : 0;
   (void)kek;
   for (uint16_t i = 0; i < len; i++)
     sink ^= in[i];
-  memset(out, 0, len > 8 ? (size_t)(len - 8) : 0);
-  return 0;   /* integrity fail: we are not testing the unwrap itself */
+  memset(out, 0, outlen);
+  if (unwrap_plain == NULL)
+    return 0;
+  memcpy(out, unwrap_plain,
+         unwrap_plain_len < outlen ? unwrap_plain_len : outlen);
+  return 1;
 }
 
 /* The RC4 group-key path mtl still carries (#124 removed it from lua). Not
@@ -301,17 +333,75 @@ static void scen_gtk_kd(void)
   f->key_frame.key_info.key_mic = 1;
   f->key_frame.key_info.secure = 1;
   set_body_length(f, (uint32_t)BASE_LEN);   /* honest: isolates the unwrap read */
-  /* 56 is the largest the group handler accepts (sizeof(unwrapped)+8), and the
-   * check that caps it is against the SCRATCH BUFFER, never against the frame.
-   * This frame carries no key_data at all - a real one carries 56-88 bytes
-   * there, which is precisely why the received length is the only thing that
-   * could bound the read, and it is unused. */
+  /* The only cap on this before #292 was against the SCRATCH BUFFER, never
+   * against the frame. This frame carries no key_data at all - a real one
+   * carries 56-88 bytes there, which is precisely why the received length is
+   * the only thing that could bound the read, and it was unused.
+   *
+   * 56 rather than the current cap of 112: the scratch buffer was 48+8 bytes
+   * before #230 enlarged it for msg3's key data, so a larger value would be
+   * refused by the OLD code for the wrong reason and this guard would pass
+   * vacuously against it. 56 over-reads on the original source and is refused
+   * by the frame bound on this one, which is what a guard has to do. */
   f->key_frame.key_data_length[0] = 0;
   f->key_frame.key_data_length[1] = 56;
   feed((uint32_t)BASE_LEN);
 
   /* Reaching here is the assertion: ASan reports the over-read otherwise. */
   printf("  unwrap returned without reading past the frame\n");
+}
+
+/* --- msg3 carries the GTK (#230) ------------------------------------------ */
+
+static void scen_msg3_gtk(void)
+{
+  struct eapol_frame *f;
+  /* The unwrapped key data of a WPA2 msg3: the RSN IE first, THEN the GTK KDE.
+   * A walk that treats the leading 0x30 as a terminator finds no GTK - that is
+   * the shape the lua fix had to handle too. Then RFC 3394 padding, which is a
+   * zero-length vendor element.
+   *   0x30 len=2  ..           the RSN IE msg3 leads with
+   *   0xDD len=22 00-0F-AC-01  GTK KDE: OUI + data type 1
+   *               KeyID=1, reserved, then the 16-byte GTK
+   *   0xDD len=0               pad */
+  static const uint8_t plain[48] = {
+    0x30, 0x02, 0x01, 0x00,
+    0xDD, 0x16, 0x00, 0x0F, 0xAC, 0x01, 0x01, 0x00,
+    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+    0xDD, 0x00,
+  };
+  static const uint8_t expect_gtk[EAPOL_EK_LENGTH] = {
+    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+    0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+  };
+  const uint16_t kdlen = 56;               /* wrapped: plain + 8 */
+  const uint32_t len = (uint32_t)BASE_LEN + kdlen;
+
+  printf("scenario msg3-gtk: message 3/4's key data yields the GTK\n");
+
+  do_msg1(1);
+
+  f = frame_init();
+  set_replay(f, 2);
+  f->key_frame.key_info.key_mic = 1;          /* msg3 */
+  memcpy(f->key_frame.key_nonce, last_nonce, EAPOL_NONCE_LENGTH);
+  f->key_frame.key_data_length[0] = (uint8_t)(kdlen >> 8);
+  f->key_frame.key_data_length[1] = (uint8_t)kdlen;
+  set_body_length(f, len);
+  unwrap_plain = plain;
+  unwrap_plain_len = sizeof plain;
+  set_key_calls = 0;
+  feed(len);
+  unwrap_plain = NULL;
+
+  CHECK(set_key_calls == 1, "a key is installed from message 3/4");
+  CHECK(set_key_cipher == RT2501_CIPHER_AES, "installed as a CCMP key");
+  CHECK(set_key_index == 1, "installed at the KeyID the GTK KDE carries");
+  CHECK(memcmp(set_key_material, expect_gtk, EAPOL_EK_LENGTH) == 0,
+        "the key material is the GTK from the KDE");
+  CHECK(eapol_state == EAPOL_S_RUN,
+        "the supplicant runs after msg3 rather than waiting for a group message");
 }
 
 /* --- group message, TKIP branch: key_data may not be there at all --------- */
@@ -383,8 +473,9 @@ int main(int argc, char **argv)
     }                                                                         \
   } while (0)
 
-  RUN("msg1",      scen_msg1);
-  RUN("msg3-mic",  scen_msg3_mic);
+  RUN("msg1",       scen_msg1);
+  RUN("msg3-mic",   scen_msg3_mic);
+  RUN("msg3-gtk",   scen_msg3_gtk);
   RUN("gtk-kd",     scen_gtk_kd);
   RUN("group-tkip", scen_group_tkip);
   RUN("group-mic",  scen_group_mic);
