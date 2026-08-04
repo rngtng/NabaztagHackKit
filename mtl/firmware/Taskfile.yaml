@@ -138,6 +138,7 @@ tasks:
       - task: test:vm
       - task: test:bugs
       - task: test:crypto
+      - task: test:host
 
   simulate:
     desc: 'Run the native C VM (testvm) interactively against boot bytecode, foreground. Requires boot:build first.'
@@ -184,10 +185,26 @@ tasks:
         docker run --rm -v "$(realpath .):/work" {{.FW_IMAGE}}
         sh -c "gcc -Wall -Wextra -Wpedantic -Iinc test/aes128_kat.c src/net/aes128.c -o /tmp/aes128_kat && /tmp/aes128_kat"
 
+  test:host:
+    desc: 'Compile the vendored net/ sources natively against stubbed hardware and run them under ASan/UBSan — the mtl track''s only automated coverage of the WPA join path (#307). TEST=<binary> runs one binary, SCENARIO=<name> one scenario within it.'
+    summary: 'Usage: task firmware:test:host [TEST=eapol_test] [SCENARIO=msg3-mic]. Scenarios: test/host/README.md.'
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - task: image   # firmware image bundles a native gcc for host-side tests
+      # Bare `make check` runs every binary and reports them all rather than
+      # stopping at the first ASan abort. A SCENARIO the selected binary does
+      # not know exits 2 — it never reports a pass having run nothing.
+      - >
+        docker run --rm -v "$(realpath .):/work" -w /work/test/host {{.FW_IMAGE}}
+        sh -c "make clean >/dev/null && make
+        {{- if or .TEST .SCENARIO}} && ./{{.TEST | default "eapol_test"}} {{.SCENARIO}}
+        {{- else}} check{{end}}"
+
   clean:
     desc: 'Remove firmware build artifacts (bin/, obj/) and the Docker images (incl. testvm)'
     dir: '{{.TASKFILE_DIR}}'
     cmds:
-      - rm -rf bin obj
+      - rm -rf bin obj test/host/*.o
+      - rm -f test/host/ieee80211_test test/host/eapol_test
       - docker rmi {{.FW_IMAGE}} || true
       - task: testvm:clean

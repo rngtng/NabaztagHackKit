@@ -1041,8 +1041,20 @@ static void ieee80211_send_probe_response(uint8_t *dest_mac)
 
 	if(!rt2501_tx(presp, sizeof(TXD_STRUC)+frame_length)) {
 		DBG_WIFI("TX error in ieee80211_send_probe_response"EOL);
-		return;
 	}
+
+	/* Release the frame on BOTH paths (#295). It was never freed at all: in AP
+	   mode every answered probe request leaked ~115 bytes of COMRAM, and the
+	   pool hcd.c hands out is 4 KB (ComRAMSize), so ~32 answers exhausted it -
+	   fewer, since the OHCI descriptors and RX/TX buffers live there too. The
+	   parser answers every broadcast probe from every scanning device in range,
+	   and the boot image's AP mode stays up for as long as it takes a user to
+	   type a password, so the pool drained before the portal was ever used - and
+	   what runs dry is the USB allocator, so what stops is the radio.
+	   rt2501_scan has always freed its probe the same way. */
+	disable_ohci_irq();
+	hcd_free(presp);
+	enable_ohci_irq();
 }
 
 static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
@@ -1068,14 +1080,30 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 				char ssid[IEEE80211_SSID_MAXLEN+1];
 
 				ssid_present = 0;
-				while(frame_current < frame_end) {
+				/* Initialised before the walk (#293): a frame with no SSID IE
+				   left this array untouched and `ssid[0]` was still read below. */
+				ssid[0] = 0;
+				/* An IE needs its id AND its length byte inside the frame before
+				   either can be read, and its payload inside the frame before it
+				   can be copied. The old walk tested only `frame_current <
+				   frame_end` and then read both bytes, so one trailing byte -
+				   a pad, or a frame clipped by one - read past the end (#293). */
+				while(frame_current + 2 <= frame_end) {
+					uint8_t ie_len = frame_current[1];
+
+					if(frame_current + 2 + ie_len > frame_end) break;
 					if(frame_current[0] == IEEE80211_ELEMID_SSID) {
-						ssid_present = 1;
-						for(i=0;i<frame_current[1];i++)
-							ssid[i] = frame_current[i+2];
-						ssid[i] = 0;
+						/* The length byte comes off the air. The scan path below
+						   has always bounded this copy; this one did not, and
+						   ssid[] is 33 bytes on our own stack (#293). */
+						if(ie_len <= IEEE80211_SSID_MAXLEN) {
+							ssid_present = 1;
+							for(i=0;i<ie_len;i++)
+								ssid[i] = frame_current[i+2];
+							ssid[i] = 0;
+						}
 					}
-					frame_current += (frame_current[1] + 2);
+					frame_current += (ie_len + 2);
 				}
 				if(ssid[0] == 0) ssid_present = 0;
 
@@ -1126,7 +1154,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 					else
 						scan_result.encryption = IEEE80211_CRYPT_NONE;
 
-					while(frame_current < frame_end) {
+					/* Same bound as the AP-mode walk above (#293): the id and
+					   the length byte must both be inside the frame before either
+					   is read, and the payload before it is consumed. */
+					while(frame_current + 2 <= frame_end
+					      && frame_current + 2 + frame_current[1] <= frame_end) {
 						switch(frame_current[0]) {
 							case IEEE80211_ELEMID_SSID:
 								if(frame_current[1] < sizeof(scan_result.ssid)) {
@@ -1136,7 +1168,9 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								}
 								break;
 							case IEEE80211_ELEMID_DSPARMS:
-								scan_result.channel = frame_current[2];
+								/* one-byte IE; a zero-length one carries no channel */
+								if(frame_current[1] >= 1)
+									scan_result.channel = frame_current[2];
 								break;
 							case IEEE80211_ELEMID_RATES:
 							case IEEE80211_ELEMID_XRATES:
@@ -1151,6 +1185,7 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
               case IEEE80211_ELEMID_RSN:
               {
                 uint8_t *current;
+                uint8_t *ie_end;
                 uint16_t count;
                 uint8_t found;
 
@@ -1158,15 +1193,21 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 //DBG_WIFI("RSN Information"EOL);
                 //dump(frame_current,frame_current[1]);
                 #endif
-                //frame_current += frame_current[1];
 
                 current = &frame_current[2];
+                /* Every suite count below is a u16 off the air, and every walk
+                   used to run `count` iterations of 4 bytes with nothing checked
+                   against the frame - 0x4000 suites walked 256 KB past it (#294).
+                   The enclosing walk has already proved this IE is inside the
+                   frame, so its own end is the bound. */
+                ie_end = current + frame_current[1];
                 /* Element 1: Group cipher suites (OUIs) */
+                if(current + 2 > ie_end) break;   /* truncated RSN IE */
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
                 scan_result.encryption = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
@@ -1189,10 +1230,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 2: Pairwise cipher suites (OUIs) */
+                if(current + 2 > ie_end) break;
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP)
@@ -1215,10 +1257,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   break;
                 }
                 /* Element 5: Auth key management suites (OUIs) */
+                if(current + 2 > ie_end) break;
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
-                for(i=0;i<count;i++) {
+                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_AUTH_PSK)
@@ -1233,13 +1276,19 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 
                 scan_result.encryption |= IEEE80211_CRYPT_WPA2;
                 DBG_WIFI("WPA2 supported"EOL);
-                frame_current += frame_current[1];
+                /* No advance here (#294): the walk below already steps over the
+                   whole IE. This extra step made the success path skip
+                   2*ie_len+2 bytes AND take its length byte from a position that
+                   had already moved - so the byte it added was payload, not a
+                   length. Every other case in this switch leaves the advance to
+                   the walk; this one now does too. */
                 break;
               }
 							case IEEE80211_ELEMID_VENDOR:
               {
 								/* Check for WPA */
 								uint8_t *current;
+								uint8_t *ie_end;
 								uint16_t count;
 								int32_t found;
 
@@ -1251,11 +1300,19 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 
 								/* Check RSN IE */
 								current = &frame_current[2];
+								/* The WPA1 vendor IE the lua twin no longer parses at all
+								   (#124), so this bound has no counterpart there - but the
+								   suite counts below are the same u16s off the air as the
+								   RSN IE's, walked the same unchecked way (#294). Same
+								   bound: the enclosing walk has proved the IE is inside the
+								   frame, so the IE's own end is the limit. */
+								ie_end = current + frame_current[1];
 								if(memcmp(current, ieee80211_vendor_wpa_id, sizeof(ieee80211_vendor_wpa_id)) != 0) break;
 								current += sizeof(ieee80211_vendor_wpa_id);
 								DBG_WIFI("WPA supported"EOL);
 
 								/* Element 1: Multicast cipher suite (OUI) */
+								if(current + IEEE80211_OUI_LEN > ie_end) break;
 								if(memcmp(current, ieee80211_wpa_oui, IEEE80211_OUI_LEN-1) != 0) {
 									scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
 									break;
@@ -1263,12 +1320,13 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								current += IEEE80211_OUI_LEN;
 
 								/* Element 2: Number of unicast cipher suites, 2 bytes */
+								if(current + 2 > ie_end) break;
 								count = (current[0] << 0)|(current[1] << 8);
 								current += 2;
 
 								/* Element 3: Unicast cipher suites (OUIs) */
 								found = 0;
-								for(i=0;i<count;i++) {
+								for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP ||
@@ -1283,12 +1341,13 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
 								}
 
 								/* Element 4: Number of auth key management suites, 2 bytes */
+								if(current + 2 > ie_end) break;
 								count = (current[0] << 0)|(current[1] << 8);
 								current += 2;
 
 								/* Element 5: Auth key management suites (OUIs) */
 								found = 0;
-								for(i=0;i<count;i++) {
+								for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
                   if(memcmp(current, ieee80211_wpa_oui,  IEEE80211_OUI_LEN-1) == 0)
                   {
                     if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_TKIP ||
@@ -1812,9 +1871,16 @@ void rt2501_scan(const uint8_t *ssid, rt2501_scan_callback callback, void *userp
 		write_ptr = probe->probe;
 		/* TAGGED PARAMETERS */
 		if(ssid != NULL) {
-			/* SSID */
+			/* SSID. probe[] is sized for exactly IEEE80211_SSID_MAXLEN, so the
+			   length is clamped here rather than trusted from the caller (#296) -
+			   this is the buffer, so this is where the bound cannot be bypassed.
+			   Computed in a size_t first: `j` is a uint8_t, so a 256-byte SSID
+			   used to truncate to a zero-length IE. */
+			size_t ssid_len = strlen((char*)ssid);
+
+			if(ssid_len > IEEE80211_SSID_MAXLEN) ssid_len = IEEE80211_SSID_MAXLEN;
+			j = (uint8_t)ssid_len;
 			*(write_ptr++) = IEEE80211_ELEMID_SSID;
-			j = strlen((char*)ssid);
 			*(write_ptr++) = j;
 			for(i=0;i<j;i++)
 				*(write_ptr++) = ssid[i];

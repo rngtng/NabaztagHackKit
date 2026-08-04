@@ -521,6 +521,43 @@ static void eapol_input_msg1(uint8_t *frame, uint32_t length)
 }
 
 /**
+ * @brief Bytes the MIC is computed over, or 0 when the frame does not carry them.
+ *
+ * The MIC runs over [protocol_version .. end of key data], i.e. 4 + body_length
+ * bytes starting at frame+LLC_LENGTH. `body_length` comes off the wire, so the
+ * RECEIVED length is the only thing that can bound it - and computing the MIC is
+ * what the comparison against the received MIC is for, so this read happens
+ * before the frame is authenticated. A frame claiming more than it carries is
+ * dropped here rather than hashed off the end of the buffer (#292).
+ *
+ * eapol_input has already refused anything shorter than the base structure, so
+ * length > LLC_LENGTH holds.
+ */
+static uint32_t eapol_mic_span(const struct eapol_frame *fr, uint32_t length)
+{
+  uint32_t span = (uint32_t)((fr->body_length[0] << 8) | fr->body_length[1]) + 4;
+
+  if(span > length - LLC_LENGTH)
+    return 0;
+  return span;
+}
+
+/**
+ * @brief Bytes of key data the frame actually carries.
+ *
+ * key_data is the last field of struct eapol_frame, so its offset is
+ * sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH and a real msg3 runs past the
+ * struct (56-88 bytes of wrapped KDEs is normal). key_data_length is off the
+ * wire; this is what keeps it inside the frame (#292).
+ */
+static uint32_t eapol_key_data_avail(uint32_t length)
+{
+  const uint32_t off = (uint32_t)(sizeof(struct eapol_frame) - EAPOL_RSN_LENGTH);
+
+  return (length > off) ? length - off : 0;
+}
+
+/**
  * @brief Process EAPOL Message 3
  *
  * @param [in]  frame   Frame buffer
@@ -528,10 +565,9 @@ static void eapol_input_msg1(uint8_t *frame, uint32_t length)
  */
 static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 {
-  // FIXME Check length before cast ?
-  (void)length;
   struct eapol_frame *fr_in = (struct eapol_frame *)frame;
   uint8_t old_mic[EAPOL_KEYMIC_LENGTH];
+  uint32_t mic_span;
   struct {
     struct eapol_frame llc_eapol;
   } fr_out;
@@ -556,7 +592,14 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
 
   DBG_WIFI("ANonce OK"EOL);
 
-  /* Check MIC */
+  /* Check MIC. The span is validated against the received length first: this
+   * hash is the pre-authentication read (#292). Both cipher branches use it -
+   * the TKIP/hmac_md5 one is just as reachable, since the AP picks the cipher. */
+  mic_span = eapol_mic_span(fr_in, length);
+  if(mic_span == 0) {
+    DBG_WIFI("body_length exceeds the received frame, drop"EOL);
+    return;
+  }
   memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
   memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
   if((ieee80211_encryption&0x0F) == IEEE80211_CIPHER_CCMP)
@@ -566,7 +609,7 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
     //dump((uint8_t *)&fr_out+LLC_LENGTH,sizeof(struct eapol_frame)+rsn_size-LLC_LENGTH);
      hmac_sha1(ptk.s.kck, EAPOL_MICK_LENGTH,
      frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      kt);
     //DBG_WIFI("MIC:");
     //dump(kt,EAPOL_MICK_LENGTH);
@@ -577,7 +620,7 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
   else
     hmac_md5(ptk.s.kck, EAPOL_MICK_LENGTH,
      frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      fr_in->key_frame.key_mic);
 
   if(memcmp(fr_in->key_frame.key_mic, old_mic, EAPOL_KEYMIC_LENGTH) != 0)
@@ -679,11 +722,10 @@ static void eapol_input_msg3(uint8_t *frame, uint32_t length)
  */
 static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
 {
-  // FIXME Check length before cast ?
-  (void)length;
   uint32_t i;
   struct eapol_frame *fr_in = (struct eapol_frame *)frame;
   uint8_t old_mic[EAPOL_KEYMIC_LENGTH];
+  uint32_t mic_span;
   uint8_t key[32];
   struct rc4_context rc4;
   struct eapol_frame fr_out;
@@ -697,26 +739,31 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
     return;
   }
 
-  /* Check MIC */
+  /* Check MIC - bounded by the received length, as in msg3 (#292). */
+  mic_span = eapol_mic_span(fr_in, length);
+  if(mic_span == 0) {
+    DBG_WIFI("body_length exceeds the received frame, drop"EOL);
+    return;
+  }
   memcpy(old_mic, fr_in->key_frame.key_mic, EAPOL_KEYMIC_LENGTH);
   memset(fr_in->key_frame.key_mic, 0, EAPOL_KEYMIC_LENGTH);
   if((ieee80211_encryption&0x0F) == IEEE80211_CIPHER_CCMP)
   {
     uint8_t kt[20]={0};
     //DBG_WIFI("Before MIC"EOL);
-    //dump((uint8_t *)&frame+LLC_LENGTH,((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4);
+    //dump((uint8_t *)&frame+LLC_LENGTH,mic_span);
      hmac_sha1(ptk.s.kck, EAPOL_MICK_LENGTH, frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      kt);
     //DBG_WIFI("MIC:");
     //dump(kt,EAPOL_MICK_LENGTH);
     memcpy(fr_in->key_frame.key_mic,kt,EAPOL_KEYMIC_LENGTH);
     //DBG_WIFI("After MIC"EOL);
-    //dump((uint8_t *)&frame+LLC_LENGTH,((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4);
+    //dump((uint8_t *)&frame+LLC_LENGTH,mic_span);
   }
   else
     hmac_md5(ptk.s.kck, EAPOL_MICK_LENGTH, frame+LLC_LENGTH,
-     ((fr_in->body_length[0] << 8)|fr_in->body_length[1])+4,
+     mic_span,
      fr_in->key_frame.key_mic);
 
   if(memcmp(fr_in->key_frame.key_mic, old_mic, EAPOL_KEYMIC_LENGTH) != 0)
@@ -803,6 +850,16 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
   {
     case IEEE80211_CIPHER_TKIP: // Decrypt RC4
       {
+        /* The RC4 GTK is read straight out of key_data, which is the OPTIONAL
+         * tail of struct eapol_frame - eapol_input only guarantees the frame
+         * reaches the start of it. Nothing bounded this read, so a group
+         * message that stops at the base structure had 32 bytes taken from
+         * past the end of the received buffer (#292 in the branch #124 removed
+         * from the lua twin, so this hunk has no counterpart there). */
+        if(eapol_key_data_avail(length) < EAPOL_MICK_LENGTH+EAPOL_EK_LENGTH) {
+          DBG_WIFI("TKIP GTK key data truncated"EOL);
+          break;
+        }
         memcpy(&key[0], fr_in->key_frame.key_iv, EAPOL_KEYIV_LENGTH);
         memcpy(&key[EAPOL_KEYIV_LENGTH], ptk.s.kek, 16);
         rc4_init(&rc4, key, 32);
@@ -830,8 +887,11 @@ static void eapol_input_group_msg1(uint8_t *frame, uint32_t length)
         uint16_t p, plen;
 
         /* key_data holds the AES-Key-Wrapped GTK KDE: (n+1) 8-byte blocks,
-         * so >= 16 bytes; bound it to our scratch buffer. */
-        if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8) {
+         * so >= 16 bytes; bound it to our scratch buffer AND to what the frame
+         * actually carries (#292 - the scratch-buffer cap alone let a short
+         * frame declare 56 bytes and hand them all to aes128_unwrap). */
+        if(kdlen < 16 || kdlen > sizeof(unwrapped) + 8
+           || kdlen > eapol_key_data_avail(length)) {
           DBG_WIFI("GTK key data length invalid"EOL);
           break;
         }

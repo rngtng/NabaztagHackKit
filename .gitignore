@@ -30,3 +30,7 @@ boot_lc.h
 # apps:compile output (device bytecode built from the .lua next to it)
 /lua/apps/*.lc
 /lua/firmware/test/*.lc
+
+# host test binaries (test/host/Makefile builds them next to their sources)
+/lua/firmware/test/host/*_test
+/mtl/firmware/test/host/*_test

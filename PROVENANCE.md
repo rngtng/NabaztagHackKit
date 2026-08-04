@@ -21,6 +21,44 @@ not here.
 | `lua/firmware/` | original to this repo; ARM startup/linker/registers copied from `mtl/firmware` @ `3a37cef` | Bare-metal Lua 5.4 port (#87). HAL drivers (led, spi, audio, i2c, rfid, motor, usb) are verbatim/trimmed ports of `mtl/firmware`'s - a register fix there may apply here, grep the sibling. `led.c` was later re-synced from `mtl/firmware` PR #45 (gamma-2.2 + background-fade engine, driven off the M11a `tick.c` tick whose ring-osc reload was corrected to 0xFC18) (#102). Per-driver detail: #89/#102/#116/#117/#118/#123/#143. `hal/config.c` (#214) and `hal/ota.c` (#235) port `mtl/firmware/src/utils/mem.c`'s OKI internal-flash writer (`write_uc_flash_sec` / `flash_uc`): `config.c` bounded to the config sector, `ota.c` the whole-image OTA writer + watchdog reset - same SPD erase/program sequences. |
 | `mtl/tools/openocd/`, `lua/tools/openocd/` | original to this repo | JTAG debrick configs (Raspberry Pi bit-bang) - the host-side flashing exception (see CLAUDE.md). |
 
+## The 802.11 stack: `mtl/firmware/src/net/` ↔ `lua/firmware/src/net/`
+
+**These two directories are twin copies of the same vendored source.** A fix in
+one almost always applies to the other - grep the sibling before concluding a
+divergence is intentional, exactly as for `src/vm/` and the HAL drivers.
+
+`aes128.c`, `eapol.c`, `hash.c` and `ieee80211.c` exist in both. `rc4.c` is mtl
+only; `hash.c` is trimmed on the lua side. Two things have to be understood
+before touching either copy:
+
+**1. Both copies are CRLF.** A scripted edit that rewrites them as LF turns a
+167-line fix into a 6,109-line diff and destroys this bridge. Python's
+`read_text()`/`write_text()` does exactly that silently - go through
+`read_bytes()`/`write_bytes()`, or edit in place. **Check `git diff --stat`
+after any scripted edit**; a small change with a huge line count means the file
+was rewritten. (Same rule as `CLAUDE.md` → Vendoring, repeated here because
+this is where someone doing a backport is looking.)
+
+**2. They have diverged, so a patch is a port and not a cherry-pick.** #124
+scavenged WEP/WPA1/TKIP out of the lua stack, leaving it WPA2/CCMP only. mtl
+still carries those branches: `eapol.c`'s RC4 group-key path and
+`ieee80211.c`'s `IEEE80211_ELEMID_VENDOR` (WPA1) suite walk have no lua
+counterpart at all, and every cipher decision in mtl is a two-way branch where
+lua's is straight-line.
+
+Fixes that have crossed, newest first:
+
+| Fix | lua | mtl | Notes |
+|---|---|---|---|
+| Pre-auth OOB reads in the WPA handshake and the 802.11 IE walks (#292/#293/#294/#295/#296) | `4e6c9cf` | #307 | Ported, not copied. The mtl port adds two hunks with no lua counterpart, both the same defect class in the WPA1/TKIP code #124 deleted there: a bound on `eapol.c`'s RC4 GTK read, and on `ieee80211.c`'s WPA1 vendor-IE suite counts. |
+| WPA2 PMK 40-byte-into-32 overflow (#228) | `818bd15` | `1a8c48c` | Fixed twin-wide; mtl's was in `vinterp.c`'s netPmk path. |
+
+Host-native ASan coverage exists on **both** sides now and is the cheapest way
+to check a port: `lua/firmware/test/host/` and `mtl/firmware/test/host/` link
+the vendored sources against ~20-25 stubbed board symbols and run them under
+AddressSanitizer (`task lua:firmware:test:host`, `task mtl:firmware:test:host`).
+The mtl side is that track's only automated coverage of the WPA join path.
+
 ## Fixes backported upstream
 
 Bugs found and fixed here while building the test suite, all present in upstream
