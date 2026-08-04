@@ -98,12 +98,24 @@ end
 function sched.tick()
   local i = 1
   while i <= #pumps do
-    local ok, err = pcall(pumps[i])
-    if ok then
-      i = i + 1
-    else
+    local fn = pumps[i]
+    local ok, err = pcall(fn)
+    if not ok then
       blame(err)
-      table.remove(pumps, i)
+    end
+    -- Advance only if the list did not shift under us (#309). A pump may call
+    -- sched.unpump on itself from inside its own body - :detach() from a
+    -- finished :step() is the natural way to end an animation - and that
+    -- table.remove pulls the NEXT pump down into index i, which a blind
+    -- i = i + 1 would then step over for the rest of the slice. If fn is still
+    -- at i it is ours to advance past (or, having raised, to drop); if it is
+    -- not, i already holds a pump that has not run yet.
+    if pumps[i] == fn then
+      if ok then
+        i = i + 1
+      else
+        table.remove(pumps, i)
+      end
     end
   end
   i = 1

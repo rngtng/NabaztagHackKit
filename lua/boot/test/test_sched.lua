@@ -183,6 +183,71 @@ do
 end
 
 -- ---------------------------------------------------------------------------
+-- DEFECT 2b (#309) - a pump that unregisters ITSELF makes sched.tick() skip
+-- the next pump for that slice.
+--
+-- The pump loop advances the index itself:
+--
+--   while i <= #pumps do
+--     local ok, err = pcall(pumps[i])
+--     if ok then i = i + 1
+--     else blame(err); table.remove(pumps, i) end
+--   end
+--
+-- sched.unpump does a table.remove, so a pump that removes itself from inside
+-- its own body shifts the pump behind it down into index `i` - and `i = i + 1`
+-- then steps straight over it. (The error path is already right, by NOT
+-- advancing; it is the success path that never notices the array shrank.)
+--
+-- That is the pattern #297 introduced, not a hypothetical: player:detach() and
+-- ears:detach() are documented as safe to call from a stop() path, and calling
+-- one from inside its own :step() is the natural way to end a finished
+-- animation. Fairness, not correctness - the skipped pump runs again on the
+-- next tick, sub-millisecond away - but a one-slice stall in whatever it was
+-- doing, for no reason it can see.
+-- ---------------------------------------------------------------------------
+
+do
+  boot_reload()
+  nab_set_time(1000)
+
+  local first, second = 0, 0
+  local h
+  h = sched.pump(function()
+    first = first + 1
+    sched.unpump(h)                 -- e.g. a finished player calling :detach()
+  end)
+  sched.pump(function() second = second + 1 end)
+
+  nab_pump()
+  eq(first, 1, "sched: the self-removing pump ran")
+  eq(second, 1, "sched: the pump after a self-removing one runs in the SAME slice")
+
+  nab_advance(10)
+  nab_pump()
+  eq(first, 1, "sched.unpump: the self-removed pump is not called again")
+  eq(second, 2, "sched: the surviving pump keeps running on later ticks")
+end
+
+do
+  -- The same shift, one step further out: a pump that removes a pump OTHER
+  -- than itself. Whatever moves into the vacated slot must still get its slice.
+  boot_reload()
+  nab_set_time(1000)
+
+  local a, b, c = 0, 0, 0
+  local hb
+  sched.pump(function() a = a + 1; sched.unpump(hb) end)
+  hb = sched.pump(function() b = b + 1 end)
+  sched.pump(function() c = c + 1 end)
+
+  nab_pump()
+  eq(a, 1, "sched: the removing pump ran")
+  eq(b, 0, "sched.unpump: a pump removed before its turn does not run")
+  eq(c, 1, "sched: the pump shifted into the vacated slot still runs this slice")
+end
+
+-- ---------------------------------------------------------------------------
 -- DEFECT 3 - the reactor hangs off a single-slot callback that boot.lua claims
 -- at startup, and any app that uses the documented seam silently unhooks it.
 --
