@@ -9,7 +9,7 @@ until the app prints the done-marker or a timeout elapses.
 Flow control: the link is 115200 8N1 with NO hardware flow control and the device
 polls a 16-byte RX FIFO, draining it only while it is reading a line/frame - NOT
 during the gaps where it does other work. Two such gaps drop bytes for #LC
-bytecode frames (#128): after the `#LC:<len>` header the device runs malloc(len)
+bytecode frames (#128): after the `#LC:<len>:<sum>` header the device runs malloc(len)
 before the hex loop, and after a frame it runs the chunk + prints before reading
 the next header. A blind byte burst overflows the 16-byte FIFO in either gap. So
 within one frame, input is paced one byte at a time, and after every newline we
@@ -82,9 +82,16 @@ PROMPT = b"> "
 
 def split_frames(payload: bytes) -> list[bytes]:
     """Split a replpipe.py stream into its individual #LC frames. A frame is a
-    "#LC:<len>\\n" header line plus every following line up to (but not
-    including) the next header line or EOF - i.e. exactly the bytes one
-    load_lc_frame() call on the device consumes."""
+    "#LC:<len>:<sum>\\n" header line (len = chunk bytes in decimal, sum = the
+    #298 Fletcher-32 of those bytes as 8 hex digits) plus every following line
+    up to (but not including) the next header line or EOF - i.e. exactly the
+    bytes one load_lc_frame() call on the device consumes.
+
+    The split only prefix-matches "#LC:" and never parses the header, so the
+    #298 field costs nothing here - but two readers of these comments have now
+    missed that field (this file, and tools/simui/app.py, where it was a live
+    regression: #308). They are the description of the wire format nearest the
+    hardware path, so they say the whole format."""
     lines = payload.splitlines(keepends=True)
     frames, cur = [], bytearray()
     for line in lines:

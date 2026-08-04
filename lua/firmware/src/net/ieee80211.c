@@ -85,6 +85,23 @@ static uint16_t ieee80211_txrate;
 /* filled at auth and when entering Master mode, does not change */
 static uint16_t ieee80211_lowest_txrate;
 
+/* Store the SSID we are beaconing / associated with, bounded AT THE BUFFER
+   (#310). Both callers below used strcpy() into ieee80211_assoc_ssid, a
+   33-byte global, with the length checked - where it was checked at all - a
+   layer up in hal/wifi.c. Not reachable with an over-long SSID today, but
+   this is the copy, so this is where the bound cannot be bypassed: exactly
+   the argument #296 used to justify clamping inside rt2501_scan's probe[],
+   applied there and not here. strlen+memcpy rather than strncpy, which is
+   not otherwise linked - a new libc symbol is never free on this budget. */
+static void ieee80211_set_assoc_ssid(const uint8_t *ssid)
+{
+	uint32_t len = strlen((const char*)ssid);
+
+	if(len > IEEE80211_SSID_MAXLEN) len = IEEE80211_SSID_MAXLEN;
+	memcpy(ieee80211_assoc_ssid, ssid, len);
+	ieee80211_assoc_ssid[len] = 0;
+}
+
 static uint16_t ieee80211_rate_to_mask(uint8_t rate)
 {
 	switch(rate) {
@@ -1141,30 +1158,53 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                 ie_end = current + frame_current[1];
                 /* CCMP only (#124): a TKIP group or pairwise suite no longer
                  * counts as supported - the join path can't key it. */
-                /* Element 1: Group cipher suites (OUIs) */
+                /* Element 1: Version (u16). NOT a suite count (#310): per
+                   802.11 the RSN IE opens with its version and the single
+                   group cipher suite follows it, with no count in front.
+                   This block was labelled "group cipher suites" and ran the
+                   version as its iteration count - which lands on exactly the
+                   right four bytes only because the version is always 1. An
+                   IE declaring 2 walked two "suites", eating the group suite
+                   plus the pairwise count, and read every field after it at
+                   the wrong offset. The value itself is not checked: nothing
+                   but 1 is defined, and the layout below is what we parse
+                   either way. */
                 if(current + 2 > ie_end) break;   /* truncated RSN IE */
-                count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
+                /* Element 2: Group cipher suite (one OUI). Both bounds
+                   above break BEFORE the encryption label is cleared, so a
+                   truncated IE keeps the conservative label the capinfo
+                   PRIVACY bit already set (WEP = legacy/unsupported, which
+                   rt2501_auth rejects). Clearing it first would report a
+                   privacy-flagged AP with a clipped RSN IE as OPEN. */
+                if(current + IEEE80211_OUI_LEN > ie_end) break;
                 found = 0;
                 scan_result.encryption = 0;
-                for(i=0;i<count && current + IEEE80211_OUI_LEN <= ie_end;i++) {
-                  if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
+                if(memcmp(current, ieee80211_wpa2_oui,  IEEE80211_OUI_LEN-1) == 0)
+                {
+                  if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
                   {
-                    if(*(current+IEEE80211_OUI_LEN-1) == IEEE80211_CIPHER_CCMP)
-                    {
-                      found = 1;
-                      scan_result.encryption |= IEEE80211_CIPHER_CCMP<<1;
-                      DBG_WIFI("GROUP CCMP supported"EOL);
-                    }
+                    found = 1;
+                    scan_result.encryption |= IEEE80211_CIPHER_CCMP<<1;
+                    DBG_WIFI("GROUP CCMP supported"EOL);
                   }
-                  current += IEEE80211_OUI_LEN;
                 }
+                current += IEEE80211_OUI_LEN;
                 if(!found) {
                   scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
                   break;
                 }
-                /* Element 2: Pairwise cipher suites (OUIs) */
-                if(current + 2 > ie_end) break;
+                /* Element 3: Pairwise cipher suite count + list (OUIs) */
+                /* Truncated here, the label built so far is the group CCMP bit
+                   and nothing else - and `encryption & 0xF0` is what rt2501_auth
+                   switches on, so a partial label lands in its CRYPT_NONE arm and
+                   a privacy-flagged AP gets associated with as an open one (#310).
+                   Every bail-out past this point says UNSUPPORTED, like the
+                   !found ones do. */
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
@@ -1184,8 +1224,11 @@ static void ieee80211_input_mgt(uint8_t *frame, uint32_t length, int16_t rssi)
                   scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
                   break;
                 }
-                /* Element 5: Auth key management suites (OUIs) */
-                if(current + 2 > ie_end) break;
+                /* Element 4: AKM suite count + list (OUIs) */
+                if(current + 2 > ie_end) {
+                  scan_result.encryption = IEEE80211_CRYPT_UNSUPPORTED;
+                  break;
+                }
                 count = (current[0] << 0)|(current[1] << 8);
                 current += 2;
                 found = 0;
@@ -1635,7 +1678,7 @@ void rt2501_setmode(int32_t mode, const uint8_t *ssid, uint8_t channel)
 			disable_ohci_irq();
 			ieee80211_state = IEEE80211_S_RUN;
 			ieee80211_mode = IEEE80211_M_MASTER;
-			strcpy((char*)ieee80211_assoc_ssid, (char*)ssid);
+			ieee80211_set_assoc_ssid(ssid);
 			memcpy(ieee80211_assoc_bssid, rt2501_mac, IEEE80211_ADDR_LEN);
 			ieee80211_assoc_channel = channel;
 			for(i=0;i<RT2501_MAX_ASSOCIATED_STA;i++)
@@ -1815,7 +1858,7 @@ void rt2501_auth(const uint8_t *ssid, const uint8_t *mac,
 
 	memcpy(ieee80211_assoc_mac, mac, IEEE80211_ADDR_LEN);
 	memcpy(ieee80211_assoc_bssid, bssid, IEEE80211_ADDR_LEN);
-	strcpy((char*)ieee80211_assoc_ssid, (char*)ssid);
+	ieee80211_set_assoc_ssid(ssid);
 
 	ieee80211_assoc_channel = channel;
 

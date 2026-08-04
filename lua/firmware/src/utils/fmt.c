@@ -67,7 +67,12 @@ void luai_writestringerror(const char *fmt, const char *arg)
  * (h/hh/l/ll/L/z/t/j, parsed; values are fetched as `long` since LUA_32BITS
  * makes lua_Integer and pointers 32-bit, so no 64-bit divide helpers are
  * pulled). Float conversions (f e g a, any case) stay approximate - integer
- * part + ".0" - a real dtoa is still future work. */
+ * part + ".0" - a real dtoa is still future work; they are rendered by
+ * luai_num2str at the bottom of this file, which is the only float-to-digits
+ * code here (#306). */
+
+/* Widest digit string either float path can produce: FLT_MAX is 39 digits. */
+#define NUM2STR_DIGITS 44
 
 #define PF_LEFT  1
 #define PF_PLUS  2
@@ -101,6 +106,49 @@ static void pf_pad(char **d, char *end, size_t *n, char c, int count)
 {
   while (count-- > 0)
     pf_emit(d, end, n, c);
+}
+
+/* IEEE-754 double bits -> the nearest float, by integer surgery alone (#306).
+ * A plain (float)dv cast would link libgcc's double soft-float (~2.4 KB, #213),
+ * which is the whole reason the %f branch takes the bits apart at all. This is
+ * the exact inverse of the promotion that put the value in the varargs: on this
+ * target LUA_32BITS makes lua_Number a float, so every float that reaches a
+ * "..." arrived as one. Rounds to nearest with ties to even and saturates to
+ * inf on overflow, as the cast would, so "%f" and print() of the same value
+ * render the same digits. It differs from a true cast in one place that cannot
+ * reach the output: anything below the float's NORMAL range flushes to zero
+ * instead of becoming a subnormal, and every such value is < 1, which this
+ * shim prints as "0.0" either way. */
+static float pf_d2f(uint64_t u)
+{
+  union { float f; uint32_t u; } fv;
+  uint32_t sign = (uint32_t)(u >> 63) << 31;
+  int e = (int)((u >> 52) & 0x7FF);
+  uint64_t frac = u & 0xFFFFFFFFFFFFFULL;
+  uint32_t m = (uint32_t)(frac >> 29);              /* top 23 fraction bits */
+
+  if (e == 0x7FF)                                   /* inf / NaN stay themselves */
+    fv.u = sign | 0x7F800000u | (frac ? (m ? m : 1u) : 0u);
+  else if (e == 0)                                  /* zero, double subnormal */
+    fv.u = sign;
+  else {
+    int fe = e - 1023 + 127;                        /* rebias */
+    uint32_t rest = (uint32_t)(frac & 0x1FFFFFFFu); /* the 29 bits dropped above */
+
+    if (rest > 0x10000000u || (rest == 0x10000000u && (m & 1u))) {
+      if (++m == 0x800000u) {                       /* the carry left the field */
+        m = 0;
+        fe++;
+      }
+    }
+    if (fe >= 0xFF)
+      fv.u = sign | 0x7F800000u;                    /* overflows the float range */
+    else if (fe <= 0)
+      fv.u = sign;                                  /* underflows it; |x| < 1 anyway */
+    else
+      fv.u = sign | ((uint32_t)fe << 23) | m;
+  }
+  return fv.f;
 }
 
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
@@ -154,7 +202,7 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
     char conv = *fmt;
     if (conv == '\0') break;
 
-    char tmp[32];
+    char tmp[NUM2STR_DIGITS + 4];      /* sized for the widest float body */
     const char *body = tmp;
     int blen = 0;
     char sign = 0;
@@ -206,27 +254,30 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
       case 'f': case 'F': case 'e': case 'E':
       case 'g': case 'G': case 'a': case 'A': {
         /* Varargs promoted the float to a double (C default argument
-         * promotion, unavoidable through '...'), so take the IEEE-754 bits
-         * apart instead of doing double arithmetic - a single (long)dv or
-         * dv < 0 would link libgcc's double soft-float (~2.4 KB, #213).
-         * Output is the same integer part + ".0" as before. */
+         * promotion, unavoidable through '...'), so narrow it back by bit
+         * surgery and render it through luai_num2str - the one float-to-digits
+         * path in this file (#306).
+         *
+         * This branch used to shift the mantissa into an `unsigned long` of its
+         * own, which is the defect #301 removed next door: the width of the
+         * output was the width of the target's `unsigned long`, so %f of 1e10
+         * printed "1410065408.0" on the rabbit - 1e10 mod 2^32, not an
+         * approximation of anything - and an infinity took the `>= 64` arm and
+         * printed "0.0". Going through luai_num2str deletes that second
+         * implementation instead of repairing it: its digits come from
+         * dec_shifted(), which shifts in DECIMAL and so is exact on both
+         * widths, and inf/nan come along with it. */
         union { double d; uint64_t u; } fv;
         fv.d = va_arg(ap, double);
-        int fexp = (int)((fv.u >> 52) & 0x7FF) - 1023;
-        uint64_t mant = (fv.u & 0xFFFFFFFFFFFFFULL) | (1ULL << 52);
-        unsigned long uv;
-        if (fexp < 0)
-          uv = 0;                                  /* |x| < 1, subnormals, 0 */
-        else if (fexp <= 52)
-          uv = (unsigned long)(mant >> (52 - fexp));
-        else                                       /* huge/inf/nan: low bits */
-          uv = (fexp - 52 < 64) ? (unsigned long)(mant << (fexp - 52)) : 0;
-        if (fv.u >> 63) sign = '-';
-        else sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0;
-        blen = pf_utoa(tmp, uv, 10, 0);
-        tmp[blen++] = '.';
-        tmp[blen++] = '0';
-        is_num = 1;
+        blen = luai_num2str(tmp, sizeof tmp, pf_d2f(fv.u));
+        if (tmp[0] == '-') {                       /* let the padding own the sign */
+          sign = '-';
+          body = tmp + 1;
+          blen--;
+        } else {
+          sign = (flags & PF_PLUS) ? '+' : (flags & PF_SPACE) ? ' ' : 0;
+        }
+        is_num = (body[0] >= '0' && body[0] <= '9');   /* "inf"/"nan": no 0-pad */
         prec = -1;
         break;
       }
@@ -314,8 +365,9 @@ void fmt_hex8(char out[17], const uint8_t uid[8])
  * 1e10 mod 2^32, not an approximation of anything - and on a 64-bit host it
  * produced up to 17 digits and ran off the caller's buffer. Accumulating in
  * uint64_t is the other way to fix it and is not free here: pf_utoa's /= and %=
- * would link libgcc's __aeabi_uldivmod. */
-#define NUM2STR_DIGITS 44   /* FLT_MAX is 39 digits; the widest 2^129 is 39 */
+ * would link libgcc's __aeabi_uldivmod. (NUM2STR_DIGITS is defined at the top
+ * of the file: vsnprintf's %f branch sizes its own body buffer by it, since
+ * that branch renders through here too - #306.) */
 
 static int dec_shifted(char *out, uint32_t v, int shift)
 {

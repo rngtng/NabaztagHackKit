@@ -17,10 +17,13 @@
  *   printf            the conversions Lua actually emits
  *   num               float <-> string, pow and fmod
  *   num-large         a big float must stay inside luai_num2str's digit buffer
+ *   parity            #306 - both float paths, swept against glibc's printf
  *   hex8              #254 - UID formatting, especially zero nibbles
  */
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lua.h"
@@ -275,10 +278,68 @@ static void scen_num_large(void)
   eq_int(n, (long)strlen(b), "num2str returns the length it actually wrote");
   CHECK(n > 0 && n < (int)sizeof b, "num2str output stays bounded for a huge float");
 
-  /* The same bits go through vsnprintf's %f branch (into a char tmp[32]) - it
-   * is wide enough today, and this pins that it stays so. */
+  /* The widest thing this shim can be asked to print: FLT_MAX is 39 digits,
+   * which is what NUM2STR_DIGITS is sized for. */
+  luai_num2str(b, sizeof b, 3.40282347e38f);
+  eq_str(b, "340282346638528859811704183484516925440.0", "num2str FLT_MAX");
+
+  /* --- the same values through vsnprintf's %f branch (#306) ---------------
+   *
+   * This is where num-large used to stop, at
+   *
+   *     snprintf(b, sizeof b, "%f", 1.0e15);
+   *     CHECK(strlen(b) > 0 && strlen(b) < sizeof b, ...);
+   *
+   * - the branch's BOUNDS and never its VALUE. That blind spot was structural,
+   * not an oversight of a line: the defect is that %f shifted the mantissa into
+   * an `unsigned long`, and `unsigned long` is 64-bit here, so the 2^32 wrap
+   * that bites on the rabbit cannot reproduce on this host at all. Asserting
+   * the digits of 1e10 would still have passed.
+   *
+   * So the fix to the test is both halves: assert the digits, and choose
+   * magnitudes that overflow SIXTY-FOUR bits, where a width-dependent shift is
+   * wrong on the host too. The shim itself no longer has a width to inherit -
+   * it narrows the double by bit surgery and renders it through luai_num2str,
+   * the one float path in the file - so host digits and device digits are now
+   * the same digits by construction.
+   *
+   * %f renders at float precision (LUA_32BITS makes lua_Number a float, so a
+   * float is all a %f on this target can be carrying), hence the expected
+   * strings are the exact values of the NEAREST FLOAT, not of the decimal
+   * literal: 1e10 and 1e20 are shown below as themselves and as
+   * 100000002004087734272, respectively, because the first is exactly a float
+   * and the second is not. */
+  snprintf(b, sizeof b, "%f", 1.0e10);
+  eq_str(b, "10000000000.0", "%f keeps the digits of a value above 2^32");
+  snprintf(b, sizeof b, "%f", 1.0e20);
+  eq_str(b, "100000002004087734272.0", "%f keeps the digits of a value above 2^64");
+  snprintf(b, sizeof b, "%f", -1.0e20);
+  eq_str(b, "-100000002004087734272.0", "%f keeps the sign of a huge negative");
   snprintf(b, sizeof b, "%f", 1.0e15);
-  CHECK(strlen(b) > 0 && strlen(b) < sizeof b, "%f stays bounded for a huge double");
+  eq_str(b, "999999986991104.0", "%f renders a double at float precision");
+  snprintf(b, sizeof b, "%f", 0.25);
+  eq_str(b, "0.0", "%f truncates a fraction to 0.0");
+
+  /* An infinity used to take the `fexp - 52 >= 64` arm and print "0.0" - a
+   * magnitude that does not exist. Both float paths say so now. */
+  snprintf(b, sizeof b, "%f", (double)__builtin_inf());
+  eq_str(b, "inf", "%f of an infinity says so");
+  snprintf(b, sizeof b, "%f", -(double)__builtin_inf());
+  eq_str(b, "-inf", "%f keeps the sign of a negative infinity");
+  snprintf(b, sizeof b, "%f", (double)__builtin_nan(""));
+  eq_str(b, "nan", "%f of a NaN says so");
+
+  /* A double past the float range has no float to be narrowed to; saturating
+   * to inf is what the narrowing conversion does, and it is at least not a
+   * wrapped number. (The old branch printed "0.0" for this too.) */
+  snprintf(b, sizeof b, "%f", 1.0e300);
+  eq_str(b, "inf", "%f of a double beyond the float range saturates to inf");
+
+  /* Width and sign still come from the padding machinery around the body. */
+  snprintf(b, sizeof b, "%12f|", 42.0);
+  eq_str(b, "        42.0|", "%f pads to width");
+  snprintf(b, sizeof b, "%+f", 42.0);
+  eq_str(b, "+42.0", "%f honours the plus flag");
 }
 
 /* ---------------------------------------------------------------------------
@@ -315,6 +376,131 @@ static void scen_hex8(void)
   eq_int(b[16], 0, "fmt_hex8 NUL-terminates");
 }
 
+/* ---------------------------------------------------------------------------
+ * parity - the two float paths, swept against glibc (#306).
+ *
+ * num-large pins named values. This pins the CONTRACT over the whole dynamic
+ * range of the type, which is what #306 was really about: there must be one
+ * float renderer, and its output must not depend on the width of any C type.
+ *
+ * The oracle is glibc's own printf. fmt.c overrides snprintf and vsnprintf but
+ * NOT sprintf, so sprintf here is genuinely libc's and can referee. The
+ * contract it is held to: the integer part of the NEAREST FLOAT, truncated
+ * toward zero, plus ".0"; "inf"/"nan" as words; a double outside the float
+ * range saturates to inf rather than wrapping.
+ *
+ * Every value is checked twice - through vsnprintf's %f and through
+ * luai_num2str - and the two are required to agree with each other as well as
+ * with glibc. Before #306 they did not: %f of 1e20 printed 1e20 mod 2^64 here
+ * and 1e20 mod 2^32 on the device.
+ * ------------------------------------------------------------------------- */
+static int par_checks;
+
+/* What %f must print for x, per glibc. */
+static void par_reference(char *out, double x)
+{
+  float f = (float)x;
+
+  if (isnan(f)) { strcpy(out, "nan"); return; }
+  if (isinf(f)) { strcpy(out, signbit(f) ? "-inf" : "inf"); return; }
+  sprintf(out, "%.0f.0", trunc((double)f));
+}
+
+static void par_check(double x, const char *what)
+{
+  char got[64], want[64];
+
+  snprintf(got, sizeof got, "%f", x);
+  par_reference(want, x);
+  par_checks++;
+  if (strcmp(got, want) != 0) {
+    printf("  FAIL: %%f %s: x=%.17g got \"%s\", want \"%s\"\n", what, x, got, want);
+    failures++;
+  }
+}
+
+/* luai_num2str must render the same float the same way. */
+static void par_check_num2str(float f, const char *what)
+{
+  char a[64], b[64];
+
+  luai_num2str(a, sizeof a, f);
+  snprintf(b, sizeof b, "%f", (double)f);
+  par_checks++;
+  if (strcmp(a, b) != 0) {
+    printf("  FAIL: parity %s: f=%.9g num2str \"%s\", %%f \"%s\"\n", what, (double)f, a, b);
+    failures++;
+  }
+}
+
+static void scen_parity(void)
+{
+  union { float f; uint32_t u; } fv;
+  union { double d; uint64_t u; } dv;
+  unsigned i;
+
+  printf("scenario parity: both float paths swept against glibc\n");
+
+  /* The oracle itself, on a value whose digits are stated in this file, so a
+   * broken reference cannot quietly agree with a broken shim. */
+  {
+    char ref[64];
+
+    par_reference(ref, 1.0e10);
+    eq_str(ref, "10000000000.0", "the glibc reference renders 1e10 as expected");
+  }
+
+  /* Binary boundaries where a width-dependent shift breaks: 2^24 is where
+   * floats stop being contiguous integers, 2^32 is where the device's
+   * `unsigned long` wrapped, 2^64 is where this host's did. */
+  {
+    static const double bounds[] = {
+      0.0, 0.5, 1.0, 0.9999999,
+      16777215.0, 16777216.0, 16777217.0,           /* 2^24 -1/+0/+1 */
+      2147483648.0, 4294967040.0, 4294967296.0,     /* 2^31, largest < 2^32, 2^32 */
+      9007199254740992.0,                           /* 2^53 */
+      18446744073709551616.0,                       /* 2^64 */
+      3.4028234663852886e38,                        /* FLT_MAX */
+      1.1754943508222875e-38,                       /* FLT_MIN */
+      1e-45, 1e-320,                                /* float, then double subnormal */
+      1e39, 1e300,                                  /* past the float range: inf */
+    };
+
+    for (i = 0; i < sizeof bounds / sizeof *bounds; i++) {
+      par_check(bounds[i], "boundary");
+      par_check(-bounds[i], "boundary (negative)");
+    }
+  }
+
+  par_check(__builtin_inf(), "inf");
+  par_check(-__builtin_inf(), "-inf");
+  par_check(__builtin_nan(""), "nan");
+
+  /* Every float exponent crossed with a spread of mantissas - the whole
+   * dynamic range of the type, including subnormals and the all-ones
+   * exponent. */
+  for (uint32_t e = 0; e < 256; e++) {
+    for (uint32_t m = 0; m < 0x800000u; m += 0x800000u / 16) {
+      fv.u = (e << 23) | m;
+      par_check((double)fv.f, "float bits");
+      par_check(-(double)fv.f, "float bits (negative)");
+      par_check_num2str(fv.f, "float bits");
+    }
+  }
+
+  /* Random DOUBLE bit patterns: mantissa bits below what a float can hold, so
+   * these are the values where the narrowing has to round rather than copy. */
+  srand(1);
+  for (i = 0; i < 20000; i++) {
+    dv.u = ((uint64_t)rand() << 40) ^ ((uint64_t)rand() << 20) ^ (uint64_t)rand();
+    par_check(dv.d, "double bits");
+  }
+
+  /* A selector that matched nothing, or a sweep that stopped early, must not
+   * report a pass (the vacuous-pass rule). */
+  CHECK(par_checks > 30000, "the sweep actually compared its whole range");
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
@@ -324,6 +510,7 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "num") == 0)              scen_num();
   if (!only || strcmp(only, "num-large") == 0)        scen_num_large();
   if (!only || strcmp(only, "hex8") == 0)             scen_hex8();
+  if (!only || strcmp(only, "parity") == 0)           scen_parity();
 
   if (failures) {
     printf("fmt_test: %d check(s) FAILED\n", failures);

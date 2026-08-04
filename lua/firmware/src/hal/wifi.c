@@ -27,6 +27,15 @@
 
 #include "hal/wifi.h"
 
+/* WIFI_SSID_MAX is what hal/wifi.h documents this HAL as enforcing, and it
+ * is the bound the layers below are sized by. They were two names for 32:
+ * every check here used IEEE80211_SSID_MAXLEN while WIFI_SSID_MAX was read
+ * only by main.c's nab.wifi* bindings, so the constant whose comment claimed
+ * to be the enforced cap was not the one enforcing it (#310). One name here
+ * now, and a check that the two cannot drift apart. */
+_Static_assert(WIFI_SSID_MAX == IEEE80211_SSID_MAXLEN,
+               "the HAL's SSID cap must match the 802.11 buffer bound");
+
 /* eapol.c's PBKDF2 (4096-iter HMAC-SHA1 x2); no header declares it - V1's
  * vm/vnet.c declared it the same way at its netPmk call site. */
 void mypassword_to_pmk(const uint8_t *password, uint8_t *ssid,
@@ -201,7 +210,7 @@ int32_t wifi_scan(const char *ssid)
   /* rt2501_scan builds its probe request into a frame sized for a 32-byte SSID
    * and copies strlen(ssid) bytes in with no check of its own, so the cap has
    * to be here - as it already is in wifi_ap (#296). */
-  if(ssid != NULL && strlen(ssid) > IEEE80211_SSID_MAXLEN)
+  if(ssid != NULL && strlen(ssid) > WIFI_SSID_MAX)
     return -1;
 
   scan_hits = 0;
@@ -293,7 +302,7 @@ int8_t wifi_connect_ex(const char *ssid, const char *psk, uint32_t timeout_ms,
    * fixed probe frame, and the PSK reaches the PBKDF2. WIFI_PSK_MAX matches
    * hal/config.h's CONFIG_PSK_MAX, so a credential that fits the config sector
    * always fits here too. */
-  if (ssid == NULL || strlen(ssid) > IEEE80211_SSID_MAXLEN
+  if (ssid == NULL || strlen(ssid) > WIFI_SSID_MAX
       || (psk != NULL && strlen(psk) > WIFI_PSK_MAX)) {
     if (why) *why = WIFI_FAIL_NOTFOUND;
     return -1;
@@ -329,7 +338,7 @@ int32_t wifi_state(void)
 /* ---- master (AP) mode + raw frame TX/RX (#216) ---------------------------- */
 int8_t wifi_ap(const char *ssid, uint8_t channel)
 {
-  if (strlen(ssid) > IEEE80211_SSID_MAXLEN)
+  if (strlen(ssid) > WIFI_SSID_MAX)
     return -1;
   /* Skip the cold boot when the dongle is already up (e.g. STA -> AP switch);
    * rt2501_setmode itself flushes the driver's RX queue on the mode change. */
