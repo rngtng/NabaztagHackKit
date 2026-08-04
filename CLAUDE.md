@@ -121,7 +121,10 @@ Don't restate them here - two copies drift. The rules that bind new work:
   our Dockerfiles can reach the network. No-ops everywhere else.
   **`Cannot connect to the Docker daemon` means the daemon died, not that the
   setup was wrong — just re-run the script.** It happens several times in a long
-  session; it is one command, not a diagnosis.
+  session; it is one command, not a diagnosis. **Run it *before* a long
+  `verify`, not only after one dies** — the script is idempotent and takes a
+  second, and a daemon death eight minutes into `lua:verify` costs the whole run.
+  Three of seven verify runs in one session were lost to exactly that.
 - **The MTL build/simulate tasks (`mtl:<layer>:build`/`:simulate`) and `task mtl:lib:test` always
   exit 0** — the MTL compiler and simulator report fatal errors on stderr but never fail the
   process. Both are wrapped to scan their own output for
@@ -179,6 +182,21 @@ lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/l
   nothing can link it and nothing in it is unit-testable — that is why `fmt.c` (#245) and
   `lcframe.c` (#298) were split out. `main.c` keeps wiring; anything with a rule to it
   gets a file and a `test/host/` test.
+- **Syntax-check `main.c` before spending a `verify` on it.** Nothing links it, so no host
+  test compiles it either: the ~6-minute Docker ARM build is the *only* thing that reads
+  it, and it is `-Werror`. A one-line comment edit that left the tail of the old comment
+  dangling cost a full verify cycle to discover. One second buys it back — **exit 0 on a
+  clean tree, so a nonzero exit is your edit**:
+  ```sh
+  gcc -fsyntax-only -std=gnu11 -D_NAB_SIM -w \
+      -Ilua/firmware/test/host/stubs -Ilua/firmware/inc -Ilua/firmware/gen \
+      -Ilua/firmware/sys/inc -Ilua/firmware/lua lua/firmware/src/main.c
+  ```
+  Needs `gen/boot_lc.h`, so run it after any `lua:firmware:build`. `test/host/stubs/`
+  carries the handful of port registers `init_hw()` touches purely so this stays quiet —
+  without them the real error hides under undeclared-register noise, which is the same
+  vacuous-signal problem as a test that cannot fail. Works for any firmware TU; it is the
+  audit skill's §2 probe pointed at your own edit instead of at a file you are assessing.
 
 ## MTL language gotchas
 

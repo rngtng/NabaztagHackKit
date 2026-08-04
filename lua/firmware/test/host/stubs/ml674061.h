@@ -31,6 +31,19 @@ extern volatile uint32_t nab_regs[64];
 /* Port mux (init_i2c's / init_adc's pin setup) */
 #define PORTSEL1        (NAB_REG_BASE + 0x00)
 #define PORTSEL2        (NAB_REG_BASE + 0x04)
+#define PORTSEL4        (NAB_REG_BASE + 0x0C)
+
+/* Port 2 / port 4 output + mode registers. Not here for a host TEST - nothing
+ * links main.c, which is the point of splitting fmt.c and lcframe.c out of it
+ * (CLAUDE.md). They are here so main.c can be SYNTAX-CHECKED host-side, because
+ * otherwise the only thing that ever reads it is the ~6-minute Docker ARM build
+ * and it is -Werror: a one-line comment edit that left the old comment's tail
+ * dangling cost a whole verify cycle to find. Without these, init_hw() buries
+ * any real error under a wall of undeclared-register noise. */
+#define PO2             (NAB_REG_BASE + 0x10)
+#define PM2             (NAB_REG_BASE + 0x14)
+#define PO4             (NAB_REG_BASE + 0x18)
+#define PM4             (NAB_REG_BASE + 0x1C)
 
 /* ADC block - offsets mirror the real header's ADC_BASE + n */
 #define ADC_BASE        (NAB_REG_BASE + 0x60)
