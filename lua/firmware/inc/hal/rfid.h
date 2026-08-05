@@ -2,7 +2,7 @@
  * @file rfid.h
  * @brief STMicro CRX14/CR14 RFID coupler over I2C.
  *
- * Trimmed port of src/firmware/src/hal/rfid.c's API (Violet / RedoX GCC port):
+ * Trimmed port of mtl/firmware/src/hal/rfid.c's API (Violet / RedoX GCC port):
  * keeps CRX14 bring-up, the anti-collision initiate/slot-marker/select dance,
  * and UID read. Drops the SRIX EEPROM read/write path (write_eeprom_rfid,
  * read_eeprom_rfid, and the UID->CHIP_ID re-select helpers built on them) -

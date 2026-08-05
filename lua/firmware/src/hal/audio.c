@@ -2,21 +2,20 @@
  * @file audio.c
  * @brief VLSI VS1003B audio codec over SPI0.
  *
- * Trimmed port of src/firmware/src/hal/audio.c (Violet / RedoX). Keeps the SCI
- * read/write protocol, chip bring-up, volume, amplifier, and the built-in sine
- * test verbatim in behaviour. SCI framing was hardware-verified (SS_VER=3,
- * VOLUME write/read-back). See inc/hal/audio.h.
+ * Trimmed port of mtl/firmware's driver. Keeps the SCI read/write protocol,
+ * chip bring-up, volume, amplifier, and the built-in sine test verbatim in
+ * behaviour. SCI framing was hardware-verified (SS_VER=3, VOLUME
+ * write/read-back). See inc/hal/audio.h.
  *
  * vlsi_play() does real SDI-stream playback, so SCI_VOLUME actually attenuates
  * decoded audio (unlike the sine test). vlsi_rec_start/read/stop add IMA-ADPCM
- * microphone record, ported from src/firmware's init_adpcm_encode/rec_check/
- * stop_adpcm_encode.
+ * microphone record.
  *
- * #265 split that playback path into vlsi_stream_start/feed/busy/stop, where
- * feed never waits (it pushes what the decoder can take and returns the count),
- * so Lua can keep the codec fed from its cooperative loop and the CPU is free
- * in between - the rabbit plays a sound AND animates/serves/answers the REPL.
- * vlsi_play() is now that same primitive with the waiting put back.
+ * The playback path is split into vlsi_stream_start/feed/busy/stop, where feed
+ * never waits (it pushes what the decoder can take and returns the count), so
+ * Lua can keep the codec fed from its cooperative loop and the CPU is free in
+ * between - the rabbit plays a sound AND animates/serves/answers the REPL.
+ * vlsi_play() is that same primitive with the waiting put back.
  */
 #include "ml674061.h"
 #include "common.h"

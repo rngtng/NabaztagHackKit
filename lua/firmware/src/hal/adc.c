@@ -2,9 +2,7 @@
  * @file adc.c
  * @brief Analog-to-digital access for the back wheel.
  *
- * Trimmed port of the ADC bring-up in src/firmware/src/main.c (`ADCON0`/
- * `ADCON1`/`ADCON2` init, PD2 -> ADC2 pin mux) plus the register sequence in
- * src/firmware/src/hal/audio.c's `get_adc_value`. Select-mode (not scan-mode)
+ * Trimmed port of mtl/firmware's ADC bring-up. Select-mode (not scan-mode)
  * single-channel conversion, matching the original.
  */
 #include "ml674061.h"
@@ -28,13 +26,10 @@ void init_adc(void)
  * ADCON2_CLK32 takes under a microsecond, so this bound is ~5 orders of
  * magnitude of slack - it only bites when the ADC is wedged.
  *
- * The bound is the point (#296): the poll fed the watchdog while it waited, so
- * a converter that never answered was not a slow read but a permanent hang with
- * the one thing that could have broken it explicitly suppressed. hal/rfid.c was
- * bounded for the same reason in #253, and audio.c's wait_dreq() carries its own
- * guard count. The reach is wider than a script calling nab.wheel(): lib/audio's
- * volume knob is written to be handed to sched.pump, so the wheel is read from
- * inside every nab.wait/nab.delay/nab.play and from the REPL's idle loop. */
+ * The bound is the point: the poll feeds the watchdog while it waits, so an
+ * unbounded wait is not a slow read but a permanent hang with the one thing
+ * that could have broken it explicitly suppressed. Any polling loop that clears
+ * the watchdog needs a guard count for the same reason. */
 #define ADC_POLL_MAX 100000UL
 
 uint8_t adc_read_ch2(void)

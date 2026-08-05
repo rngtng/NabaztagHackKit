@@ -2,7 +2,7 @@
  * @file motor.h
  * @brief Ear DC-motor + encoder driver over the OKI FTM timer/PWM block.
  *
- * Ported from src/firmware/src/hal/motor.c (Violet / RedoX GCC port). No
+ * Ported from mtl/firmware/src/hal/motor.c (Violet / RedoX GCC port). No
  * interrupt needed: init_pwm() only pokes the FTM0-5 timer control registers;
  * run_motor()/stop_motor() drive the PWM duty registers directly; and
  * get_motor_position() reads a free-running hardware pulse-capture counter
@@ -20,7 +20,7 @@
 
 /* Bring up the FTM PWM (drive) + capture (encoder) timers: configures the
  * PWM_MCC pins as outputs, calls init_pwm(), and stops both motors. Call once
- * at startup (mirrors the motor subset of src/firmware/src/main.c's init_io). */
+ * at startup (mirrors the motor subset of mtl/firmware/src/main.c's init_io). */
 void init_ears(void);
 
 /** @brief Init the PWM module to drive the 2 DC brush motors and count position. */

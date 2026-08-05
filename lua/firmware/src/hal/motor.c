@@ -5,7 +5,7 @@
  * @date 2015/09/07
  * @brief Motors low level access
  *
- * Ported verbatim from src/firmware/src/hal/motor.c - see motor.h for why no
+ * Ported verbatim from mtl/firmware/src/hal/motor.c - see motor.h for why no
  * IRQ/timer subsystem bring-up is needed. init_ears() at the bottom is new: the
  * pin bring-up src/firmware does inline in main.c's init_io, trimmed to the
  * PWM_MCC lines only.

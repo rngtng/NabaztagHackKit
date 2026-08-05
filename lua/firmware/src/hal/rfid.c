@@ -2,8 +2,8 @@
  * @file rfid.c
  * @brief STMicro CRX14/CR14 RFID coupler over I2C.
  *
- * Trimmed port of src/firmware/src/hal/rfid.c (Violet / RedoX GCC port) - see
- * hal/rfid.h for what was dropped (EEPROM read/write) and why.
+ * Trimmed port of mtl/firmware's driver - see hal/rfid.h for what was dropped
+ * (EEPROM read/write) and why.
  */
 #include "ml674061.h"
 #include "common.h"

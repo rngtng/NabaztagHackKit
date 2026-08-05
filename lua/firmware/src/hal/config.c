@@ -2,15 +2,14 @@
  * @file config.c
  * @brief Config-sector persistence: V1's internal-flash writer, blob-only.
  *
- * Port of the proven V1 writer (mtl/firmware/src/utils/mem.c:
- * write_uc_flash_sec / read_uc_flash - OKI 2005 via RedoX's 2015 GCC port,
- * see PROVENANCE.md), reduced to the one job this track needs: persist a
- * single fixed-layout record in the last 4 KB sector (0x1F000-0x1FFFF) of
- * internal flash. V1 kept a caller-supplied 4 KB shadow buffer to preserve
- * unrelated data sharing the sector; here the record IS the whole sector
- * layout, so the shadow (and V1's index/length parameters) are gone.
+ * Port of mtl/firmware's internal-flash writer, reduced to the one job this
+ * track needs: persist a single fixed-layout record in the last 4 KB sector
+ * (0x1F000-0x1FFFF) of internal flash. The original kept a caller-supplied
+ * 4 KB shadow buffer to preserve unrelated data sharing the sector; here the
+ * record IS the whole sector layout, so the shadow (and the index/length
+ * parameters) are gone.
  *
- * Brick-risk containment (#214): cfg_program takes NO address - the sector
+ * Brick-risk containment: cfg_program takes NO address - the sector
  * base is the compile-time constant CFG_SECTOR, and the byte offset is
  * bounded by sizeof(struct config_rec) << 4096. The SPD erase command is
  * issued at CFG_SECTOR only, so the writer physically cannot touch the
