@@ -503,6 +503,56 @@ tasks:
             exit 1 ;;
         esac
 
+  test:hw:
+    desc: 'Hardware acceptance run on the JTAG rig: flash the PRODUCT image, drive test/hw-accept.lua over the UART once, and require every criterion to pass (codec SS_VER + SCI read-back, wheel ADC, 1 ms tick, ear encoder motion, RFID tag, radio MAC, AP scan, config read/verify). NOT part of lua:verify - it needs the rig - so run it on demand when JTAG is connected, as the single regression check across firmware + hardware. The examples/ probes stay the layer beneath it: this says which subsystem regressed, a probe says how.'
+    summary: 'Usage: task lua:firmware:test:hw [RUN_TIMEOUT=120] [PI_HOST=tobi@jtag.local]. Requires the JTAG rig + an RFID tag fixed to the board.'
+    dir: '{{.TASKFILE_DIR}}'
+    vars:
+      PI_HOST: '{{.PI_HOST | default "tobi@jtag.local"}}'
+      RUN_TIMEOUT: '{{.RUN_TIMEOUT | default "120"}}'
+    deps:
+      - task: build                 # the product image - this tests what ships
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      # One chunk, not per-line: replpipe frames a *.lua file one chunk per
+      # source line, which would break every multi-line function in the script.
+      - task: luac:compile
+        vars:
+          APP: '{{.TASKFILE_DIR}}/test/hw-accept.lua'
+          OUT: '{{.TASKFILE_DIR}}/test/hw-accept.lc'
+      - |
+        set -e
+        IN="$(mktemp "{{.REPO}}/.hwaccept.XXXXXX")"; trap 'rm -f "$IN"' EXIT
+        python3 '{{.REPO}}/tools/luac/replpipe.py' \
+          '{{.TASKFILE_DIR}}/test/hw-accept.lc' -o "$IN"
+        GOT="$(python3 '{{.REPO}}/tools/openocd/flash.py' --uart --host {{.PI_HOST}} \
+                 --configs '{{.REPO}}/tools/openocd' --elf bin/firmware.elf \
+                 --input "$IN" --run-timeout {{.RUN_TIMEOUT}})"
+        printf '%s\n' "$GOT"
+        # Guard a false pass exactly as test:sched does: a board that never
+        # reached the prompt yields an empty transcript, and empty must fail
+        # rather than validate nothing. Require the start marker first.
+        case "$GOT" in
+          *"<<HW-ACCEPT start>>"*) : ;;
+          *) echo "test:hw: no output - the board never reached the prompt ✗"
+             echo "  check the rig: JTAG wiring, power, and the UART link (EXAMPLE=uartprobe)"
+             exit 1 ;;
+        esac
+        # Require every criterion, not merely a marker: n/n with n == total.
+        SUMMARY="$(printf '%s\n' "$GOT" | grep -oE '<<HW-ACCEPT [0-9]+/[0-9]+>>' | tail -1)"
+        NUM="$(printf '%s' "$SUMMARY" | grep -oE '[0-9]+/[0-9]+')"
+        if [ -z "$NUM" ]; then
+          echo "test:hw: the run started but never reported a verdict ✗"
+          exit 1
+        fi
+        if [ "${NUM%/*}" != "${NUM##*/}" ]; then
+          echo "test:hw: $NUM criteria passed ✗"
+          printf '%s\n' "$GOT" | grep -E '^\s+FAIL ' || true
+          exit 1
+        fi
+        echo "test:hw: $NUM criteria passed ✓"
+
   clean:
     desc: 'Remove firmware (V2) build artifacts (bin/, obj/, gen/) and the Docker images (incl. host luac + simulator)'
     dir: '{{.TASKFILE_DIR}}'

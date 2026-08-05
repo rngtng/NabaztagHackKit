@@ -230,6 +230,13 @@ nab.play(nab.rec_wav(table.concat(chunks)))
 documented chip is not a *responding* chip until you have seen it answer (the M6 AT45 lesson:
 `CS_FLASH` is unpopulated, so #94 was reverted outright).
 
+**`task lua:firmware:test:hw` re-checks the machine-checkable half of this table** in one
+flash of the product image, whenever the rig is connected — codec `SS_VER` + SCI read-back,
+wheel ADC, the 1 ms tick, ear-encoder motion, the RFID tag, the radio MAC, an AP scan, and
+the config read/verify path. It is deliberately outside `lua:verify` (it needs the rig), and
+it is not a substitute for the rest: anything whose oracle is a human sense stays a claim
+made by hand here, re-checked with the [probes](examples/README.md).
+
 | Confirmed on hardware | Built, **not** HW-confirmed |
 |---|---|
 | LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |

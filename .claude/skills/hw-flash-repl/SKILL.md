@@ -12,6 +12,9 @@ chip inventory: `docs/hardware-dissection.md`.
 
 - **Flash**: `task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]`
 - **Read console / REPL**: `task lua:firmware:flash:repl [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
+- **Did anything regress?**: `task lua:firmware:test:hw` — one flash of the product image,
+  every machine-checkable subsystem asserted in a single scripted run. Start here when the
+  rig is connected; it names the subsystem, then the probes below tell you how it broke.
 
 Never hand-roll `scp` + `openocd` + `gdb` - the raw ssh+openocd path is denied,
 and both operations are already taskified. If a task doesn't cover what you
