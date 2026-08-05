@@ -216,21 +216,17 @@ tasks:
       - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
 
   check:
-    desc: 'Syntax-check one firmware TU with the real cross-compiler, without building anything (#319). SRC=<path relative to lua/firmware> selects it; the default is src/main.c, the one TU nothing else ever compiles - it carries main(), so no host test links it and the full ARM build is otherwise the only thing that reads it. Seconds instead of minutes, and it is -Werror like the build, so a clean exit means clean. Not part of verify: firmware:build subsumes it.'
+    desc: 'Syntax-check one firmware TU with the real cross-compiler, building nothing (#319). SRC=<path relative to lua/firmware>; defaults to src/main.c, the one TU nothing else compiles - it carries main(), so no host test links it and the ARM build is its only reader. Seconds instead of minutes, -Werror like the build. Not in verify: firmware:build subsumes it.'
     summary: 'Usage: task lua:firmware:check [SRC=src/net/ieee80211.c]'
     dir: '{{.TASKFILE_DIR}}'
     deps: [image]
     vars:
       SRC: '{{.SRC | default "src/main.c"}}'
     cmds:
-      # Same compiler and the same -I set as the Makefile, so this cannot pass on
-      # something the build would reject. -fsyntax-only stops after parsing, which
-      # is what makes it fast; it will not catch anything the linker decides.
-      #
-      # -Igen is included because src/main.c includes the generated boot_lc.h,
-      # so this needs a prior `task lua:firmware:build`. Vendored dirs are exempt
-      # from our -Werror set in the Makefile, so this mirrors that with -w for
-      # anything under src/net, src/usb or lua/ and stays strict elsewhere.
+      # The Makefile's compiler and -I set, so this cannot pass on something the
+      # build rejects. -fsyntax-only stops after parsing - fast, and blind to
+      # anything the linker decides. -Igen: main.c includes the generated
+      # boot_lc.h. Vendored dirs mirror the Makefile's -Werror exemption.
       - |
         docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work {{.FV_IMAGE}} sh -c '
           set -e
