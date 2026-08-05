@@ -121,7 +121,9 @@ Don't restate them here - two copies drift. The rules that bind new work:
   our Dockerfiles can reach the network. No-ops everywhere else.
   **`Cannot connect to the Docker daemon` means the daemon died, not that the
   setup was wrong — just re-run the script.** It happens several times in a long
-  session; it is one command, not a diagnosis.
+  session; it is one command, not a diagnosis. **Run it *before* a long `verify`,
+  not just after one dies** — a daemon death mid-run costs the whole run, and it
+  cost three of seven in one session.
 - **The MTL build/simulate tasks (`mtl:<layer>:build`/`:simulate`) and `task mtl:lib:test` always
   exit 0** — the MTL compiler and simulator report fatal errors on stderr but never fail the
   process. Both are wrapped to scan their own output for
@@ -179,6 +181,12 @@ lib module" live in `mtl/test/README.md` — read it before touching `mtl/test/l
   nothing can link it and nothing in it is unit-testable — that is why `fmt.c` (#245) and
   `lcframe.c` (#298) were split out. `main.c` keeps wiring; anything with a rule to it
   gets a file and a `test/host/` test.
+- **`task lua:firmware:check` before spending a `verify` on a firmware TU.** Nothing links
+  `main.c`, so no host test compiles it either: the ~6-minute ARM build is its only
+  reader, and it is `-Werror` — a dangling comment tail cost a full cycle to find. The
+  task syntax-checks one TU with the real cross-compiler and the Makefile's `-I` set, in
+  seconds. Defaults to `src/main.c`; `SRC=` picks another. Needs a prior
+  `firmware:build` for `gen/boot_lc.h`, and says so.
 
 ## MTL language gotchas
 

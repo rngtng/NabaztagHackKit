@@ -215,6 +215,33 @@ tasks:
     cmds:
       - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
 
+  check:
+    desc: 'Syntax-check one firmware TU with the real cross-compiler, building nothing (#319). SRC=<path relative to lua/firmware>; defaults to src/main.c, the one TU nothing else compiles - it carries main(), so no host test links it and the ARM build is its only reader. Seconds instead of minutes, -Werror like the build. Not in verify: firmware:build subsumes it.'
+    summary: 'Usage: task lua:firmware:check [SRC=src/net/ieee80211.c]'
+    dir: '{{.TASKFILE_DIR}}'
+    deps: [image]
+    vars:
+      SRC: '{{.SRC | default "src/main.c"}}'
+    cmds:
+      # The Makefile's compiler and -I set, so this cannot pass on something the
+      # build rejects. -fsyntax-only stops after parsing - fast, and blind to
+      # anything the linker decides. -Igen: main.c includes the generated
+      # boot_lc.h. Vendored dirs mirror the Makefile's -Werror exemption.
+      - |
+        docker run --rm -v "$(realpath {{.TASKFILE_DIR}}):/work" -w /work {{.FV_IMAGE}} sh -c '
+          set -e
+          if [ ! -f gen/boot_lc.h ]; then
+            echo "check: gen/boot_lc.h missing - run task lua:firmware:build first" >&2
+            exit 1
+          fi
+          case "{{.SRC}}" in
+            src/net/*|src/usb/*|lua/*) STRICT="-w" ;;
+            *) STRICT="-Wall -Wextra -Wpedantic -Wpointer-arith -Wcast-align -Werror" ;;
+          esac
+          arm-none-eabi-gcc -fsyntax-only -std=gnu11 -mcpu=arm7tdmi -mthumb -mthumb-interwork \
+            $STRICT -Iinc/ -Isys/inc -Ilua -Igen "{{.SRC}}"
+          echo "check: {{.SRC}} is clean"'
+
   test:host:
     desc: 'Host-side C unit tests (#241): compile the board-independent firmware sources (the #195 event core, the fmt shims, the register-only HAL drivers) natively against stubbed hardware and run them under ASan/UBSan. Deterministic - the stubs own the clock - and the fastest gate, so it runs first in lua:verify. TEST=<binary> runs one test, SCENARIO=<name> one scenario within it.'
     summary: 'Usage: task lua:firmware:test:host [TEST=rfid_test] [SCENARIO=wedged]'

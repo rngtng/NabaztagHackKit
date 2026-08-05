@@ -40,7 +40,13 @@ Two questions that repeatedly found things here:
 
 ## 2. Decide what is testable — do not assume
 
-Before writing off a file as "needs hardware", **probe it**:
+Two questions, two tools:
+
+- **"Does my edit still compile for the target?"** — `task lua:firmware:check
+  [SRC=…]`. Real cross-compiler, the Makefile's flags, seconds. Run it after
+  editing any firmware TU, especially `main.c` (§4).
+- **"Could this file be host-tested at all?"** — the probe below. One-off,
+  throwaway flags, so it stays a raw command.
 
 ```sh
 gcc -fsyntax-only -std=gnu11 -D_NAB_SIM \
@@ -98,11 +104,47 @@ to the defect:
 | "this loop terminates" | `alarm(2)` + a handler — a hang cannot be asserted on a return value |
 | cost / "does too much work" | `debug.sethook` VM-instruction counts, **not** wall clock |
 | whole-image behaviour | a simulator golden, guarded by a required marker |
+| parser over attacker-controlled input | a **deterministic mutation fuzz** (§5b) |
 | needs a real peripheral | a hardware checklist, and say plainly it is unverified |
 
+### 5b. Fuzz the parsers, and make the fuzzer prove itself
+
+Fixtures cover the cases you thought of. For anything parsing bytes off the air,
+add a mutation fuzz over the real entry points — `ieee80211_test`'s `fuzz` is
+20,000 iterations in 46 ms, and it both corrected a severity that had been
+"analysed" by reading and retired a planned refactor of the RSN sub-parse.
+
+- **Fix the seed.** Unseeded, a failure is unreproducible and CI flakes.
+- **Bias the mutations.** Uniform noise dies in the first two bytes. Weight
+  boundary values (0, 1, 0x7F, 0x80, 0xFF) and above all **truncation** — every
+  real defect in `ieee80211.c` was a length field outrunning the buffer.
+- **Control both sides.** A well-formed input must parse before the storm *and
+  after* it, or a wedged parser reports a clean run over nothing. Assert the
+  iteration count.
+- **Run it against the pre-fix source first.** A fuzzer that finds nothing on
+  known-buggy code is measuring nothing. Ours rediscovers #315 and #317.
+
+### 5c. A wrong stub does not miss defects — it invents them
+
 Model the seam **faithfully, not conveniently**. `nab.on` holds one callback per
-name and replaces it silently; a stub that chained them would have hidden the
-defect it was written to catch.
+name and replaces it silently; a stub that chained them would hide the defect it
+was written to catch. That is the mild version. #315 is the severe one:
+
+```c
+int8_t rt2501_tx(void *frame, uint32_t len) { tx_calls++; return 1; }
+```
+
+`rt2501_tx` hands its buffer to the USB stack, which frees it on the URB
+completion. The stub modelled none of that, so a correctly released frame looked
+leaked. `CHECK(free_calls == malloc_calls)` then pinned a contract the device
+does not have, the "fix" for the imaginary leak was a double free worse than the
+bug, and the test defended it. `rt2501_auth` nearly got a second one.
+
+**A test asserting a contract the hardware lacks is worse than no test.** When a
+stub makes a driver look wrong, suspect the stub — especially when the "defect"
+is an omission (not freed, not called, not reset), which is exactly what an
+unmodelled hand-off looks like. Find the code that would have done the thing and
+check your stub stands in for it.
 
 ## 6. Before you commit
 
@@ -124,3 +166,19 @@ For each finding record: what breaks, **who can trigger it**, the proof command
 and its output, and the blast radius. "13% of corruptions kill the runtime, and
 there is no MMU so that is silent heap corruption" lands; "the loader is not
 robust" does not.
+
+### State impact only after you have run it
+
+§5 gates the *fix* on a failing test. Gate the **claim** too: no severity in an
+issue, comment, commit or PR until the proof has executed. Reading tells you
+something is wrong, not how wrong.
+
+#317 was published three times before it ran once — "up to 255 bytes" (the
+consumer was length-checked), then "1 byte, plus 128 if unlucky" (too generous),
+then the measured truth: an attacker-controlled 128-byte over-read **that gets
+transmitted**. Cost: three corrections and two rewrites of one comment.
+
+The errors ran in *both* directions — an over-read looks smaller if you stop at
+the walk, larger if you assume the consumer is unbounded — so erring severe is
+not a fix. Until it runs, say **"this looks wrong, here is the probe I am about
+to write."**
