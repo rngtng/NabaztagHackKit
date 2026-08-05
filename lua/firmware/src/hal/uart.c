@@ -32,7 +32,7 @@ void putst_uart(uint8_t *str)
 
 uint8_t rxrdy_uart(void)
 {
-  /* non-consuming: lets the REPL run the cooperative event pump (#195)
+  /* non-consuming: lets the REPL run the cooperative event pump
    * only while no console byte is waiting. */
   return (get_value(UARTLSR0) & UARTLSR_DR) == UARTLSR_DR;
 }

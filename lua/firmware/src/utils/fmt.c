@@ -1,7 +1,7 @@
 /**
  * @file fmt.c
  * @brief Formatting + number conversion shims that keep newlib's stdio out of
- *        the flash budget. Split out of main.c (#245).
+ *        the flash budget. Split out of main.c.
  *
  * These are the strong symbols that override newlib's, plus the luai_* hooks
  * luaconf.h routes Lua's number formatting through. They were written inline in
@@ -47,7 +47,7 @@ void luai_writestring(const char *s, size_t l)
 /* Every lua_writestringerror call site (lauxlib panic/warn) uses a "%s"-style
  * format with one const char* arg. snprintf is our own (below).
  *
- * #245: the clamp is `sizeof b - 1`, not `sizeof b`. snprintf returns the
+ * The clamp is `sizeof b - 1`, not `sizeof b`. snprintf returns the
  * length the output WOULD have had and writes at most sizeof b - 1 chars plus
  * the NUL, so clamping to sizeof b emitted 127 message bytes plus the
  * terminator - a stray NUL into the console stream that flash.py/uart_repl.py
@@ -76,7 +76,7 @@ void luai_writestringerror(const char *fmt, const char *arg)
  * pulled). Float conversions (f e g a, any case) stay approximate - integer
  * part + ".0" - a real dtoa is still future work; they are rendered by
  * luai_num2str at the bottom of this file, which is the only float-to-digits
- * code here (#306). */
+ * code here. */
 
 /* Widest digit string either float path can produce: FLT_MAX is 39 digits. */
 #define NUM2STR_DIGITS 44
@@ -115,8 +115,8 @@ static void pf_pad(char **d, char *end, size_t *n, char c, int count)
     pf_emit(d, end, n, c);
 }
 
-/* IEEE-754 double bits -> the nearest float, by integer surgery alone (#306).
- * A plain (float)dv cast would link libgcc's double soft-float (~2.4 KB, #213),
+/* IEEE-754 double bits -> the nearest float, by integer surgery alone.
+ * A plain (float)dv cast would link libgcc's double soft-float (~2.4 KB),
  * which is the whole reason the %f branch takes the bits apart at all. This is
  * the exact inverse of the promotion that put the value in the varargs: on this
  * target LUA_32BITS makes lua_Number a float, so every float that reaches a
@@ -263,10 +263,10 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap)
         /* Varargs promoted the float to a double (C default argument
          * promotion, unavoidable through '...'), so narrow it back by bit
          * surgery and render it through luai_num2str - the one float-to-digits
-         * path in this file (#306).
+         * path in this file.
          *
          * This branch used to shift the mantissa into an `unsigned long` of its
-         * own, which is the defect #301 removed next door: the width of the
+         * own, which is the defect removed next door: the width of the
          * output was the width of the target's `unsigned long`, so %f of 1e10
          * printed "1410065408.0" on the rabbit - 1e10 mod 2^32, not an
          * approximation of anything - and an infinity took the `>= 64` arm and
@@ -334,7 +334,7 @@ int snprintf(char *buf, size_t size, const char *fmt, ...)
   return r;
 }
 
-/* ---- 8-byte UID -> lowercase hex (#254) ---------------------------------- */
+/* ---- 8-byte UID -> lowercase hex ---------------------------------- */
 /* Was eight snprintf("%02x") calls in main.c's push_uid_hex - eight walks of a
  * format string, eight flag/width parses and eight pf_utoa divide loops to
  * produce sixteen characters, on the per-RFID-event path. A nibble table does
@@ -349,7 +349,7 @@ void fmt_hex8(char out[17], const uint8_t uid[8])
   out[16] = '\0';
 }
 
-/* ---- float -> string for Lua's number printing (#213) --------------------- */
+/* ---- float -> string for Lua's number printing --------------------- */
 /* luaconf.h routes lua_number2str/lua_number2strx (lobject.c's tostringbuff,
  * string.format's %a and %q-on-floats) here. Non-variadic on purpose: a float
  * passed through '...' is promoted to double by the caller (C default argument
@@ -366,7 +366,7 @@ void fmt_hex8(char out[17], const uint8_t uid[8])
  * by adding it to itself digit by digit - the /10 and %10 in that loop are by a
  * constant, which the compiler turns into a multiply, not a library call.
  *
- * The point is exactness on BOTH widths (#301). The old
+ * The point is exactness on BOTH widths. The old
  * `(unsigned long)mant << (fexp - 23)` inherited the width of `unsigned long`:
  * it wrapped at 2^32 on the rabbit, so print(1e10) came out as 1410065408.0 -
  * 1e10 mod 2^32, not an approximation of anything - and on a 64-bit host it
@@ -374,7 +374,7 @@ void fmt_hex8(char out[17], const uint8_t uid[8])
  * uint64_t is the other way to fix it and is not free here: pf_utoa's /= and %=
  * would link libgcc's __aeabi_uldivmod. (NUM2STR_DIGITS is defined at the top
  * of the file: vsnprintf's %f branch sizes its own body buffer by it, since
- * that branch renders through here too - #306.) */
+ * that branch renders through here too.) */
 
 static int dec_shifted(char *out, uint32_t v, int shift)
 {
@@ -565,7 +565,7 @@ LUA_NUMBER luai_fmod(LUA_NUMBER a, LUA_NUMBER b)
    * integral, so only the small range needs the int round-trip - and (long)
    * stays within single-float helpers. The former (long long) cast pulled
    * __aeabi_f2lz, whose libgcc __fixunssfdi converts VIA DOUBLE, dragging in
-   * the double soft-float (~740 B: muldf3 + fixunsdfsi, #213). */
+   * the double soft-float (~740 B: muldf3 + fixunsdfsi). */
   LUA_NUMBER n = (q >= 16777216.0f || q <= -16777216.0f)
                      ? q : (LUA_NUMBER)(long)q;
   LUA_NUMBER m = a - n * b;                  /* remainder, sign of a */

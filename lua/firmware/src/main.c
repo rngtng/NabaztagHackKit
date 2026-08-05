@@ -2,7 +2,7 @@
  * @file main.c
  * @brief Boot PUC-Rio Lua 5.4 and run a REPL - the first real language runtime
  *        on the ML67Q4051. Opens a trimmed stdlib, runs an embedded demo chunk,
- *        then drops into a REPL. Console = UART0 (#207); heap = 1 MB ExtRAM.
+ *        then drops into a REPL. Console = UART0; heap = 1 MB ExtRAM.
  *
  * Bare metal supplies neither, so this file also overrides the newlib syscalls
  * (_read/_write over the polled UART, _sbrk into ExtRAM) and Lua's number/printf
@@ -41,7 +41,7 @@
 
 #include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
 
-/* ---- UART console (#207) ------------------------------------------------- */
+/* ---- UART console ------------------------------------------------- */
 /* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 115200 8N1.
  * init_uart() runs at boot (main); read/drive it on the Pi's /dev/serial0.
  *
@@ -189,7 +189,7 @@ static int nab_led(lua_State *L)
 }
 
 /* nab.led8(name, r, g, b): like nab.led but r/g/b are 8-bit (0..255) and pass
- * through the gamma-2.2 table (#102 / #45) - so a value of 1 still lights (the
+ * through the gamma-2.2 table - so a value of 1 still lights (the
  * old table's 0..51 dead zone is gone), giving smooth low-end fades. Instant. */
 static int nab_led8(lua_State *L)
 {
@@ -202,11 +202,11 @@ static int nab_led8(lua_State *L)
 
 /* nab.fade(name, r, g, b, ms): fade an LED from its current colour to r/g/b
  * (8-bit, gamma) over ms, in the BACKGROUND - returns immediately. The 1 ms
- * System Timer IRQ (#102) interpolates and reflushes the LED bus; start fades on
+ * System Timer IRQ interpolates and reflushes the LED bus; start fades on
  * all five and they run at once. A nab.led/nab.led8/nab.fade on the same LED
  * replaces its fade. ms=0 sets the colour instantly. The fade only advances
  * while interrupts run; the simulator models the timer and delivers its IRQ
- * (#102), so fades animate there too. */
+ *, so fades animate there too. */
 static int nab_fade(lua_State *L)
 {
   int i = luaL_checkoption(L, 1, NULL, led_names);
@@ -218,15 +218,12 @@ static int nab_fade(lua_State *L)
   return 0;
 }
 
-/* nab.delay is nab.wait (see below). Until #283 it was a bare spin that fed
- * only the watchdog, so every delay was a hole in which no event was even
- * sampled, no ear stopped on its target and no connection was pumped - a press
- * and release inside one was lost for good rather than delivered late. That a
- * script's frame pacing silently disabled its own callbacks was the bug, not a
- * feature worth keeping a second primitive for, so the two collapsed into one
- * and `delay` is now an alias. Both still time off the 1 ms System Timer
- * (counter_timer, #102), the same clock the background fades use, so animation
- * pacing and fades stay in step.
+/* nab.delay is an alias of nab.wait (see below), deliberately - a delay that
+ * spins without pumping is a hole in which no event is sampled, no ear stops on
+ * its target and no connection is pumped, so a press and release inside one is
+ * lost for good rather than delivered late. Don't reintroduce a second,
+ * non-pumping primitive. Times off the 1 ms System Timer (counter_timer), the
+ * same clock the background fades use, so pacing and fades stay in step.
  */
 
 /* nab.button() -> boolean: true while the head button is held (polled). */
@@ -258,10 +255,9 @@ static int nab_beep(lua_State *L)
 
   vlsi_ampli(1);                   /* plays at the current nab.volume setting */
   vlsi_sine((uint8_t)freq, 1);
-  /* Timed off the 1 ms System Timer, like nab.delay (#247). This was a
-   * calibrated-by-guess spin whose comment still claimed "no timer yet" - the
-   * tick has existed since #102 - so nab.beep's ms argument was simply wrong
-   * whenever the core clock differed from whatever the spin was tuned against. */
+  /* Timed off the 1 ms System Timer, like nab.delay. Not a calibrated spin:
+   * that makes the ms argument wrong whenever the core clock differs from
+   * whatever the spin was tuned against. */
   wait_ms((uint32_t)ms);
   vlsi_sine((uint8_t)freq, 0);
   vlsi_ampli(0);
@@ -273,7 +269,7 @@ static int nab_beep(lua_State *L)
  * nab.volume actually attenuates it. Blocking: returns once the buffer is fed
  * and flushed.
  *
- * Blocking, but cooperative (#283): it drives #265's stream primitives itself
+ * Blocking, but cooperative: it drives the stream primitives itself
  * rather than calling vlsi_play, so the event pump and reactor tick run in the
  * gaps where the decoder's FIFO is full. Callbacks keep firing and an ear still
  * stops on its target while a clip plays. vlsi_play stays as-is for callers
@@ -336,7 +332,7 @@ static int nab_play(lua_State *L)
   return 0;
 }
 
-/* nab.play_start(): open a non-blocking playback stream (#265) - decoder into
+/* nab.play_start(): open a non-blocking playback stream - decoder into
  * decode mode, volume re-asserted, amplifier on. Then push bytes with
  * nab.play_feed as fast as the decoder takes them, and close with
  * nab.play_stop. This is what lets the rabbit make a sound AND do something
@@ -563,7 +559,7 @@ static void push_uid_hex(lua_State *L, const uint8_t uid[8])
 /* nab.rfid() -> UID as a lowercase hex string (e.g. "a1b2c3d4e5f60708"), or
  * nil if no tag is on the coupler. Scans the CRX14 (I2C 0xA0) each call - no
  * caching, so placing/removing a tag is reflected on the next poll. For
- * scripts that would call this in a loop, prefer nab.on('rfid', fn) (#195). */
+ * scripts that would call this in a loop, prefer nab.on('rfid', fn). */
 static int nab_rfid(lua_State *L)
 {
   uint8_t uid[8];
@@ -576,7 +572,7 @@ static int nab_rfid(lua_State *L)
   return 1;
 }
 
-/* ---- cooperative events (#195): nab.on / nab.wait / nab.time -------------- */
+/* ---- cooperative events: nab.on / nab.wait / nab.time -------------- */
 /* Principle 2 lands here: event.c polls the hardware from the cooperative
  * pump (never an ISR) and queues edge events; this block delivers them to Lua
  * callbacks under lua_pcall. Dispatch runs while the REPL prompt sits idle
@@ -597,7 +593,7 @@ static void report(lua_State *L);  /* defined with the REPL below */
 static void dispatch_events(lua_State *L, uint8_t allow_rfid)
 {
   static uint8_t busy;
-  /* Sample the hardware ALWAYS, even when re-entered (#243). The guard exists
+  /* Sample the hardware ALWAYS, even when re-entered. The guard exists
    * to stop recursive *Lua dispatch* (principle 2), and event_pump touches no
    * Lua state - the queue is precisely the buffer that decouples the two. With
    * the pump inside the guard, a nab.wait() called from a callback stopped the
@@ -629,7 +625,7 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
     if (lua_pcall(L, 1, 0, 0) != LUA_OK)
       report(L);
   }
-  /* Cooperative tick (#283): once the C event queue is drained, hand the Lua
+  /* Cooperative tick: once the C event queue is drained, hand the Lua
    * reactor a slice. This is the seam that lets behaviour which must keep
    * running during a blocking call - an ear stopping on its target, a net
    * connection being pumped - actually run, without the C layer knowing what
@@ -653,7 +649,7 @@ static void dispatch_events(lua_State *L, uint8_t allow_rfid)
  * fn(uid) when a new tag lands on the coupler, fn(nil) when it leaves;
  * registering starts the background ~750 ms scan cycle, clearing stops it.
  * name "tick": fn() on every pump iteration, after the event queue is drained -
- * the seam the Lua reactor (sched, #283) hangs off. It is not an event source:
+ * the seam the Lua reactor (sched) hangs off. It is not an event source:
  * nothing is queued for it and it carries no argument.
  * Callbacks fire from the cooperative pump - while the REPL prompt is idle or
  * inside nab.wait()/nab.delay() - never from an interrupt (principle 2). */
@@ -696,7 +692,7 @@ static int nab_wait(lua_State *L)
 
 /* nab.time() -> milliseconds since boot: the raw 1 ms tick (counter_timer),
  * a wrapping 32-bit count - subtract two readings, don't compare absolutes.
- * Advances in the simulator too (it models the timer, #102), but on an
+ * Advances in the simulator too (it models the timer), but on an
  * instruction-count clock - so it is approximate there, not wall time. */
 static int nab_time(lua_State *L)
 {
@@ -712,7 +708,7 @@ static int nab_time(lua_State *L)
  * around (hw.ears's hole-counting home() exists because there is nothing to
  * bump into and zero against).
  *
- * Single speed by design (#179): these gearmotors have a hard torque floor
+ * Single speed by design: these gearmotors have a hard torque floor
  * (~120/255, ~43% PWM duty) below which they only hum without turning, and
  * above it the rotation rate barely changes (HW-measured: ~7-9 encoder
  * counts/700ms flat from 115 to 200, ~11 at 255). So "speed" was effectively
@@ -777,10 +773,10 @@ static int nab_sciw(lua_State *L)
  * encrypted AP; omit (or "") for an open one. On failure `reason` is a stable
  * tag - "radio" (bring-up), "notfound" (SSID not seen), "auth" (encrypted AP,
  * join never completed - a bad-PSK hint, advisory) or "timeout" - that the
- * provisioning flow (#234) branches on to pick an LED/message. The whole USB +
+ * provisioning flow branches on to pick an LED/message. The whole USB +
  * 802.11 stack is pulled into the image only because this binding references
  * it (see hal/wifi.c). */
-/* Bounded string argument for the radio bindings (#296). The 802.11 SSID and
+/* Bounded string argument for the radio bindings. The 802.11 SSID and
  * the WPA passphrase both land in fixed-size C buffers - rt2501_scan's probe
  * frame, the PBKDF2 - so the cap belongs here, at the seam, exactly as
  * nab.config already enforces its own field caps (principle 5: bindings are
@@ -813,7 +809,7 @@ static int nab_wifi(lua_State *L)
   wifi_fail_t why = WIFI_OK;
   if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
     /* (nil, message, reason): reason is a stable machine-readable tag the
-     * provisioning flow (#234) branches on; message is for humans. */
+     * provisioning flow branches on; message is for humans. */
     const char *reason = "timeout";
     switch (why) {
     case WIFI_FAIL_RADIO:    reason = "radio"; break;
@@ -832,7 +828,7 @@ static int nab_wifi(lua_State *L)
 
 /* nab.wifi_ap(ssid [, channel]) -> true | nil, message. Switch the radio to
  * master (AP) mode: beacon `ssid` on `channel` (default 1) as an OPEN network
- * - the driver path Violet's original setup mode used, setup-mode only (#216).
+ * - the driver path Violet's original setup mode used, setup-mode only.
  * Brings up the USB dongle first when needed (~10 s cold boot); an
  * already-joined STA switches without the cold boot. Frames stations send us
  * arrive via nab.wifi_recv(). */
@@ -852,7 +848,7 @@ static int nab_wifi_ap(lua_State *L)
 
 /* nab.wifi_up() -> true | nil, message. Cold-boot the USB dongle (~10 s) WITHOUT
  * joining or beaconing, so nab.wifi_mac() reads the real EEPROM MAC. setup.run
- * (#233) calls this before deriving the "Nabaztag-XXXX" AP name: the MAC is
+ * calls this before deriving the "Nabaztag-XXXX" AP name: the MAC is
  * all-zero until the radio is up, and nab.wifi_ap is itself the bring-up, so
  * naming off wifi_mac() before it yielded "Nabaztag-0000" on every device. With
  * the dongle already up, the following nab.wifi_ap skips the cold boot (its
@@ -874,7 +870,7 @@ static int nab_wifi_up(lua_State *L)
  * the probe request directed, so an AP whose beacon we'd miss still answers -
  * that is the scan nab.wifi() runs internally before joining. Cold-boots the
  * dongle first when it is down (~10 s), like nab.wifi/nab.wifi_ap. Fails in AP
- * mode: the driver only scans as a station, so setup.run (#273) must scan
+ * mode: the driver only scans as a station, so setup.run must scan
  * BEFORE nab.wifi_ap switches the radio to master. A scan clears the BSSID and
  * hops all 14 channels, so an existing association does not survive it. */
 static int nab_wifi_scan(lua_State *L)
@@ -901,7 +897,7 @@ static int nab_wifi_scan(lua_State *L)
  * the last nab.wifi_scan() saw, deduped by BSSID (up to 32 - a dense place has
  * far more). bssid is a 6-byte binary string; enc is the raw 802.11 encryption
  * byte (0 = open, 0x40|cipher = WPA2 - the only encrypted flavour this image
- * joins). The setup portal (#273) turns the ssid fields into its drop-down. */
+ * joins). The setup portal turns the ssid fields into its drop-down. */
 static int nab_wifi_seen(lua_State *L)
 {
   int32_t i, n = wifi_seen_count();
@@ -958,7 +954,7 @@ static int nab_wifi_recv(lua_State *L)
 {
   lua_Integer ms = luaL_optinteger(L, 1, 0);
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
-  /* Wait cooperatively (#283). wifi_recv_frame(0) is one driver pump slice, so
+  /* Wait cooperatively. wifi_recv_frame(0) is one driver pump slice, so
    * running the timeout here - with the event pump and reactor tick between
    * slices - keeps callbacks firing and ears stopping on target throughout a
    * DHCP exchange or an HTTP GET. Doing it this way rather than in net/iface.lua
@@ -985,7 +981,7 @@ static int nab_wifi_recv(lua_State *L)
 }
 
 /* nab.wifi_mac() -> our 6-byte station MAC: the identity lua/lib/net's ARP/DHCP
- * put on the wire (#217). All-zero until nab.wifi()/nab.wifi_ap() has brought
+ * put on the wire. All-zero until nab.wifi()/nab.wifi_ap() has brought
  * the dongle up once (it is read from the EEPROM during bring-up). */
 static int nab_wifi_mac(lua_State *L)
 {
@@ -1015,7 +1011,7 @@ static void cfg_field(lua_State *L, const char *k, char *dst, size_t cap)
  * first written). nab.config{ssid=..., psk=..., url=..., fails=...} -> boolean:
  * persist the record (missing string keys become "", fails becomes 0); ssid <=
  * 32, psk <= 64, url <= 64 chars, fails 0..255. `fails` is the consecutive-
- * join-failure counter the provisioning flow (#234) read-modify-writes. The
+ * join-failure counter the provisioning flow read-modify-writes. The
  * sector is erase-cycled per write, so a record identical to what flash already
  * holds is skipped and returns false; true means erased, programmed and
  * verified by read-back (~63 ms with interrupts masked - see hal/config.h).
@@ -1056,7 +1052,7 @@ static int nab_config(lua_State *L)
   return 1;
 }
 
-/* nab.flash_firmware(image): whole-image OTA flash (#235). `image` is the
+/* nab.flash_firmware(image): whole-image OTA flash. `image` is the
  * verified firmware .bin as a byte string - net.ota has ALREADY checked its
  * magic / target id / length / CRC, so nothing unverified reaches here. Masks
  * interrupts and hands the bytes to the .ramfunc writer, which erases internal
@@ -1136,7 +1132,7 @@ static int luaopen_nab(lua_State *L)
  * io/os/package/debug/loadlib (no filesystem, OS, or dynamic loading on this
  * target), and utf8. base's dofile/loadfile are removed in lua/lbaselib.c.
  *
- * coroutine costs 2,300 B (measured, #283) and buys the cooperative scheduler:
+ * coroutine costs 2,300 B (measured) and buys the cooperative scheduler:
  * without it every long-running activity has to be hand-unrolled into a state
  * machine that some other loop remembers to pump, which is exactly why the four
  * workloads could not compose. */
@@ -1175,17 +1171,16 @@ static void report(lua_State *L)
 }
 
 /* Resident boot chunk: the M5 nab-binding demo helpers, a short LED showcase
- * (#102) that doubles as a timer/fade self-test, and an idle LED state, defined
+ * that doubles as a timer/fade self-test, and an idle LED state, defined
  * at startup so the interpreter proves out with no console input (sim) and both
  * demos are one short line away on hardware. It does NOT auto-run anything long:
  * run() is a while-true RFID loop that only returns on a head-button press, and
  * ledshow() is a ~6 s animation - auto-calling either at boot would delay or
- * strand the REPL (the boot chunk eats the instruction budget before the prompt,
- * #207). Both bodies are resident, so `ledshow()` (breathe blue/magenta, then a
+ * strand the REPL (the boot chunk eats the instruction budget before the prompt). Both bodies are resident, so `ledshow()` (breathe blue/magenta, then a
  * ball round the ring) exercises the timer IRQ + fade engine with a 10-char
  * feed, not a ~2 KB script.
  *
- * This image has no on-device parser (#128), so the chunk cannot be compiled
+ * This image has no on-device parser, so the chunk cannot be compiled
  * from source at boot. The build compiles lua/boot/boot.lua off-device
  * (tools/luac/embed.py) into gen/boot_lc.h - a `boot_lc[]` bytecode blob loaded
  * below via luaL_loadbuffer (sizeof boot_lc = chunk length). Edit boot.lua, not
@@ -1195,7 +1190,7 @@ static void report(lua_State *L)
 #define REPL_LINE 256
 
 /* ---- off-device luac bytecode frames ------------------------------------- */
-/* This image drops lparser/llex/lcode (~18.9 KB, #128), so it can ONLY load
+/* This image drops lparser/llex/lcode (~18.9 KB), so it can ONLY load
  * bytecode - it cannot compile source on-device. Host-side luac (tools/luac)
  * compiles every REPL line off-device and ships the chunk here as a framed hex
  * payload:
@@ -1208,7 +1203,7 @@ static void report(lua_State *L)
  * '\n'/NUL and sh_gets is line-based), hence the hex framing. #LC frames are the
  * only executable input the REPL accepts; anything else is rejected (see repl).
  *
- * The checksum (#298) is the transport guard: this console has no hardware flow
+ * The checksum is the transport guard: this console has no hardware flow
  * control and a 16-byte RX FIFO, and the loader behind it does not check what it
  * is given (lua/lundump.c; see task lua:firmware:test:bytecode for what a
  * corrupted chunk costs). A frame that does not verify is reported and NOT
@@ -1276,7 +1271,7 @@ static void drop_lc_payload(long len)
  * a header claiming 4 GB cannot make us read 8 GB of hex, which means
  * drop_lc_payload eats only the first line and the rest of that frame's hex is
  * then read as REPL input - one "bytecode-only build" reply per wrapped line,
- * the #308 desync in its remaining corner. It takes a chunk over LC_MAX (64 KB)
+ * the console desync in its remaining corner. It takes a chunk over LC_MAX (64 KB)
  * to reach, which no sender here produces. Draining to the first non-hex byte
  * instead would resync without trusting the length, but that is a loop over
  * attacker-paced input in main.c, where nothing can link it to test it - so it
@@ -1314,7 +1309,7 @@ static int load_lc_frame(lua_State *L, const char *line)
   }
   skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
 
-  /* Verify before the loader ever sees it (#298). */
+  /* Verify before the loader ever sees it. */
   if (lcframe_checksum((const uint8_t *)buf, (size_t)len) != want) {
     free(buf);
     lua_pushliteral(L, "#LC frame checksum mismatch - frame corrupted in transit");
@@ -1324,7 +1319,7 @@ static int load_lc_frame(lua_State *L, const char *line)
   /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
    * starts with LUA_SIGNATURE, so lua_load takes the lundump (bytecode) branch;
    * a non-bytecode payload would hit the guarded f_parser text branch and error
-   * (there is no parser in this image, #128). */
+   * (there is no parser in this image). */
   int status = luaL_loadbuffer(L, buf, (size_t)len, "=stdin");
   free(buf);
   return status;
@@ -1355,7 +1350,7 @@ static void repl(lua_State *L)
   char line[REPL_LINE];
   sh_puts("> ");
   for (;;) {
-    /* Idle between lines: run the cooperative pump (#195) so nab.on callbacks
+    /* Idle between lines: run the cooperative pump so nab.on callbacks
      * fire while the prompt waits. The ~5 ms RFID coupler scan could overflow
      * the 16-byte RX FIFO if bytes arrived mid-scan, so it is gated on the
      * console having been quiet for CONSOLE_IDLE_MS; the (cheap) button poll
@@ -1373,7 +1368,7 @@ static void repl(lua_State *L)
       else
         run_chunk(L);
     } else {
-      /* Bytecode-only build (#128): no on-device parser. Source is compiled
+      /* Bytecode-only build: no on-device parser. Source is compiled
        * off-device (tools/luac) and sent as an #LC frame - see luash.py. */
       sh_puts("bytecode-only build: send #LC frames (see tools/luac)\n");
     }
@@ -1385,15 +1380,13 @@ static void repl(lua_State *L)
  * (the LLC2_4c LED-only subset of the firmware's init_io). */
 static void init_hw(void)
 {
-  /* #102: populate IRQ_HANDLER_TABLE + the interrupt controller before any
-   * source is armed. Exactly once (#244): init_irq() is not idempotent-in-place
-   * - it zeroes ILC0/ILC1/EXILC* and resets all 64 handler slots to
-   * null_handler - so a second call here silently discarded anything the
-   * peripherals below had registered. Nothing registered between the two calls
-   * as it stood, which is the only reason it was harmless. */
+  /* Populate IRQ_HANDLER_TABLE + the interrupt controller before any source is
+   * armed, and EXACTLY ONCE: init_irq() is not idempotent-in-place - it zeroes
+   * ILC0/ILC1/EXILC* and resets all 64 handler slots to null_handler, so a
+   * second call silently discards everything the peripherals below registered. */
   init_irq();
 
-  /* #275: mux XD16-31 (upper external-data-bus half) to GPIO, as mtl's
+  /* Mux XD16-31 (upper external-data-bus half) to GPIO, as mtl's
    * init_io does. BWC=0xA0 runs ExtRAM as a 16-bit bank, so XD16-31 carry no
    * data - but left on their default bus function they toggle on every EMC
    * WRITE, and they share package pins with the audio-control GPIO group
@@ -1415,7 +1408,7 @@ static void init_hw(void)
   init_i2c();    /* I2C bus, for the CRX14 RFID coupler / nab.rfid() */
   init_ears();   /* FTM PWM + encoder timers, for nab.ear_* */
 
-  /* #102: arm the shared 1 ms System Timer tick last, once every peripheral is
+  /* Arm the shared 1 ms System Timer tick last, once every peripheral is
    * up. init_tick() (sys/src/tick.c) reprograms the timer to 1 ms, registers its
    * ISR, and unmasks interrupts; its handler advances nab.fade's background fades
    * (led_fade_tick) and counter_timer (nab.delay's clock). The simulator models

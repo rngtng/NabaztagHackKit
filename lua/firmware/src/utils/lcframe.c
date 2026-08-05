@@ -1,8 +1,8 @@
 /**
  * @file lcframe.c
- * @brief Fletcher-32 for the `#LC` frame's integrity check (#298).
+ * @brief Fletcher-32 for the `#LC` frame's integrity check.
  *
- * Its own translation unit rather than a static in main.c, for the reason #245
+ * Its own translation unit rather than a static in main.c, for the reason
  * split out fmt.c: main.c carries main(), so nothing else can link it and
  * nothing in it can be unit-tested. This is the one piece of new logic the frame
  * check adds, and test/host/lcframe_test.c pins it.

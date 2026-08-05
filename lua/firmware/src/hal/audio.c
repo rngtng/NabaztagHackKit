@@ -24,9 +24,9 @@
 #include "hal/spi.h"
 
 /* Software delay - init_vlsi runs before the tick, so no timer/DelayMs here.
- * Sized for the VS1003 reset + PLL-lock window. #269: the loop count is wall-clock
+ * Sized for the VS1003 reset + PLL-lock window. The loop count is wall-clock
  * dependent, so it was scaled 4x (200k -> 800k) when the chip moved from the
- * ring-osc 8 MHz to the 32 MHz PLL, keeping the #123-verified real-time delay. */
+ * ring-osc 8 MHz to the 32 MHz PLL, keeping the verified real-time delay. */
 static void audio_delay(volatile unsigned long n)
 {
   while (n--)
@@ -92,7 +92,7 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
  * did not stick: with XD16-31 left on their bus function, every ExtRAM (EMC)
  * write burst hardware-reset the VS1003, knocking CLOCKF/MODE/VOLUME back to
  * defaults - so vlsi_play() re-asserts the cached value right before the SDI
- * feed. #275 fixed the root cause (PORTSEL4 mux in main.c's init_hw; isolated
+ * feed. The root cause is fixed (PORTSEL4 mux in main.c's init_hw; isolated
  * by examples/recprobe.c), so writes now hold; the play-window re-assert is
  * kept as cheap defence in depth. */
 static uint8_t vlsi_volume = 0x20;
@@ -152,7 +152,7 @@ void init_vlsi(void)
   audio_delay(800000);
   wait_dreq();
   /* SPI0 stays at ~2 MHz. The historical "8 MHz reads garbage" observation was
-   * #275: EMC write bursts hardware-reset the codec, so CLKI was back at base
+   * EMC write bursts hardware-reset the codec, so CLKI was back at base
    * XTAL (max SCI = CLKI/7) whenever we looked. With the PORTSEL4 fix CLOCKF
    * holds and ~8 MHz should be safe (mtl runs it), but 2 MHz is plenty for
    * SCI + the SDI feed and is the speed everything here was verified at. */
@@ -164,7 +164,7 @@ void init_vlsi(void)
 /* VLSI's own microcode patch, applied unconditionally by FW1's init_vlsi()
  * (mtl/firmware/src/hal/audio.c, named patchwma there) but never ported here.
  * Ten WRAM_ADDR/WRAM writes loading two short blocks into the codec's X-RAM -
- * the standard VLSI patch-loading idiom, not a bespoke register poke. #123
+ * the standard VLSI patch-loading idiom, not a bespoke register poke. It was
  * A/B'd it by ear against the unpatched decoder for a reported MP3-quieter-
  * than-nab.beep gap: no clear difference, but it is official and harmless
  * (X-RAM only, no persistent state), so it stays in as a low-risk default -
