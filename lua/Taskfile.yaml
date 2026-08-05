@@ -109,40 +109,43 @@ tasks:
         '
 
   check:eol:
-    desc: 'Lint: the vendored net/ sources still have their original CRLF line endings - a scripted edit that rewrites them turns a small fix into a whole-file diff and destroys the backport bridge. Part of lua:verify.'
+    desc: 'Lint: no tracked file changed its line endings in the working tree - a scripted edit that rewrites a vendored CRLF file turns a small fix into a whole-file diff and destroys the backport bridge. Covers every tracked file, not a hand-kept list. Part of lua:verify.'
     dir: '{{.TASKFILE_DIR}}'
     silent: true
     cmds:
       - |
         set -e
         cd "$(git rev-parse --show-toplevel)"
-        # These four are vendored CRLF and must stay that way. Python's read_text()/
-        # write_text() silently rewrites them as LF; go through read_bytes()/write_bytes().
-        # .gitattributes cannot guard this - the damage happens in the working tree.
-        # Counted in python on the raw bytes rather than with `grep -c`: a CR
-        # pattern has to survive YAML -> Task shell -> grep quoting intact, and a
-        # pattern that silently empties matches every line and passes vacuously.
-        # `total == 0` is part of the assertion: a truncated file has no CRLF to
-        # lose and would otherwise sail through as "all 0 of 0 lines are CRLF".
-        python3 -c '
-        import sys
-
-        LF, CRLF = b"\n", b"\r\n"
-        VENDORED = ("lua/firmware/src/net/ieee80211.c", "lua/firmware/src/net/eapol.c",
-                    "mtl/firmware/src/net/ieee80211.c", "mtl/firmware/src/net/eapol.c")
-        bad = False
-        for f in VENDORED:
-            blob = open(f, "rb").read()
-            total, crlf = blob.count(LF), blob.count(CRLF)
-            if total == 0 or crlf != total:
-                print(f"✗ {f} lost its CRLF endings ({crlf}/{total} lines still CRLF)")
-                print(f"    a scripted edit rewrote it - restore with: git checkout -- {f}")
-                print("    then redo the edit via read_bytes()/write_bytes(), not read_text()")
-                bad = True
-        if bad:
-            sys.exit(1)
-        print(f"✓ vendored line endings: the {len(VENDORED)} net/ sources are still CRLF")
-        '
+        # 110 tracked files are CRLF (66 under mtl/firmware, 32 under lua/firmware,
+        # 12 under mtl/tools). Python's read_text()/write_text() silently rewrites
+        # them as LF; go through read_bytes()/write_bytes(). .gitattributes cannot
+        # guard this - the damage happens in the working tree.
+        #
+        # Asked of git rather than counted by hand: `git ls-files --eol` reports the
+        # index and worktree endings per file, so any file whose worktree endings no
+        # longer match what is committed shows up as i/crlf w/lf. That covers every
+        # tracked file including ones added later, where a hardcoded list silently
+        # protects only what someone remembered to add to it - this started out
+        # guarding 4 of the 110. Whole repo, ~60ms.
+        report="$(git ls-files --eol | awk '
+          {
+            split($1, idx, "/"); split($2, work, "/")
+            if (idx[2] != work[2]) {
+              # $NF is the path; git pads the eol columns with spaces + a tab
+              print "    " $NF ": committed as " idx[2] ", now " work[2]
+              bad = 1
+            }
+          }
+          END { exit bad ? 1 : 0 }
+        ')" && rc=0 || rc=1
+        if [ "$rc" != 0 ]; then
+          echo "✗ tracked file(s) changed line endings in the working tree:"
+          printf '%s\n' "$report"
+          echo "    a scripted edit rewrote them - restore with: git checkout -- <path>"
+          echo "    then redo the edit via read_bytes()/write_bytes(), not read_text()"
+          exit 1
+        fi
+        echo "✓ line endings: all $(git ls-files | wc -l | tr -d ' ') tracked files match their committed endings"
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
