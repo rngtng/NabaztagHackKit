@@ -1,7 +1,7 @@
 # Provenance
 
 Sources are **vendored** (copied, not submodules - rationale in
-[NABAZTAG_SDK.md](NABAZTAG_SDK.md)). This table is the backport bridge: where each tree
+[mtl/README.md](mtl/README.md#vendoring-not-submodules)). This table is the backport bridge: where each tree
 came from and its pinned commit, so local changes can be diffed and flowed back upstream.
 Deep change histories live in the linked GitHub issues and [CHANGELOG.md](CHANGELOG.md),
 not here.

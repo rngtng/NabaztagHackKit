@@ -1,7 +1,7 @@
 # NabaztagSDK — working conventions
 
 Apply these by default; they're the rules we converged on, so I shouldn't need
-re-steering. Rationale lives in `NABAZTAG_SDK.md`; roadmap in GitHub Issues; vendored-source
+re-steering. Rationale lives in the layer READMEs; roadmap in GitHub Issues; vendored-source
 origins in `PROVENANCE.md`. (Global `~/.claude/CLAUDE.md` rules still apply — concise,
 `fd`/`rg`, `uv`, prefer Taskfile, commit per change, code minimalism.)
 
@@ -214,7 +214,7 @@ re-deriving from here.
   on separate `malloc`'d buffers.
 
 ## Working agreement
-Commit per logical change with the `Co-Authored-By` trailer. Keep `NABAZTAG_SDK.md` /
+Commit per logical change with the `Co-Authored-By` trailer. Keep the layer READMEs /
 `PROVENANCE.md` in sync as decisions land (roadmap → GitHub Issues). Surface genuine forks as decisions;
 otherwise pick the convention above and proceed.
 - **A PR that resolves an issue must say `Fixes #<n>` in its body** (GitHub closing

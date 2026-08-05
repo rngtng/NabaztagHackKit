@@ -27,7 +27,8 @@ tasks:
   verify:
     desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
     cmds:
-      - task: check:docs      # cheap, fail-fast: catch stale `task lua:…` doc refs before the slow builds
+      - task: check:docs      # cheap, fail-fast: catch stale task/`*.md` doc refs before the slow builds
+      - task: check:eol       # cheap, fail-fast: the vendored net/ sources are still CRLF
       - task: firmware:test:host   # native C unit tests under ASan - no sim, seconds
       - task: boot:test            # host-lua unit tests for `sched`, the resident reactor
       - task: firmware:test:bytecode  # the only input surface: malformed bytecode must not kill the runtime
@@ -39,8 +40,9 @@ tasks:
       - task: firmware:test:sched  # #283: events, choreography and blocking work must still overlap
 
   check:docs:
-    desc: 'Lint: every `task lua:…` command written in docs/comments/skills names a real task - catches doc references left stale by a rename. Part of lua:verify.'
+    desc: 'Lint: every `task lua:…` command AND every `*.md` path written in docs/comments/skills resolves to something real - catches references left stale by a rename or a delete. Part of lua:verify.'
     dir: '{{.TASKFILE_DIR}}'
+    silent: true
     cmds:
       - |
         set -e
@@ -61,6 +63,80 @@ tasks:
           exit 1
         fi
         echo "✓ doc task-name check: every 'task lua:…' reference resolves"
+      - |
+        set -e
+        ROOT="$(git rev-parse --show-toplevel)"
+        cd "$ROOT"
+        # Every `*.md` path written in a doc must exist. Doc *pointers* are how this
+        # repo avoids restating the same rule in two places, so a pointer that rots
+        # silently is what turns the split back into duplication - `NABAZTAG_SDK.md`
+        # was cited as the home of all rationale long after it stopped existing.
+        # CHANGELOG is historical (past paths are expected there), same as above.
+        git ls-files -z -- '*.md' ':!CHANGELOG.md' | python3 -c '
+        import os, re, sys
+
+        # markdown link targets, and backticked paths - .md only: a bare `main.c` in
+        # prose is a filename, not a path, and linting those just invents failures.
+        PATTERNS = (re.compile(r"\[[^\]]*\]\(([^)\s]+)\)"), re.compile(r"`([^`\s]+\.md(?:#[^`\s]*)?)`"))
+        missing = []
+        for doc in sys.stdin.read().split("\0"):
+            if not doc:
+                continue
+            text = open(doc, encoding="utf-8", errors="replace").read()
+            for pattern in PATTERNS:
+                for raw in pattern.findall(text):
+                    ref = raw.split("#", 1)[0]
+                    # skip URLs and ~/ paths (the global CLAUDE.md is not in this repo)
+                    if not ref.endswith(".md") or re.match(r"^(https?:|mailto:|~)", raw):
+                        continue
+                    # resolve against the citing file first, then the repo root
+                    if any(os.path.exists(p) for p in (
+                            os.path.join(os.path.dirname(doc), ref), ref.lstrip("/"))):
+                        continue
+                    missing.append((doc, raw))
+        if missing:
+            print("✗ docs reference *.md path(s) that do not exist:")
+            for doc, raw in missing:
+                print(f"    {doc}: {raw}")
+            sys.exit(1)
+        print("✓ doc path check: every *.md reference resolves")
+        '
+
+  check:eol:
+    desc: 'Lint: the vendored net/ sources still have their original CRLF line endings - a scripted edit that rewrites them turns a small fix into a whole-file diff and destroys the backport bridge. Part of lua:verify.'
+    dir: '{{.TASKFILE_DIR}}'
+    silent: true
+    cmds:
+      - |
+        set -e
+        cd "$(git rev-parse --show-toplevel)"
+        # These four are vendored CRLF and must stay that way. Python's read_text()/
+        # write_text() silently rewrites them as LF; go through read_bytes()/write_bytes().
+        # .gitattributes cannot guard this - the damage happens in the working tree.
+        # Counted in python on the raw bytes rather than with `grep -c`: a CR
+        # pattern has to survive YAML -> Task shell -> grep quoting intact, and a
+        # pattern that silently empties matches every line and passes vacuously.
+        # `total == 0` is part of the assertion: a truncated file has no CRLF to
+        # lose and would otherwise sail through as "all 0 of 0 lines are CRLF".
+        python3 -c '
+        import sys
+
+        LF, CRLF = b"\n", b"\r\n"
+        VENDORED = ("lua/firmware/src/net/ieee80211.c", "lua/firmware/src/net/eapol.c",
+                    "mtl/firmware/src/net/ieee80211.c", "mtl/firmware/src/net/eapol.c")
+        bad = False
+        for f in VENDORED:
+            blob = open(f, "rb").read()
+            total, crlf = blob.count(LF), blob.count(CRLF)
+            if total == 0 or crlf != total:
+                print(f"✗ {f} lost its CRLF endings ({crlf}/{total} lines still CRLF)")
+                print(f"    a scripted edit rewrote it - restore with: git checkout -- {f}")
+                print("    then redo the edit via read_bytes()/write_bytes(), not read_text()")
+                bad = True
+        if bad:
+            sys.exit(1)
+        print(f"✓ vendored line endings: the {len(VENDORED)} net/ sources are still CRLF")
+        '
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
