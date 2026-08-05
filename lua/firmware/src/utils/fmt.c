@@ -15,6 +15,13 @@
  * The console sink (_write) stays in main.c: it is a syscall over the UART and
  * belongs with the console, and keeping it out of here is what lets the host
  * tests capture output with their own _write.
+ *
+ * NO FLOAT MAY CROSS A VARARGS BOUNDARY on the device. C default argument
+ * promotion turns a float into a double at the call, which links libgcc's
+ * double soft-float and costs kilobytes of a 124 KB budget. Print floats
+ * through the non-variadic luai_num2str instead. This is why the number paths
+ * below take their argument by a concrete type rather than through `...`;
+ * float printing stays approximate pending a real dtoa.
  */
 #include <stdarg.h>
 #include <stddef.h>

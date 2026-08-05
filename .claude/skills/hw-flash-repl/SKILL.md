@@ -34,6 +34,15 @@ check: `task lua:firmware:flash APP=uartprobe` -> a repeating
 floating reads `lo` (how a TX/RX swap shows up). Not 115200: the UART clock
 is a measured 8 MHz (`lua/firmware/inc/hal/uart.h`).
 
+## Before every hardware round-trip
+
+**Trace the full runtime path — entry → app logic → the thing you are testing — not
+just the subsystem you changed.** A flash cycle is minutes; reading `main()` is
+seconds. #207 lost ~6-8 flashes chasing "no REPL output" that was `DEMO`'s `run()`
+looping until a button press, plainly readable in `main()` the whole time. This
+extends "read the source before iterating" from the transport to the entire path to
+whatever you are observing.
+
 ## Before writing any driver or binding
 
 **Confirm the peripheral actually exists on this board first.** A wired

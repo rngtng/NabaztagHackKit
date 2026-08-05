@@ -25,6 +25,14 @@ The mtl track takes the best piece from each of four prior projects (commits in
 `nabgcc` and `nabaztag-piper` solve different layers of the same stack, not competitors.
 **Tie-break when unsure: prefer `nabaztag-piper`.**
 
+## Bootstrap build order
+
+`mtl toolchain → bc.c (compile boot.mtl) → boot/app bytecode → firmware-c → forth`.
+
+The C firmware needs a real `bc.c`, which only exists once the MTL compiler can produce
+it — so **the compiler comes before the firmware**, not the other way round. Don't start
+a layer whose inputs aren't built yet.
+
 ## The three-tier update model (the spine)
 
 Combining these repos gives a graceful update gradient from "needs a JTAG probe" to
