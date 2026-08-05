@@ -1,7 +1,7 @@
 # NabaztagSDK — MTL - design rationale
 
 This documents the **mtl** track (C-VM + MTL + Forth). The **lua** track is a separate
-re-architecture with its own rationale in [`lua/firmware/README.md`](lua/firmware/README.md).
+re-architecture with its own rationale in [`lua/firmware/README.md`](../lua/firmware/README.md).
 
 ## Goal & scope
 
@@ -13,7 +13,7 @@ part of it.
 ## Synthesized from four repos
 
 The mtl track takes the best piece from each of four prior projects (commits in
-[PROVENANCE.md](PROVENANCE.md)):
+[PROVENANCE.md](../PROVENANCE.md)):
 
 | Repo | Contributes | → SDK role |
 |------|-------------|-----------|
@@ -48,7 +48,7 @@ Combining these repos gives a graceful update gradient from "needs a JTAG probe"
 Flash a minimal VM **once** (T0), iterate the whole app by redeploying `bc.jsp` to a
 local web server (T1), hot-tweak behaviour over telnet with no recompile (T2). The SDK
 makes all three tiers ergonomic, simulated, and tested. (Boot-embedded vs remote-load
-strategies: [`docs/firmware/architecture.md`](docs/firmware/architecture.md).)
+strategies: [`docs/firmware/architecture.md`](../docs/firmware/architecture.md).)
 
 ## Three test/simulate levels — keep all
 
@@ -58,6 +58,10 @@ strategies: [`docs/firmware/architecture.md`](docs/firmware/architecture.md).)
   the host with faked hardware → catches app-logic bugs.
 - **`task mtl:lib:test`** (`mtl/test`) - the **MTL assertion framework** run through the
   simulator → unit tests for `mtl/lib`.
+
+Harness architecture, the stub-ordering rationale and how to add a test for a new lib
+module live in [`test/README.md`](test/README.md) — read it before touching
+`test/lib/_test.mtl`.
 
 ## Language & tooling choices
 
@@ -81,7 +85,7 @@ logic issues fixed outright. Keep new firmware code warning-clean.
 ## Vendoring, not submodules
 
 Sources are **copied in**, not submoduled, with origin repo + commit + local changes in
-[PROVENANCE.md](PROVENANCE.md) - the backport bridge. This keeps the build self-contained
+[PROVENANCE.md](../PROVENANCE.md) - the backport bridge. This keeps the build self-contained
 and multi-arch and quarantines the painful bits (submodule URLs, the `-m32` toolchain)
 behind opt-in targets. Never vendor secrets; exclude build artifacts and rebuild in
-Docker. (Rules in [CLAUDE.md](CLAUDE.md).)
+Docker. (Rules in [CLAUDE.md](../CLAUDE.md).)

@@ -75,29 +75,35 @@ tasks:
         git ls-files -z -- '*.md' ':!CHANGELOG.md' | python3 -c '
         import os, re, sys
 
-        # markdown link targets, and backticked paths - .md only: a bare `main.c` in
-        # prose is a filename, not a path, and linting those just invents failures.
-        PATTERNS = (re.compile(r"\[[^\]]*\]\(([^)\s]+)\)"), re.compile(r"`([^`\s]+\.md(?:#[^`\s]*)?)`"))
+        # .md only: a bare `main.c` in prose is a filename, not a path, and linting
+        # those just invents failures. A markdown LINK is held to how GitHub renders
+        # it - relative to the citing file - because a link that only resolves from
+        # the repo root is a 404 for a human reader. A backticked path is prose, so
+        # either resolution counts.
+        LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+        QUOTED = re.compile(r"`([^`\s]+\.md(?:#[^`\s]*)?)`")
         missing = []
         for doc in sys.stdin.read().split("\0"):
             if not doc:
                 continue
             text = open(doc, encoding="utf-8", errors="replace").read()
-            for pattern in PATTERNS:
+            for pattern, link in ((LINK, True), (QUOTED, False)):
                 for raw in pattern.findall(text):
                     ref = raw.split("#", 1)[0]
                     # skip URLs and ~/ paths (the global CLAUDE.md is not in this repo)
                     if not ref.endswith(".md") or re.match(r"^(https?:|mailto:|~)", raw):
                         continue
-                    # resolve against the citing file first, then the repo root
-                    if any(os.path.exists(p) for p in (
-                            os.path.join(os.path.dirname(doc), ref), ref.lstrip("/"))):
+                    cands = [os.path.join(os.path.dirname(doc), ref)]
+                    if not link:
+                        cands.append(ref.lstrip("/"))
+                    if any(os.path.exists(p) for p in cands):
                         continue
-                    missing.append((doc, raw))
+                    missing.append((doc, raw, "link" if link else "ref"))
         if missing:
-            print("✗ docs reference *.md path(s) that do not exist:")
-            for doc, raw in missing:
-                print(f"    {doc}: {raw}")
+            print("✗ docs reference *.md path(s) that do not resolve:")
+            for doc, raw, kind in missing:
+                where = "relative to it (as GitHub renders)" if kind == "link" else "at all"
+                print(f"    {doc}: {raw} - does not exist {where}")
             sys.exit(1)
         print("✓ doc path check: every *.md reference resolves")
         '
