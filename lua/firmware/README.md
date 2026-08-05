@@ -68,7 +68,8 @@ that breaks one needs a stated reason.**
 
 Host needs only Docker + Task. Two target kinds: the **product firmware** (`src/main.c`, the
 Lua host — the default) and standalone **examples** (`examples/<name>.c`, one peripheral each,
-own `main()`, no Lua).
+own `main()`, no Lua) — [`examples/README.md`](examples/README.md) says what each probe proves
+and which to reach for first.
 
 ```sh
 task lua:firmware:build                  # -> bin/firmware.{elf,hex,bin,sim}
