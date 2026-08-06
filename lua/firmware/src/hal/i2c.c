@@ -2,7 +2,7 @@
  * @file i2c.c
  * @brief OKI ML67Q4051 I2C peripheral - low-level access.
  *
- * Verbatim port of src/firmware/src/hal/i2c.c (Violet / RedoX GCC port) - the
+ * Verbatim port of mtl/firmware/src/hal/i2c.c (Violet / RedoX GCC port) - the
  * bus bring-up + polled master read/write that hal/rfid.c (CRX14 coupler)
  * builds on. No firmwareV2-specific changes: the register set (I2CCTL/I2CSR/
  * I2CDR/...) already lives in sys/inc/ml674061.h, and the polling protocol is

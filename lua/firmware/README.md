@@ -68,7 +68,8 @@ that breaks one needs a stated reason.**
 
 Host needs only Docker + Task. Two target kinds: the **product firmware** (`src/main.c`, the
 Lua host — the default) and standalone **examples** (`examples/<name>.c`, one peripheral each,
-own `main()`, no Lua).
+own `main()`, no Lua) — [`examples/README.md`](examples/README.md) says what each probe proves
+and which to reach for first.
 
 ```sh
 task lua:firmware:build                  # -> bin/firmware.{elf,hex,bin,sim}
@@ -228,6 +229,13 @@ nab.play(nab.rec_wav(table.concat(chunks)))
 `LLC2_4c`, the only board revision tested. Treat everything else as *needs a probe* — a
 documented chip is not a *responding* chip until you have seen it answer (the M6 AT45 lesson:
 `CS_FLASH` is unpopulated, so #94 was reverted outright).
+
+**`task lua:firmware:test:hw` re-checks the machine-checkable half of this table** in one
+flash of the product image, whenever the rig is connected — codec `SS_VER` + SCI read-back,
+wheel ADC, the 1 ms tick, ear-encoder motion, the RFID tag, the radio MAC, an AP scan, and
+the config read/verify path. It is deliberately outside `lua:verify` (it needs the rig), and
+it is not a substitute for the rest: anything whose oracle is a human sense stays a claim
+made by hand here, re-checked with the [probes](examples/README.md).
 
 | Confirmed on hardware | Built, **not** HW-confirmed |
 |---|---|

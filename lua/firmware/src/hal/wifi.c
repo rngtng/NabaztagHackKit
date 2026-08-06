@@ -2,7 +2,7 @@
  * @file hal/wifi.c
  * @brief RT2501 802.11 join over the vendored USB + 802.11/WPA stack.
  *
- * The join sequence proven on hardware by wifiprobe (#119), extracted so both
+ * The join sequence proven on hardware by wifiprobe, extracted so both
  * the probe and the `nab.wifi` binding drive one implementation. See hal/wifi.h
  * for the contract. Nothing here prints - callers observe via wifi_seen() and
  * the wifi_join step callback, from the main loop (the RX/scan callback runs in
@@ -31,7 +31,7 @@
  * is the bound the layers below are sized by. They were two names for 32:
  * every check here used IEEE80211_SSID_MAXLEN while WIFI_SSID_MAX was read
  * only by main.c's nab.wifi* bindings, so the constant whose comment claimed
- * to be the enforced cap was not the one enforcing it (#310). One name here
+ * to be the enforced cap was not the one enforcing it. One name here
  * now, and a check that the two cannot drift apart. */
 _Static_assert(WIFI_SSID_MAX == IEEE80211_SSID_MAXLEN,
                "the HAL's SSID cap must match the 802.11 buffer bound");
@@ -99,7 +99,7 @@ static void scan_cb(struct rt2501_scan_result *r, void *userparam)
  * call, or the driver timer never fires at all. */
 static uint32_t pump_last_timer;
 
-/* RX capture (#216): drained data frames are freed by default (the join path
+/* RX capture: drained data frames are freed by default (the join path
  * only needs EAPOL, which rt2501_receive consumes internally). Once capture is
  * on - wifi_ap() / first wifi_recv_frame() - the pump queues up to RX_QUEUE_MAX
  * frames for the app instead, dropping the newest on overflow so a non-polling
@@ -196,7 +196,7 @@ int8_t wifi_up(void)
 
   /* A freshly cold-booted radio scans poorly for the first moments (0-2
    * networks vs ~60-80 warm); let the BBP/RF settle before the first scan.
-   * Load-bearing: without it the first scan sees nothing (#119). */
+   * Load-bearing: without it the first scan sees nothing. */
   wifi_pump(2000);
   return 0;
 }
@@ -209,7 +209,7 @@ int32_t wifi_scan(const char *ssid)
 
   /* rt2501_scan builds its probe request into a frame sized for a 32-byte SSID
    * and copies strlen(ssid) bytes in with no check of its own, so the cap has
-   * to be here - as it already is in wifi_ap (#296). */
+   * to be here - as it already is in wifi_ap. */
   if(ssid != NULL && strlen(ssid) > WIFI_SSID_MAX)
     return -1;
 
@@ -298,7 +298,7 @@ int8_t wifi_connect_ex(const char *ssid, const char *psk, uint32_t timeout_ms,
 
   if (why)
     *why = WIFI_OK;
-  /* Bounded before the radio is touched (#296): the SSID reaches rt2501_scan's
+  /* Bounded before the radio is touched: the SSID reaches rt2501_scan's
    * fixed probe frame, and the PSK reaches the PBKDF2. WIFI_PSK_MAX matches
    * hal/config.h's CONFIG_PSK_MAX, so a credential that fits the config sector
    * always fits here too. */
@@ -335,7 +335,7 @@ int32_t wifi_state(void)
   return rt2501_state();
 }
 
-/* ---- master (AP) mode + raw frame TX/RX (#216) ---------------------------- */
+/* ---- master (AP) mode + raw frame TX/RX ---------------------------- */
 int8_t wifi_ap(const char *ssid, uint8_t channel)
 {
   if (strlen(ssid) > WIFI_SSID_MAX)

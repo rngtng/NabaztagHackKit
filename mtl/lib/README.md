@@ -14,7 +14,9 @@ MTL/Metal is a custom functional language by [Sylvain Huet](http://www.sylvain-h
 - **Lists**: `hd`, `tl`, `::` (cons), `nil`
 - **Mutation**: `set field = value;` — in-place field update
 
-Grammar reference: [../docs/grammar.md](../docs/grammar.md)
+Grammar reference: [../docs/grammar.md](../docs/grammar.md). Per-command
+reference (every VM native + the `custom` ones added here):
+[../docs/commands.md](../docs/commands.md).
 
 ## Architecture
 

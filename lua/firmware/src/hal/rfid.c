@@ -2,8 +2,8 @@
  * @file rfid.c
  * @brief STMicro CRX14/CR14 RFID coupler over I2C.
  *
- * Trimmed port of src/firmware/src/hal/rfid.c (Violet / RedoX GCC port) - see
- * hal/rfid.h for what was dropped (EEPROM read/write) and why.
+ * Trimmed port of mtl/firmware's driver - see hal/rfid.h for what was dropped
+ * (EEPROM read/write) and why.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -26,13 +26,13 @@ static uint8_t field_on;
  * gets an answer (per the original driver's comments). V1 used DelayMs(1);
  * with the 1 ms tick live (sys/src/tick.c) we do the same - calibrated
  * against the real clock, replacing the uncalibrated ~200k-spin busy loop
- * (#180's open settle-tuning risk, resolved per #195). */
+ * (settle-tuning risk resolved by the event-driven scan). */
 static void rfid_delay_1ms(void)
 {
   DelayMs(1);
 }
 
-/* Retries per bus transfer (#253). write_i2c/read_i2c already wait out the bus
+/* Retries per bus transfer. write_i2c/read_i2c already wait out the bus
  * internally and handle arbitration and NAck, so a failure means the device
  * genuinely did not answer - retrying a handful of times covers a transient,
  * and the former 1000 did not add resilience, it multiplied the worst case.

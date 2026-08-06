@@ -55,3 +55,6 @@ for raw bytecode.
 Runs in the foreground; stop with a single `Ctrl+C` (the container uses `--init`
 so the signal reaches the simulator). Anything after `--` is forwarded verbatim
 to `mtl_simu`.
+
+Checking a boot image end to end (what `mtl:boot:simulate` should print, and how
+to drive its config portal): [VERIFY_BOOT_SIMULATE.md](VERIFY_BOOT_SIMULATE.md).

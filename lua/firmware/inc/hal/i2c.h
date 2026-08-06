@@ -2,7 +2,7 @@
  * @file i2c.h
  * @brief OKI ML67Q4051 I2C peripheral - low-level access.
  *
- * Verbatim port of src/firmware/src/hal/i2c.c's API (Violet / RedoX GCC port).
+ * Verbatim port of mtl/firmware/src/hal/i2c.c's API (Violet / RedoX GCC port).
  * Register defs (I2CCTL/I2CSR/I2CDR/...) already live in sys/inc/ml674061.h -
  * this header only declares the driver entry points. CRX14-specific constants
  * (slave address, registers) live in hal/rfid.h, the one consumer.

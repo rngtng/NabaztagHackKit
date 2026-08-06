@@ -11,10 +11,10 @@
  * unused. A shadow image of the register lives in led_intensity[]; writes
  * pack into the shadow and a flush shifts all 14 bytes out in one go.
  *
- * Re-synced from mtl/firmware (issue #102 / PR #45): the gamma-2.2 intensity
+ * Re-synced from mtl/firmware: the gamma-2.2 intensity
  * table (no low-end dead zone), the generic led_pack/led_flush packer, and the
  * background fade engine. TWO firmwareV2-local differences from the sibling:
- *   1. counter_timer comes from hal/timer.c (the 1 ms System Timer IRQ, #102),
+ *   1. counter_timer comes from hal/timer.c (the 1 ms System Timer IRQ),
  *      not mtl/firmware's utils/delay.c.
  *   2. led_fade_tick() runs in the timer ISR (firmwareV2's Lua REPL has no main
  *      loop to tick it from), so the main-context writers here mask that IRQ

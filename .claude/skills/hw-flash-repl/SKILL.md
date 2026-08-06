@@ -12,6 +12,9 @@ chip inventory: `docs/hardware-dissection.md`.
 
 - **Flash**: `task lua:firmware:flash [APP=lua] [PI_HOST=tobi@jtag.local]`
 - **Read console / REPL**: `task lua:firmware:flash:repl [APP=lua] [SCRIPT=path.lua] [PI_HOST=tobi@jtag.local]`
+- **Did anything regress?**: `task lua:firmware:test:hw` — one flash of the product image,
+  every machine-checkable subsystem asserted in a single scripted run. Start here when the
+  rig is connected; it names the subsystem, then the probes below tell you how it broke.
 
 Never hand-roll `scp` + `openocd` + `gdb` - the raw ssh+openocd path is denied,
 and both operations are already taskified. If a task doesn't cover what you
@@ -33,6 +36,15 @@ check: `task lua:firmware:flash APP=uartprobe` -> a repeating
 `sudo pinctrl set <gpio> ip pd; pinctrl get <gpio>` - driven reads `hi`,
 floating reads `lo` (how a TX/RX swap shows up). Not 115200: the UART clock
 is a measured 8 MHz (`lua/firmware/inc/hal/uart.h`).
+
+## Before every hardware round-trip
+
+**Trace the full runtime path — entry → app logic → the thing you are testing — not
+just the subsystem you changed.** A flash cycle is minutes; reading `main()` is
+seconds. #207 lost ~6-8 flashes chasing "no REPL output" that was `DEMO`'s `run()`
+looping until a button press, plainly readable in `main()` the whole time. This
+extends "read the source before iterating" from the transport to the entire path to
+whatever you are observing.
 
 ## Before writing any driver or binding
 

@@ -2,7 +2,7 @@
  * @file audio.h
  * @brief VLSI VS1003B audio codec over SPI0.
  *
- * Trimmed from src/firmware/src/hal/audio.c (Violet / RedoX GCC port) for the
+ * Trimmed from mtl/firmware/src/hal/audio.c (Violet / RedoX GCC port) for the
  * firmwareV2 Lua runtime: chip bring-up, SCI register access, volume, amplifier,
  * the built-in sine-test tone (the cheapest "make a sound" - no decoder feed
  * needed), SDI playback (#123), and IMA-ADPCM microphone record (#116 mic

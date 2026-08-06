@@ -2,21 +2,20 @@
  * @file audio.c
  * @brief VLSI VS1003B audio codec over SPI0.
  *
- * Trimmed port of src/firmware/src/hal/audio.c (Violet / RedoX). Keeps the SCI
- * read/write protocol, chip bring-up, volume, amplifier, and the built-in sine
- * test verbatim in behaviour. SCI framing was hardware-verified (SS_VER=3,
- * VOLUME write/read-back). See inc/hal/audio.h.
+ * Trimmed port of mtl/firmware's driver. Keeps the SCI read/write protocol,
+ * chip bring-up, volume, amplifier, and the built-in sine test verbatim in
+ * behaviour. SCI framing was hardware-verified (SS_VER=3, VOLUME
+ * write/read-back). See inc/hal/audio.h.
  *
  * vlsi_play() does real SDI-stream playback, so SCI_VOLUME actually attenuates
  * decoded audio (unlike the sine test). vlsi_rec_start/read/stop add IMA-ADPCM
- * microphone record, ported from src/firmware's init_adpcm_encode/rec_check/
- * stop_adpcm_encode.
+ * microphone record.
  *
- * #265 split that playback path into vlsi_stream_start/feed/busy/stop, where
- * feed never waits (it pushes what the decoder can take and returns the count),
- * so Lua can keep the codec fed from its cooperative loop and the CPU is free
- * in between - the rabbit plays a sound AND animates/serves/answers the REPL.
- * vlsi_play() is now that same primitive with the waiting put back.
+ * The playback path is split into vlsi_stream_start/feed/busy/stop, where feed
+ * never waits (it pushes what the decoder can take and returns the count), so
+ * Lua can keep the codec fed from its cooperative loop and the CPU is free in
+ * between - the rabbit plays a sound AND animates/serves/answers the REPL.
+ * vlsi_play() is that same primitive with the waiting put back.
  */
 #include "ml674061.h"
 #include "common.h"
@@ -25,9 +24,9 @@
 #include "hal/spi.h"
 
 /* Software delay - init_vlsi runs before the tick, so no timer/DelayMs here.
- * Sized for the VS1003 reset + PLL-lock window. #269: the loop count is wall-clock
+ * Sized for the VS1003 reset + PLL-lock window. The loop count is wall-clock
  * dependent, so it was scaled 4x (200k -> 800k) when the chip moved from the
- * ring-osc 8 MHz to the 32 MHz PLL, keeping the #123-verified real-time delay. */
+ * ring-osc 8 MHz to the 32 MHz PLL, keeping the verified real-time delay. */
 static void audio_delay(volatile unsigned long n)
 {
   while (n--)
@@ -93,7 +92,7 @@ static void vlsi_feed_sdi(const uint8_t *data, uint32_t len)
  * did not stick: with XD16-31 left on their bus function, every ExtRAM (EMC)
  * write burst hardware-reset the VS1003, knocking CLOCKF/MODE/VOLUME back to
  * defaults - so vlsi_play() re-asserts the cached value right before the SDI
- * feed. #275 fixed the root cause (PORTSEL4 mux in main.c's init_hw; isolated
+ * feed. The root cause is fixed (PORTSEL4 mux in main.c's init_hw; isolated
  * by examples/recprobe.c), so writes now hold; the play-window re-assert is
  * kept as cheap defence in depth. */
 static uint8_t vlsi_volume = 0x20;
@@ -153,7 +152,7 @@ void init_vlsi(void)
   audio_delay(800000);
   wait_dreq();
   /* SPI0 stays at ~2 MHz. The historical "8 MHz reads garbage" observation was
-   * #275: EMC write bursts hardware-reset the codec, so CLKI was back at base
+   * EMC write bursts hardware-reset the codec, so CLKI was back at base
    * XTAL (max SCI = CLKI/7) whenever we looked. With the PORTSEL4 fix CLOCKF
    * holds and ~8 MHz should be safe (mtl runs it), but 2 MHz is plenty for
    * SCI + the SDI feed and is the speed everything here was verified at. */
@@ -165,7 +164,7 @@ void init_vlsi(void)
 /* VLSI's own microcode patch, applied unconditionally by FW1's init_vlsi()
  * (mtl/firmware/src/hal/audio.c, named patchwma there) but never ported here.
  * Ten WRAM_ADDR/WRAM writes loading two short blocks into the codec's X-RAM -
- * the standard VLSI patch-loading idiom, not a bespoke register poke. #123
+ * the standard VLSI patch-loading idiom, not a bespoke register poke. It was
  * A/B'd it by ear against the unpatched decoder for a reported MP3-quieter-
  * than-nab.beep gap: no clear difference, but it is official and harmless
  * (X-RAM only, no persistent state), so it stays in as a low-risk default -

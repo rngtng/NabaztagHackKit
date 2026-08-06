@@ -1,11 +1,11 @@
 /**
  * @file event.c
- * @brief Cooperative event core (#195) - see inc/event.h.
+ * @brief Cooperative event core - see inc/event.h.
  *
  * Pollers, not ISRs: button debouncing and the CRX14 scan cycle run inside
  * event_pump(), called from the cooperative main loop. Timing comes from the
  * 1 ms tick (sys/src/tick.c, counter_timer), which the Unicorn simulator also
- * advances (#102) - but the sim emulates no CRX14 bus, so the RFID half is
+ * advances - but the sim emulates no CRX14 bus, so the RFID half is
  * hardware-only there. See the simulator's peripheral-injection model for
  * how sim runs drive button/RFID inputs instead.
  */
@@ -59,7 +59,7 @@ static void pump_button(void)
     return;
   }
   if (raw != btn_stable && (counter_timer - btn_edge_ms) >= BUTTON_DEBOUNCE_MS) {
-    /* Commit only once the edge is really queued (#242): btn_stable is what
+    /* Commit only once the edge is really queued: btn_stable is what
      * says "this edge was announced", so setting it before a post that the
      * full queue rejects loses the edge for good - the raw level has already
      * settled, so nothing re-triggers it. On failure we leave btn_stable
@@ -98,7 +98,7 @@ static void pump_rfid(void)
     return; /* transient I2C fault: keep the last known state */
   if (r == 0) {
     if (rfid_present && ++rfid_miss >= RFID_MISS_MAX) {
-      /* Commit after the post, as in pump_button (#242). rfid_miss keeps
+      /* Commit after the post, as in pump_button. rfid_miss keeps
        * climbing while the post keeps failing, so the condition stays true
        * and the next scan retries. */
       event_t e = { EV_RFID_GONE, {0} };
@@ -109,7 +109,7 @@ static void pump_rfid(void)
   }
   rfid_miss = 0;
   if (!rfid_present || memcmp(uid, rfid_uid, sizeof rfid_uid) != 0) {
-    /* The cached UID is the "already announced this tag" record (#242). Caching
+    /* The cached UID is the "already announced this tag" record. Caching
      * it before a post the full queue rejects makes the tag invisible until it
      * is physically lifted off the coupler - the scan keeps matching the cache
      * and never posts again. Cache only on success; the next scan retries. */

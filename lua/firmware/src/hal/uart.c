@@ -2,12 +2,11 @@
  * @file uart.c
  * @brief Minimal polled UART0 driver (TX + RX) for firmwareV2.
  *
- * Trimmed port of the proven V1 driver (mtl/firmware/src/hal/uart.c, itself
- * OKI's 2005 code via RedoX's 2015 GCC port). Init + polled TX + polled RX; no
- * XMODEM. V1's RX was interrupt-driven (UARTIER_ERBF -> a ring-buffer ISR), but
- * firmwareV2 has no RX handler in the IRQ table, so an enabled RX IRQ would
- * fault on the first byte. getch_uart() polls the LSR data-ready bit instead
- * and IER stays 0 (init_uart), matching the polled-TX style.
+ * Trimmed port of mtl/firmware's driver. Init + polled TX + polled RX; no
+ * XMODEM. The original's RX was interrupt-driven (UARTIER_ERBF -> a ring-buffer
+ * ISR), but this firmware has no RX handler in the IRQ table, so an enabled RX
+ * IRQ would fault on the first byte. getch_uart() polls the LSR data-ready bit
+ * instead and IER stays 0 (init_uart), matching the polled-TX style.
  *
  * UART0 = 115200 baud, 8 data bits, 1 stop bit, no parity, no flow control
  * (see uart.h - the peripheral clock is a measured 8 MHz, so 115200 is out of
@@ -33,7 +32,7 @@ void putst_uart(uint8_t *str)
 
 uint8_t rxrdy_uart(void)
 {
-  /* non-consuming: lets the REPL run the cooperative event pump (#195)
+  /* non-consuming: lets the REPL run the cooperative event pump
    * only while no console byte is waiting. */
   return (get_value(UARTLSR0) & UARTLSR_DR) == UARTLSR_DR;
 }

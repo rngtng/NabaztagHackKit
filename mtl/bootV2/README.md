@@ -26,15 +26,21 @@ reports `RT2501_S_BROKEN`, a C-firmware/RT2501 radio issue below the MTL layer
 
 ## Source layout
 
+This is the original monolithic `boot.mtl` split into focused modules. The
+stdlib-candidate modules have all migrated: they are now thin wrappers over
+`mtl/lib/`, so the shared stack is the one that gets fixed and boot only keeps
+what is boot-specific (LED feedback, the button-driven portal, the `SIMU` shims).
+
 | File | Purpose |
 |------|---------|
 | `boot.mtl` | Entry point; includes all modules |
 | `main.mtl` | `main` function + hardware self-test loop |
 | `boot_loop.mtl` | Main WiFi provisioning loop |
+| `bytecode_loader.mtl` | `getbytecode` / `load_bytecode` — `#include "mtl/lib/sys/bytecode"` |
 | `config.mtl` | Persistent config read/write (SSID, key, IP, …); flash layout shared with `mtl/apps/piper/utils/config.mtl` |
 | `config_seam.mtl` | Satisfies `mtl/lib/net`'s `config_get_*` accessors from boot's `confGet*` |
 | `config_server.mtl` | HTTP server for the provisioning UI |
-| `firmware.mtl` | OTA firmware download and flash |
+| `firmware.mtl` | OTA firmware download and flash — wraps `mtl/lib/sys/firmware` with boot's LED feedback |
 | `wifi.mtl` | WiFi state machine (scan, associate, DHCP) — device: composes `mtl/lib/net/wifi.mtl`; SIMU: boot's own |
 | `http.mtl` | HTTP client — device: wraps `mtl/lib/net/http.mtl`; SIMU: boot's own |
 | `http_server.mtl` | Minimal HTTP server (`mtl/lib/net/http_server.mtl`) |
