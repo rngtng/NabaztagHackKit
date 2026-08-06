@@ -59,10 +59,14 @@ nab.sciw(0x0B, vol0)
 check("codec SCI write/read-back", volrb == 0x2A2A,
       string.format("wrote 0x2a2a read 0x%04x", volrb))
 
--- 3. Wheel ADC in range (an analog pot on ch.2; ~255 at rest).
-local w = nab.wheel()
-check("wheel ADC in 0..255", w ~= nil and w >= 0 and w <= 255,
-      string.format("wheel=%s", tostring(w)))
+-- Wheel: REPORTED, NOT ASSERTED - on purpose. adc_read_ch2() returns uint8_t,
+-- so "in 0..255" holds by construction and could never fail; and a passive read
+-- cannot separate a dead ADC from a wheel left turned to zero, because travel
+-- runs 255 -> 0 -> 255 and 0 is a real position. Any honest check needs someone
+-- to turn it, which puts it in the button's category. examples/gpioprobe.c is
+-- the real check. ~255 is rest.
+print(string.format("  --   %-28s wheel=%s (not asserted - needs a human)",
+                    "wheel ADC", tostring(nab.wheel())))
 
 -- 4. The 1 ms tick advances. Bounded above too: a wild jump means the timer
 --    reload or the clock changed, which is a regression even though it moved.

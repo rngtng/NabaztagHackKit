@@ -504,7 +504,7 @@ tasks:
         esac
 
   test:hw:
-    desc: 'Hardware acceptance run on the JTAG rig: flash the PRODUCT image, drive test/hw-accept.lua over the UART once, and require every criterion to pass (codec SS_VER + SCI read-back, wheel ADC, 1 ms tick, ear encoder motion, RFID tag, radio MAC, AP scan, config read/verify). NOT part of lua:verify - it needs the rig - so run it on demand when JTAG is connected, as the single regression check across firmware + hardware. The examples/ probes stay the layer beneath it: this says which subsystem regressed, a probe says how.'
+    desc: 'Hardware acceptance run on the JTAG rig: flash the PRODUCT image, drive test/hw-accept.lua over the UART once, and require every criterion to pass (codec SS_VER + SCI read-back, 1 ms tick, ear encoder motion, RFID tag, radio MAC, AP scan, config read/verify; the wheel is reported but not asserted - it needs a human to turn it, like the button). NOT part of lua:verify - it needs the rig - so run it on demand when JTAG is connected, as the single regression check across firmware + hardware. The examples/ probes stay the layer beneath it: this says which subsystem regressed, a probe says how.'
     summary: 'Usage: task lua:firmware:test:hw [RUN_TIMEOUT=120] [PI_HOST=tobi@jtag.local]. Requires the JTAG rig + an RFID tag fixed to the board.'
     dir: '{{.TASKFILE_DIR}}'
     vars:
