@@ -146,10 +146,12 @@ Two things keep it from being worse, and both are load-bearing:
   `--gc-sections` alone.**
 
 `-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
-4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
-boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,620 B — `run`/`watch`/`ledshow` plus
+**5,834 B together**: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
+boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,674 B — `run`/`watch`/`ledshow` plus
 two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
-decisions, not refactors. `task lua:firmware:build` fails loudly on overflow.
+decisions, not refactors. (Both figures re-measured off a real build: the pair was previously
+written up as "4,547 B together" with the chunk at 3,620 B, and `../boot/README.md` carried a
+2,387 B for the same chunk — none of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
 
 ## The `nab` module
 

@@ -13,10 +13,10 @@ the per-lib READMEs, [`boot/README.md`](boot/README.md), and one README per tool
 thing a reader most often needs: the edge list — including the edges that leave
 this track entirely.
 
-Sizes below are the committed measurements from those READMEs and from the
-build's own size report. They are re-derivable, not authoritative here: run
-`task lua:firmware:build` (flash) and `task lua:lib:size` (bytecode) rather than
-trusting this page.
+Sizes below were measured, not copied: `task lua:firmware:build` for flash and
+`task lua:lib:size` for bytecode, both run against this commit. Re-run them
+rather than trusting this page — several of the numbers the layer READMEs
+carried had drifted, and these will too.
 
 ## The stack in one picture
 
@@ -143,13 +143,13 @@ in effect:
 
 ### Flash budget
 
-`bin/firmware.elf` = **119,332 B of 126,976 B**, ~7.5 KB free. Roughly: ~23 KB
-USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine` 2,300 B measured), ~2.1 KB
-provisioning plumbing, ~1.5 KB the event core, 2,160 B the `nab.tone()` MP3,
-836 B `nab.config`, ~0.8 KB the raw-frame/AP bindings, ~0.65 KB the OTA writer,
-560 B the scan bindings, 552 B the stream HAL, plus the resident boot chunk.
-Full breakdown and the two levers that keep it from being worse:
-[`firmware/README.md`](firmware/README.md).
+`bin/firmware.elf` = **119,332 B of 126,976 B**, **7,644 B free** (measured, not
+quoted). Roughly: ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine`
+2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event core,
+3,674 B the resident boot chunk, 2,160 B the `nab.tone()` MP3, 836 B
+`nab.config`, ~0.8 KB the raw-frame/AP bindings, ~0.65 KB the OTA writer, 560 B
+the scan bindings, 552 B the stream HAL. Full breakdown and the two levers that
+keep it from being worse: [`firmware/README.md`](firmware/README.md).
 
 ## 4. The seam — `nab.*`
 
@@ -200,14 +200,15 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 
 | Where | What | Lives in | Size (stripped `.lc`) |
 |---|---|---|---|
-| `boot/boot.lua` | `sched` — the cooperative reactor — + demo helpers | **flash** | 2,387 B |
+| `boot/boot.lua` | `sched` — the cooperative reactor — + demo helpers | **flash** | 3,674 B |
 | `lib/net/` | link, arp, ipv4, udp, dns, dhcp, tcp, http, iface, setup, provision, ota | RAM | 35,585 B |
-| `lib/audio/` | player, stream, midi, volume | RAM | 6,763 B |
+| `lib/audio/` | player, stream, midi, volume | RAM | 7,011 B |
 | `lib/sys/` | ntp, time | RAM | 4,702 B |
-| `lib/hw/` | ears | RAM | 3,424 B |
+| `lib/hw/` | ears | RAM | 3,675 B |
 | `apps/` | 10 demo apps | RAM | — |
 
-**~50.5 KB of bytecode across 19 modules**, against ~7.5 KB of free flash.
+**50,973 B of bytecode across 19 modules**, against 7,644 B of free flash
+(`119,332` of `126,976` used).
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -312,7 +313,7 @@ already exists twice — `play_start`/`play_feed`/`playing` and
 `rec_start`/`rec_read`/`rec_stop` are what a chunked HAL looks like. WiFi has no
 step-form, so `nab.wifi` cannot be made cooperative without one.
 
-**2. The Lua userland has no delivery mechanism.** ~50.5 KB of bytecode in 19
+**2. The Lua userland has no delivery mechanism.** 50,973 B of bytecode in 19
 modules, no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
 single file. The load order exists in exactly two places, neither of them
 shippable: prose in the lib READMEs, and a hard-coded `MODULES` array in each
@@ -343,11 +344,16 @@ reports as a transcript diff rather than as a named contract.
 **5. A vendored 802.11 file writes the LEDs.** §7's ⚠ — small, contained, and
 easy to forget until an app's LED state is stomped mid-join.
 
-**6. A stale number in the flash budget.** `firmware/README.md` puts the two
-demo assets at "4,547 B together" while naming them 2,160 B and 3,620 B, which
-does not add up; `boot/README.md`'s 2,387 B for the boot chunk is what makes
-4,547 correct. The 3,620 figure is the stale one. Cheap to fix, and worth fixing
-because that paragraph is what a future flash-budget decision reads.
+**6. Size figures drift, and nothing catches it.** Three documented numbers for
+the two demo assets disagreed — `firmware/README.md`'s "4,547 B together" with
+the boot chunk at 3,620 B, against `boot/README.md`'s 2,387 B for that same
+chunk. Measured off a real build, the chunk is **3,674 B** and the pair is
+**5,834 B**; both READMEs are corrected. The `lib/` figures had drifted the same
+way (`audio/player` 2,649 → 2,897, `hw/ears` 3,424 → 3,675, while `net` and
+`sys` were still exact). `task lua:firmware:build` and `task lua:lib:size` print
+all of it in seconds, so the gap is not measurement cost — it is that nothing
+compares the printed number against the written one. This is the cheapest
+unclaimed gate in the track.
 
 ## 9. Is it well structured? — coupling and cohesion, measured
 

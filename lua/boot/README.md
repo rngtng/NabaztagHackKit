@@ -7,7 +7,8 @@ and `src/main.c` loads that blob with `luaL_loadbuffer` before the REPL starts.
 `task lua:firmware:build` delegates the embed here — edit `boot.lua`, never the
 generated header.
 
-It costs **flash** (2,387 B measured, see
+It costs **flash** (3,674 B, measured off `gen/boot_lc.h` from a real
+`task lua:firmware:build`; see
 [`../firmware/README.md`](../firmware/README.md#flash-budget)), which is the
 whole reason it is short.
 
