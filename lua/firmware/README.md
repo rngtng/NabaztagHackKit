@@ -328,7 +328,8 @@ is why led.c's main-context writers mask that IRQ around their SPI flush.
 ```
 sys/                ARM7TDMI startup, linker script, OKI register defs (copied from mtl/firmware)
   asm/init.s        reset vector, clock + EMC init, init_pll, stacks, .data/.bss -> main()
-  src/tick.c        1 ms system tick - counter_timer + DelayMs; steps the LED fades
+  src/tick.c        1 ms system tick - counter_timer + DelayMs; runs the one registered
+                    tick_set_hook() callback (hal/led.c installs the fade engine)
   src/irq.c         IRQ handler table + init
 src/main.c          product entry: boots Lua 5.4 into a bytecode REPL; all nab.* bindings
 src/hal/            one file per peripheral: spi, led, button, audio (VS1003), adc, i2c,

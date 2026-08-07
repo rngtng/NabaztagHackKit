@@ -219,6 +219,16 @@ void led_fade(uint8_t led,uint32_t color,uint32_t ms)
     return;
   }
   irq=irq_disable_save();          /* publish the fade atomically vs the ISR */
+  /* Register the engine with the tick on the first real fade, not from
+   * init_led_rgb_driver(), so tick.c does not have to name us (#325). Here
+   * rather than at init because it costs nothing to be exact: led_fade_tick()
+   * returns immediately while every led_fade_len[] is 0, so an image that only
+   * ever calls set_led() has no use for it - and registering at init would
+   * take its address unconditionally, dragging the whole fade engine into
+   * set_led-only images (measured: +912 B on blink, +904 B on ledmap).
+   * Inside the critical section so the hook and the armed fade become visible
+   * to the ISR together. Idempotent; init_tick() never clears it. */
+  tick_set_hook(led_fade_tick);
   led_fade_len[phys]=0;            /* pause this LED while we set it up */
   for(ch=0;ch<3;ch++)
   {

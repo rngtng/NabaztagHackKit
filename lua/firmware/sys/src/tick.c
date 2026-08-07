@@ -3,7 +3,8 @@
  * @brief 1 ms system tick - firmwareV2's first live IRQ.
  *
  * Shared by the USB host stack (URB timeouts, DelayMs in enumeration) and the
- * #102 LED fade engine (the ISR calls led_fade_tick). Mirrors mtl/firmware
+ * #102 LED fade engine, which registers itself through tick_set_hook() rather
+ * than being called by name from here (#325). Mirrors mtl/firmware
  * main.c's timer setup, ISR on INT_SYSTEM_TIMER (0). init.s already starts the
  * timer (10 ms); init_tick() reprograms it to 1 ms and unmasks the interrupt.
  * The reload is mtl/firmware's 0xF830 (1 ms @ 32 MHz) because init.s runs
@@ -17,11 +18,32 @@
 #include "common.h"
 #include "irq.h"
 #include "utils/delay.h"
-#include "hal/led.h"     /* led_fade_tick() - the #102 fade engine runs off this ISR */
 
 volatile uint32_t counter_timer;
 volatile uint32_t counter_timer_s;
 static volatile uint32_t counter_timer_sbuf;
+
+/* The one callback the tick ISR runs, installed by whoever needs the tick
+ * rather than reached for from here (#325). It exists for hal/led.c's #102
+ * fade engine: the ISR is the right place to step it - doing it from the
+ * cooperative pump instead would stutter fades whenever Lua blocks, which is
+ * exactly what putting it on the timer avoids - but sys/ calling up into a
+ * driver was the wrong DIRECTION for that, and led.c masks this very IRQ
+ * around its own SPI flush in return, so it was a loop rather than a stray
+ * edge. Registration inverts it: sys/ now includes no hal/ header, an image
+ * that lights nothing lets --gc-sections drop led.c entirely, and one that
+ * only calls set_led() drops the fade engine (led.c registers from led_fade,
+ * so the address is taken only when a fade is really armed).
+ *
+ * Deliberately ONE hook, not a handler list: nothing else needs the tick, and
+ * sched already exists a layer up for anything that does. The null check is
+ * the only thing added to a 1 ms ISR - keep it that way. */
+static void (*tick_hook)(void);
+
+void tick_set_hook(void (*fn)(void))
+{
+  tick_hook = fn;
+}
 
 static void tick_handler(void)
 {
@@ -30,7 +52,8 @@ static void tick_handler(void)
     counter_timer_s++;
     counter_timer_sbuf = 0;
   }
-  led_fade_tick();             /* advance #102 background LED fades (self rate-limited) */
+  if (tick_hook)
+    tick_hook();               /* #102 background LED fades (self rate-limited) */
   put_value(TMOVF, TMOVF_OVF); /* clear overflow flag */
 }
 
@@ -39,6 +62,9 @@ void init_tick(void)
   counter_timer = 0;
   counter_timer_s = 0;
   counter_timer_sbuf = 0;
+  /* tick_hook is NOT reset here. init_hw() calls init_led_rgb_driver() - and
+   * so the registration - well before init_tick(), so clearing it would
+   * silently kill every fade for the rest of the boot. */
 
   put_value(TMEN, 0x00);            /* stop timer while reprogramming */
   put_value(TMOVF, TMOVF_OVF);      /* clear stale overflow */
