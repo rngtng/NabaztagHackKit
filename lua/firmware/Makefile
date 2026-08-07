@@ -35,11 +35,15 @@ else
   OBJDIR = obj
 endif
 
-# Sources: the entry (product or example) + shared C (src/utils, src/hal, ...)
-# + startup. src/usb + src/net (M11a, #143) compile for every target;
+# Sources: the entry (product or example) + shared C (src/libc, src/utils,
+# src/hal, ...) + startup. src/libc (#324) is the newlib-substitution leaf -
+# rand/srand/__assert_func plus the _read/_write/_sbrk/abort syscalls; it is
+# OUR code, so it takes the default -O1 and -Werror, with no per-file block
+# below. src/usb + src/net (M11a, #143) compile for every target;
 # --gc-sections drops them from images that never call in, so the product flash
 # budget is untouched.
 C_FILES  = $(ENTRY)
+C_FILES += $(wildcard src/libc/*.c)
 C_FILES += $(wildcard src/utils/*.c)
 C_FILES += $(wildcard src/hal/*.c)
 C_FILES += $(wildcard src/usb/*.c)

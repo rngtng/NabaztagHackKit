@@ -328,15 +328,20 @@ is why led.c's main-context writers mask that IRQ around their SPI flush.
 ```
 sys/                ARM7TDMI startup, linker script, OKI register defs (copied from mtl/firmware)
   asm/init.s        reset vector, clock + EMC init, init_pll, stacks, .data/.bss -> main()
-  src/tick.c        1 ms system tick - counter_timer + DelayMs; steps the LED fades
+  src/tick.c        1 ms system tick - counter_timer + DelayMs; runs the one registered
+                    tick_set_hook() callback (hal/led.c installs the fade engine)
   src/irq.c         IRQ handler table + init
 src/main.c          product entry: boots Lua 5.4 into a bytecode REPL; all nab.* bindings
 src/hal/            one file per peripheral: spi, led, button, audio (VS1003), adc, i2c,
                     rfid (CRX14), motor (ears), uart, config (flash sector), ota, wifi
+src/libc/           everything that exists to keep newlib out of the flash budget, and
+                    nothing else: libc_shim.c (rand/srand/__assert_func), syscalls.c
+                    (_read/_write over the console, _sbrk into ExtRAM, halting abort).
+                    A leaf - it depends on hal/uart + the tick and on nothing above.
 src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
 src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
 src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
-                    lcframe.c (#LC header parse + checksum), libc_shim.c
+                    lcframe.c (#LC header parse + checksum)
 lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral

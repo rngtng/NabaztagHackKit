@@ -12,9 +12,11 @@
  * No behaviour change in the move itself; the one fix is documented at
  * luai_writestringerror.
  *
- * The console sink (_write) stays in main.c: it is a syscall over the UART and
- * belongs with the console, and keeping it out of here is what lets the host
- * tests capture output with their own _write.
+ * The console sink (_write) is not here: it is a syscall over the UART and
+ * lives with the other newlib substitutions in src/libc/syscalls.c (#324),
+ * declared by libc/syscalls.h. Keeping it out of this file is what lets the
+ * host tests capture output with their own _write - it is a LINK-TIME SEAM,
+ * and test/host/fmt_test.c substitutes exactly that symbol.
  *
  * NO FLOAT MAY CROSS A VARARGS BOUNDARY on the device. C default argument
  * promotion turns a float into a double at the call, which links libgcc's
@@ -30,10 +32,8 @@
 
 #include "lua.h"
 
+#include "libc/syscalls.h"
 #include "utils/fmt.h"
-
-/* newlib syscall, defined in main.c (host tests supply their own). */
-int _write(int fd, const char *ptr, int len);
 
 /* ---- Lua console output -------------------------------------------------- */
 /* luaconf.h routes lua_writestring/writeline/writestringerror here so print()
