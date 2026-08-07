@@ -372,6 +372,30 @@ already exists twice — `play_start`/`play_feed`/`playing` and
 `rec_start`/`rec_read`/`rec_stop` are what a chunked HAL looks like. WiFi has no
 step-form, so `nab.wifi` cannot be made cooperative without one.
 
+**1b. And the one primitive that does pump stops pumping when it is nested.**
+`dispatch_events` carries a `static uint8_t busy` re-entrancy guard: on a nested
+call it runs `event_pump()` (hardware polling only) and returns before any Lua
+runs. The guard is *necessary* — without it `nab.wait` inside a callback would
+recurse into dispatch until the stack gave out. But it means `nab.wait(500)`
+called from inside a `sched` pump, a spawned task, or a `nab.on` callback is 500
+ms in which **no other pump runs, no task resumes and no queued event is
+delivered** — precisely the hole #283 exists to close, reopened one level down.
+
+Three things make this a trap rather than a documented trade-off. The `nab`
+reference describes `nab.wait(ms)` as "sleep ~ms while running the event pump,
+so `nab.on` callbacks fire", which is true at top level and false everywhere
+inside the reactor; the consequence is written down only in a C comment in
+`main.c`. `boot/test/run.lua`'s `nab_pump()` is a plain function call that does
+not model the guard at all, so the suite that exists to protect the reactor
+cannot catch this class of regression — the one place that harness models the
+seam conveniently rather than faithfully. And the correct alternative depends on
+context: `sched.sleep(ms)` inside a task, a `:step()` that returns inside a pump,
+never `nab.wait`.
+
+`lib/` gets this right today — `player:wait()` and `ears:wait()` call the
+injected `sleep(0)`/`sleep(1)` as a pump-once, and long waits go through
+`sched.sleep`. Nothing enforces it for app code.
+
 **2. The Lua userland has no delivery mechanism.** 50,973 B of bytecode in 19
 modules, no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
 single file. The load order exists in exactly two places, neither of them
