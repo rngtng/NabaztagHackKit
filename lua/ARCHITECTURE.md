@@ -257,47 +257,99 @@ utils/event.c ──► hal/{button,rfid}              sys/src/tick.c ──► 
 ```
 
 Counted as distinct symbols crossing a directory boundary — the intended
-downward flow first, then the four edges that run against it:
+downward flow first, then the edges that run against it:
 
 ```
-              ┌───────────────┐
-              │  src/main.c   │
-              └─┬───────────┬─┘
-      44 syms ↓             ↓ 6 syms                       ② _write ⚠
-    ┌─────────────┐     ┌──────────────┐  ◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
-    │  src/hal/   │     │  src/utils/  │                          ╎
-    └─┬────┬────┬─┘     └──────────────┘                          ╎
-10 ↓    2 ↓    ↓ 8              ▲ ④ rand() ⚠ (2, benign) ╌╌╌╌╌╌┐  ╎
- ┌──────────┐  │  ┌──────────┐                                ╎  ╎
- │ src/usb/ │◄─┼──┤ src/net/ │╌╌╌╌╌► ③ set_led ⚠ ──────────────┴──┘
- └────┬─────┘16│4 └────┬─────┘        (into hal/, lateral)
-    3 ↓  └─────┴────►  ↓ 1
- ┌──────────────────────────────────────────────────────────────────┐
- │  sys/     ╌╌╌╌► ① led_fade_tick ⚠ ──► hal/led.c                  │
- └──────────────────────────────────────────────────────────────────┘
+                 ┌───────────────┐
+                 │  src/main.c   │
+                 └─┬───────────┬─┘
+         44 syms ↓             ↓ 6 syms
+       ┌─────────────┐     ┌──────────────┐
+       │  src/hal/   │     │  src/utils/  │
+       └─┬────┬────┬─┘     └──────┬───────┘
+   10 ↓    2 ↓    ↓ 8             ↓ _write ②  (link-time seam, not a cycle:
+ ┌──────────┐  │  ┌──────────┐    ↓            main.c on the device,
+ │ src/usb/ │◄─┼──┤ src/net/ │────┘            fmt_test.c on the host)
+ └────┬─────┘16│4 └────┬─┬───┘  rand() ④ → libc_shim  (libc, not a layer)
+    3 ↓  └─────┴────►  ↓ │ 1
+      │                 │ └╌╌╌╌► ✗ ③ set_led ╌╌► hal/led.c   THE REAL ONE
+ ┌────┴─────────────────┴───────────────────────────────────────────────┐
+ │  sys/          ⚠ ① led_fade_tick ╌╌► hal/led.c                       │
+ └──────────────────────────────────────────────────────────────────────┘
+
+   ✗ defect   ⚠ real coupling, benign   ② ④ artifacts of ranking by folder
 ```
 
-`main.c → sys/` (5 symbols) is omitted above for legibility. `usb ↔ net` is a
-genuine cycle — 16 symbols out, 4 back — so those two vendored directories are
+`main.c → sys/` (5 symbols) is omitted for legibility. `usb ↔ net` is a genuine
+cycle — 16 symbols out, 4 back — so those two vendored directories are
 effectively one 9,725-line module.
 
-The four ⚠ edges, all measured, none accidental:
+Four edges run against the layering, and **they are four different things**.
+An earlier revision of this page filed them under one heading, which flattened
+the distinction that decides what to do about each:
 
-1. **`sys/src/tick.c` → `hal/led.c`** (`led_fade_tick`). The 1 ms tick ISR steps
-   the fade engine, so the bottom layer depends on a driver — and `led.c` masks
-   that same IRQ around its SPI flush in return. Documented at both ends, and
-   still a loop.
-2. **`utils/fmt.c` → `main.c`** (`_write`). A true two-way cycle: `main.c` needs
-   `fmt.c`'s `snprintf` and Lua number hooks, `fmt.c` needs `main.c`'s UART
-   syscall.
-3. **`net/eapol.c` → `hal/led.c`** (`set_led`). The PBKDF2 loop (`F()`) drives
-   LEDs 1-3 as a progress indicator and pumps `usbhost_events()` + drains RX
-   from inside the key derivation. A WPA2 join therefore **writes the LEDs
-   behind the app's back**, bypassing the seam entirely. Vendored, predating the
-   seam, and reachable from `nab.wifi(ssid, psk)` on every join.
-4. **`net/{eapol,ieee80211}.c` → `utils/libc_shim.c`** (`rand`, 2 symbols).
-   Benign — the shim is a libc replacement, not a layer. It exists because
-   newlib's `rand` drags ~9 KB of `vfprintf`/FILE machinery into a 124 KB budget.
+1. ⚠ **`sys/src/tick.c` → `hal/led.c`** (`led_fade_tick`) — *real coupling,
+   benign.* The 1 ms tick ISR steps the fade engine, so the bottom layer depends
+   on a driver, and `led.c` masks that same IRQ around its SPI flush in return.
+   Invertible with a registration hook (`irq.c`'s `IRQ_HANDLER_TABLE` is the
+   precedent) for ~20–40 B, which would also let `--gc-sections` drop `led.c`
+   from examples that light nothing. Worth doing when someone is next in
+   `tick.c`; not worth an errand.
+2. **`utils/fmt.c` → `_write`** — *not a cycle.* `_write` is a **link-time
+   seam**: the device links `main.c`'s UART implementation, and
+   `test/host/fmt_test.c` links its own buffer-capture one to assert
+   `luai_writestring` byte for byte. The static analysis attributed the symbol
+   to `main.c` because that is where the device copy lives. The real (smaller)
+   defect is that the seam is *unnamed* — `fmt.c` forward-declares `_write`
+   inline rather than including a header, so nothing marks it as a substitution
+   point.
+3. ✗ **`net/eapol.c` → `hal/led.c`** (`set_led`) — *the one real defect.* The
+   PBKDF2 loop (`F()`) drives logical LEDs 1–3 — **left, belly, right** via
+   `led_logical[]` — as a progress indicator, from inside key derivation. So a
+   WPA2 join blinks three of the five LEDs for the whole 4096-iteration
+   derivation, bypassing the seam, with no way for an app to prevent it. The
+   `usbhost_events()` + `CLR_WDT` + RX drain in the same loop are **load-bearing
+   and must stay** — without them the USB stack dies and the watchdog fires
+   mid-derivation. Deleting the three `set_led` lines is the whole fix.
+   `mtl/firmware`'s copy carries the identical lines, so removing them deepens
+   an already-395-line divergence and wants a `PROVENANCE.md` note.
+4. **`net/{eapol,ieee80211}.c` → `utils/libc_shim.c`** (`rand`, 2 symbols) —
+   *not a violation.* The shim is a libc replacement, not a layer; it exists
+   because newlib's `rand` drags ~9 KB of `vfprintf`/FILE machinery into a
+   124 KB budget. This edge is an artifact of ranking layers by folder, and
+   `libc_shim.c` only lands above `net/` because it happens to live in
+   `utils/`. "Fixing" it would mean deleting the shim and re-linking the 9 KB.
+
+### Where the libc substitutions belong
+
+Edges ② and ④ are the same finding wearing two hats: this firmware carries a
+real, named concern — **everything that exists to keep newlib out of the flash
+budget** — and it has no folder, so its pieces are scattered across three files
+and get mis-ranked by any structural analysis, including this page's.
+
+The pieces: `utils/libc_shim.c` (`rand`, `srand`, `__assert_func`),
+`main.c`'s newlib syscalls (`_write`, `_read`, `_sbrk`, `abort`), and half of
+`utils/fmt.c` (`snprintf`/`vsnprintf`). A `src/libc/` holding the first two
+makes the concern visible and fixes both edges by making the ranking honest
+rather than by moving any code that runs:
+
+```
+src/libc/libc_shim.c   moved verbatim — no header, nothing includes it,
+                       so the move is a Makefile line and a git mv
+src/libc/syscalls.c    _write / _read / _sbrk / abort, lifted out of main.c
+                       ~40 lines off the god file, zero flash delta
+```
+
+`libc/` then sits below everything as a true leaf: `net → libc` and
+`utils/fmt.c → libc/syscalls.c` both become ordinary downward edges, and the
+`_write` substitution point finally gets a header to be named in.
+
+`fmt.c` should **not** be split to join them. Its `snprintf` half and its Lua
+`luai_*` half share static helpers (`pf_emit`, `pf_pad`, `pf_utoa`,
+`dec_shifted`); separating them would either duplicate those or export them,
+and `fmt.c` is host-tested as one unit. It stays in `utils/` — which leaves
+`utils/` as event core + `#LC` framing + number formatting, three things that
+genuinely are utilities rather than a fourth grab-bag.
 
 ### Across the seam
 
@@ -459,12 +511,14 @@ Nothing depended on by many things depends on much itself. The hubs are
 composition roots — `iface.lua` exists precisely to know about ten modules —
 which is where high fan-out belongs.
 
-**Layer violations are rare and all four are known.** Across every non-vendored
-TU there are exactly four upward call edges: `sys/src/tick.c` → `led_fade_tick`,
-`src/utils/fmt.c` → `_write` (a genuine `main.c` ↔ `fmt.c` cycle), and
-`net/{eapol,ieee80211}.c` → `rand()` (benign — `libc_shim.c` is a libc
-replacement, not a layer). Plus the lateral `net/eapol.c` → `set_led` from §7.
-For bare-metal C with two vendored subsystems, four is a low number.
+**Layer violations are rare, and only one is a defect.** Across every
+non-vendored TU there are four upward or lateral call edges, and §7 separates
+them: one real-but-benign coupling (`tick.c` → `led_fade_tick`), one that is a
+link-time seam rather than a cycle (`fmt.c` → `_write`), one artifact of ranking
+by folder (`net` → `rand()`), and **one actual defect** (`net/eapol.c` →
+`set_led`, which blinks three LEDs from inside PBKDF2). Four is a low number for
+bare-metal C with two vendored subsystems — and the honest count of things wrong
+is one.
 
 The one real cycle is **`usb` ↔ `net`**: 12 symbols out, 4 back. Vendored, so
 not this track's doing, but it means those two directories are effectively one
