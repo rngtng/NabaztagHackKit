@@ -4,9 +4,10 @@
  *        on the ML67Q4051. Opens a trimmed stdlib, runs an embedded demo chunk,
  *        then drops into a REPL. Console = UART0; heap = 1 MB ExtRAM.
  *
- * Bare metal supplies neither, so this file also overrides the newlib syscalls
- * (_read/_write over the polled UART, _sbrk into ExtRAM) and Lua's number/printf
- * helpers to keep the buffered-FILE + libm layers out of the flash budget.
+ * Bare metal supplies neither. The newlib syscalls that stand in for an OS
+ * (_read/_write over the polled UART, _sbrk into ExtRAM, abort) live in
+ * src/libc/ with the rest of the keep-newlib-out-of-flash concern (#324); Lua's
+ * number/printf helpers are in src/utils/fmt.c.
  */
 #include <errno.h>
 #include <stddef.h>
@@ -30,6 +31,7 @@
 #include "hal/rfid.h"
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
+#include "libc/syscalls.h" /* _read/_write/_sbrk/abort + console_last_rx_ms */
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
 #include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
@@ -44,50 +46,13 @@
 /* ---- UART console ------------------------------------------------- */
 /* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 115200 8N1.
  * init_uart() runs at boot (main); read/drive it on the Pi's /dev/serial0.
- *
- * EOF: getch_uart() is non-blocking (-1 = RX FIFO empty) and a raw UART has no
- * native end-of-stream, so _read() blocks until a byte arrives and treats EOT
- * (0x04, what Ctrl-D sends) as EOF - EOF is what ends the REPL loop and fires
- * <<FV_DONE>>. The host feeder (replpipe/flash.py/simulator) appends EOT after
- * the input it sends; hex #LC frames and source lines never contain 0x04. */
-#define CONSOLE_EOF 0x04   /* EOT / Ctrl-D: end of console input */
+ * The _read/_write syscall ends of it are in src/libc/syscalls.c (#324). */
 
 /* Raw console write, independent of stdio buffering - used for prompts/errors. */
 static void sh_puts(const char *s)
 {
   while (*s)
     putch_uart((uint8_t)*s++);
-}
-
-/* ---- newlib syscalls: stdout/stdin over UART, heap in ExtRAM ------------- */
-/* Our own definitions win over libnosys' stubs (object beats archive member). */
-
-int _write(int fd, const char *ptr, int len)
-{
-  (void)fd;
-  for (int i = 0; i < len; i++)
-    putch_uart((uint8_t)ptr[i]);
-  return len;
-}
-
-/* Tick timestamp of the last console RX byte: the REPL's idle pump gates the
- * ~5 ms RFID coupler scan on the console having been quiet a while, so a scan
- * can't stall RX mid-transfer and overflow the 16-byte FIFO (see repl). */
-static uint32_t console_last_ms;
-
-int _read(int fd, char *ptr, int len)
-{
-  (void)fd;
-  if (len <= 0)
-    return 0;
-  int c;
-  while ((c = getch_uart()) < 0)
-    ;                      /* block: no byte yet (UART has no native EOF) */
-  console_last_ms = counter_timer;
-  if (c == CONSOLE_EOF)
-    return 0;              /* EOT -> EOF, ends the REPL */
-  ptr[0] = (char)c;
-  return 1;               /* one char per call; sh_gets reassembles the line */
 }
 
 /* Read one line into buf (keeps the trailing '\n', NUL-terminates), built on
@@ -110,33 +75,6 @@ static char *sh_gets(char *buf, int size)
   }
   buf[i] = '\0';
   return buf;
-}
-
-/* ---- abort: halt, don't raise(SIGABRT) ----------------------------------- */
-/* newlib's abort() calls raise() + _exit(), pulling the signal machinery
- * (raise/signal/_kill_r/_getpid). Bare metal has no OS to signal, so halt in
- * place. */
-void abort(void)
-{
-  for (;;) {
-  }
-}
-
-/* Heap = the 1 MB external RAM window; IntRAM is too small for a Lua state. */
-extern char __extram_start__, __extram_end__;
-
-void *_sbrk(ptrdiff_t incr)
-{
-  static char *cur;
-  if (cur == NULL)
-    cur = &__extram_start__;
-  if (cur + incr > &__extram_end__) {
-    errno = ENOMEM;
-    return (void *)-1;
-  }
-  char *prev = cur;
-  cur += incr;
-  return prev;
 }
 
 /* ---- hardware bindings: the `nab` module --------------------------------- */
@@ -1357,7 +1295,7 @@ static void repl(lua_State *L)
      * always runs. Once a byte is pending we fall through to the blocking
      * line read - no pumping mid-line or mid-#LC-frame. */
     while (!rxrdy_uart())
-      dispatch_events(L, (counter_timer - console_last_ms) > CONSOLE_IDLE_MS);
+      dispatch_events(L, (counter_timer - console_last_rx_ms()) > CONSOLE_IDLE_MS);
     if (sh_gets(line, sizeof line) == NULL)
       break;
     if (line[0] == '\n' || line[0] == '\0') {
