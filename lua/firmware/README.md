@@ -373,5 +373,7 @@ test/*.expected     golden transcripts for the bytecode / desync / injection tes
 ```
 
 `sys/`, `inc/common.h` and `hal/` are **copied** from `mtl/firmware` — a register fix there may
-apply here, so grep the sibling before assuming a divergence is intentional. Otherwise this
-layer is self-contained. Vendoring origins: [`PROVENANCE.md`](../../PROVENANCE.md).
+apply here, so grep the sibling before assuming a divergence is intentional (ten files are still
+byte-identical twins; [`../ARCHITECTURE.md`](../ARCHITECTURE.md) lists them, along with the rest
+of the track's dependency graph). Otherwise this layer is self-contained. Vendoring origins:
+[`PROVENANCE.md`](../../PROVENANCE.md).

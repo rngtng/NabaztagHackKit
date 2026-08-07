@@ -85,7 +85,9 @@ app state); see [`mtl/lib/README.md`](mtl/lib/README.md).
 
 An alternative Layer 0: PUC-Rio Lua 5.4 running bare-metal, with hardware behind a
 thin `nab.*` HAL. JTAG-flashed, no MTL. Design principles and current state:
-[`lua/firmware/README.md`](lua/firmware/README.md).
+[`lua/firmware/README.md`](lua/firmware/README.md); the cross-layer picture -
+hardware, HAL, C firmware, Lua libs and the edges between them -
+[`lua/ARCHITECTURE.md`](lua/ARCHITECTURE.md).
 
 ## Background
 
