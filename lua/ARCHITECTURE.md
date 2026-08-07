@@ -349,6 +349,121 @@ does not add up; `boot/README.md`'s 2,387 B for the boot chunk is what makes
 4,547 correct. The 3,620 figure is the stale one. Cheap to fix, and worth fixing
 because that paragraph is what a future flash-budget decision reads.
 
+## 9. Is it well structured? — coupling and cohesion, measured
+
+Short answer: **yes on coupling, yes on cohesion everywhere except two places** —
+and both exceptions are structural consequences of one decision, not sloppiness.
+
+### Coupling: low, and pointing the right way
+
+Dependencies should flow from things that change often toward things that don't.
+Measured as instability (I = fan-out ÷ (fan-in + fan-out), 0 = depended-upon
+bedrock, 1 = pure consumer), both halves of the track get this right without any
+document having told them to:
+
+| | most stable (I≈0) | most unstable (I≈1) |
+|---|---|---|
+| **C** | `hcdmem.c`, `irq.c`, `button.c`, `spi.c`, `uart.c`, `motor.c`, `adc.c`, `ota.c`, `lcframe.c` — fan-out **0** | `main.c` (I=0.94), `hal/wifi.c` (0.88), `hcd.c` (0.80) |
+| **Lua** | `net.link` (fan-in **7**, fan-out **0**), `net.http` (3/0), `net.dns`, `sys.ntp` — 9 of 20 modules are pure leaves | `net.iface` (fan-out 10, I=0.91), `net.setup` (5), `net.provision` |
+
+Nothing depended on by many things depends on much itself. The hubs are
+composition roots — `iface.lua` exists precisely to know about ten modules —
+which is where high fan-out belongs.
+
+**Layer violations are rare and all four are known.** Across every non-vendored
+TU there are exactly four upward call edges: `sys/src/tick.c` → `led_fade_tick`,
+`src/utils/fmt.c` → `_write` (a genuine `main.c` ↔ `fmt.c` cycle), and
+`net/{eapol,ieee80211}.c` → `rand()` (benign — `libc_shim.c` is a libc
+replacement, not a layer). Plus the lateral `net/eapol.c` → `set_led` from §7.
+For bare-metal C with two vendored subsystems, four is a low number.
+
+The one real cycle is **`usb` ↔ `net`**: 12 symbols out, 4 back. Vendored, so
+not this track's doing, but it means those two directories are effectively one
+9,725-line module that cannot be reasoned about separately.
+
+### Cohesion: high in the HAL, high in `lib/`, low in exactly one file
+
+Clustering each C file's functions by shared file-scope state and internal
+calls (an LCOM-style count — 1 cluster = every function belongs together):
+
+| Single-cluster (cohesive) | Fragmented |
+|---|---|
+| `audio.c` 19 fns → **1**, `rfid.c` 13 → **1**, `aes128.c` 15 → 1, `eapol.c` 14 → 1, `led.c` 8 → 1, `event.c` 6 → 1, `config.c` 4 → 1 | **`main.c` 65 fns → 31 clusters** |
+
+The other multi-cluster files are false positives: `spi.c` (5 → 5), `adc.c`,
+`button.c` are stateless register pokes, so there is no shared state to cluster
+on. `main.c` is not a false positive.
+
+### The one structural defect: `main.c`
+
+Every metric puts it alone at the end of the distribution — 1,444 lines, 65
+functions, **fan-out 17** where the next highest is 7, I=0.94, 31 cohesion
+clusters. It is seven modules sharing a file:
+
+```
+[20] the REPL: console, #LC frame reader, event dispatch, boot, main
+[ 7] record + WAV/RIFF assembly          [ 5] wifi bindings + arg checking
+[ 4] LED bindings + colour checking      [ 2] beep   [ 2] config
+[25] singleton bindings (each a thin arg-check over one HAL call)
+```
+
+The 25 singletons are fine — a binding table *should* be a list of thin
+wrappers. The problem is the six islands of real logic that came along for the
+ride, and the cause is structural rather than careless: `main.c` is the only
+place `lua_State` exists, so anything needing one lands there, and once there it
+can never be linked by a test. `utils/lcframe.c` is the proof that extraction
+works — it was pulled out, and it gained a unit test the moment it left.
+
+**Two things are on the wrong side of the seam entirely.** `nab.rec_wav` is
+`string → string`: it touches no hardware, yet ~44 lines of RIFF assembly sit in
+flash — the scarcest resource here, ~7.5 KB free — and cannot be unit-tested,
+while `lib/audio/` exists, costs no flash and already has a test harness. The
+2,160 B `nab.tone()` MP3 blob is the same category. Principle 1 says behaviour
+belongs in Lua; these are behaviour.
+
+### The second-order problem: the reactor-attachment protocol has no owner
+
+Six objects in `lib/` are pull-style state machines, and they agree on nothing:
+
+| Object | Step verb | Self-registers with `sched`? |
+|---|---|---|
+| `hw.ears`, `audio.player` | `:step()` | yes — via `:attach()`/`:detach()` |
+| `audio.volume` | `:step()` | no |
+| `net.iface`, `net.tcp`, `audio.stream` | `:poll()` | no |
+
+`:attach()`/`:detach()` are duplicated **byte-for-byte** between `hw/ears.lua`
+and `audio/player.lua` (only the comments differ). `sched` is resident in flash
+and is the obvious owner of a protocol every reactor participant needs.
+Relatedly, [`boot/README.md`](boot/README.md) states that `net.iface:poll()` is
+"reachable via `:attach()`" — `iface.lua` contains zero occurrences of the word.
+
+**The seam's semantics are also patched from above.** `nab.on` holds one
+callback per name and replaces silently, so `boot.lua` monkey-patches `nab.on`
+to stop an app displacing `sched.tick`. The contract is now defined in two
+languages and two artifacts and depends on load order — code that captured
+`nab.on` before the boot chunk ran gets the C behaviour — and the
+single-subscriber limit still stands for `"button"` and `"rfid"`.
+
+### Smaller structural notes
+
+- **`common.h` is a god header**: included by 41 files, and it mixes register
+  access macros with domain constants from two different peripherals
+  (`FORWARD`/`REVERSE` from the motor, `TURN_ON_AUDIO_AMPLIFIER` from the
+  codec). Vendored, which explains it — but it means the one-file-per-peripheral
+  cohesion is undone at the header level.
+- **Host-test coverage tracks the wrong axis.** Six of our 20 TUs are
+  host-tested (plus 2 vendored). The stub technique that makes register-only
+  drivers testable — `test/host/stubs/ml674061.h` shadowing the absolute
+  addresses — already works and is used for `i2c.c` and `adc.c`. `button.c`,
+  `motor.c`, `spi.c`, `uart.c`, `ota.c` and `led.c` are equally register-only
+  and equally testable. The Makefile's comment that "anything touching
+  `ml674061.h` cannot be compiled for the host" is disproven by its own
+  `i2c_test`/`adc_test` rules.
+- **Duplication that is *not* a smell**: `arp.lua` and `dns.lua` each carry a
+  two-line bounded-cache cap-and-clear, and `dns.lua` says out loud that it is
+  copying `arp.learn`. Extracting a two-line policy would cost more bytecode
+  than it saves on a device where every module ships over a 333 B/s console.
+
 ## Re-deriving this
 
 Nothing here is hand-maintained knowledge; each claim came from a command.
@@ -356,6 +471,10 @@ Nothing here is hand-maintained knowledge; each claim came from a command.
 ```sh
 # the C include graph
 grep -rn '^#include' firmware/src firmware/sys/src
+
+# §9's coupling/cohesion numbers: symbol-level call graph -> fan-in/fan-out,
+# and functions clustered by shared file-scope state (see the commit that
+# added this section for the scripts)
 
 # which files are still twins of the mtl track
 for f in $(cd firmware && ls src/hal/*.c src/usb/*.c src/net/*.c); do
