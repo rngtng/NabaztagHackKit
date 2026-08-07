@@ -14,7 +14,7 @@ thing a reader most often needs: the edge list — including the edges that leav
 this track entirely.
 
 Sizes below were measured, not copied: `task lua:firmware:build` for flash and
-`task lua:lib:size` for bytecode, both run against this commit. Re-run them
+`task lua:lib:size` for bytecode, both re-run after #332 landed. Re-run them
 rather than trusting this page — several of the numbers the layer READMEs
 carried had drifted, and these will too.
 
@@ -42,15 +42,18 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
  ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
  ║  freeze it:  nab.wifi 30 s · nab.record 30 s · wifi_up 10 s · wifi_scan 5 s  ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
- L2  THE LUA HOST ──────────────────────────── src/main.c · 1,444 ln · fan-out 17
+ L2  THE LUA HOST ──────────────────────────── src/main.c · 1,382 ln · fan-out 17
      38 bindings · #LC frame REPL · dispatch_events (the pump)
-     _sbrk → ExtRAM · _read/_write → UART0 · open_trimmed_libs
-     the ONLY TU where lua_State exists — and 31 cohesion clusters wide
+     open_trimmed_libs · init_hw
+     the ONLY TU where lua_State exists — and ~28 cohesion clusters wide
  ────────────────────────────────────────────────────────────────────────────────
  L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
      src/hal/    12 drivers · 3,119 ln   spi led button audio adc i2c rfid
                                          motor uart wifi config ota
-     src/utils/  event · fmt · lcframe · libc_shim
+     src/libc/   keep-newlib-out-of-flash, and nothing else (#324):
+                 libc_shim (rand/srand/__assert_func) · syscalls
+                 (_read/_write → UART0, _sbrk → ExtRAM, halting abort)
+     src/utils/  event · fmt · lcframe
      src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
      src/net/    802.11 + WPA2-CCMP · 4,203 ln                     (vendored, -Os)
      lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
@@ -121,17 +124,25 @@ policy, **no `lua_State`**.
 `sys/` is the layer beneath: reset vector, PLL, EMC init, stacks, the 1 ms tick,
 the IRQ table, the linker script, the OKI register headers.
 
-**Two edges here are worth knowing about**, because neither points the way the
-diagram suggests:
+**Two edges here are worth knowing about:**
 
-- `sys/src/tick.c` → `hal/led.h`: the 1 ms ISR calls `led_fade_tick()`. The
-  bottom layer depends on a driver, and `led.c` masks that IRQ around its own
-  SPI flush in return. It works, and it is documented at both ends, but the two
-  files are coupled in a loop.
+- `sys/src/tick.c` → `hal/led.c` used to be a call by name, so the bottom layer
+  depended on a driver while `led.c` masked that same IRQ in return — a loop.
+  **#325 inverted it**: `tick_set_hook()` takes one callback, and `led_fade()`
+  installs `led_fade_tick` when a fade is actually armed. `sys/` now includes no
+  `hal/` header. Registering from `led_fade()` rather than from
+  `init_led_rgb_driver()` is what makes it pay: an image that only ever calls
+  `set_led()` never takes the engine's address, so `--gc-sections` drops it
+  (`usbprobe` 9,956 → 8,908 B, `wifiprobe` 29,406 → 28,806 B; the product pays
+  40 B for the layering).
 - `src/utils/event.c` → `hal/button.h`, `hal/rfid.h`: the event core sits
   *above* the HAL, not beside it. That is why it host-tests cleanly (its
   dependencies are two functions) and why `button.c` deliberately holds no
   debouncing.
+
+`src/libc/` (#324) sits **above** `hal/`, not below it: `syscalls.c` reads and
+writes the console through `hal/uart`. It is a substitution layer, not a leaf —
+`libc_shim.c` alone depends on nothing, but the folder as a whole does not.
 
 ## 3. What else the C firmware holds
 
@@ -142,9 +153,10 @@ diagram suggests:
 | `src/net/` — 802.11, EAPOL, AES-128, hashes | 8 | 4,203 | vendored from mtl/V1 |
 | `src/hal/` | 24 | 3,119 | ported from `mtl/firmware`, then diverged |
 | `examples/` — one-peripheral bring-up progs | 19 | 3,222 | original |
-| `sys/` — startup, tick, irq, linker, regs | 11 | 2,431 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe, libc shim | 11 | 1,550 | original |
-| `src/main.c` — the Lua host | 1 | 1,444 | original |
+| `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
+| `src/utils/` — event, fmt, lcframe | 10 | 1,516 | original |
+| `src/main.c` — the Lua host | 1 | 1,382 | original |
+| `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
 — `lcode`/`llex`/`lparser` are dropped, ~18.9 KB) plus `lauxlib`, `lbaselib`,
@@ -155,20 +167,20 @@ and never writes it. The two remaining references into the dropped parser
 must re-apply (the others: `luaconf.h`'s `LUA_32BITS` + off-newlib number and
 console hooks, and `lbaselib.c` dropping `dofile`/`loadfile`).
 
-`src/utils/` is small but load-bearing, and two of its four files are global
-in effect:
+`src/utils/` and `src/libc/` are small but load-bearing, and two of their files
+are global in effect:
 
 - **`fmt.c`** overrides `snprintf`/`vsnprintf` for *every* target and supplies
   Lua's `luai_*` number hooks — which is why `-Ilua` is on the include path even
   for examples that never link Lua.
-- **`libc_shim.c`** supplies local `rand`/`srand`/`__assert_func`. Without it
+- **`libc/libc_shim.c`** supplies local `rand`/`srand`/`__assert_func`. Without it
   the vendored net stack's `rand()` re-links ~9 KB of newlib `vfprintf`/FILE
   machinery. Any new libc call needs the same audit — via the map's *Archive
   member* section, not `--gc-sections`.
 
 ### Flash budget
 
-`bin/firmware.elf` = **119,332 B of 126,976 B**, **7,644 B free** (measured, not
+`bin/firmware.elf` = **119,316 B of 126,976 B**, **7,660 B free** (measured, not
 quoted). Roughly: ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine`
 2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event core,
 3,674 B the resident boot chunk, 2,160 B the `nab.tone()` MP3, 836 B
@@ -232,8 +244,8 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 | `lib/hw/` | ears | RAM | 3,675 B |
 | `apps/` | 10 demo apps | RAM | — |
 
-**50,973 B of bytecode across 19 modules**, against 7,644 B of free flash
-(`119,332` of `126,976` used).
+**50,973 B of bytecode across 19 modules**, against 7,660 B of free flash
+(`119,316` of `126,976` used, post-#332).
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -256,100 +268,112 @@ main.c ──► hal/* ──► sys/inc (registers)         hal/wifi.c ──�
 utils/event.c ──► hal/{button,rfid}              sys/src/tick.c ──► hal/led.h  ⚠
 ```
 
-Counted as distinct symbols crossing a directory boundary — the intended
-downward flow first, then the edges that run against it:
+Counted as distinct symbols crossing a directory boundary. **#332 cleared three
+of the four edges that used to run against the layering**; what is left is the
+one that was never a violation:
 
 ```
                  ┌───────────────┐
                  │  src/main.c   │
-                 └─┬───────────┬─┘
-         44 syms ↓             ↓ 6 syms
-       ┌─────────────┐     ┌──────────────┐
-       │  src/hal/   │     │  src/utils/  │
-       └─┬────┬────┬─┘     └──────┬───────┘
-   10 ↓    2 ↓    ↓ 8             ↓ _write ②  (link-time seam, not a cycle:
- ┌──────────┐  │  ┌──────────┐    ↓            main.c on the device,
- │ src/usb/ │◄─┼──┤ src/net/ │────┘            fmt_test.c on the host)
- └────┬─────┘16│4 └────┬─┬───┘  rand() ④ → libc_shim  (libc, not a layer)
-    3 ↓  └─────┴────►  ↓ │ 1
-      │                 │ └╌╌╌╌► ✗ ③ set_led ╌╌► hal/led.c   THE REAL ONE
- ┌────┴─────────────────┴───────────────────────────────────────────────┐
- │  sys/          ⚠ ① led_fade_tick ╌╌► hal/led.c                       │
+                 └─┬───────┬───┬─┘
+         43 syms ↓        6 ↓   ↓ 2
+       ┌─────────────┐  ┌──────────────┐  ┌─────────────┐
+       │  src/hal/   │  │  src/utils/  │─►│  src/libc/  │  ② now an ordinary
+       └─┬────┬────┬─┘  └──────┬───────┘1 └──────┬──────┘     downward edge:
+   10 ↓    2 ↓    ↓ 9          │ 2               │ 2           fmt.c → a header,
+ ┌──────────┐  ┌──────────┐    ▼                 ▼             not into main.c
+ │ src/usb/ │◄─┤ src/net/ │──► hal/ (event core) hal/uart
+ └────┬─────┘17│4 └──┬──┬─┘
+    3 ↓  └─────┴───► │  └╌╌╌╌► ④ rand() ╌╌► libc/   (still "upward" — and still
+      │ 1            │                             not a violation: see below)
+ ┌────┴──────────────┴──────────────────────────────────────────────────┐
+ │  sys/    ① inverted: tick_set_hook(), no hal/ include at all         │
  └──────────────────────────────────────────────────────────────────────┘
 
-   ✗ defect   ⚠ real coupling, benign   ② ④ artifacts of ranking by folder
+   ① ③ cleared by #332   ② resolved by naming the seam   ④ unchanged
 ```
 
 `main.c → sys/` (5 symbols) is omitted for legibility. `usb ↔ net` is a genuine
-cycle — 16 symbols out, 4 back — so those two vendored directories are
+cycle — 17 symbols out, 4 back — so those two vendored directories are
 effectively one 9,725-line module.
 
-Four edges run against the layering, and **they are four different things**.
-An earlier revision of this page filed them under one heading, which flattened
-the distinction that decides what to do about each:
+`src/libc/` sits **above** `hal/` (its `syscalls.c` drives `hal/uart`), so ④ is
+still upward when measured by folder rank. That is the same artifact as before,
+relocated: the folder move made the *concern* visible, which was the point, but
+it could not make `net/` calling `rand()` into a downward edge. `firmware/README.md`
+calls `src/libc/` "a leaf"; it is a substitution layer, and only `libc_shim.c`
+inside it is a true leaf.
 
-1. ⚠ **`sys/src/tick.c` → `hal/led.c`** (`led_fade_tick`) — *real coupling,
-   benign.* The 1 ms tick ISR steps the fade engine, so the bottom layer depends
-   on a driver, and `led.c` masks that same IRQ around its SPI flush in return.
-   Invertible with a registration hook (`irq.c`'s `IRQ_HANDLER_TABLE` is the
-   precedent) for ~20–40 B, which would also let `--gc-sections` drop `led.c`
-   from examples that light nothing. Worth doing when someone is next in
-   `tick.c`; not worth an errand.
-2. **`utils/fmt.c` → `_write`** — *not a cycle.* `_write` is a **link-time
-   seam**: the device links `main.c`'s UART implementation, and
+Four edges used to run against the layering, and **they were four different
+things** — which is exactly why three could be closed and one could not:
+
+1. ✅ **`sys/src/tick.c` → `hal/led.c`** (`led_fade_tick`) — *was real coupling,
+   benign.* **Inverted by #325.** `tick_set_hook()` holds one callback;
+   `led_fade()` installs `led_fade_tick` inside the critical section it already
+   takes, so the hook and the armed fade become visible to the ISR together.
+   Registering there rather than at `init_led_rgb_driver()` is what makes it
+   pay — an image that only calls `set_led()` never takes the engine's address.
+   Verified: `sys/` includes no `hal/` header, and `led_fade_len[]` is armed in
+   exactly one place, after the install.
+2. ✅ **`utils/fmt.c` → `_write`** — *was never a cycle.* `_write` is a
+   **link-time seam**: the device links the UART implementation,
    `test/host/fmt_test.c` links its own buffer-capture one to assert
    `luai_writestring` byte for byte. The static analysis attributed the symbol
-   to `main.c` because that is where the device copy lives. The real (smaller)
-   defect is that the seam is *unnamed* — `fmt.c` forward-declares `_write`
-   inline rather than including a header, so nothing marks it as a substitution
-   point.
-3. ✗ **`net/eapol.c` → `hal/led.c`** (`set_led`) — *the one real defect.* The
-   PBKDF2 loop (`F()`) drives logical LEDs 1–3 — **left, belly, right** via
-   `led_logical[]` — as a progress indicator, from inside key derivation. So a
-   WPA2 join blinks three of the five LEDs for the whole 4096-iteration
-   derivation, bypassing the seam, with no way for an app to prevent it. The
-   `usbhost_events()` + `CLR_WDT` + RX drain in the same loop are **load-bearing
-   and must stay** — without them the USB stack dies and the watchdog fires
-   mid-derivation. Deleting the three `set_led` lines is the whole fix.
-   `mtl/firmware`'s copy carries the identical lines, so removing them deepens
-   an already-395-line divergence and wants a `PROVENANCE.md` note.
-4. **`net/{eapol,ieee80211}.c` → `utils/libc_shim.c`** (`rand`, 2 symbols) —
-   *not a violation.* The shim is a libc replacement, not a layer; it exists
-   because newlib's `rand` drags ~9 KB of `vfprintf`/FILE machinery into a
-   124 KB budget. This edge is an artifact of ranking layers by folder, and
-   `libc_shim.c` only lands above `net/` because it happens to live in
-   `utils/`. "Fixing" it would mean deleting the shim and re-linking the 9 KB.
+   to `main.c` because that is where the device copy lived. The real (smaller)
+   defect was that the seam was *unnamed*. **#324 named it**: `inc/libc/syscalls.h`,
+   which `fmt.c` now includes instead of forward-declaring inline.
+3. ✅ **`net/eapol.c` → `hal/led.c`** (`set_led`) — *the one real defect.*
+   **Removed by #323.** The PBKDF2 loop (`F()`) drove logical LEDs 1–3 — left,
+   belly, right via `led_logical[]` — from inside key derivation, so a WPA2 join
+   blinked three of the five for the whole 4096-iteration derivation, bypassing
+   the seam. The `usbhost_events()` + `CLR_WDT` + RX drain in that loop stayed:
+   without them the USB stack dies and the watchdog fires mid-derivation.
+   `test/host/eapol_test.c`'s `pmk-leds` scenario now pins it, with two
+   non-vacuous guards (both PBKDF2 halves run their full 4096 rounds; the pump
+   still fires 63 times per half) so it cannot pass having derived nothing —
+   independently confirmed to fail against a re-added `set_led`.
+4. ⬜ **`net/{eapol,ieee80211}.c` → `libc/libc_shim.c`** (`rand`, 2 symbols) —
+   *not a violation, and unchanged.* The shim is a libc replacement, not a
+   layer; it exists because newlib's `rand` drags ~9 KB of `vfprintf`/FILE
+   machinery into a 124 KB budget. This edge is an artifact of ranking layers by
+   folder, and #324 moved `libc_shim.c` from `utils/` to `libc/` without moving
+   its rank relative to `net/`. "Fixing" it would mean deleting the shim and
+   re-linking the 9 KB. It stays listed here so nobody re-discovers it as a bug.
 
-### Where the libc substitutions belong
+**Cost of clearing them: −16 B net** (−64 eapol, +8 the `console_last_rx_ms`
+accessor, +40 the tick hook), and every bring-up example got smaller or stayed
+level.
 
-Edges ② and ④ are the same finding wearing two hats: this firmware carries a
-real, named concern — **everything that exists to keep newlib out of the flash
-budget** — and it has no folder, so its pieces are scattered across three files
-and get mis-ranked by any structural analysis, including this page's.
+### Where the libc substitutions belong — and what the move actually bought
 
-The pieces: `utils/libc_shim.c` (`rand`, `srand`, `__assert_func`),
-`main.c`'s newlib syscalls (`_write`, `_read`, `_sbrk`, `abort`), and half of
-`utils/fmt.c` (`snprintf`/`vsnprintf`). A `src/libc/` holding the first two
-makes the concern visible and fixes both edges by making the ranking honest
-rather than by moving any code that runs:
+Edges ② and ④ looked like the same finding wearing two hats: this firmware
+carries a real, named concern — **everything that exists to keep newlib out of
+the flash budget** — and it had no folder, so its pieces sat across three files
+and got mis-ranked by any structural analysis, including this page's.
 
-```
-src/libc/libc_shim.c   moved verbatim — no header, nothing includes it,
-                       so the move is a Makefile line and a git mv
-src/libc/syscalls.c    _write / _read / _sbrk / abort, lifted out of main.c
-                       ~40 lines off the god file, zero flash delta
-```
+#324 gave it one. `src/libc/` now holds `libc_shim.c` (`rand`, `srand`,
+`__assert_func`, moved verbatim) and `syscalls.c` (`_write`, `_read`, `_sbrk`,
+`abort`, lifted out of `main.c`), with `inc/libc/syscalls.h` naming the
+interface. `fmt.c`'s `snprintf` half stayed in `utils/`: it shares static
+helpers (`pf_emit`, `pf_pad`, `pf_utoa`, `dec_shifted`) with its `luai_*` half
+and is host-tested as one unit, so splitting it would duplicate or export those.
 
-`libc/` then sits below everything as a true leaf: `net → libc` and
-`utils/fmt.c → libc/syscalls.c` both become ordinary downward edges, and the
-`_write` substitution point finally gets a header to be named in.
+**One prediction on this page was wrong.** It said `libc/` would "then sit below
+everything as a true leaf", making both ② and ④ ordinary downward edges. Only ②
+came true. `syscalls.c` drives the console through `hal/uart`, so the folder
+sits *above* `hal/`, and `net/` calling `rand()` is still upward by folder rank —
+the artifact moved with the file rather than being dissolved by it. Only
+`libc_shim.c` in isolation is a leaf; `firmware/README.md` calls the folder one,
+which is worth correcting to "a substitution layer".
 
-`fmt.c` should **not** be split to join them. Its `snprintf` half and its Lua
-`luai_*` half share static helpers (`pf_emit`, `pf_pad`, `pf_utoa`,
-`dec_shifted`); separating them would either duplicate those or export them,
-and `fmt.c` is host-tested as one unit. It stays in `utils/` — which leaves
-`utils/` as event core + `#LC` framing + number formatting, three things that
-genuinely are utilities rather than a fourth grab-bag.
+What the move did buy is real, and it is ② plus testability: `fmt.c` depends on
+a declared header instead of forward-declaring into `main.c`, the `_write`
+substitution point is finally *named* where `test/host/fmt_test.c` already
+exercises it, and the console syscalls left the one TU nothing can link — which
+is what unblocks #328. Measured at **+8 B**, all of it the
+`console_last_rx_ms()` accessor that keeps the RX timestamp encapsulated; a
+control build publishing the variable as `extern` came in at exactly 0 B, so the
+mechanical move really was free.
 
 ### Across the seam
 
@@ -466,18 +490,20 @@ checksum-comparison gate over the known-twin list would turn that into a
 failing task, and would have to be paired with an explicit
 allowed-divergence list.
 
-**4. `main.c` is 1,444 lines that nothing can link.** It carries `main()`, so no
+**4. `main.c` is 1,382 lines that nothing can link.** It carries `main()`, so no
 host test can reach it. The repo's own rule sends new non-wiring logic to its
-own TU, and `utils/lcframe.c` shows the pattern working. Still inside `main.c`
-with a rule to them and no unit test: the WAV/RIFF header assembly (which
-carries a byte-identical-to-mtl contract), the hex-frame reader and
+own TU, and `utils/lcframe.c` shows the pattern working — as does #324, which
+took the four newlib syscalls out to `src/libc/` and shed ~60 lines. Still
+inside `main.c` with a rule to them and no unit test: the WAV/RIFF header
+assembly (a byte-identical-to-mtl contract), the hex-frame reader and
 `drop_lc_payload` resync path, and `dispatch_events`' ordering guarantees. They
 are covered end-to-end by the sim goldens (`test:bytecode`, `test:desync`,
-`test:inject`, `test:sched`) — which is real coverage, but it means a failure
-reports as a transcript diff rather than as a named contract.
+`test:inject`, `test:sched`) — real coverage, but a failure reports as a
+transcript diff rather than as a named contract. Tracked as #326, with #327-#329
+the extractions; #324 landing also unblocks #328's test, since the console is
+now injectable behind a header.
 
-**5. A vendored 802.11 file writes the LEDs.** §7's ⚠ — small, contained, and
-easy to forget until an app's LED state is stomped mid-join.
+**5. ~~A vendored 802.11 file writes the LEDs.~~** Fixed by #323 — see §7.
 
 **6. Size figures drift, and nothing catches it.** Three documented numbers for
 the two demo assets disagreed — `firmware/README.md`'s "4,547 B together" with
@@ -511,14 +537,13 @@ Nothing depended on by many things depends on much itself. The hubs are
 composition roots — `iface.lua` exists precisely to know about ten modules —
 which is where high fan-out belongs.
 
-**Layer violations are rare, and only one is a defect.** Across every
-non-vendored TU there are four upward or lateral call edges, and §7 separates
-them: one real-but-benign coupling (`tick.c` → `led_fade_tick`), one that is a
-link-time seam rather than a cycle (`fmt.c` → `_write`), one artifact of ranking
-by folder (`net` → `rand()`), and **one actual defect** (`net/eapol.c` →
-`set_led`, which blinks three LEDs from inside PBKDF2). Four is a low number for
-bare-metal C with two vendored subsystems — and the honest count of things wrong
-is one.
+**Layer violations: one remains, and it is not a defect.** There were four
+upward or lateral call edges across the non-vendored tree; §7 separates them and
+**#332 closed three** — the `tick.c` → `led_fade_tick` coupling (inverted to a
+hook), the unnamed `fmt.c` → `_write` seam (given a header), and the one actual
+defect, `net/eapol.c` → `set_led`. What is left is `net` → `rand()`, which is an
+artifact of ranking layers by folder rather than a dependency anyone should
+remove. For bare-metal C with two vendored subsystems, that is a clean graph.
 
 The one real cycle is **`usb` ↔ `net`**: 12 symbols out, 4 back. Vendored, so
 not this track's doing, but it means those two directories are effectively one
@@ -539,23 +564,28 @@ on. `main.c` is not a false positive.
 
 ### The one structural defect: `main.c`
 
-Every metric puts it alone at the end of the distribution — 1,444 lines, 65
-functions, **fan-out 17** where the next highest is 7, I=0.94, 31 cohesion
-clusters. It is seven modules sharing a file:
+Every metric puts it alone at the end of the distribution — 1,382 lines, 61
+functions, **fan-out 17** where the next highest is 7, I=0.94, 28 cohesion
+clusters. It is six modules sharing a file:
 
 ```
-[20] the REPL: console, #LC frame reader, event dispatch, boot, main
+[19] the REPL: console, #LC frame reader, event dispatch, boot, main
 [ 7] record + WAV/RIFF assembly          [ 5] wifi bindings + arg checking
 [ 4] LED bindings + colour checking      [ 2] beep   [ 2] config
-[25] singleton bindings (each a thin arg-check over one HAL call)
+[22] singleton bindings (each a thin arg-check over one HAL call)
 ```
 
-The 25 singletons are fine — a binding table *should* be a list of thin
-wrappers. The problem is the six islands of real logic that came along for the
-ride, and the cause is structural rather than careless: `main.c` is the only
-place `lua_State` exists, so anything needing one lands there, and once there it
-can never be linked by a test. `utils/lcframe.c` is the proof that extraction
-works — it was pulled out, and it gained a unit test the moment it left.
+The singletons are fine — a binding table *should* be a list of thin wrappers.
+The problem is the five islands of real logic that came along for the ride, and
+the cause is structural rather than careless: `main.c` is the only place
+`lua_State` exists, so anything needing one lands there, and once there it can
+never be linked by a test.
+
+**Extraction demonstrably works, twice now.** `utils/lcframe.c` was pulled out
+and gained a unit test the moment it left; #324 took the four newlib syscalls to
+`src/libc/`, which cost 0 B for the mechanical move (measured against a control
+build) and turned the `_write` seam from an inline forward-declaration into a
+named header. Three clusters remain worth extracting — #327, #328, #329.
 
 **Two things are on the wrong side of the seam entirely.** `nab.rec_wav` is
 `string → string`: it touches no hardware, yet ~44 lines of RIFF assembly sit in
