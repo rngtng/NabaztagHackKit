@@ -38,6 +38,7 @@
  *   msg1      a well-formed message 1/4 is answered (the non-vacuous half)
  *   msg3-mic  message 3/4's body_length must be bounded by the frame
  *   gtk-kd    message 3/4's key_data_length must be bounded by the frame
+ *   pmk-leds  key derivation drives no LEDs and still pumps USB (#323)
  *
  * Both guards drive a real msg1 first, because that is how a supplicant reaches
  * the state where msg3 is accepted. They differ in what they need from the
@@ -81,16 +82,26 @@ uint32_t ieee80211_timeout;
 
 static unsigned sent_frames;
 static uint32_t hmac_len;      /* the length the code asked the HMAC to read */
+static unsigned hmac_calls;    /* PBKDF2 rounds actually performed */
+static unsigned pump_calls;    /* usbhost_events() calls from inside F() */
+static unsigned led_calls;     /* #323: must stay 0 across key derivation */
 
 void *hcd_malloc(uint32_t size, uint8_t type, uint8_t tag)
 { (void)type; (void)tag; return malloc(size); }
 void hcd_free(void *p) { free(p); }
 void dump(uint8_t *d, uint32_t n) { (void)d; (void)n; }
-void usbhost_events(void) {}
+void usbhost_events(void) { pump_calls++; }
 struct rt2501buffer *rt2501_receive(void) { return NULL; }
 int32_t rt2501_set_key(uint8_t i, uint8_t *k, uint8_t *tx, uint8_t *rx, uint8_t c)
 { (void)i; (void)k; (void)tx; (void)rx; (void)c; return 1; }
-void set_led(uint8_t l, uint32_t c) { (void)l; (void)c; }
+
+/* #323: eapol.c must never drive the LEDs - a WPA2 join is not allowed to
+ * clobber whatever an app has lit, and the `nab` seam is the only way in.
+ * This stub is deliberately kept after the calls were removed: it is the
+ * detector. Re-adding a set_led() anywhere under src/net/ links here (the
+ * vendored dirs build with -w, so an implicit declaration would not stop it)
+ * and scen_pmk_leds fails. */
+void set_led(uint8_t l, uint32_t c) { (void)l; (void)c; led_calls++; }
 
 int32_t rt2501_send(const uint8_t *data, uint32_t len, const uint8_t *dst,
                     int32_t lowrate, int32_t mayblock)
@@ -110,6 +121,7 @@ void hmac_sha1(const uint8_t *key, uint16_t key_len, const uint8_t *data,
   volatile uint8_t sink = 0;
   (void)key; (void)key_len;
   hmac_len = data_len;
+  hmac_calls++;
   for (uint32_t i = 0; i < data_len; i++)
     sink ^= data[i];
   memset(out, 0, 20);   /* see the MIC note on scen_gtk_kd */
@@ -269,6 +281,46 @@ static void scen_gtk_kd(void)
   printf("  unwrap returned without reading past the frame\n");
 }
 
+/* --- key derivation must be silent on the LEDs (#323) --------------------- */
+/* `password_to_pmk` is static; `mypassword_to_pmk` is the wrapper the firmware
+ * itself calls (src/hal/wifi.c:41 forward-declares it exactly like this). */
+void mypassword_to_pmk(const uint8_t *password, uint8_t *ssid,
+                       uint16_t ssidlength, uint8_t *pmk);
+
+/* What F() does per invocation, from src/net/eapol.c:56. password_to_pmk calls
+ * it twice (one per 20-byte half of the 40-byte scratch). */
+#define PBKDF2_ITERS 4096                    /* hmac_sha1 calls: U1 + 4095 more */
+#define PBKDF2_PUMPS ((PBKDF2_ITERS - 1) / 64) /* i in 1..4095 with !(i&63): 63 */
+
+static void scen_pmk_leds(void)
+{
+  static uint8_t ssid[] = "nabaztag-test";
+  uint8_t pmk[EAPOL_MASTER_KEY_LENGTH];
+
+  printf("scenario pmk-leds: key derivation drives no LEDs\n");
+
+  memset(pmk, 0, sizeof pmk);
+  hmac_calls = pump_calls = led_calls = 0;
+
+  mypassword_to_pmk((const uint8_t *)"correct horse battery staple", ssid,
+                    (uint16_t)strlen((char *)ssid), pmk);
+
+  /* Non-vacuous first: a run that derived nothing would satisfy led_calls == 0
+   * for free. These two say the full 2x4096-round derivation really executed
+   * and reached the every-64th-iteration block the LED calls used to sit in. */
+  CHECK(hmac_calls == 2 * PBKDF2_ITERS,
+        "both PBKDF2 halves ran their full 4096 iterations");
+  /* And the load-bearing half of that block is still there: without pumping
+   * the USB host stack from inside the loop, the dongle's queues stall and the
+   * watchdog fires mid-derivation on a 32 MHz ARM7TDMI. Deleting the LED lines
+   * must not have disturbed its cadence. */
+  CHECK(pump_calls == 2 * PBKDF2_PUMPS,
+        "the USB host stack is still pumped every 64 iterations");
+
+  CHECK(led_calls == 0,
+        "key derivation drives no LEDs (the nab seam owns them)");
+}
+
 int main(int argc, char **argv)
 {
   const char *only = (argc > 1) ? argv[1] : NULL;
@@ -278,6 +330,7 @@ int main(int argc, char **argv)
   if (!only || strcmp(only, "msg1") == 0)     scen_msg1();
   if (!only || strcmp(only, "msg3-mic") == 0) scen_msg3_mic();
   if (!only || strcmp(only, "gtk-kd") == 0)   scen_gtk_kd();
+  if (!only || strcmp(only, "pmk-leds") == 0) scen_pmk_leds();
 
   if (failures) {
     printf("eapol_test: %d check(s) FAILED\n", failures);

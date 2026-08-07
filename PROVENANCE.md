@@ -53,3 +53,19 @@ only when the queue attempt failed. The vendored original had the same bug in `r
 `DelayMs(350)` leaves the window empty and hides it). **#307's backport of #292-#296 into
 mtl must not carry #295's free across** - mtl's `ieee80211_send_probe_response` is correct
 as it stands, and only its `rt2501_scan` needs this fix.
+
+**No LEDs from key derivation** (`lua/firmware/src/net/eapol.c`) - another lua-track
+divergence, and one more line on #307's ledger: `mtl/firmware`'s copy carries the identical
+calls. The vendored `F()` (PBKDF2-SHA1) drove three LEDs as a progress indicator from
+inside the derivation loop, so every `nab.wifi(ssid, psk)` blinked left/belly/right for the
+whole 4096-iteration join - seconds - clobbering whatever an app had lit, with no way for a
+script to prevent it and without going through the `nab` seam at all. The four lines (the
+`j=(i>>6)&3` pattern index and its three `set_led` calls) and the now-unused
+`#include "hal/led.h"` are gone (#323). **The rest of that loop body is load-bearing and
+must survive any backport**: `usbhost_events()`, `CLR_WDT` and the `rt2501_receive()` drain
+run every 64th iteration because 4096 rounds of HMAC-SHA1 on a 32 MHz ARM7TDMI otherwise
+stall the dongle's queues and let the watchdog fire mid-derivation. `test/host/eapol_test.c`'s
+`pmk-leds` scenario pins both halves - `set_led` is never called, and the pump still runs
+its 63 times per half. On the lua track the removed feedback is redundant: `lib/net/
+provision.lua` sets the nose LED amber for "connecting" before calling `nab.wifi`, which is
+the seam-respecting way to say the same thing.

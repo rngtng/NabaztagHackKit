@@ -15,7 +15,6 @@
 #include "usb/hcdmem.h"
 #include "usb/hcd.h"
 #include "utils/debug.h"
-#include "hal/led.h"
 
 
 #include "usb/rt2501usb.h"
@@ -80,10 +79,6 @@ void F(const uint8_t *password, uint16_t passwordlength,
       output[j] ^= digest[j];
     if (!(i&63))
     {
-      j=(i>>6)&3;
-      set_led(1,(j==0)?0xff:0);
-      set_led(2,(j&1)?0xff:0);
-      set_led(3,(j==2)?0xff:0);
       usbhost_events();
       CLR_WDT;
       while((r=rt2501_receive()))
