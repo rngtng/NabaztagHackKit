@@ -20,23 +20,48 @@ carried had drifted, and these will too.
 
 ## The stack in one picture
 
+Five layers, read bottom-up like an address space, with one seam cutting across.
+Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
+
 ```
-                                      apps/*.lua            ← demo apps (RAM)
-                                      lib/{net,hw,sys,audio} ← behaviour (RAM, ~50 KB .lc)
-   Lua                                boot/boot.lua          ← sched, resident (flash)
-   ───────────────────────────────────────────────────────────────────────────
-   the seam                           nab.*  38 names / 37 C functions
-   ───────────────────────────────────────────────────────────────────────────
-                    src/main.c        Lua host: state, trimmed stdlib, #LC REPL,
-                                      all bindings, event dispatch, _sbrk/_read/_write
-   C               src/utils/         event core, fmt/number shims, #LC header, libc shim
-                   src/hal/           spi led button audio adc i2c rfid motor uart
-                                      wifi config ota          ← 12 drivers
-                   src/net/  src/usb/ 802.11 + WPA2 · OHCI + RT2501   (vendored, -Os)
-                   lua/               PUC-Rio Lua 5.4.7, parser removed (vendored)
-                   sys/               init.s, tick, irq, linker script, OKI regs
-   ───────────────────────────────────────────────────────────────────────────
-   hardware        OKI ML67Q4051 (ARM7TDMI @32 MHz) + 1 MB ExtRAM + peripherals
+ L4  LUA USERLAND ─────────────────────────────────── RAM · 50,973 B · 19 modules
+     lib/net  12 mod · 35,585 B     lib/audio  4 · 7,011 B     apps/  10 demos
+     lib/sys   2 mod ·  4,702 B     lib/hw     1 · 3,675 B
+     no require · no manifest · no bundler — chunks extending a global table
+ ────────────────────────────────────────────────────────────────────────────────
+ L3  LUA RUNTIME SURFACE ────────────────────────────────── flash · 3,674 B chunk
+     boot.lua → sched          pump · unpump · spawn · sleep   (the reactor)
+     stdlib                    base (−dofile/loadfile) · string · table
+                               coroutine (2,300 B — what the reactor is built on)
+     absent                    math · io · os · package · debug · utf8
+                               load() takes bytecode only → lundump is the whole
+                               input surface
+ ╔══ SEAM ═══ nab.* ═══ 38 names → 37 C functions ══════════════════════════════╗
+ ║  LEDs 3 · audio out 8 · audio in 5 · wifi 8 · rfid/button/wheel/ears 7       ║
+ ║  time+events 4 · persistence 2 · codec diagnostics 2                         ║
+ ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
+ ║  freeze it:  nab.wifi 30 s · nab.record 30 s · wifi_up 10 s · wifi_scan 5 s  ║
+ ╚══════════════════════════════════════════════════════════════════════════════╝
+ L2  THE LUA HOST ──────────────────────────── src/main.c · 1,444 ln · fan-out 17
+     38 bindings · #LC frame REPL · dispatch_events (the pump)
+     _sbrk → ExtRAM · _read/_write → UART0 · open_trimmed_libs
+     the ONLY TU where lua_State exists — and 31 cohesion clusters wide
+ ────────────────────────────────────────────────────────────────────────────────
+ L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
+     src/hal/    12 drivers · 3,119 ln   spi led button audio adc i2c rfid
+                                         motor uart wifi config ota
+     src/utils/  event · fmt · lcframe · libc_shim
+     src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
+     src/net/    802.11 + WPA2-CCMP · 4,203 ln                     (vendored, -Os)
+     lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
+ ────────────────────────────────────────────────────────────────────────────────
+ L0  STARTUP + SILICON ─────────────────────────────────────────────────────────
+     sys/        init.s (PLL · EMC · stacks) · tick.c (1 ms) · irq.c
+                 ml67q4051.ld · OKI register headers
+     board       ML67Q4051 ARM7TDMI @32 MHz · flash 124 KB + 4 KB config sector
+                 ExtRAM 1 MB @0xD0000000 · TLC594x LEDs (SPI1) · VS1003B (SPI0)
+                 CRX14 RFID (I2C) · ear PWM (FTM) · wheel (ADC ch.2) · UART0
+                 RT2501 USB WiFi (ML60842 OHCI)
 ```
 
 Two properties make this a stack rather than a pile, and both are checkable:
@@ -231,14 +256,48 @@ main.c ──► hal/* ──► sys/inc (registers)         hal/wifi.c ──�
 utils/event.c ──► hal/{button,rfid}              sys/src/tick.c ──► hal/led.h  ⚠
 ```
 
-The two ⚠ edges point the wrong way and are both real:
+Counted as distinct symbols crossing a directory boundary — the intended
+downward flow first, then the four edges that run against it:
 
-- `net/eapol.c`'s PBKDF2 loop (`F()`) calls `set_led(1..3)` as a progress
-  indicator and pumps `usbhost_events()` + drains RX from inside the key
-  derivation. So a WPA2 join **writes the LEDs behind the app's back**,
-  bypassing the `nab` seam entirely. It is vendored code and it predates the
-  seam, but it is reachable from `nab.wifi(ssid, psk)` on every join.
-- `sys/src/tick.c` → `hal/led.h`, discussed in §2.
+```
+              ┌───────────────┐
+              │  src/main.c   │
+              └─┬───────────┬─┘
+      44 syms ↓             ↓ 6 syms                       ② _write ⚠
+    ┌─────────────┐     ┌──────────────┐  ◄╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
+    │  src/hal/   │     │  src/utils/  │                          ╎
+    └─┬────┬────┬─┘     └──────────────┘                          ╎
+10 ↓    2 ↓    ↓ 8              ▲ ④ rand() ⚠ (2, benign) ╌╌╌╌╌╌┐  ╎
+ ┌──────────┐  │  ┌──────────┐                                ╎  ╎
+ │ src/usb/ │◄─┼──┤ src/net/ │╌╌╌╌╌► ③ set_led ⚠ ──────────────┴──┘
+ └────┬─────┘16│4 └────┬─────┘        (into hal/, lateral)
+    3 ↓  └─────┴────►  ↓ 1
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  sys/     ╌╌╌╌► ① led_fade_tick ⚠ ──► hal/led.c                  │
+ └──────────────────────────────────────────────────────────────────┘
+```
+
+`main.c → sys/` (5 symbols) is omitted above for legibility. `usb ↔ net` is a
+genuine cycle — 16 symbols out, 4 back — so those two vendored directories are
+effectively one 9,725-line module.
+
+The four ⚠ edges, all measured, none accidental:
+
+1. **`sys/src/tick.c` → `hal/led.c`** (`led_fade_tick`). The 1 ms tick ISR steps
+   the fade engine, so the bottom layer depends on a driver — and `led.c` masks
+   that same IRQ around its SPI flush in return. Documented at both ends, and
+   still a loop.
+2. **`utils/fmt.c` → `main.c`** (`_write`). A true two-way cycle: `main.c` needs
+   `fmt.c`'s `snprintf` and Lua number hooks, `fmt.c` needs `main.c`'s UART
+   syscall.
+3. **`net/eapol.c` → `hal/led.c`** (`set_led`). The PBKDF2 loop (`F()`) drives
+   LEDs 1-3 as a progress indicator and pumps `usbhost_events()` + drains RX
+   from inside the key derivation. A WPA2 join therefore **writes the LEDs
+   behind the app's back**, bypassing the seam entirely. Vendored, predating the
+   seam, and reachable from `nab.wifi(ssid, psk)` on every join.
+4. **`net/{eapol,ieee80211}.c` → `utils/libc_shim.c`** (`rand`, 2 symbols).
+   Benign — the shim is a libc replacement, not a layer. It exists because
+   newlib's `rand` drags ~9 KB of `vfprintf`/FILE machinery into a 124 KB budget.
 
 ### Across the seam
 
@@ -259,7 +318,7 @@ lib/sys/time      ──► nab.time            lib/sys/ntp ──► (nothing �
 lib/hw/ears       ──► sched , nab
 ```
 
-`lib/net/link.lua` and `lib/sys/ntp.lua` are the only leaves. `iface.lua` (420
+`lib/net/link.lua` and `lib/sys/ntp.lua` are the only leaves. `iface.lua` (401
 lines) is the hub — it is what every blocking flow (`:dhcp`, `:resolve`,
 `:http_get`, `:ntp`) hangs off, and the module the other libs reach through.
 "Four independent libs" is not accurate: `audio` needs `net`, and `net` softly
