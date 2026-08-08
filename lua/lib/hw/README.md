@@ -128,4 +128,4 @@ Covered: homing from all 17 start holes, homing across an encoder *and* tick
 rollover, shortest-path and forced direction, ten hops with no drift, the coast
 window vs. a real hand turn, jam and gapless-wheel give-up, and recovery.
 
-`task lua:lib:size` (as of #263): `hw/ears` 3424 B stripped.
+`task lua:lib:size` prints `hw/ears`'s stripped bytecode.

@@ -6,8 +6,8 @@ HTTP body as a playable source, MIDI jingles, and the wheel as a volume knob.
 
 **Nothing in this folder costs flash** — modules are compiled off-device
 (`tools/luac`, `LUA_32BITS`) and shipped as `#LC` frames over the REPL into
-RAM. `task lua:lib:size` (as of #333): `player` 2897 B, `record` 2353 B,
-`stream` 1860 B, `midi` 1584 B, `volume` 670 B — 9,364 B for the folder.
+RAM. `task lua:lib:size` prints the stripped bytecode per module; `player` and
+`record` are the two that matter for #219's budget.
 
 ## Why
 

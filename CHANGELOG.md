@@ -37,6 +37,48 @@
     - Consequence worth noting: `nab.rec_wav` stayed a C binding in #327 because
       "`nab.record` needs the header in C either way". That premise is now false, so the
       last 96 B of #330's third item is genuinely recoverable — see `ARCHITECTURE.md` §9.
+  * [#342](https://github.com/rngtng/NabaztagHackKit/issues/342): **`task lua:measure` —
+    the figures four documents cite, from one place.** `lua/ARCHITECTURE.md`,
+    `firmware/README.md`, `boot/README.md` and the per-lib READMEs all quote measured
+    numbers, and each one used to come from its own throwaway invocation; during the
+    #322/#326 arc they were re-derived by hand four times, drifting a little each time.
+    One command now prints flash (used/free, per-object and per-function off the map),
+    the resident boot chunk, per-module Lua bytecode, lines per area and `src/main.c`'s
+    function count — human-readable by default, `FORMAT=json` for #338's size gate.
+    - **It fails rather than mislead.** A map or ELF older than any source it was linked
+      from is an error naming the offending file, and every section asserts it measured
+      something: a tidy report of zeros is indistinguishable from a measurement.
+    - **Flash comes from the ELF section table, not the map.** `ld` prints a flash `load
+      address` for `.bss` too, so billing every section with one charges the budget ~5 KB
+      of zero-init RAM. Pure Python — reading an ELF needs no toolchain container.
+    - `task lua:lib:size` is now a view over the same implementation instead of a second
+      count of the same thing, which is how these drifted apart to begin with.
+    - Corrected on the way past, each against a real build: `src/hal/` 3,119 → 3,129 ln,
+      `src/net/` 4,203 → 4,198, `lib/audio/player` 2649 → 2897 B, `lib/hw/ears` 3424 →
+      3675 B. `src/utils/` read 2,253 ln because the sweep that produced it also swept
+      `inc/common.h` and `inc/event.h`; the loose `inc/` headers are their own row now
+      (`src/utils/` 1,751 ln, `inc/` 644).
+    - The optional extras #342 lists — the symbol-level dependency graph and the
+      LCOM-style cohesion clustering — were deliberately **not** built: they change
+      rarely, and the issue says to add them only once someone reaches for them twice.
+    - **The documents stopped carrying the figures.** Rather than correct them again,
+      `ARCHITECTURE.md`, `firmware/README.md`, `boot/README.md` and the four per-lib
+      READMEs now name the command that prints a size instead of quoting one — §3 lost
+      its line-count columns, §6 its byte column, the stack diagram its byte and line
+      annotations, and each per-lib README its byte list. The flash budget keeps its
+      magnitude in prose ("under 10 KB free of 124 KB"), because that constraint is the
+      argument every design principle answers to; the digits are the tool's.
+      **Deltas stayed** — "#331 gave back 2,112 B", "#326 cost +56 B against a control
+      build", "#324 came in at 0 B" — because a delta records a past measurement that no
+      command can regenerate, which is the opposite of a snapshot. Rule applied
+      throughout: a number goes only if `task lua:measure` produces it, so the cohesion
+      clusters, fan-out, seam width and `coroutine`'s 2,300 B all stayed put.
+    - Why this instead of #338's gate: #344 re-derived every figure by hand, and a day
+      later five of the nine rows in `ARCHITECTURE.md`'s §3 table disagreed with the
+      tree — while the same page's diagram already carried a different `main.c` line
+      count than its own table did. With the snapshots gone, #338 has almost nothing
+      left to compare; the useful gate in its place is the inverse, failing when a
+      document reintroduces one.
 
   * [#326](https://github.com/rngtng/NabaztagHackKit/issues/326): **the rest of the
     rule-bearing code is out of `main.c`** — [#327](https://github.com/rngtng/NabaztagHackKit/issues/327)

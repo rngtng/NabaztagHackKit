@@ -120,7 +120,12 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **117,120 B of 124 KB (~9.6 KB free)**. Roughly: ~23 KB the USB +
+The image fills most of the **124 KB** internal flash, with **under 10 KB free** — the
+constraint every design principle above answers to. **`task lua:measure ONLY=flash,objects`
+prints the exact used/free** and where it went, per object and per function, off a real
+build; it refuses to report a map older than the sources it was linked from, so a number it
+prints is this tree's. Nothing here quotes one, because a quoted total is wrong by the next
+merge. Roughly, the spend is: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -152,11 +157,12 @@ API, which is why it was a codec change rather than the feature cut this section
 offer. #333 gave back another **252 B** by moving `nab.record`'s loop to `lib/audio/record.lua`.
 
 What remains is one demo asset, the resident boot chunk (`gen/boot_lc.h` from
-`../boot/boot.lua`, **3,674 B** — `run`/`watch`/`ledshow` plus two hard-coded RFID UIDs,
-largely duplicating [`../apps/`](../apps/)). That one is a product decision, not a refactor.
-(Figures re-measured off real builds: the pair was previously written up as "4,547 B together"
-with the chunk at 3,620 B, and `../boot/README.md` carried a 2,387 B for the same chunk — none
-of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
+`../boot/boot.lua` — `run`/`watch`/`ledshow` plus two hard-coded RFID UIDs, largely
+duplicating [`../apps/`](../apps/); `task lua:measure ONLY=boot` for its size). That one is
+a product decision, not a refactor. It is also the reason this section stopped quoting
+sizes: the same chunk was once documented at 3,620 B here and 2,387 B in
+[`../boot/README.md`](../boot/README.md), and neither matched the build.
+`task lua:firmware:build` fails loudly on overflow.
 
 ## The `nab` module
 

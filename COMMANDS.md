@@ -91,6 +91,7 @@ task lua:lib:test              # host-side unit tests for the lua libs
 task lua:firmware:test         # bytecode-pipeline golden (luac -> frame -> run)
 task lua:firmware:test:inject  # peripheral-injection golden (button/RFID/ear)
 task lua:lib:size              # device-bytecode size of every lua-lib module
+task lua:measure               # every figure the lua docs cite (FORMAT=json for machines)
 ```
 
 ---

@@ -7,6 +7,7 @@
 #   * boot:*      — the resident boot chunk baked into the image (firmware delegates).
 #   * apps:*      — the Lua app sources: compile to bytecode, run in the sim.
 #   * lib:*       — host-side Lua stdlib tests.
+#   * measure     — the figures the docs cite (#342), one producer for all of them.
 # (`task firmware:build` here == `cd firmware && task build`.) This root owns only
 # the cross-leaf orchestration (verify, clean). Run `task` with no args to list.
 version: '3'
@@ -22,13 +23,16 @@ includes:
     taskfile: ./lib/Taskfile.yaml
   simui: # browser UI for the simulator (#43): NiceGUI + embedded sim, one container
     taskfile: ./tools/simui/Taskfile.yaml
+  measure: # the figures the docs cite (#342); the `measure` task below is its front door
+    taskfile: ./tools/measure/Taskfile.yaml
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
+    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the measure parsers (#342), the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
     cmds:
       - task: check:docs      # cheap, fail-fast: catch stale task/`*.md` doc refs before the slow builds
       - task: check:eol       # cheap, fail-fast: the vendored net/ sources are still CRLF
+      - task: measure:test    # cheap, no Docker: the map/ELF parsers behind lua:measure (#342)
       - task: firmware:test:host   # native C unit tests under ASan - no sim, seconds
       - task: boot:test            # host-lua unit tests for `sched`, the resident reactor
       - task: firmware:test:bytecode  # the only input surface: malformed bytecode must not kill the runtime
@@ -146,6 +150,22 @@ tasks:
           exit 1
         fi
         echo "✓ line endings: all $(git ls-files | wc -l | tr -d ' ') tracked files match their committed endings"
+
+  measure:
+    desc: 'Print the measured figures the lua docs cite - flash (used/free/per-object/per-function), the resident boot chunk, per-module Lua bytecode, lines per area and src/main.c''s function count. Fails rather than reporting stale or empty numbers. Reporting only: the gate that compares these against the docs is #338.'
+    summary: |
+      Usage: task lua:measure [FORMAT=json] [ONLY=flash,objects,boot,bytecode,lines,functions]
+
+      Needs a current build for the flash figures - a map older than any source it
+      was built from is an error, not a footnote. Run task lua:firmware:build first.
+      ONLY=... restricts the report to the sections you name.
+    # The one name a person types, so `task --list` shows `lua:measure` and not a
+    # `:default` suffix nobody needs. The leaf still owns the implementation (and
+    # keeps its own `default`, so `cd tools/measure && task` works there too) -
+    # this is the same re-exposure the apps leaf does for `luac:compile`.
+    cmds:
+      - task: measure:default
+        vars: {FORMAT: '{{.FORMAT}}', ONLY: '{{.ONLY}}'}
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'
