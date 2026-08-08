@@ -30,7 +30,9 @@ chunk.
 - `task lua:lib:test` - host-side unit tests for every lib (in `lua:verify`).
 - `task lua:lib:size` - stripped device-bytecode size per module, grouped by
   lib (feeds #219's flash budget). A view over `task lua:measure` (#342), which
-  prints this alongside the flash, line and function figures the docs cite.
+  prints this alongside the flash, line and function figures. The per-lib READMEs
+  point at it rather than quoting bytes - every listing that was written down
+  drifted before anyone noticed.
 
 Both **auto-discover** libs: a new lib is a new subfolder with its own modules
 and a `test/run.lua`; it is picked up with no edits to `Taskfile.yaml`. Tests

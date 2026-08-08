@@ -13,24 +13,29 @@ the per-lib READMEs, [`boot/README.md`](boot/README.md), and one README per tool
 thing a reader most often needs: the edge list — including the edges that leave
 this track entirely.
 
-Every figure below was measured, not copied, and there is now one command that
-prints all of them: **`task lua:measure`** (#342 — flash, per-object flash, the
-boot chunk, per-module bytecode, lines per area, `main.c`'s function count;
-`FORMAT=json` for machines). Re-run it rather than trusting this page — several
-of the numbers the layer READMEs carried had drifted, and these will too.
+**This page carries no sizes.** Flash used/free, per-object and per-function
+flash, the resident boot chunk, per-module bytecode, lines per area and
+`main.c`'s function count are all one command — **`task lua:measure`** (#342,
+`FORMAT=json` for machines) — and the sections below name the command instead of
+quoting a number. That is not tidiness: these figures were re-derived by hand
+five times across the #322/#326/#330 arcs and drifted every time, including
+away from each other inside this file. Structure is what a document can hold;
+sizes have an owner now.
 
 ## The stack in one picture
 
 Five layers, read bottom-up like an address space, with one seam cutting across.
-Every size is measured (`task lua:measure`).
+**No sizes here on purpose** — `task lua:measure` prints them, and a figure
+typed into a diagram is wrong by the next merge.
 
 ```
- L4  LUA USERLAND ─────────────────────────────────── RAM · 53,326 B · 20 modules
-     lib/net  12 mod · 35,585 B     lib/audio  5 · 9,364 B     apps/  10 demos
-     lib/sys   2 mod ·  4,702 B     lib/hw     1 · 3,675 B
+ L4  LUA USERLAND ────────────────────────────────────────────── RAM · lib/ + apps/
+     lib/net    link arp ipv4 udp dns dhcp tcp http iface setup provision ota
+     lib/audio  player record stream midi volume      lib/sys  ntp time
+     lib/hw     ears                                  apps/    demo apps
      no require · no manifest · no bundler — chunks extending a global table
  ────────────────────────────────────────────────────────────────────────────────
- L3  LUA RUNTIME SURFACE ────────────────────────────────── flash · 3,674 B chunk
+ L3  LUA RUNTIME SURFACE ──────────────────────── flash · the resident boot chunk
      boot.lua → sched          pump · unpump · spawn · sleep   (the reactor)
      stdlib                    base (−dofile/loadfile) · string · table
                                coroutine (2,300 B — what the reactor is built on)
@@ -43,21 +48,21 @@ Every size is measured (`task lua:measure`).
  ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
  ║  freeze it:  nab.wifi 30 s · wifi_up 10 s · wifi_scan 5 s · nab.beep         ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
- L2  THE LUA HOST ──────────────────────────── src/main.c · 1,084 ln · fan-out 17
-     37 bindings · the REPL · init_hw · open_trimmed_libs
-     the ONLY TU where lua_State exists. 47 fns in 33 clusters — 29 of them
-     singletons, which is what a binding table SHOULD look like (#326 done)
+ L2  THE LUA HOST ─────────────────────────────────── src/main.c · fan-out 17
+     the bindings · the REPL · init_hw · open_trimmed_libs
+     the ONLY TU where lua_State exists. Its functions fall in 33 clusters —
+     29 singletons, which is what a binding table SHOULD look like (#326 done)
  ────────────────────────────────────────────────────────────────────────────────
  L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
-     src/hal/    12 drivers · 3,129 ln   spi led button audio adc i2c rfid
-                                         motor uart wifi config ota
+     src/hal/    12 drivers   spi led button audio adc i2c rfid
+                              motor uart wifi config ota
      src/libc/   keep-newlib-out-of-flash, and nothing else (#324):
                  libc_shim (rand/srand/__assert_func) · syscalls
                  (_read/_write → UART0, _sbrk → ExtRAM, halting abort)
      src/utils/  event · fmt · lcframe · lcread · pump · wav · luaseam
-     src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
-     src/net/    802.11 + WPA2-CCMP · 4,198 ln                     (vendored, -Os)
-     lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
+     src/usb/    OHCI + RT2501                                     (vendored, -Os)
+     src/net/    802.11 + WPA2-CCMP                                (vendored, -Os)
+     lua/        PUC-Rio 5.4.7, parser removed              (vendored, 4 edits)
  ────────────────────────────────────────────────────────────────────────────────
  L0  STARTUP + SILICON ─────────────────────────────────────────────────────────
      sys/        init.s (PLL · EMC · stacks) · tick.c (1 ms) · irq.c
@@ -103,7 +108,7 @@ That absence is what leaves principle 4 (partial updates) without a home.
 
 ## 2. The HAL — `firmware/src/hal/` + `firmware/sys/`
 
-12 drivers, 3,129 lines including headers. The API is deliberately narrow and
+12 drivers. The API is deliberately narrow and
 register-shaped: `init_x()` plus a handful of verbs, no state machines, no
 policy, **no `lua_State`**.
 
@@ -147,25 +152,24 @@ writes the console through `hal/uart`. It is a substitution layer, not a leaf �
 
 ## 3. What else the C firmware holds
 
-Counted by `task lua:measure ONLY=lines`, which defines an area as
-`src/<area>/*.c` plus the headers that declare it, `inc/<area>/*.h`. The loose
-headers in `inc/` belong to no single area — `common.h` alone is included by 41
-files — so they are their own row rather than folded into whichever directory a
-hand-written sweep reached first, which is how `src/utils/` used to read 500
-lines larger than it is.
+Ordered by size; **`task lua:measure ONLY=lines` for the figures**. What is
+worth writing down is where each area came from, because that is what decides
+whether a change here should be flowed back to `mtl/` — the line counts are a
+lookup, and a lookup that lived on this page disagreed with the tree five times
+out of nine the last time anyone checked.
 
-| Area | Files | Lines | Origin |
-|---|---:|---:|---|
-| `lua/` — PUC-Rio Lua 5.4.7 | 61 | 30,280 | vendored, 4 local edits |
-| `src/usb/` — OHCI host + RT2501 | 19 | 5,522 | vendored from mtl/V1 |
-| `src/net/` — 802.11, EAPOL, AES-128, hashes | 8 | 4,198 | vendored from mtl/V1 |
-| `src/hal/` | 24 | 3,129 | ported from `mtl/firmware`, then diverged |
-| `examples/` — one-peripheral bring-up progs | 19 | 3,228 | original |
-| `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 16 | 1,756 | original |
-| `src/main.c` — the Lua host | 1 | 1,084 | original |
-| `inc/` — `common.h`, `event.h`, `tone_midi.h` | 3 | 514 | vendored + original |
-| `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
+| Area | Origin |
+|---|---|
+| `lua/` — PUC-Rio Lua 5.4.7 | vendored, 4 local edits |
+| `src/usb/` — OHCI host + RT2501 | vendored from mtl/V1 |
+| `src/net/` — 802.11, EAPOL, AES-128, hashes | vendored from mtl/V1 |
+| `src/hal/` | ported from `mtl/firmware`, then diverged |
+| `examples/` — one-peripheral bring-up progs | original |
+| `sys/` — startup, tick, irq, linker, regs | copied from `mtl/firmware` |
+| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | original |
+| `src/main.c` — the Lua host | original |
+| `inc/` — `common.h`, `event.h`, `tone_midi.h` | vendored + original |
+| `src/libc/` — the newlib substitutions | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
 — `lcode`/`llex`/`lparser` are dropped, ~18.9 KB) plus `lauxlib`, `lbaselib`,
@@ -189,14 +193,16 @@ are global in effect:
 
 ### Flash budget
 
-`bin/firmware.elf` = **117,120 B of 126,976 B**, **9,856 B free** (measured, not
-quoted; 119,484 / 7,492 before #331 and #333). Roughly: ~23 KB USB +
-802.11/WPA2, ~3.2 KB the reactor (`coroutine` 2,300 B measured), ~2.1 KB
-provisioning plumbing, ~1.5 KB the event core, 3,674 B the resident boot chunk,
-836 B `nab.config`, ~0.8 KB the raw-frame/AP bindings, ~0.65 KB the OTA writer,
-560 B the scan bindings, 552 B the stream HAL, **45 B the `nab.tone()` MIDI
-file**. Full breakdown and the two levers that keep it from being worse:
-[`firmware/README.md`](firmware/README.md).
+The image fills most of the **124 KB** internal flash, with **under 10 KB free**
+— which is the constraint every design principle on this track answers to.
+`task lua:measure ONLY=flash,objects` prints the exact used/free and where it
+went, per object and per function; #331 and #333 together bought back 2,364 B of
+it. Roughly, the spend is ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor
+(`coroutine` 2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event
+core, the resident boot chunk, 836 B `nab.config`, ~0.8 KB the raw-frame/AP
+bindings, ~0.65 KB the OTA writer, 560 B the scan bindings, 552 B the stream
+HAL, **45 B the `nab.tone()` MIDI file**. Full breakdown and the two levers that
+keep it from being worse: [`firmware/README.md`](firmware/README.md).
 
 ## 4. The seam — `nab.*`
 
@@ -245,17 +251,19 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 
 ## 6. The custom Lua layer
 
-| Where | What | Lives in | Size (stripped `.lc`) |
-|---|---|---|---|
-| `boot/boot.lua` | `sched` — the cooperative reactor — + demo helpers | **flash** | 3,674 B |
-| `lib/net/` | link, arp, ipv4, udp, dns, dhcp, tcp, http, iface, setup, provision, ota | RAM | 35,585 B |
-| `lib/audio/` | player, record, stream, midi, volume | RAM | 9,364 B |
-| `lib/sys/` | ntp, time | RAM | 4,702 B |
-| `lib/hw/` | ears | RAM | 3,675 B |
-| `apps/` | 10 demo apps | RAM | — |
+| Where | What | Lives in |
+|---|---|---|
+| `boot/boot.lua` | `sched` — the cooperative reactor — + demo helpers | **flash** |
+| `lib/net/` | link, arp, ipv4, udp, dns, dhcp, tcp, http, iface, setup, provision, ota | RAM |
+| `lib/audio/` | player, record, stream, midi, volume | RAM |
+| `lib/sys/` | ntp, time | RAM |
+| `lib/hw/` | ears | RAM |
+| `apps/` | demo apps | RAM |
 
-**53,326 B of bytecode across 20 modules**, against 9,856 B of free flash
-(`117,120` of `126,976` used, post-#331/#333).
+Per-module stripped bytecode, and the boot chunk's flash cost:
+`task lua:measure ONLY=bytecode,boot` (or `task lua:lib:size` for the libs
+alone). The shape that matters is the ratio, and it is stark — **the userland is
+several times the free flash**, which is why §8's delivery problem is a problem.
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -533,16 +541,17 @@ inside a pump, never `nab.wait`. `lib/` gets this right (`player:wait()` and
 `ears:wait()` use the injected `sleep(0)`/`sleep(1)` as a pump-once); nothing
 enforces it for app code, and that is now a stated limit rather than an unknown.
 
-**2. The Lua userland has no delivery mechanism.** 53,326 B of bytecode in 20
-modules, no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
+**2. The Lua userland has no delivery mechanism.** Over 50 KB of bytecode
+(`task lua:measure ONLY=bytecode`), no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
 single file. The load order exists in exactly two places, neither of them
 shippable: prose in the lib READMEs, and a hard-coded `MODULES` array in each
 `test/run.lua`. And the console is paced for flow control at 3 ms/byte plus
 80 ms/line (`tools/openocd/uart_repl.py` defaults, ~333 B/s against a 115200
 line) — so shipping the boot-critical `net` subset (23 KB → ~46 KB of hex) is
 minutes, and the whole lib set is longer. Freezing a subset into flash is the
-known plan (#219); the 9,856 B free is the problem — #331 and #333 bought
-2,364 B of it, which was the point of doing them first.
+known plan (#219); the free flash is the problem — #331 and #333 bought back
+2,364 B of it, which was the point of doing them first, and it is still under
+10 KB against a userland five times that size.
 
 **3. The cross-track twin dependency is unguarded.** Ten byte-identical files,
 and the correct action on a change differs per file — copy for most, explicitly
@@ -594,18 +603,27 @@ realistic goal is "unguessable to an off-path observer", not "cryptographic".
 **6. Size figures drift, and nothing catches it.** Three documented numbers for
 the two demo assets disagreed — `firmware/README.md`'s "4,547 B together" with
 the boot chunk at 3,620 B, against `boot/README.md`'s 2,387 B for that same
-chunk. Measured off a real build, the chunk is **3,674 B** and the pair is
-**5,834 B**; both READMEs are corrected. The `lib/` figures had drifted the same
-way (`audio/player` 2,649 → 2,897, `hw/ears` 3,424 → 3,675, while `net` and
-`sys` were still exact). The gap was never measurement cost — it is that nothing
-compares the printed number against the written one.
+chunk. The `lib/` figures had drifted the same way (`audio/player` 2,649 →
+2,897, `hw/ears` 3,424 → 3,675, while `net` and `sys` were still exact). The gap
+was never measurement cost — it was that a number, once typed into a document,
+has no owner.
 
-**Half of that is now closed.** #342 made the figures one command — `task
-lua:measure`, `FORMAT=json` for machines — so there is a single producer to
-compare against instead of four ad-hoc invocations, and it fails rather than
-report a stale map or a tidy row of zeros. The gate that reads the documents and
-compares them (#338) is still the cheapest unclaimed one in the track, and it is
-much cheaper now than it was.
+**#342 closed it, and not by adding a gate.** One command produces every one of
+these figures (`task lua:measure`, `FORMAT=json` for machines), and the
+documents stopped carrying them: this page, the layer READMEs and the per-lib
+READMEs now say which command prints a size instead of quoting one. That is why
+§3 has no line counts and §6 has no byte column. **What stayed is deltas** —
+"#331 gave back 2,112 B", "#326 cost +56 B", "#324 came in at 0 B against a
+control build" — because those are records of a past measurement, permanently
+true and unrecoverable by any command, which is the opposite of a snapshot.
+
+The evidence that this was the right way round rather than a gate: #344
+re-derived every figure by hand, and a day later five of the nine rows in §3's
+old table disagreed with the tree — while the same page's own diagram already
+carried a different line count for `main.c` than its table did. #338 was scoped
+to compare documents against measured output; with the snapshots gone there is
+almost nothing left for it to compare, and the useful gate in its place is the
+inverse — fail when a document reintroduces one.
 
 ## 9. Is it well structured? — coupling and cohesion, measured
 
@@ -659,13 +677,17 @@ It used to sit alone at the end of every distribution: 1,444 lines, 65
 functions, six modules sharing a file, and every rule-bearing line of it
 unlinkable because `main.c` carries `main()`. Four merged PRs later:
 
-| | before | now |
+| | before | after #326 |
 |---|---:|---:|
 | lines | 1,444 | **1,108** |
 | functions | 65 | **48** |
 | `main.o` | 13,073 B | **11,325 B** |
 | largest cohesion cluster | 20 fns | **8 fns** |
 | clusters | 31 | **34** |
+
+Both columns are what #326 measured, kept as the record of what it bought —
+later work has moved the right-hand one (#333 took another binding out).
+`task lua:measure ONLY=functions,objects` is the current state.
 
 **The cluster count going up is the success signal, not a regression.** What
 joined those singleton bindings into clusters was the shared helpers —
@@ -775,9 +797,9 @@ single-subscriber limit still stands for `"button"` and `"rfid"`.
 
 Nothing here is hand-maintained knowledge; each claim came from a command.
 
-**Every size and count on this page is one command** (#342 — it exists because
-these were re-derived by hand four times during the #322/#326 arc, drifting a
-little each time):
+**Every size this page used to quote is one command** (#342 — it exists because
+they were re-derived by hand five times across the #322/#326/#330 arcs, drifting
+each time):
 
 ```sh
 task lua:measure                    # all of it, human-readable

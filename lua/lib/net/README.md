@@ -224,15 +224,16 @@ content, never just that two runs agree.
 
 ## Size (feeds #219)
 
-`task lua:lib:size` - stripped `.lc` bytes per module. As of #259: link 1502,
-arp 1220, ipv4 1385, udp 788, dns 3123, dhcp 3441, tcp 5142, http 2296, iface
-7214, setup 4156, provision 1597, ota 3721 — **35,585 B total**. (Of `iface`'s
-growth since #232, #259's `:ntp` is 6213 → 7214, +1001 B; the rest is #286/#302's
-multi-connection `serve()`. The sys modules `:ntp` drives are counted under
-`lua/lib/sys/`.)
+**`task lua:lib:size`** — stripped `.lc` bytes per module, which is what #219
+budgets against. This folder is the largest of the four libs by a wide margin,
+and `iface` is the largest module in it.
 
-(The previous listing was stamped "as of #235" but had already drifted — several
-modules grew after it; these numbers are re-measured, not patched.)
+No listing here on purpose. Two successive ones were written down and both had
+drifted before anyone noticed (the "as of #235" table was stale by #259, and its
+replacement by #333). The growth worth remembering is the part a size print
+cannot tell you: **#259's `:ntp` added +1,001 B to `iface`**, and #286/#302's
+multi-connection `serve()` the rest. The `sys` modules `:ntp` drives are counted
+under `lua/lib/sys/`, not here.
 
 The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 15.8 KB,
 23.0 KB once `iface` is counted) is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM

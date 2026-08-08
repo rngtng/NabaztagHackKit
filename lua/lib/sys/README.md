@@ -171,7 +171,8 @@ to end — success, a stale-cookie reply skipped and the retry accepted, a
 definitive refusal stopping early, a timeout, and the port unregistered on
 every path.
 
-`task lua:lib:size` (as of #259): `sys/ntp` 928 B, `sys/time` 3774 B.
+`task lua:lib:size` prints both modules' stripped bytecode; `time` is much the
+larger of the two.
 
 ## On device
 

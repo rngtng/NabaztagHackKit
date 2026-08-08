@@ -16,8 +16,20 @@ task lua:measure:test                 # the parsers' unit tests (in lua:verify)
 ```
 
 Reporting only — it is not a gate, and it is deliberately not in `lua:verify`.
-Comparing what it prints against what the docs *say* is #338; this exists so that
-gate has one number to compare against instead of four human-readable outputs.
+
+**The documents no longer carry these figures at all.** [`lua/ARCHITECTURE.md`](../../ARCHITECTURE.md), the
+layer READMEs and the per-lib READMEs name the command that prints a size instead of
+quoting one, so there is nothing left to drift: §3 has no line-count column, §6 has no
+byte column, and the flash budget states its magnitude in prose while this tool owns
+the digits. What the docs kept is **deltas** — "#331 gave back 2,112 B", "#326 cost
++56 B against a control build" — because a delta is a record of a past measurement:
+permanently true, and unrecoverable by re-running anything.
+
+That was the alternative to #338's doc-vs-measured gate, and the reason to prefer it
+is on the record: #344 re-derived every figure by hand, and a day later five of nine
+rows in that page's table disagreed with the tree while its own
+diagram disagreed with its own table. A gate would have caught that on the way in;
+deleting the snapshots means there is nothing to catch.
 
 ## What it emits
 
