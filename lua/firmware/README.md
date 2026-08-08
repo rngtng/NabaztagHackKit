@@ -120,13 +120,20 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **119,428 B of 124 KB (~7.4 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **119,484 B of 124 KB (~7.3 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
 ~0.65 KB the #235 OTA writer, 560 B the #273 `nab.wifi_scan`/`nab.wifi_seen` scan bindings
 (station mode only), 552 B the #265 non-blocking audio stream HAL. Everything above that
 last one is Lua in [`../lib/audio/`](../lib/audio/) and costs no flash.
+
+The #326 extractions (`pump.c`, `wav.c`, `luaseam.c`) cost **+56 B** measured
+against the build before them — three TU boundaries the compiler can no longer
+propagate constants across, of which the largest single item is `pump_init()`
+at 36 B, the accessor that keeps the `"nab.events"` registry key private to
+`pump.c`. Same trade as #324's `console_last_rx_ms()`: a few dozen bytes for an
+interface that cannot be reached around. Revisit if flash gets tight.
 
 Two things keep it from being worse, and both are load-bearing:
 
@@ -155,6 +162,13 @@ nab.fade(name, r, g, b, ms)   -- background fade over ms; returns immediately (#
 nab.delay(ms)                 -- block ms, timed off the 1 ms tick (the clock fades use)
 nab.time()                    -- -> ms since boot (wrapping 32-bit tick)
 nab.wait(ms)                  -- sleep ~ms while running the event pump, so nab.on callbacks fire
+                              --   TOP LEVEL ONLY. Called from inside a callback, a sched.pump
+                              --   or a spawned task it is ms of dead air: the pump's re-entrancy
+                              --   guard means no other pump runs, no task resumes and nothing
+                              --   queued is delivered until it returns (#329, utils/pump.h).
+                              --   Inside the reactor use sched.sleep(ms), or return and be
+                              --   called again. Edges are still SAMPLED throughout, so a press
+                              --   inside the window arrives late rather than being lost
 nab.on(name, fn|nil)          -- register/clear a callback (#195): "button" -> fn(pressed) on
                               --   debounced edges; "rfid" -> fn(uid|nil) on tag arrive/leave
                               --   (registering starts the background ~750 ms scan); "tick" ->
@@ -343,7 +357,13 @@ src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -
 src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
                     lcframe.c (#LC header parse + checksum), lcread.c (the #LC
                     reader: console -> checked chunk, and what a REFUSED frame
-                    leaves behind)
+                    leaves behind), pump.c (queue -> Lua callbacks + the reactor
+                    tick, and the re-entrancy guard), wav.c (the recording's RIFF
+                    header), luaseam.c (the shared seam helpers: bounded argument
+                    checks, the uid push, the error reporter).
+                    The last three are #326: main.c keeps main(), so nothing can
+                    link what sits next to it - rule-bearing code moves out, the
+                    marshalling stays.
 lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral

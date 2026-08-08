@@ -39,13 +39,31 @@ task lua:boot:compile     # standalone, this doubles as a compile/lint check
 
 `test/run.lua` models the device seam faithfully rather than conveniently: the
 test owns `nab.time()`, and `nab.on` holds **one** callback per name and
-replaces it silently, because that is exactly what `main.c`'s `nab_on` does.
-`nab_pump()` is one iteration of `dispatch_events()`. `boot.lua` itself is
-loaded verbatim from source, so there is no copy to drift, and the same stdlib
-lint the lib tests run applies here — with `coroutine` allowed, since the
-resident chunk is what uses it.
+replaces it silently, because that is exactly what `utils/pump.c`'s `pump_on`
+does. `nab_pump()` is one iteration of `pump_dispatch()` — the whole of it, C
+rule for C rule: the pollers run first and unconditionally, the re-entrancy
+guard makes a nested dispatch deliver nothing, the queue is drained before the
+reactor gets its tick slice, and a raising callback is contained by `pcall`.
+`nab.wait(ms)` advances the modelled 1 ms tick dispatching at every step, as
+`nab_wait` does. `boot.lua` itself is loaded verbatim from source, so there is
+no copy to drift, and the same stdlib lint the lib tests run applies here —
+with `coroutine` allowed, since the resident chunk is what uses it.
+
+That claim was **not** true until #329: `nab_pump()` was a plain function call
+that did not model the guard at all, and `nab.wait()` was a no-op — so the one
+suite whose job is protecting the reactor could not tell a pump that keeps
+running from one that has silently stopped, which is precisely how the
+nested-`nab.wait` trap went unnoticed. `test/test_pump.lua` is the part that
+holds the seam to its contract; every scenario in it fails against a harness
+that drops the guard or moves the pollers inside it.
 
 The suite carries baseline scenarios (scheduling, the 32-bit tick wrap,
-task-error isolation) alongside the regression guards, so it cannot pass
-vacuously: if `sched` stopped running anything at all, the baselines would fail
-too.
+task-error isolation, an event actually being delivered) alongside the
+regression guards, so it cannot pass vacuously: if `sched` or the modelled
+pump stopped running anything at all, the baselines would fail too.
+
+Two test files, and the split is the seam itself: `test_sched.lua` is the
+reactor (pumps, tasks, deadlines, error isolation), `test_pump.lua` is the C
+pump underneath it (the four rules in
+[`../firmware/inc/utils/pump.h`](../firmware/inc/utils/pump.h), and what
+`nab.wait` does on either side of the guard).

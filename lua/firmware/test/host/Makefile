@@ -18,7 +18,7 @@ CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
 TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test lcframe_test \
-         lcread_test
+         lcread_test wav_test
 
 all: $(TESTS)
 
@@ -75,6 +75,11 @@ lcframe_test: lcframe_test.c $(FW)/src/utils/lcframe.c
 # src/libc/syscalls.c is deliberately NOT in the link: it would drag in the UART
 # and win the duplicate-symbol race, and the fake console is the point.
 lcread_test: lcread_test.c $(FW)/src/utils/lcread.c $(FW)/src/utils/lcframe.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# wav.c is pure byte formatting - no hardware, no Lua, no stubs. The test is
+# the only reader of the cross-track byte contract in mtl/lib/hw/reclib.mtl.
+wav_test: wav_test.c $(FW)/src/utils/wav.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)

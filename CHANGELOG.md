@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+  * [#326](https://github.com/rngtng/NabaztagHackKit/issues/326): **the rest of the
+    rule-bearing code is out of `main.c`** — [#327](https://github.com/rngtng/NabaztagHackKit/issues/327)
+    the WAV/RIFF assembly, [#329](https://github.com/rngtng/NabaztagHackKit/issues/329)
+    the event pump, plus the bounds checks the issue left to whichever landed first. The
+    marshalling stays: #326's finding was that extracting the two *largest* bindings would
+    test `luaL_checkinteger`, and neither moved.
+    - `src/utils/wav.c` — the recording header's 60 bytes were a documented cross-track
+      promise ("anything that accepts a V1 recording accepts this one") made of magic
+      numbers, with nothing checking it. `test/host/wav_test.c` now asserts every byte
+      against `mtl/lib/hw/reclib.mtl`'s `_reclib_mkriff`, transcribed into the test.
+      `nab.rec_wav` stays a C binding — moving it to `lib/audio/` is an API decision, kept
+      separate on purpose.
+    - `src/utils/pump.c` — the four rules the reactor stands on (re-entrancy guard, polling
+      even when re-entered, drain-then-tick, `pcall` isolation), and with them the trap rule
+      one carries: **`nab.wait(ms)` from inside a `sched` pump, a spawned task or a `nab.on`
+      callback delivers nothing for its whole duration.** The `nab` reference had described
+      `nab.wait` as pumping, which is true at top level and false everywhere inside the
+      reactor; it now says so.
+    - `lua/boot/test/run.lua` modelled `nab_pump()` as a plain call and `nab.wait()` as a
+      no-op, which is *why* that trap went unseen: the suite whose job is protecting the
+      reactor could not tell a pump that keeps running from one that has silently stopped.
+      The harness now models `pump_dispatch()` rule for rule, and `test_pump.lua` fails
+      against one that drops the guard or moves the pollers inside it. `boot/README.md`'s
+      "faithfully rather than conveniently" claim is true as of this change, not before it.
+    - `src/utils/luaseam.c` — the shared seam helpers (the bounds checks #296 found bugs in,
+      the UID push both `nab.rfid` and the pump must spell the same way, the error reporter).
+      Flash **+56 B** across all three, measured against a control build.
+
   * [#315](https://github.com/rngtng/NabaztagHackKit/issues/315): **a queued 802.11 TX
     frame belongs to the USB stack, not to its sender.** `rt2501_tx()` hands the buffer
     to `usbh_bulk_transfer_async()`, which installs `usbh_free_urb_callback` — and that
