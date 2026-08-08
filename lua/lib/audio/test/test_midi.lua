@@ -50,6 +50,29 @@ eq(#f, 14 + 8 + 0x17, "length = header + track header + track")
 -- 500 ms is exactly one quarter note at the default tempo
 eq(X(midi.varlen(480)), "8360", "480 ticks encodes as 83 60")
 
+-- the resident tone: the same file, built on the other side of the seam ------
+
+-- #331 swapped nab.tone()'s 2,160 B MP3 for a 45-byte SMF that
+-- firmware/tools/tonegen.py builds from these same constants, so the resident
+-- asset and a Lua-built jingle cannot drift in pitch or tempo conventions.
+-- Nothing is shared across the seam except the constants, which is exactly why
+-- both sides need pinning: firmware/test/host/tone_test.c holds the C half
+-- against the SMF spec, and this is the Lua half held against the same bytes.
+-- If this fails, one side moved - regenerate with `task lua:firmware:gen:tone`
+-- and check tone_test still passes before believing the new bytes.
+local TONE = "4d546864 00000006 0000 0001 01e0"
+          .. "4d54726b 00000017"
+          .. "00 ff5103 07a120"    -- tempo 500000 = midi.TEMPO
+          .. "00 c009"             -- program 9 = midi.PROGRAM (glockenspiel)
+          .. "00 905164"           -- note on A5 (81 = 0x51), velocity 100
+          .. "8170 805140"         -- 240 ticks = 250 ms, then note off
+          .. "00 ff2f00"
+
+eq(X(midi.note("A5", 250)), (TONE:gsub("%s", "")),
+   "audio.midi.note('A5', 250) IS inc/tone_midi.h, byte for byte")
+eq(#midi.note("A5", 250), 45, "...all 45 bytes of it")
+eq(midi.num("A5"), 81, "A5 = 81, the 880 Hz the MP3 predecessor synthesised")
+
 -- a rest delays the next note instead of emitting one ------------------------
 
 local r = midi.tune{{nil, 250}, {"C4", 250}}

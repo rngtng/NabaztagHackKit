@@ -36,13 +36,13 @@
 #include "utils/lcread.h"  /* #LC frame reader: console -> checked chunk (#328) */
 #include "utils/luaseam.h" /* shared seam helpers: bounds, uid push, report (#326) */
 #include "utils/pump.h"  /* the cooperative pump: queue -> Lua callbacks (#329) */
-#include "utils/wav.h"   /* WAV_HEADER_LEN + wav_adpcm_header - nab.record (#327) */
+#include "utils/wav.h"   /* WAV_HEADER_LEN + wav_adpcm_header - nab.rec_wav (#327) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
 #include "irq.h"         /* init_irq: interrupt controller + tick (wifi needs it) */
 
-#include "tone_mp3.h"   /* nab_tone_mp3[]: built-in MP3 tone for nab.tone() */
+#include "tone_midi.h"  /* nab_tone_midi[]: built-in MIDI tone for nab.tone() */
 
 /* ---- UART console ------------------------------------------------- */
 /* The REPL console is UART0 (hal/uart.c): polled TX + polled RX, 115200 8N1.
@@ -309,70 +309,46 @@ static int nab_play_stop(lua_State *L)
   return 0;
 }
 
-/* nab.tone(): a small built-in MP3 tone (nab_tone_mp3, see tone_mp3.h) so
- * nab.play + nab.volume are demoable without shipping a file. It is MP3, not
- * raw PCM WAV: the VS1003B on this board decodes MP3 but NOT PCM WAV
- * (hardware-verified). Feed to nab.play. */
+/* nab.tone(): a small built-in tone (nab_tone_midi, see tone_midi.h) so
+ * nab.play + nab.volume are demoable with zero libs loaded - the smoke test
+ * for "is the codec alive at all" at a bare REPL. Feed it to nab.play.
+ *
+ * It is a 45-byte Standard MIDI File, which the VS1003B decodes natively
+ * (#331): the same audible result the 2,160 B MP3 gave, for 28% of the
+ * image's free flash back. Still NOT raw PCM WAV - the VS1003B does not
+ * decode WAV at all (hardware-verified), so a .wav is the one thing that
+ * cannot be handed to nab.play. tools/tonegen.py generates the asset from the
+ * same note/tempo constants lib/audio/midi.lua uses, so this and
+ * audio.midi.note("A5", 250) are the same bytes. */
 static int nab_tone(lua_State *L)
 {
-  lua_pushlstring(L, (const char *)nab_tone_mp3, sizeof nab_tone_mp3);
+  lua_pushlstring(L, (const char *)nab_tone_midi, sizeof nab_tone_midi);
   return 1;
 }
 
-/* The IMA-ADPCM WAV header both recording paths wrap their data in is
- * utils/wav.c - 8 kHz mono, 256-byte blocks of 505 samples (~4055 B/s), and
- * byte-for-byte the RIFF wrapper lib/hw/reclib.mtl's _reclib_mkriff builds
- * around the same VS1003 record stream for the V1 stack. It is there rather
- * than here because that last sentence is a cross-track promise and main.c is
- * the one TU nothing can link to check it (#327); test/host/wav_test.c now
- * does, against the MTL source transcribed into it. */
+/* The IMA-ADPCM WAV header the recording is wrapped in is utils/wav.c - 8 kHz
+ * mono, 256-byte blocks of 505 samples (~4055 B/s), and byte-for-byte the RIFF
+ * wrapper lib/hw/reclib.mtl's _reclib_mkriff builds around the same VS1003
+ * record stream for the V1 stack. It is there rather than here because that
+ * last sentence is a cross-track promise and main.c is the one TU nothing can
+ * link to check it (#327); test/host/wav_test.c now does, against the MTL
+ * source transcribed into it. */
 
 /* Cooperative record session state (nab.rec_start/rec_read/rec_stop). Outside
  * record mode HDAT0/HDAT1 mean decode state (stream format / bitrate), so
- * rec_read must not drain them unless a session is actually open. */
-#define REC_WAIT  50000UL  /* blocking-read poll bound, ~20x one block time  */
+ * rec_read must not drain them unless a session is actually open.
+ *
+ * This session API is the WHOLE recording seam since #333. There used to be a
+ * blocking nab.record(ms) beside it that ran the drain loop in C, and it was
+ * one of the seam's freezes: nothing else ran - no ear step, no player feed,
+ * no sched task - for up to 30 s. Everything it did was already here in
+ * cooperative form, so it is now ../lib/audio/record.lua, which costs no flash
+ * and pumps the reactor between polls. The duration arithmetic went with it
+ * (audio.recorder.bytes); the 4055 B/s that made it work is documented above
+ * and in wav.c. */
 #define REC_CHUNK 2048     /* VS1003 record FIFO: 1024 words - max one drain */
 
 static int rec_active = 0;
-
-/* nab.record(ms [, gain]) -> string: record ~ms milliseconds from the
- * microphone (8 kHz IMA ADPCM, like the V1 stack) and return a complete WAV
- * file. gain: 1024 = 1x, 512 = 0.5x, ...; default 0 = automatic gain control
- * (V1's setting). Blocking; no timer needed - duration is counted in encoded
- * 256-byte blocks (~63 ms each), so it is sample-clock accurate. The result
- * can be shorter than asked (header says how much) if the codec stops
- * delivering - off hardware it is header-only, see vlsi_rec_read. For
- * recording while doing other work, use nab.rec_start/rec_read/rec_stop. */
-static int nab_record(lua_State *L)
-{
-  lua_Integer ms = luaL_checkinteger(L, 1);
-  lua_Integer gain = luaL_optinteger(L, 2, 0);
-  luaL_argcheck(L, ms >= 1 && ms <= 30000, 1, "1..30000");
-  luaL_argcheck(L, gain >= 0 && gain <= 65535, 2, "0..65535");
-
-  uint32_t want = ((uint32_t)ms * 4055UL / 1000 + 255) & ~255UL;
-  if (want == 0)
-    want = 256;
-
-  luaL_Buffer b;
-  uint8_t *out = (uint8_t *)luaL_buffinitsize(L, &b, WAV_HEADER_LEN + want);
-
-  vlsi_rec_start(8000, (uint16_t)gain);
-  rec_active = 1;   /* takes over the codec: ends any open rec_start session */
-  uint32_t got = 0;
-  while (got < want) {
-    uint32_t n = vlsi_rec_read(out + WAV_HEADER_LEN + got, want - got, REC_WAIT);
-    if (n == 0)
-      break;   /* codec never delivered (simulator / wedged chip) */
-    got += n;
-  }
-  vlsi_rec_stop();
-  rec_active = 0;
-
-  wav_adpcm_header(out, got);
-  luaL_pushresultsize(&b, WAV_HEADER_LEN + got);
-  return 1;
-}
 
 /* nab.rec_start([gain]): open a cooperative record session - the codec starts
  * encoding the mic into its FIFO and the CPU is free. Poll nab.rec_read()
@@ -390,7 +366,8 @@ static int nab_rec_start(lua_State *L)
 /* nab.rec_read() -> string|nil: drain the record FIFO, returning immediately.
  * A string of one or more whole 256-byte ADPCM blocks, or nil when no full
  * block is buffered yet (or no session is open). Concatenate the chunks: they
- * are exactly the data section of nab.record's WAV - nab.rec_wav wraps them. */
+ * are exactly the data section of the recording's WAV - nab.rec_wav wraps
+ * them, and lib/audio/record.lua is the loop that does it for you. */
 static int nab_rec_read(lua_State *L)
 {
   if (rec_active) {
@@ -416,7 +393,7 @@ static int nab_rec_stop(lua_State *L)
 }
 
 /* nab.rec_wav(data) -> string: wrap concatenated nab.rec_read chunks (whole
- * 256-byte blocks) in the same WAV header nab.record produces. */
+ * 256-byte blocks) in the RIFF/IMA-ADPCM header of utils/wav.c. */
 static int nab_rec_wav(lua_State *L)
 {
   size_t len;
@@ -862,7 +839,6 @@ static const luaL_Reg nab_funcs[] = {
     {"play_stop", nab_play_stop},
     {"playing", nab_playing},
     {"tone", nab_tone},
-    {"record", nab_record},
     {"rec_start", nab_rec_start},
     {"rec_read", nab_rec_read},
     {"rec_stop", nab_rec_stop},
@@ -1055,7 +1031,7 @@ static void init_hw(void)
    * data - but left on their default bus function they toggle on every EMC
    * WRITE, and they share package pins with the audio-control GPIO group
    * (RST_AUDIO = PIO11.7): each Lua-heap write burst hardware-reset the
-   * VS1003 (CLOCKF/MODE/VOLUME back to defaults), killing nab.record and
+   * VS1003 (CLOCKF/MODE/VOLUME back to defaults), killing recording and
    * forcing vlsi_play's re-assert workaround. Reads leave the bus hi-Z,
    * which is why playback mostly survived. Isolated by examples/recprobe.c. */
   set_wbit(PORTSEL4, 0x00000040);

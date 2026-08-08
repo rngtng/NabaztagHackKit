@@ -120,7 +120,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **119,484 B of 124 KB (~7.3 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **117,120 B of 124 KB (~9.6 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -145,13 +145,18 @@ Two things keep it from being worse, and both are load-bearing:
   the image needs the same treatment — check the map's "Archive member" section; don't trust
   `--gc-sections` alone.**
 
-`-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
-**5,834 B together**: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
-boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,674 B — `run`/`watch`/`ledshow` plus
-two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
-decisions, not refactors. (Both figures re-measured off a real build: the pair was previously
-written up as "4,547 B together" with the chunk at 3,620 B, and `../boot/README.md` carried a
-2,387 B for the same chunk — none of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
+`-Os` and Lua 5.5 are **not** levers. The cheapest one that was left has been taken: #331
+swapped `nab.tone()`'s 2,160 B MP3 for a **45-byte Standard MIDI File** (`inc/tone_midi.h`)
+the VS1003B decodes natively — **2,112 B measured**, for the same audible result and the same
+API, which is why it was a codec change rather than the feature cut this section used to
+offer. #333 gave back another **252 B** by moving `nab.record`'s loop to `lib/audio/record.lua`.
+
+What remains is one demo asset, the resident boot chunk (`gen/boot_lc.h` from
+`../boot/boot.lua`, **3,674 B** — `run`/`watch`/`ledshow` plus two hard-coded RFID UIDs,
+largely duplicating [`../apps/`](../apps/)). That one is a product decision, not a refactor.
+(Figures re-measured off real builds: the pair was previously written up as "4,547 B together"
+with the chunk at 3,620 B, and `../boot/README.md` carried a 2,387 B for the same chunk — none
+of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
 
 ## The `nab` module
 
@@ -192,11 +197,12 @@ nab.play_feed(data [, i])     -- -> bytes accepted (0..n). Short = FIFO full, NO
                               -- keep the rest and offer it again next turn (i = i + n)
 nab.playing()                 -- -> true while the decoder still has a stream to decode
 nab.play_stop()               -- close the stream, amplifier off
-nab.tone()                    -- -> a built-in ~0.25 s 880 Hz MP3, for nab.play. MP3, not PCM
-                              --   WAV - the VS1003B does not decode WAV.
-nab.record(ms [, gain])       -- -> ~ms of mic audio as a complete WAV (8 kHz IMA ADPCM). Blocking.
-                              --   gain: 1024 = 1x, 512 = 0.5x, 0 = AGC (default)
-nab.rec_start([gain])         -- cooperative session: codec encodes into its ~2 KB FIFO, CPU free
+nab.tone()                    -- -> a built-in ~0.25 s A5 (880 Hz) MIDI file, for nab.play.
+                              --   MIDI, not PCM WAV - the VS1003B decodes MIDI natively
+                              --   (#331: 45 B, where the MP3 it replaced was 2,160) but does
+                              --   NOT decode WAV. Same bytes as audio.midi.note("A5", 250)
+nab.rec_start([gain])         -- cooperative session: codec encodes into its ~2 KB FIFO, CPU
+                              --   free. gain: 1024 = 1x, 512 = 0.5x, 0 = AGC (default)
 nab.rec_read()                -- -> whole 256-byte ADPCM blocks, or nil. Returns immediately
 nab.rec_stop()                -- close the session (codec back to decode mode)
 nab.rec_wav(data)             -- wrap concatenated rec_read chunks as a WAV string
@@ -222,11 +228,16 @@ nab.sci(reg) / nab.sciw(r,v)  -- read/write a VS1003 SCI register (codec bring-u
 Higher-level behaviour belongs in [`../lib/`](../lib/), not here — e.g. `nab.ear_pos` is a raw
 edge count, and `lib/hw/ears.lua` (#263) is what turns it into homing and absolute positions.
 
-`nab.record`'s RIFF header is **byte-identical to the mtl stack's** (`mtl/lib/hw/reclib.mtl`),
-so anything that accepts a V1 recording accepts this one. `nab.record` is blocking; the
-`rec_*` session API is the non-blocking form — the codec encodes into its own ~2 KB FIFO
+`nab.rec_wav`'s RIFF header is **byte-identical to the mtl stack's** (`mtl/lib/hw/reclib.mtl`),
+so anything that accepts a V1 recording accepts this one — pinned byte for byte by
+`test/host/wav_test.c` (#327).
+
+**The `rec_*` session API is the whole recording seam** since #333. There used to be a
+blocking `nab.record(ms)` beside it; it is now [`audio.record(ms)`](../lib/audio/README.md) in
+Lua, which costs no flash and pumps the reactor between polls instead of freezing it for up to
+30 s. The session is what makes that possible: the codec encodes into its own ~2 KB FIFO
 (~half a second at 8 kHz; overflow drops audio but never crashes) while your script does
-other work:
+other work —
 
 ```lua
 chunks = {}
@@ -258,12 +269,28 @@ made by hand here, re-checked with the [probes](examples/README.md).
 | LEDs by name, head button, ear motors + encoders (full speed) | `nab.rfid` — run `rfidprobe` first (#117) |
 | `nab.beep` audible; VS1003B on SPI0 | `nab.config` write path — write creds, power-cycle, read back (#214) |
 | `nab.wheel` — analog pot on ADC ch.2, 255 rest -> 0 full sweep (#123) | `nab.on`/`nab.wait` — register `watch()`, place a tag, press the button (#195) |
-| `nab.play`/`nab.tone`/`nab.volume` — audible, attenuates (#123); SCI_VOLUME holds exactly as written through the #265 streaming path too, re-verified post-#283 rebase | |
+| `nab.play`/`nab.volume` — audible, attenuates (#123); SCI_VOLUME holds exactly as written through the #265 streaming path too, re-verified post-#283 rebase | **`nab.tone()` since #331** — was confirmed audible as an MP3; it is now a MIDI file and **no SMF has yet been played on this rig**. See the gate below the table |
 | **Streaming playback + ear/net concurrency (#123/#265/#283)** — `nab.play_feed` accepts bytes end to end, plays audibly while `nab.ear_move` spins an ear (no stall either side) and separately while streaming an HTTP GET body over wifi (`lib/net` + `audio.stream`, 25 s clip, mic-confirmed audible, LED chase animating throughout - 184 frames, 28.4 s, twice reproduced) | |
 | UART0 console both directions @115200 | |
 | USB host + RT2501 join, WPA2-CCMP | |
-| 32 MHz PLL clock (#269) | `nab.record` — sim returns a header-only WAV; blocked on #275 (#116) |
+| 32 MHz PLL clock (#269) | `audio.record` — sim has no DREQ model, so it stalls out to a header-only WAV exactly as `nab.record` did; blocked on #275 (#116) |
 | LED fade engine animates in sim | `nab.fade` timing on real hardware (#102) |
+
+**Open gate — MIDI playback (#331).** `nab.tone()` is a 45-byte Standard MIDI File as of
+#331, and that swap is the largest flash reclaim on this track (2,112 B measured). Everything
+about it is checked off-device — the bytes are pinned to the SMF spec by
+`test/host/tone_test.c` and to `audio.midi.note("A5", 250)` by `../lib/audio/test/test_midi.lua`
+— but **"the VS1003B decodes MIDI natively" is a datasheet claim this rig has never tested**,
+and this repo's own rule is that a documented chip is not a responding chip. Two things to
+check, in this order:
+
+1. `nab.play(nab.tone())` at the REPL. Audible → the codec path is proven and the row above
+   moves to the left-hand column.
+2. If it is silent, check whether the decoder needs a MODE change between MP3 and MIDI
+   streams. `init_vlsi()` sets `MODE_NATIVE` and `vlsi_stream_start()` is format-agnostic in
+   principle, so it should not — but if it does, #331 stops being a one-liner and should be
+   re-scoped. `task lua:firmware:gen:tone FORMAT=mp3` regenerates the old asset in the
+   meantime; the swap is one `#include` in `src/main.c` either way.
 
 Two #123 probe results with no code behind them: the wheel's end-of-travel **click has no
 separate GPIO** (only PD2, the wheel's own ADC line, moves), and the **audio-out jack is a
@@ -313,7 +340,9 @@ Each of these cost real debugging time. They are not obvious from the datasheet.
   (MacBook mic, `ffmpeg`/`avfoundation`) put `nab.beep` around -20 dBFS peak; the decoded
   `nab.tone()` stayed below -40 dBFS throughout its playback window in every take — a 20+ dB
   gap, sometimes not registering above the room-noise floor at all. Frequency isn't it (880 Hz
-  and 1760 Hz both quiet vs. beep). **FW1's `patchwma` is ruled out as the cause**: ported as
+  and 1760 Hz both quiet vs. beep). **That measurement was made on the MP3 asset**; since #331
+  `nab.tone()` is a MIDI file, which the codec synthesises rather than decodes, so the gap has
+  to be re-measured before it can be quoted against the current tone at all. **FW1's `patchwma` is ruled out as the cause**: ported as
   `vlsi_patch()` (`init_vlsi()`, `hal/audio.c` — ten `WRAM_ADDR`/`WRAM` writes loading a VLSI
   microcode patch, the last unported config difference between the two tracks), then A/B'd
   twice on hardware - once live mid-session (no clear difference by ear) and once by disabling

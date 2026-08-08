@@ -32,9 +32,9 @@ task lua:firmware:simulate:repl                # live interactive Lua REPL over 
 
 Not modelled: audio, WiFi, analog. **DREQ (VS1003 ready) and the ADC completion
 bit are unmodeled**, so any bounded busy-wait on them (`nab.play`, `nab.wheel`)
-spins to its cap and is hardware-only. `nab.record` is the exception — its wait
-guard is one-shot, so in-sim it returns a header-only WAV instead of burning the
-budget. QEMU isn't used (no ML67Q4051 machine; the memory map doesn't fit).
+spins to its cap and is hardware-only. Recording is the exception — `nab.rec_read`
+returns immediately with nothing, so `audio.record` stalls out to a header-only WAV
+instead of burning the budget (as the old C `nab.record` did, #333). QEMU isn't used (no ML67Q4051 machine; the memory map doesn't fit).
 
 **Live LED view.** `ARGS=--leds` reconstructs the 14-byte dot-correction frame
 from the SPI1 byte stream (latched on the CS_LED rising edge), unpacks it to five

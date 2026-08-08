@@ -240,7 +240,7 @@ static void scen_edges(void)
 {
   uint8_t *h;
 
-  /* Empty recording. nab.record returns header-only when the codec never
+  /* Empty recording. audio.record returns header-only when the codec never
    * delivers (simulator, wedged chip), so these bytes really do go out: 52
    * bytes of chunks after the RIFF prefix, no samples, no data - well-formed
    * enough that a player opens the file instead of choking on it. */
@@ -252,9 +252,10 @@ static void scen_edges(void)
   free(h);
 
   /* A partial trailing block cannot arrive through nab.rec_wav (the binding
-   * rejects a length that is not a multiple of 256) but can through
-   * nab.record, whose loop stops on whatever the codec last handed back. Byte
-   * sizes stay exact; the sample count rounds DOWN to whole blocks, because
+   * rejects a length that is not a multiple of 256), and since #333 nothing
+   * else calls this writer - but the arithmetic still has to be right, because
+   * the mtl track's _reclib_mkriff accepts any length. Byte sizes stay exact;
+   * the sample count rounds DOWN to whole blocks, because
    * samples are counted as blocks * 505 and a partial block announces none.
    * Pinned so that changing it is a decision rather than an accident. */
   h = build(512 + 100);

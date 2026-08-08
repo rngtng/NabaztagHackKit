@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+  * [#330](https://github.com/rngtng/NabaztagHackKit/issues/330): **both upward moves of
+    the C/Lua distribution assessment**, worth **2,364 B of flash** measured
+    (119,484 → 117,120 B; free flash 7,492 → 9,856 B). #330's finding was that nothing
+    should move *down* to C — that was tested rather than assumed — and that three things
+    should move up. Two of them are here; the third (`nab.rec_wav`) is noted below.
+    - [#331](https://github.com/rngtng/NabaztagHackKit/issues/331): **`nab.tone()` is a
+      45-byte MIDI file, not a 2,160 B MP3** — `inc/tone_midi.h` replaces `inc/tone_mp3.h`,
+      **2,112 B back**, which was 28% of the image's free flash spent on a beep. The
+      VS1003B decodes MIDI natively, so this is a codec swap, not the feature cut
+      `firmware/README.md` used to offer: same API, same resident byte string, still the
+      one audio asset that works with zero libs loaded. `tools/tonegen.py` builds it from
+      the same note/tempo constants `lib/audio/midi.lua` uses, so `nab.tone()` and
+      `audio.midi.note("A5", 250)` are the same bytes — pinned from the SMF spec by
+      `test/host/tone_test.c` and from the Lua side by `test_midi.lua`.
+      **⚠️ Not yet confirmed on the rig.** `nab.tone()` was hardware-confirmed audible as
+      an MP3; no SMF has been played on this board, and this repo's rule is that a
+      documented chip is not a responding chip. The gate, and the one-command way back
+      (`task lua:firmware:gen:tone FORMAT=mp3`), are in `firmware/README.md`'s hardware
+      table.
+    - [#333](https://github.com/rngtng/NabaztagHackKit/issues/333): **`nab.record` is gone;
+      `audio.record(ms [, gain])` replaces it in Lua** — **252 B** back (the issue estimated 220) and one of the seam's
+      freezes with it. The C binding blocked for up to 30 s: no ear stepped, no player was
+      fed, no `sched` task resumed. Everything it did already existed on the seam in
+      cooperative form (`nab.rec_start`/`rec_read`/`rec_stop`/`rec_wav`), so
+      `lib/audio/record.lua` costs no flash and pumps the reactor between polls.
+      **Breaking seam change**: `nab.record` no longer exists and the seam drops to 37
+      names. Out-of-tree scripts calling it must load `lib/audio/record.lua` and call
+      `audio.record(ms)` — same arguments, same WAV bytes. `apps/mic-test.lua` is migrated
+      and now turns an ear *through* the recording, which is the property the move bought.
+      **Not sim-verifiable and not yet rig-verified**: the simulator has no DREQ model, so
+      recording stalls out to a header-only WAV exactly as the C path did there. Land the
+      rig check with #116/#275 and compare both paths' WAVs before trusting the audio.
+    - Consequence worth noting: `nab.rec_wav` stayed a C binding in #327 because
+      "`nab.record` needs the header in C either way". That premise is now false, so the
+      last 96 B of #330's third item is genuinely recoverable — see `ARCHITECTURE.md` §9.
+
   * [#326](https://github.com/rngtng/NabaztagHackKit/issues/326): **the rest of the
     rule-bearing code is out of `main.c`** — [#327](https://github.com/rngtng/NabaztagHackKit/issues/327)
     the WAV/RIFF assembly, [#329](https://github.com/rngtng/NabaztagHackKit/issues/329)

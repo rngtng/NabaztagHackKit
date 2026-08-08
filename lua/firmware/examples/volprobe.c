@@ -1,11 +1,16 @@
 /**
  * @file volprobe.c
- * @brief Volume-isolation probe: play the embedded MP3 at volume 0 (loudest)
- *        then 254 (near-silent), minimal init, NO console I/O during the SDI
- *        feed (prints only between plays). If loudness clearly differs,
- *        SCI_VOLUME works on decoded audio and the lua app's "no volume" is a
- *        context problem (init_hw and/or console reads interleaved with SPI0),
- *        not the VS1003.
+ * @brief Volume-isolation probe: play an MP3 at volume 0 (loudest) then 254
+ *        (near-silent), minimal init, NO console I/O during the SDI feed
+ *        (prints only between plays). If loudness clearly differs, SCI_VOLUME
+ *        works on decoded audio and the lua app's "no volume" is a context
+ *        problem (init_hw and/or console reads interleaved with SPI0), not
+ *        the VS1003.
+ *
+ * The sample is tones.h's `tone_mp3`, the shared probe asset, NOT nab.tone():
+ * since #331 that is a MIDI file, and this probe measures SCI_VOLUME against
+ * a decoded MP3 - the format the #123 loudness finding was made on. Keeping
+ * it MP3 is what makes a re-run comparable with that finding.
  *
  * Output is on UART0 (115200 8N1), read on the Pi's /dev/serial0 (see
  * uartprobe.c for the flash+listen recipe):
@@ -21,7 +26,7 @@
 #include "hal/i2c.h"
 #include "hal/motor.h"
 #include "hal/uart.h"
-#include "tone_mp3.h"
+#include "tones.h"
 
 static void sh_puts(const char *s)
 {
@@ -112,7 +117,7 @@ static void play_mp3(void)
   sci_write(0x00, 0x0c00);   /* MODE = SM_SDINEW | SM_SDISHARE */
   TURN_ON_AUDIO_AMPLIFIER;
   for (k = 0; k < 4; k++)
-    feed_sdi(nab_tone_mp3, sizeof nab_tone_mp3);
+    feed_sdi(tone_mp3, sizeof tone_mp3);
   flush_fill();
   TURN_OFF_AUDIO_AMPLIFIER;
 }
