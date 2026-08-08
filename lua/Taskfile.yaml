@@ -23,7 +23,7 @@ includes:
     taskfile: ./lib/Taskfile.yaml
   simui: # browser UI for the simulator (#43): NiceGUI + embedded sim, one container
     taskfile: ./tools/simui/Taskfile.yaml
-  measure: # the figures the docs cite (#342): `task lua:measure` runs its default
+  measure: # the figures the docs cite (#342); the `measure` task below is its front door
     taskfile: ./tools/measure/Taskfile.yaml
 
 tasks:
@@ -52,15 +52,7 @@ tasks:
         set -e
         ROOT="$(git rev-parse --show-toplevel)"
         # Real task names, fully qualified (run the lister from the repo root).
-        # A namespace's `default` task is invocable by the namespace name alone
-        # (`task lua:measure` runs `lua:measure:default`), and the lister only
-        # prints the qualified form - so add the bare namespace too, or every doc
-        # that writes the name a user actually types reads as a stale reference.
-        real="$(cd "$ROOT" && task --list-all --json | python3 -c '
-        import sys, json
-        names = [t["name"] for t in json.load(sys.stdin)["tasks"]]
-        names += [n[:-len(":default")] for n in names if n.endswith(":default")]
-        print("\n".join(names))' | sort -u)"
+        real="$(cd "$ROOT" && task --list-all --json | python3 -c 'import sys,json; print("\n".join(t["name"] for t in json.load(sys.stdin)["tasks"]))' | sort -u)"
         # `task lua:…` invocations referenced in docs/comments (strip trailing args +
         # a stray sentence colon). CHANGELOG is historical - past task names are
         # expected there, so it is excluded.
@@ -158,6 +150,22 @@ tasks:
           exit 1
         fi
         echo "✓ line endings: all $(git ls-files | wc -l | tr -d ' ') tracked files match their committed endings"
+
+  measure:
+    desc: 'Print the measured figures the lua docs cite - flash (used/free/per-object/per-function), the resident boot chunk, per-module Lua bytecode, lines per area and src/main.c''s function count. Fails rather than reporting stale or empty numbers. Reporting only: the gate that compares these against the docs is #338.'
+    summary: |
+      Usage: task lua:measure [FORMAT=json] [ONLY=flash,objects,boot,bytecode,lines,functions]
+
+      Needs a current build for the flash figures - a map older than any source it
+      was built from is an error, not a footnote. Run task lua:firmware:build first.
+      ONLY=... restricts the report to the sections you name.
+    # The one name a person types, so `task --list` shows `lua:measure` and not a
+    # `:default` suffix nobody needs. The leaf still owns the implementation (and
+    # keeps its own `default`, so `cd tools/measure && task` works there too) -
+    # this is the same re-exposure the apps leaf does for `luac:compile`.
+    cmds:
+      - task: measure:default
+        vars: {FORMAT: '{{.FORMAT}}', ONLY: '{{.ONLY}}'}
 
   clean:
     desc: 'Clean all build artifacts and the layers'' Docker images.'

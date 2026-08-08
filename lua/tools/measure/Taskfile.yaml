@@ -30,7 +30,11 @@ includes:
 
 tasks:
   default:
-    desc: 'Print the measured figures the lua docs cite - flash (used/free/per-object/per-function), the resident boot chunk, per-module Lua bytecode, lines per area and src/main.c''s function count. Fails rather than reporting stale or empty numbers. Reporting only: the gate that compares these against the docs is #338.'
+    # No `desc:`, deliberately. The lua layer re-exposes this as `task lua:measure`
+    # and carries the description there, so `task --list` shows the one name a
+    # person types instead of two entries for the same report. `default` (rather
+    # than a named verb) is what keeps the leaf relocatable: `cd tools/measure &&
+    # task` runs the report, the same way every other leaf works.
     summary: |
       Usage: task lua:measure [FORMAT=json] [ONLY=flash,objects,boot,bytecode,lines,functions]
 

@@ -1,7 +1,7 @@
 # tools/measure — the figures the documents cite
 
 Four documents in this track quote measured numbers — [`lua/ARCHITECTURE.md`](../../ARCHITECTURE.md),
-[`firmware/README.md`](../../firmware/README.md), [`boot/README.md`](../../boot/README.md)
+[`lua/firmware/README.md`](../../firmware/README.md), [`lua/boot/README.md`](../../boot/README.md)
 and the per-lib READMEs — and before this leaf every one of them came from its own
 throwaway invocation: parse `arm-none-eabi-size`, walk `obj/firmware.map`, count lines
 per directory, count functions in `main.c`. They were re-derived by hand four times
