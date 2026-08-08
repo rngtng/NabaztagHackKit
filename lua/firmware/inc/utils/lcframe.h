@@ -58,17 +58,20 @@ typedef enum {
  * `*len` is 0 for LCFRAME_ERR_LEN, because a header with no parseable length
  * did not come from one of our senders - it is something hand-typed at the
  * prompt, and there is no payload behind it. It is also 0 for
- * LCFRAME_ERR_TOOLONG: that length is over the cap by definition, and draining
- * it would mean reading megabytes off the console to stay in sync. Desync is
- * the lesser evil there, and a real sender never declares one.
+ * LCFRAME_ERR_TOOLONG, but for the opposite reason: there IS a payload, and
+ * that declared length is over the cap by definition, so looping over it would
+ * mean reading megabytes on a header's say-so. 0 means "do not trust this
+ * number", not "nothing to consume" - and utils/lcread.c is where the two are
+ * told apart, by draining that one on CONTENT (#328). Reporting a length here
+ * would be worse than useless: it is the number the reader must not believe.
  *
  * The accepted cost: a *hand-typed* header that does parse a length but has no
  * payload - `#LC:5` typed at the prompt and nothing after it - reports 5, so
- * the caller consumes from the next line. The console has no pushback, so
- * read_hex_nibble stops on the first non-hex byte having eaten it: one lost
- * character on the following line. That is the right trade - a machine sender
- * ALWAYS has a payload queued, and the frames this exists for come from
- * machines - but it is a trade, not a free win.
+ * the caller consumes from the next line. The console has no pushback, so the
+ * reader stops on the first non-hex byte having eaten it: one lost character on
+ * the following line. That is the right trade - a machine sender ALWAYS has a
+ * payload queued, and the frames this exists for come from machines - but it is
+ * a trade, not a free win.
  */
 lcframe_status lcframe_parse_header(const char *line, long max,
                                     long *len, uint32_t *sum);

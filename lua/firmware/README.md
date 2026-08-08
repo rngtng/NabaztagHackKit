@@ -120,7 +120,7 @@ Tuned to the flash budget (`luaconf.h` sets `LUA_32BITS` — 32-bit int + float,
 
 ### Flash budget
 
-`bin/firmware.elf` uses **119,332 B of 124 KB (~7.5 KB free)**. Roughly: ~23 KB the USB +
+`bin/firmware.elf` uses **119,428 B of 124 KB (~7.4 KB free)**. Roughly: ~23 KB the USB +
 802.11/WPA2 stack, ~3.2 KB the #283 reactor (`coroutine` 2,300 B measured, the resident
 `sched` chunk and the `nab.on("tick")` seam), ~2.1 KB the #234 provisioning plumbing,
 ~1.5 KB the #195 event core, 836 B `nab.config`, ~0.8 KB the #216 raw-frame/AP bindings,
@@ -341,7 +341,9 @@ src/libc/           everything that exists to keep newlib out of the flash budge
 src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
 src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
 src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
-                    lcframe.c (#LC header parse + checksum)
+                    lcframe.c (#LC header parse + checksum), lcread.c (the #LC
+                    reader: console -> checked chunk, and what a REFUSED frame
+                    leaves behind)
 lua/                vendored PUC-Rio Lua 5.4; the Makefile compiles a subset
 gen/boot_lc.h       generated: ../boot/boot.lua baked to bytecode by tools/luac/embed.py
 examples/*.c        standalone bring-up progs, one per binary (EXAMPLE=); *probe.c per peripheral

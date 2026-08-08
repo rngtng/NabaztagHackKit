@@ -30,6 +30,7 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | `ieee80211_test.c` | `src/net/ieee80211.c` | the probe-request builder must not overrun its frame on an over-long SSID (`nab.wifi`/`nab.wifi_scan` cap nothing), and the **receive** path must survive hostile IE lengths — a probe request's SSID copy, the IE walk's off-by-one, the RSN suite count, and the probe-response frame that is never freed |
 | `eapol_test.c` | `src/net/eapol.c` | the WPA2 4-way handshake must bound its reads by the RECEIVED length, not by the lengths the frame declares (`body_length` drives the MIC computation pre-authentication; `key_data_length` drives the GTK unwrap post-MIC) |
 | `lcframe_test.c` | `src/utils/lcframe.c` | the `#LC` frame checksum (#298) — pinned vectors so the C receiver and the three Python senders cannot drift, and every single-nibble flip in a chunk-sized buffer detected — plus the header parse (#308): a **refused** header must still report the payload queued behind it, or the console reads bytecode as REPL lines |
+| `lcread_test.c` | `src/utils/lcread.c` | #328 — what a **refused** `#LC` frame leaves on the console. Every scenario asserts the exact remaining input, so "the frame was rejected" cannot pass while its payload is still queued for the REPL to choke on line by line (#308). Pins the over-long-frame corner main.c could only describe |
 | `adc_test.c` | `src/hal/adc.c` | the wheel read must terminate on a converter that never finishes (it feeds the watchdog while it waits, so a hang has no reboot) |
 
 `stubs/ml674061.h` (and `stubs/ml60842.h` for the USB block) shadows the real register map with a plain RAM array, so a
@@ -79,9 +80,11 @@ stay sim-tested (`firmware:test`, `firmware:test:inject`) or hardware-tested.
 - **One scenario per `argv[1]`**, so an ASan abort in one can't mask the rest
   (`./event_test rfid-drop`, or `task lua:firmware:test:host SCENARIO=rfid-drop`).
   `SCENARIO=` alone means `event_test`; name the binary for any other
-  (`task lua:firmware:test:host TEST=adc_test SCENARIO=wedged`). An unknown
-  scenario name matches nothing and the binary exits 0 — so a `SCENARIO` sent to
-  the wrong `TEST` reports a pass having run nothing. Check the pair.
+  (`task lua:firmware:test:host TEST=adc_test SCENARIO=wedged`). In most of
+  these binaries an unknown scenario name matches nothing and exits 0 — so a
+  `SCENARIO` sent to the wrong `TEST` reports a pass having run nothing. Check
+  the pair. `lcread_test.c` shows the fix (count the scenarios that ran, exit 2
+  if none did); it is four lines, and new tests should copy it.
 - **A hang is a legitimate assertion.** `adc_test`'s `wedged` scenario arms
   `alarm(2)` and reports the timeout, because "this loop terminates" cannot be
   asserted on the return value of a call that never returns.
