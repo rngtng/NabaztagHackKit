@@ -14,7 +14,7 @@ thing a reader most often needs: the edge list — including the edges that leav
 this track entirely.
 
 Sizes below were measured, not copied: `task lua:firmware:build` for flash and
-`task lua:lib:size` for bytecode, both re-run after #334 landed. Re-run them
+`task lua:lib:size` for bytecode, both re-run after #336 landed. Re-run them
 rather than trusting this page — several of the numbers the layer READMEs
 carried had drifted, and these will too.
 
@@ -42,10 +42,10 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
  ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
  ║  freeze it:  nab.wifi 30 s · nab.record 30 s · wifi_up 10 s · wifi_scan 5 s  ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
- L2  THE LUA HOST ──────────────────────────── src/main.c · 1,294 ln · fan-out 17
-     38 bindings · #LC frame REPL · dispatch_events (the pump)
-     open_trimmed_libs · init_hw
-     the ONLY TU where lua_State exists — and ~28 cohesion clusters wide
+ L2  THE LUA HOST ──────────────────────────── src/main.c · 1,108 ln · fan-out 17
+     38 bindings · the REPL · init_hw · open_trimmed_libs
+     the ONLY TU where lua_State exists. 48 fns in 34 clusters — 29 of them
+     singletons, which is what a binding table SHOULD look like (#326 done)
  ────────────────────────────────────────────────────────────────────────────────
  L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
      src/hal/    12 drivers · 3,119 ln   spi led button audio adc i2c rfid
@@ -53,7 +53,7 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
      src/libc/   keep-newlib-out-of-flash, and nothing else (#324):
                  libc_shim (rand/srand/__assert_func) · syscalls
                  (_read/_write → UART0, _sbrk → ExtRAM, halting abort)
-     src/utils/  event · fmt · lcframe · lcread
+     src/utils/  event · fmt · lcframe · lcread · pump · wav · luaseam
      src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
      src/net/    802.11 + WPA2-CCMP · 4,203 ln                     (vendored, -Os)
      lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
@@ -154,8 +154,8 @@ writes the console through `hal/uart`. It is a substitution layer, not a leaf �
 | `src/hal/` | 24 | 3,119 | ported from `mtl/firmware`, then diverged |
 | `examples/` — one-peripheral bring-up progs | 19 | 3,222 | original |
 | `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe, lcread | 12 | 1,777 | original |
-| `src/main.c` — the Lua host | 1 | 1,294 | original |
+| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 18 | 2,253 | original |
+| `src/main.c` — the Lua host | 1 | 1,108 | original |
 | `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
@@ -180,7 +180,7 @@ are global in effect:
 
 ### Flash budget
 
-`bin/firmware.elf` = **119,428 B of 126,976 B**, **7,548 B free** (measured, not
+`bin/firmware.elf` = **119,484 B of 126,976 B**, **7,492 B free** (measured, not
 quoted). Roughly: ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine`
 2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event core,
 3,674 B the resident boot chunk, 2,160 B the `nab.tone()` MP3, 836 B
@@ -244,8 +244,8 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 | `lib/hw/` | ears | RAM | 3,675 B |
 | `apps/` | 10 demo apps | RAM | — |
 
-**50,973 B of bytecode across 19 modules**, against 7,548 B of free flash
-(`119,428` of `126,976` used, post-#334).
+**50,973 B of bytecode across 19 modules**, against 7,492 B of free flash
+(`119,484` of `126,976` used, post-#336).
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -276,10 +276,10 @@ one that was never a violation:
                  ┌───────────────┐
                  │  src/main.c   │
                  └─┬───────┬───┬─┘
-         43 syms ↓        4 ↓   ↓ 2
+         43 syms ↓        7 ↓   ↓ 2
        ┌─────────────┐  ┌──────────────┐  ┌─────────────┐
        │  src/hal/   │  │  src/utils/  │─►│  src/libc/  │  ② now an ordinary
-       └─┬────┬────┬─┘  └──────┬───────┘2 └──────┬──────┘     downward edge:
+       └─┬────┬────┬─┘  └──────┬───────┘3 └──────┬──────┘     downward edge:
    10 ↓    2 ↓    ↓ 9          │ 2               │ 2           fmt.c and lcread.c
  ┌──────────┐  ┌──────────┐    ▼                 ▼             → a header, not
  │ src/usb/ │◄─┤ src/net/ │──► hal/ (event core) hal/uart      into main.c
@@ -473,20 +473,32 @@ called from inside a `sched` pump, a spawned task, or a `nab.on` callback is 500
 ms in which **no other pump runs, no task resumes and no queued event is
 delivered** — precisely the hole #283 exists to close, reopened one level down.
 
-Three things make this a trap rather than a documented trade-off. The `nab`
-reference describes `nab.wait(ms)` as "sleep ~ms while running the event pump,
-so `nab.on` callbacks fire", which is true at top level and false everywhere
-inside the reactor; the consequence is written down only in a C comment in
-`main.c`. `boot/test/run.lua`'s `nab_pump()` is a plain function call that does
-not model the guard at all, so the suite that exists to protect the reactor
-cannot catch this class of regression — the one place that harness models the
-seam conveniently rather than faithfully. And the correct alternative depends on
-context: `sched.sleep(ms)` inside a task, a `:step()` that returns inside a pump,
-never `nab.wait`.
+This was a **trap** rather than a documented trade-off, on three counts, and
+**#329 closed all three** (in #336):
 
-`lib/` gets this right today — `player:wait()` and `ears:wait()` call the
-injected `sleep(0)`/`sleep(1)` as a pump-once, and long waits go through
-`sched.sleep`. Nothing enforces it for app code.
+- The `nab` reference described `nab.wait(ms)` as "sleep ~ms while running the
+  event pump, so `nab.on` callbacks fire" — true at top level, false everywhere
+  inside the reactor. It now says what happens on both sides, and points at
+  `sched.sleep(ms)` as the cooperative spelling.
+- `boot/test/run.lua`'s `nab_pump()` was a plain function call that did not
+  model the guard at all, so the suite whose whole job is protecting the reactor
+  could not distinguish a pump that keeps running from one that has silently
+  stopped. It now models `pump_dispatch` rule for rule, and
+  `boot/test/test_pump.lua` holds it there. **Verified by mutation**: dropping
+  the modelled guard fails 7 checks (a task resumed mid-wait, an event delivered
+  during the freeze); moving `event_pump()` inside the guard fails exactly 1 —
+  the poll delta, which is the only way rule 2 is observable at all, since the
+  queue looks identical either way.
+- `boot/README.md`'s "models the device seam faithfully rather than
+  conveniently" is **true as of #336** rather than quietly corrected, and the
+  file says which change made it so.
+
+**The behaviour is unchanged and should be**: the guard is necessary, so the fix
+was documentation and a test, not a code change. The correct alternative still
+depends on context — `sched.sleep(ms)` inside a task, a `:step()` that returns
+inside a pump, never `nab.wait`. `lib/` gets this right (`player:wait()` and
+`ears:wait()` use the injected `sleep(0)`/`sleep(1)` as a pump-once); nothing
+enforces it for app code, and that is now a stated limit rather than an unknown.
 
 **2. The Lua userland has no delivery mechanism.** 50,973 B of bytecode in 19
 modules, no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
@@ -506,18 +518,12 @@ checksum-comparison gate over the known-twin list would turn that into a
 failing task, and would have to be paired with an explicit
 allowed-divergence list.
 
-**4. `main.c` is 1,294 lines that nothing can link.** It carries `main()`, so no
-host test can reach it. The repo's own rule sends new non-wiring logic to its
-own TU, and three landed extractions now show the pattern working — `lcframe.c`,
-#324's `src/libc/`, and #328's `lcread.c`, which found three unread bugs in the
-writing of its assertions (see §9). `main.c` is down 150 lines across the two.
-
-Still inside it with a rule to them and no unit test: the WAV/RIFF header
-assembly (a byte-identical-to-mtl contract, #327) and `dispatch_events`'
-ordering guarantees including the `busy` guard (#329). They are covered
-end-to-end by the sim goldens (`test:bytecode`, `test:desync`, `test:inject`,
-`test:sched`) — real coverage, but a failure reports as a transcript diff rather
-than as a named contract. Tracked as #326.
+**4. ~~`main.c` is a god file nothing can link.~~ Closed by #326** (#334, #336).
+1,444 → 1,108 lines, 65 → 48 functions, largest cohesion cluster 20 → 8. Every
+rule-bearing piece the assessment named is now in a linkable TU with a test:
+`lcread.c` (#328), `wav.c` (#327), `pump.c` (#329). Full accounting in §9,
+including the one piece that moved without a test (`luaseam.c`) and the one that
+never got listed (`play_feed_pumping`).
 
 **5. ~~A vendored 802.11 file writes the LEDs.~~** Fixed by #323 — see §7.
 
@@ -608,54 +614,73 @@ The other multi-cluster files are false positives: `spi.c` (5 → 5), `adc.c`,
 `button.c` are stateless register pokes, so there is no shared state to cluster
 on. `main.c` is not a false positive.
 
-### The one structural defect: `main.c`
+### `main.c` was the one structural defect — #326 closed it
 
-Every metric puts it alone at the end of the distribution — 1,294 lines, 58
-functions, **fan-out 17** where the next highest is 7, I=0.94, 28 cohesion
-clusters. It is six modules sharing a file:
+It used to sit alone at the end of every distribution: 1,444 lines, 65
+functions, six modules sharing a file, and every rule-bearing line of it
+unlinkable because `main.c` carries `main()`. Four merged PRs later:
+
+| | before | now |
+|---|---:|---:|
+| lines | 1,444 | **1,108** |
+| functions | 65 | **48** |
+| `main.o` | 13,073 B | **11,325 B** |
+| largest cohesion cluster | 20 fns | **8 fns** |
+| clusters | 31 | **34** |
+
+**The cluster count going up is the success signal, not a regression.** What
+joined those singleton bindings into clusters was the shared helpers —
+`check_rgb`, `report`, `push_uid_hex`, `wav_le32`. Extracting them removed the
+links, and what is left is 29 singletons plus five small groups:
 
 ```
-[16] the REPL: console, event dispatch, boot, main
-[ 7] record + WAV/RIFF assembly          [ 5] wifi bindings + arg checking
-[ 4] LED bindings + colour checking      [ 2] beep   [ 2] config
-[21] singleton bindings (each a thin arg-check over one HAL call)
+[8] the REPL + boot: main repl sh_gets sh_puts run_chunk load_lc_frame
+                     init_hw open_trimmed_libs           ← entry-point wiring
+[4] the rec_* session (shares one `rec_active` flag)
+[3] LED bindings   [2] beep + wait_ms   [2] nab_play + play_feed_pumping
+[29] singleton bindings — each a thin arg-check over one HAL call
 ```
 
-The singletons are fine — a binding table *should* be a list of thin wrappers.
-The problem is the five islands of real logic that came along for the ride, and
-the cause is structural rather than careless: `main.c` is the only place
-`lua_State` exists, so anything needing one lands there, and once there it can
-never be linked by a test.
+That is what a binding table is supposed to look like.
 
-**Extraction demonstrably works, three times now — and #328 is the case that
-proves the argument rather than just illustrating it.** `utils/lcframe.c` was
-pulled out and gained a unit test the moment it left. #324 took the four newlib
-syscalls to `src/libc/` for 0 B (measured against a control build) and turned
-the `_write` seam from an inline forward-declaration into a named header.
+**The argument was worth making, and #328 is the proof rather than the
+illustration.** `utils/lcframe.c` gained a unit test the moment it left. #324
+took the newlib syscalls to `src/libc/` for **0 B** (measured against a control
+build) and turned the `_write` seam from an inline forward-declaration into a
+named header. #328 moved the `#LC` reader and **writing the assertions found
+three bugs nobody had read out of the code** — a hand-typed `#LC:oops` ate the
+user's correction line, the out-of-memory path never consumed its payload (the
+#308 desync on a path nobody had looked at), and the decode loop read the second
+nibble after the first had failed, doubling the resync cost. It closed the
+`LCFRAME_ERR_TOOLONG` corner whose own comment said it stayed open *"because it
+is a loop over attacker-paced input in main.c, where nothing can link it to test
+it"*. #336 finished the list: `utils/wav.c` now checks the byte-for-byte
+cross-track RIFF claim against a transcription of `_reclib_mkriff` itself, and
+`utils/pump.c` carries the reactor's four rules where a test can reach them.
 
-Then #328 moved the `#LC` reader to `utils/lcread.c` and **writing the
-assertions found three bugs nobody had read out of the code**: a hand-typed
-`#LC:oops` ate the user's next line — the one they would type the correction
-on; the out-of-memory path never consumed its payload, which is the #308 desync
-on a path nobody had looked at; and the decode loop read the second nibble after
-the first had already failed, costing two bytes of resync instead of the one
-this console cannot avoid. It also closed the `LCFRAME_ERR_TOOLONG` corner whose
-own comment said it was left open *"because it is a loop over attacker-paced
-input in main.c, where nothing can link it to test it"* — the clearest statement
-anywhere in this tree of what the god file costs.
+Cost across the four: **+152 B net** (0, +112, +56, and −16 from the earlier
+edge work). Cheap for what it bought.
 
-It was not free: **+112 B**, because `drop_lc_payload`/`load_lc_frame` had been
-inlined and `drain_hex` is new code. Worth it for a path whose failure mode is a
-console that silently desyncs.
+**One loose end.** `utils/luaseam.c` — `check_rgb`, `check_bounded`,
+`opt_bounded`, `cfg_field`, the bounds band #296 found bugs in — moved but has
+**no test**, because every function takes a `lua_State` and no host test links
+the Lua core. `firmware/test/host/README.md` records that deferral with a condition for
+revisiting. So two of the three extractions bought verification and one bought
+organisation; that is worth being clear-eyed about rather than counting three.
 
-Two clusters remain worth extracting — #327 and #329.
+Also still in `main.c` with a rule to it and no test: `play_feed_pumping`'s
+1,000 ms stall bail-out and its "a short return is flow control, not an error"
+contract. Never listed in #326, and tangled with `nab_play`'s Lua buffer
+anchoring — the next candidate if anyone continues the pattern.
 
-**Two things are on the wrong side of the seam entirely.** `nab.rec_wav` is
-`string → string`: it touches no hardware, yet ~44 lines of RIFF assembly sit in
-flash — the scarcest resource here, ~7.5 KB free — and cannot be unit-tested,
-while `lib/audio/` exists, costs no flash and already has a test harness. The
-2,160 B `nab.tone()` MP3 blob is the same category. Principle 1 says behaviour
-belongs in Lua; these are behaviour.
+**Two things are still on the wrong side of the seam.** `nab.rec_wav` is
+`string → string` — it touches no hardware, and #327 moved the RIFF assembly to
+`utils/wav.c` where it is now tested, but left the *binding* on the seam
+deliberately, because `nab.record` needs the header in C either way and dropping
+the name is an API break. The 2,160 B `nab.tone()` MP3 blob is the clearer case:
+the VS1003B decodes MIDI natively and `lib/audio/midi.lua` already builds it, so
+~2,100 B is recoverable for the same audible result (#331). Both tracked
+under #330; principle 1 says behaviour belongs in Lua, and these are behaviour.
 
 ### The second-order problem: the reactor-attachment protocol has no owner
 
