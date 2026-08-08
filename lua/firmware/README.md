@@ -146,10 +146,12 @@ Two things keep it from being worse, and both are load-bearing:
   `--gc-sections` alone.**
 
 `-Os` and Lua 5.5 are **not** levers. The two cheapest remaining ones are demo assets,
-4,547 B together: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
-boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,620 B — `run`/`watch`/`ledshow` plus
+**5,834 B together**: `nab.tone()`'s built-in MP3 (`inc/tone_mp3.h`, 2,160 B) and the resident
+boot chunk (`gen/boot_lc.h` from `../boot/boot.lua`, 3,674 B — `run`/`watch`/`ledshow` plus
 two hard-coded RFID UIDs, largely duplicating [`../apps/`](../apps/)). Both are product
-decisions, not refactors. `task lua:firmware:build` fails loudly on overflow.
+decisions, not refactors. (Both figures re-measured off a real build: the pair was previously
+written up as "4,547 B together" with the chunk at 3,620 B, and `../boot/README.md` carried a
+2,387 B for the same chunk — none of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
 
 ## The `nab` module
 
@@ -351,7 +353,10 @@ src/hal/            one file per peripheral: spi, led, button, audio (VS1003), a
 src/libc/           everything that exists to keep newlib out of the flash budget, and
                     nothing else: libc_shim.c (rand/srand/__assert_func), syscalls.c
                     (_read/_write over the console, _sbrk into ExtRAM, halting abort).
-                    A leaf - it depends on hal/uart + the tick and on nothing above.
+                    A substitution layer, not a leaf: syscalls.c sits ON hal/uart +
+                    the tick, so the folder ranks ABOVE hal/. Only libc_shim.c
+                    depends on nothing. Nothing above depends on it except through
+                    the syscalls.
 src/net/            802.11 + WPA2: ieee80211, eapol, aes128, hash  (vendored, -Os)
 src/usb/            ML60842 OHCI host stack + RT2501 driver (#143)  (vendored, -Os)
 src/utils/          event.c (cooperative event core), fmt.c (number/printf shims),
@@ -373,5 +378,7 @@ test/*.expected     golden transcripts for the bytecode / desync / injection tes
 ```
 
 `sys/`, `inc/common.h` and `hal/` are **copied** from `mtl/firmware` — a register fix there may
-apply here, so grep the sibling before assuming a divergence is intentional. Otherwise this
-layer is self-contained. Vendoring origins: [`PROVENANCE.md`](../../PROVENANCE.md).
+apply here, so grep the sibling before assuming a divergence is intentional (ten files are still
+byte-identical twins; [`../ARCHITECTURE.md`](../ARCHITECTURE.md) lists them, along with the rest
+of the track's dependency graph). Otherwise this layer is self-contained. Vendoring origins:
+[`PROVENANCE.md`](../../PROVENANCE.md).
