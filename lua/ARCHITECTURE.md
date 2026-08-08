@@ -450,7 +450,24 @@ REPL line all go through it. Its `Dockerfile` builds `luac` from the vendored
 
 ## 8. What these dependencies cost
 
-Ranked by how much they constrain the next change.
+Ranked by how much they constrain the next change. Three of the nine are closed;
+every open one has an issue, so this list is an index rather than a backlog.
+
+| | Finding | State |
+|---|---|---|
+| 1 | Blocking HAL calls cannot pump the reactor | open — `nab.record` in #333; wifi needs a step-form HAL, unfiled by design (see below) |
+| 1b | …and `nab.wait` is dead air when nested | ✅ documented + pinned by `test_pump.lua` (#329) |
+| 2 | The Lua userland has no delivery mechanism | open — #219 |
+| 3 | The cross-track twin dependency is unguarded | open — #337 |
+| 4 | `main.c` is a god file nothing can link | ✅ closed (#326: #327/#328/#329) |
+| 5 | A vendored 802.11 file writes the LEDs | ✅ closed (#323) |
+| 5b | Nothing on this device is random | open — #335 |
+| 6 | Size figures drift and nothing catches it | open — #338 |
+| — | The reactor-attachment protocol has no owner (§9) | open — #339 |
+| — | `luaseam.c` extracted without a test (§9) | open — #340 |
+
+The C/Lua distribution assessment is #330, with #331 (the tone codec, ~2,100 B
+back — the largest reclaim available) and #333 beneath it.
 
 **1. Blocking HAL calls cannot pump the reactor — by construction.** The HAL
 takes no `lua_State`, which is what keeps it testable and example-linkable. The
@@ -508,7 +525,7 @@ shippable: prose in the lib READMEs, and a hard-coded `MODULES` array in each
 80 ms/line (`tools/openocd/uart_repl.py` defaults, ~333 B/s against a 115200
 line) — so shipping the boot-critical `net` subset (23 KB → ~46 KB of hex) is
 minutes, and the whole lib set is longer. Freezing a subset into flash is the
-known plan; the ~7.5 KB free is the problem.
+known plan (#219); the 7,492 B free is the problem.
 
 **3. The cross-track twin dependency is unguarded.** Ten byte-identical files,
 and the correct action on a change differs per file — copy for most, explicitly
