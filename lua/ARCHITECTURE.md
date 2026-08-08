@@ -13,15 +13,16 @@ the per-lib READMEs, [`boot/README.md`](boot/README.md), and one README per tool
 thing a reader most often needs: the edge list — including the edges that leave
 this track entirely.
 
-Sizes below were measured, not copied: `task lua:firmware:build` for flash and
-`task lua:lib:size` for bytecode, both re-run after #331/#333 landed. Re-run them
-rather than trusting this page — several of the numbers the layer READMEs
-carried had drifted, and these will too.
+Every figure below was measured, not copied, and there is now one command that
+prints all of them: **`task lua:measure`** (#342 — flash, per-object flash, the
+boot chunk, per-module bytecode, lines per area, `main.c`'s function count;
+`FORMAT=json` for machines). Re-run it rather than trusting this page — several
+of the numbers the layer READMEs carried had drifted, and these will too.
 
 ## The stack in one picture
 
 Five layers, read bottom-up like an address space, with one seam cutting across.
-Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
+Every size is measured (`task lua:measure`).
 
 ```
  L4  LUA USERLAND ─────────────────────────────────── RAM · 53,326 B · 20 modules
@@ -48,14 +49,14 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
      singletons, which is what a binding table SHOULD look like (#326 done)
  ────────────────────────────────────────────────────────────────────────────────
  L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
-     src/hal/    12 drivers · 3,119 ln   spi led button audio adc i2c rfid
+     src/hal/    12 drivers · 3,129 ln   spi led button audio adc i2c rfid
                                          motor uart wifi config ota
      src/libc/   keep-newlib-out-of-flash, and nothing else (#324):
                  libc_shim (rand/srand/__assert_func) · syscalls
                  (_read/_write → UART0, _sbrk → ExtRAM, halting abort)
      src/utils/  event · fmt · lcframe · lcread · pump · wav · luaseam
      src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
-     src/net/    802.11 + WPA2-CCMP · 4,203 ln                     (vendored, -Os)
+     src/net/    802.11 + WPA2-CCMP · 4,198 ln                     (vendored, -Os)
      lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
  ────────────────────────────────────────────────────────────────────────────────
  L0  STARTUP + SILICON ─────────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ That absence is what leaves principle 4 (partial updates) without a home.
 
 ## 2. The HAL — `firmware/src/hal/` + `firmware/sys/`
 
-12 drivers, 3,119 lines including headers. The API is deliberately narrow and
+12 drivers, 3,129 lines including headers. The API is deliberately narrow and
 register-shaped: `init_x()` plus a handful of verbs, no state machines, no
 policy, **no `lua_State`**.
 
@@ -146,16 +147,24 @@ writes the console through `hal/uart`. It is a substitution layer, not a leaf �
 
 ## 3. What else the C firmware holds
 
+Counted by `task lua:measure ONLY=lines`, which defines an area as
+`src/<area>/*.c` plus the headers that declare it, `inc/<area>/*.h`. The loose
+headers in `inc/` belong to no single area — `common.h` alone is included by 41
+files — so they are their own row rather than folded into whichever directory a
+hand-written sweep reached first, which is how `src/utils/` used to read 500
+lines larger than it is.
+
 | Area | Files | Lines | Origin |
 |---|---:|---:|---|
 | `lua/` — PUC-Rio Lua 5.4.7 | 61 | 30,280 | vendored, 4 local edits |
 | `src/usb/` — OHCI host + RT2501 | 19 | 5,522 | vendored from mtl/V1 |
-| `src/net/` — 802.11, EAPOL, AES-128, hashes | 8 | 4,203 | vendored from mtl/V1 |
-| `src/hal/` | 24 | 3,119 | ported from `mtl/firmware`, then diverged |
+| `src/net/` — 802.11, EAPOL, AES-128, hashes | 8 | 4,198 | vendored from mtl/V1 |
+| `src/hal/` | 24 | 3,129 | ported from `mtl/firmware`, then diverged |
 | `examples/` — one-peripheral bring-up progs | 19 | 3,222 | original |
 | `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 18 | 2,253 | original |
+| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 16 | 1,751 | original |
 | `src/main.c` — the Lua host | 1 | 1,108 | original |
+| `inc/` — `common.h`, `event.h`, `tone_mp3.h` | 3 | 644 | vendored + original |
 | `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
@@ -296,7 +305,7 @@ one that was never a violation:
 
 `main.c → sys/` (5 symbols) is omitted for legibility. `usb ↔ net` is a genuine
 cycle — 17 symbols out, 4 back — so those two vendored directories are
-effectively one 9,725-line module.
+effectively one 9,720-line module.
 
 `src/libc/` sits **above** `hal/` (its `syscalls.c` drives `hal/uart`), so ④ is
 still upward when measured by folder rank. That is the same artifact as before,
@@ -588,10 +597,15 @@ the boot chunk at 3,620 B, against `boot/README.md`'s 2,387 B for that same
 chunk. Measured off a real build, the chunk is **3,674 B** and the pair is
 **5,834 B**; both READMEs are corrected. The `lib/` figures had drifted the same
 way (`audio/player` 2,649 → 2,897, `hw/ears` 3,424 → 3,675, while `net` and
-`sys` were still exact). `task lua:firmware:build` and `task lua:lib:size` print
-all of it in seconds, so the gap is not measurement cost — it is that nothing
-compares the printed number against the written one. This is the cheapest
-unclaimed gate in the track.
+`sys` were still exact). The gap was never measurement cost — it is that nothing
+compares the printed number against the written one.
+
+**Half of that is now closed.** #342 made the figures one command — `task
+lua:measure`, `FORMAT=json` for machines — so there is a single producer to
+compare against instead of four ad-hoc invocations, and it fails rather than
+report a stale map or a tidy row of zeros. The gate that reads the documents and
+compares them (#338) is still the cheapest unclaimed one in the track, and it is
+much cheaper now than it was.
 
 ## 9. Is it well structured? — coupling and cohesion, measured
 
@@ -624,7 +638,7 @@ remove. For bare-metal C with two vendored subsystems, that is a clean graph.
 
 The one real cycle is **`usb` ↔ `net`**: 12 symbols out, 4 back. Vendored, so
 not this track's doing, but it means those two directories are effectively one
-9,725-line module that cannot be reasoned about separately.
+9,720-line module that cannot be reasoned about separately.
 
 ### Cohesion: high in the HAL, high in `lib/`, low in exactly one file
 
@@ -761,19 +775,34 @@ single-subscriber limit still stands for `"button"` and `"rfid"`.
 
 Nothing here is hand-maintained knowledge; each claim came from a command.
 
+**Every size and count on this page is one command** (#342 — it exists because
+these were re-derived by hand four times during the #322/#326 arc, drifting a
+little each time):
+
+```sh
+task lua:measure                    # all of it, human-readable
+task lua:measure FORMAT=json        # the same figures, structured
+task lua:measure ONLY=flash,lines   # a subset
+```
+
+Flash used/free/per-object, the resident boot chunk, per-module bytecode, lines
+per area, `main.c`'s function count. It refuses to report a stale map or an
+empty parse, so a number it prints came from the tree as it is now.
+[`tools/measure/README.md`](tools/measure/README.md) documents the counting
+rules; `task lua:lib:size` is a view over the same implementation.
+
+The structural claims — the ones no size gate covers — still come from these:
+
 ```sh
 # the C include graph
 grep -rn '^#include' firmware/src firmware/sys/src
 
 # §9's coupling/cohesion numbers: symbol-level call graph -> fan-in/fan-out,
 # and functions clustered by shared file-scope state (see the commit that
-# added this section for the scripts)
+# added this section for the scripts). Deliberately NOT in lua:measure: both
+# change rarely, and #342 says to add them only if someone reaches twice.
 
 # which files are still twins of the mtl track
 for f in $(cd firmware && ls src/hal/*.c src/usb/*.c src/net/*.c); do
   cmp -s "firmware/$f" "../mtl/firmware/$f" && echo "twin: $f"; done
-
-# what each Lua module actually references (strip comments first)
-task lua:lib:size          # per-module bytecode
-task lua:firmware:build    # flash total; fails loudly on overflow
 ```

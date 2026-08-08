@@ -158,6 +158,11 @@ largely duplicating [`../apps/`](../apps/)). That one is a product decision, not
 with the chunk at 3,620 B, and `../boot/README.md` carried a 2,387 B for the same chunk — none
 of the three agreed.) `task lua:firmware:build` fails loudly on overflow.
 
+**Re-measure rather than trust this section.** `task lua:measure` (#342) prints all of it
+from the build products — used/free, the per-object and per-function split off the map, the
+boot chunk — and refuses to report a map older than the sources it was linked from.
+`FORMAT=json` for machines, `ONLY=flash,objects` for just this part.
+
 ## The `nab` module
 
 The one seam between Lua and hardware, registered in `src/main.c`:

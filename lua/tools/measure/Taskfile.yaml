@@ -1,0 +1,56 @@
+# tools/measure - the figures the lua track's documents cite, from one place (#342).
+#
+# `lua/ARCHITECTURE.md`, `firmware/README.md`, `boot/README.md` and the per-lib
+# READMEs all quote measured numbers, and each one used to come from its own
+# throwaway invocation. This leaf is the single producer:
+#
+#   task lua:measure                     -> the human report
+#   task lua:measure FORMAT=json         -> the same figures, structured (#338)
+#   task lua:measure ONLY=flash,lines    -> a subset
+#   task lua:measure:test                -> the parsers' unit tests (in lua:verify)
+#
+# No Dockerfile: measure.py is stdlib-only and reads the source tree plus the
+# build products the firmware image already produced in Docker. The one figure
+# that needs a container is the Lua bytecode, and it borrows the sibling luac
+# image rather than owning one - which is also what keeps `lua:lib:size` and
+# this from being two implementations of the same count (lib:size delegates here).
+version: '3'
+
+vars:
+  LUAC_IMAGE: nabaztag-sdk-luac
+  # Lua layer root, walk-up formula identical to the sibling leaves (see
+  # firmware/Taskfile.yaml for why it must be depth-independent).
+  REPO:
+    sh: d='{{.TASKFILE_DIR}}'; while [ "$(dirname "$d")" != / ] && [ ! -e "$(dirname "$d")/.git" ]; do d="$(dirname "$d")"; done; echo "$d"
+
+includes:
+  luac: # host Lua->bytecode compiler, for the per-module bytecode figures
+    taskfile: ../luac/Taskfile.yaml
+    internal: true
+
+tasks:
+  default:
+    desc: 'Print the measured figures the lua docs cite - flash (used/free/per-object/per-function), the resident boot chunk, per-module Lua bytecode, lines per area and src/main.c''s function count. Fails rather than reporting stale or empty numbers. Reporting only: the gate that compares these against the docs is #338.'
+    summary: |
+      Usage: task lua:measure [FORMAT=json] [ONLY=flash,objects,boot,bytecode,lines,functions]
+
+      Needs a current build for the flash figures - a map older than any source it
+      was built from is an error, not a footnote. Run task lua:firmware:build first.
+      ONLY=... restricts the report to the sections you name.
+    dir: '{{.TASKFILE_DIR}}'
+    deps:
+      # Only the bytecode figures need it, but a dep cannot be conditional; the
+      # image build is a no-op when it is already current.
+      - task: luac:image
+        vars: {WORKDIR: '{{.REPO}}'}
+    cmds:
+      - >-
+        python3 measure.py --root '{{.REPO}}' --luac-image {{.LUAC_IMAGE}}
+        --format {{if eq .FORMAT "json"}}json{{else}}text{{end}}{{if .ONLY}} --only '{{.ONLY}}'{{end}}
+
+  test:
+    desc: 'Unit tests for the measure parsers: the linker map, the ELF section table, the C function counter and the freshness/non-vacuity guards, against fixtures with known answers. Part of lua:verify (stdlib-only, no Docker, milliseconds).'
+    summary: 'Usage: task lua:measure:test'
+    dir: '{{.TASKFILE_DIR}}'
+    cmds:
+      - python3 test/run.py

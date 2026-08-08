@@ -25,6 +25,9 @@ includes:
   luac: # host luac/lua image (built with the lua layer root as Docker context)
     taskfile: ../tools/luac/Taskfile.yaml
     internal: true
+  measure: # the one implementation of every documented figure, `size` included (#342)
+    taskfile: ../tools/measure/Taskfile.yaml
+    internal: true
 
 tasks:
   test:
@@ -48,25 +51,9 @@ tasks:
         [ "$ran" -gt 0 ] || { echo "lib:test: no <lib>/test/run.lua found"; exit 1; }
 
   size:
-    desc: 'Stripped device-bytecode size of every lua-lib module, grouped by lib (+ grand total) - the measured number #219 budgets against.'
-    summary: 'Usage: task lua:lib:size'
+    desc: 'Stripped device-bytecode size of every lua-lib module, grouped by lib (+ grand total) - the measured number #219 budgets against. A view over `task lua:measure` (#342): two implementations of the same count is how the documented figures drifted apart in the first place.'
+    summary: 'Usage: task lua:lib:size [FORMAT=json]'
     dir: '{{.TASKFILE_DIR}}'
-    deps:
-      - task: luac:image
-        vars: {WORKDIR: '{{.REPO}}'}
     cmds:
-      - |
-        grand=0
-        for d in */; do
-          sub=0; any=0
-          for f in "$d"*.lua; do
-            [ -f "$f" ] || continue
-            any=1
-            n=$(docker run --rm -i {{.LUAC_IMAGE}} -s -o /dev/stdout - < "$f" | wc -c)
-            n=$((n))  # strip BSD wc's leading pad so the %d below isn't "invalid number" -> 0
-            sub=$((sub+n)); grand=$((grand+n))
-            printf '%16s %6d B\n' "${f%.lua}" "$n"
-          done
-          [ "$any" -eq 1 ] && printf '%16s %6d B  (%s subtotal)\n' '' "$sub" "${d%/}"
-        done
-        printf '%16s %6d B  (stripped .lc, all libs)\n' TOTAL "$grand"
+      - task: measure:default
+        vars: {ONLY: bytecode, FORMAT: '{{.FORMAT}}'}

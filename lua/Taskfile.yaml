@@ -7,6 +7,7 @@
 #   * boot:*      — the resident boot chunk baked into the image (firmware delegates).
 #   * apps:*      — the Lua app sources: compile to bytecode, run in the sim.
 #   * lib:*       — host-side Lua stdlib tests.
+#   * measure     — the figures the docs cite (#342), one producer for all of them.
 # (`task firmware:build` here == `cd firmware && task build`.) This root owns only
 # the cross-leaf orchestration (verify, clean). Run `task` with no args to list.
 version: '3'
@@ -22,13 +23,16 @@ includes:
     taskfile: ./lib/Taskfile.yaml
   simui: # browser UI for the simulator (#43): NiceGUI + embedded sim, one container
     taskfile: ./tools/simui/Taskfile.yaml
+  measure: # the figures the docs cite (#342): `task lua:measure` runs its default
+    taskfile: ./tools/measure/Taskfile.yaml
 
 tasks:
   verify:
-    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
+    desc: 'Definition of done for the Lua (V2) layer: docs reference only real tasks, the measure parsers (#342), the host C unit tests, the reactor unit tests and the lib unit tests pass, the firmware image builds (fails loudly on flash overflow), the bytecode pipeline round-trips (firmware:test golden transcript), a refused frame leaves the console in sync (firmware:test:desync, #308) and the workloads still compose under blocking work (firmware:test:sched, #283).'
     cmds:
       - task: check:docs      # cheap, fail-fast: catch stale task/`*.md` doc refs before the slow builds
       - task: check:eol       # cheap, fail-fast: the vendored net/ sources are still CRLF
+      - task: measure:test    # cheap, no Docker: the map/ELF parsers behind lua:measure (#342)
       - task: firmware:test:host   # native C unit tests under ASan - no sim, seconds
       - task: boot:test            # host-lua unit tests for `sched`, the resident reactor
       - task: firmware:test:bytecode  # the only input surface: malformed bytecode must not kill the runtime
@@ -48,7 +52,15 @@ tasks:
         set -e
         ROOT="$(git rev-parse --show-toplevel)"
         # Real task names, fully qualified (run the lister from the repo root).
-        real="$(cd "$ROOT" && task --list-all --json | python3 -c 'import sys,json; print("\n".join(t["name"] for t in json.load(sys.stdin)["tasks"]))' | sort -u)"
+        # A namespace's `default` task is invocable by the namespace name alone
+        # (`task lua:measure` runs `lua:measure:default`), and the lister only
+        # prints the qualified form - so add the bare namespace too, or every doc
+        # that writes the name a user actually types reads as a stale reference.
+        real="$(cd "$ROOT" && task --list-all --json | python3 -c '
+        import sys, json
+        names = [t["name"] for t in json.load(sys.stdin)["tasks"]]
+        names += [n[:-len(":default")] for n in names if n.endswith(":default")]
+        print("\n".join(names))' | sort -u)"
         # `task lua:…` invocations referenced in docs/comments (strip trailing args +
         # a stray sentence colon). CHANGELOG is historical - past task names are
         # expected there, so it is excluded.

@@ -37,6 +37,30 @@
     - Consequence worth noting: `nab.rec_wav` stayed a C binding in #327 because
       "`nab.record` needs the header in C either way". That premise is now false, so the
       last 96 B of #330's third item is genuinely recoverable — see `ARCHITECTURE.md` §9.
+  * [#342](https://github.com/rngtng/NabaztagHackKit/issues/342): **`task lua:measure` —
+    the figures four documents cite, from one place.** `lua/ARCHITECTURE.md`,
+    `firmware/README.md`, `boot/README.md` and the per-lib READMEs all quote measured
+    numbers, and each one used to come from its own throwaway invocation; during the
+    #322/#326 arc they were re-derived by hand four times, drifting a little each time.
+    One command now prints flash (used/free, per-object and per-function off the map),
+    the resident boot chunk, per-module Lua bytecode, lines per area and `src/main.c`'s
+    function count — human-readable by default, `FORMAT=json` for #338's size gate.
+    - **It fails rather than mislead.** A map or ELF older than any source it was linked
+      from is an error naming the offending file, and every section asserts it measured
+      something: a tidy report of zeros is indistinguishable from a measurement.
+    - **Flash comes from the ELF section table, not the map.** `ld` prints a flash `load
+      address` for `.bss` too, so billing every section with one charges the budget ~5 KB
+      of zero-init RAM. Pure Python — reading an ELF needs no toolchain container.
+    - `task lua:lib:size` is now a view over the same implementation instead of a second
+      count of the same thing, which is how these drifted apart to begin with.
+    - Corrected on the way past, each against a real build: `src/hal/` 3,119 → 3,129 ln,
+      `src/net/` 4,203 → 4,198, `lib/audio/player` 2649 → 2897 B, `lib/hw/ears` 3424 →
+      3675 B. `src/utils/` read 2,253 ln because the sweep that produced it also swept
+      `inc/common.h` and `inc/event.h`; the loose `inc/` headers are their own row now
+      (`src/utils/` 1,751 ln, `inc/` 644).
+    - The optional extras #342 lists — the symbol-level dependency graph and the
+      LCOM-style cohesion clustering — were deliberately **not** built: they change
+      rarely, and the issue says to add them only once someone reaches for them twice.
 
   * [#326](https://github.com/rngtng/NabaztagHackKit/issues/326): **the rest of the
     rule-bearing code is out of `main.c`** — [#327](https://github.com/rngtng/NabaztagHackKit/issues/327)
