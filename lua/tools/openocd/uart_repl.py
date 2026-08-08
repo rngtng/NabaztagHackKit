@@ -17,7 +17,7 @@ pause (`line_gap`) to let the device finish that gap.
 
 #276: a FIXED inter-frame gap is not enough. If a chunk's own execution blocks
 (nab.play() decoding a real clip can run for seconds) the device does not touch
-UART at all for that whole stretch - dispatch_events during a blocking call
+UART at all for that whole stretch - pump_dispatch during a blocking call
 never reads input, only button/rfid/tick - so any fixed gap shorter than that
 blocking call still overflows the 16-byte FIFO the moment the next frame's bytes
 start arriving. Reproduced on apps/mic-test.lua: corruption clusters right after

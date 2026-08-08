@@ -31,6 +31,7 @@ coverable by the fake register map in `stubs/ml674061.h`. Today:
 | `eapol_test.c` | `src/net/eapol.c` | the WPA2 4-way handshake must bound its reads by the RECEIVED length, not by the lengths the frame declares (`body_length` drives the MIC computation pre-authentication; `key_data_length` drives the GTK unwrap post-MIC) |
 | `lcframe_test.c` | `src/utils/lcframe.c` | the `#LC` frame checksum (#298) — pinned vectors so the C receiver and the three Python senders cannot drift, and every single-nibble flip in a chunk-sized buffer detected — plus the header parse (#308): a **refused** header must still report the payload queued behind it, or the console reads bytecode as REPL lines |
 | `lcread_test.c` | `src/utils/lcread.c` | #328 — what a **refused** `#LC` frame leaves on the console. Every scenario asserts the exact remaining input, so "the frame was rejected" cannot pass while its payload is still queued for the REPL to choke on line by line (#308). Pins the over-long-frame corner main.c could only describe |
+| `wav_test.c` | `src/utils/wav.c` | #327 — the recording's 60-byte RIFF header, asserted byte for byte against `mtl/lib/hw/reclib.mtl`'s `_reclib_mkriff` transcribed into the test. The README's "anything that accepts a V1 recording accepts this one" is a cross-track promise made of magic numbers, and this is the only thing checking it |
 | `adc_test.c` | `src/hal/adc.c` | the wheel read must terminate on a converter that never finishes (it feeds the watchdog while it waits, so a hang has no reboot) |
 
 `stubs/ml674061.h` (and `stubs/ml60842.h` for the USB block) shadows the real register map with a plain RAM array, so a
@@ -67,6 +68,15 @@ What still can't live here: code inside `main.c` (it carries `main()`, so
 nothing else can link it — this is why the printf shims were split out to
 `src/utils/fmt.c` in #245), and anything needing a live peripheral peer. Those
 stay sim-tested (`firmware:test`, `firmware:test:inject`) or hardware-tested.
+
+**Nothing here links the Lua core yet**, and that is the one open question left
+by #326's extractions. `src/utils/pump.c` and `src/utils/luaseam.c` are now out
+of `main.c` and are ordinary linkable TUs, but both take a `lua_State`, so a
+test for them means compiling the vendored `lua/` subset for the host —
+weighed as option (a) in #329 and deliberately deferred, because the reactor
+contract those rules exist for is asserted a layer up instead
+(`lua/boot/test/test_pump.lua`, `task lua:boot:test`). Decide it when a C-side
+ordering rule needs pinning that the Lua-side model cannot reach.
 
 ## Conventions
 

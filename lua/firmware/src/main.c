@@ -13,7 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>   /* malloc/free - #LC bytecode frame buffer */
-#include <string.h>   /* memcpy - WAV header assembly */
+#include <string.h>   /* memcpy - the recording's data section into its buffer */
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -32,10 +32,11 @@
 #include "hal/motor.h"   /* ear motors + encoders */
 #include "hal/uart.h"    /* console: polled UART0 TX/RX (#207) */
 #include "libc/syscalls.h" /* _read/_write/_sbrk/abort + console_last_rx_ms */
-#include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
-#include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
 #include "utils/lcread.h"  /* #LC frame reader: console -> checked chunk (#328) */
+#include "utils/luaseam.h" /* shared seam helpers: bounds, uid push, report (#326) */
+#include "utils/pump.h"  /* the cooperative pump: queue -> Lua callbacks (#329) */
+#include "utils/wav.h"   /* WAV_HEADER_LEN + wav_adpcm_header - nab.record (#327) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
@@ -92,19 +93,6 @@ static const char *const led_names[] = {"nose",  "belly", "left",
 static const uint8_t led_sel[]     = {5, 1, 3, 4, 2};
 static const uint8_t led_logical[] = {0, 2, 1, 3, 4};
 
-/* Args 2,3,4 -> one 0xRRGGBB word, each channel checked against `max`
- * (127 for the raw TLC5922 range, 255 for the gamma bindings). */
-static uint32_t check_rgb(lua_State *L, lua_Integer max)
-{
-  uint32_t rgb = 0;
-  for (int i = 2; i <= 4; i++) {
-    lua_Integer v = luaL_checkinteger(L, i);
-    luaL_argcheck(L, v >= 0 && v <= max, i, max == 127 ? "0..127" : "0..255");
-    rgb = (rgb << 8) | (uint32_t)v;
-  }
-  return rgb;
-}
-
 /* Block ~ms on the 1 ms System Timer tick (counter_timer), feeding the
  * watchdog - the clock nab.delay and nab.beep both pace themselves off. */
 static void wait_ms(uint32_t ms)
@@ -120,7 +108,7 @@ static void wait_ms(uint32_t ms)
 static int nab_led(lua_State *L)
 {
   int i = luaL_checkoption(L, 1, NULL, led_names);
-  uint32_t rgb = check_rgb(L, 127);
+  uint32_t rgb = luaseam_rgb(L, 127);
 
   set_led_rgb(((uint32_t)led_sel[i] << 24) | rgb);
   return 0;
@@ -132,7 +120,7 @@ static int nab_led(lua_State *L)
 static int nab_led8(lua_State *L)
 {
   int i = luaL_checkoption(L, 1, NULL, led_names);
-  uint32_t rgb = check_rgb(L, 255);
+  uint32_t rgb = luaseam_rgb(L, 255);
 
   set_led(led_logical[i], rgb);
   return 0;
@@ -148,7 +136,7 @@ static int nab_led8(lua_State *L)
 static int nab_fade(lua_State *L)
 {
   int i = luaL_checkoption(L, 1, NULL, led_names);
-  uint32_t rgb = check_rgb(L, 255);
+  uint32_t rgb = luaseam_rgb(L, 255);
   lua_Integer ms = luaL_checkinteger(L, 5);
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 5, "0..60000");
 
@@ -217,7 +205,6 @@ static int nab_beep(lua_State *L)
  * Anything longer than the heap, or played *while* the script does something
  * else, wants audio.player on nab.play_feed (lua/lib/audio). `data` is anchored
  * as argument 1 for the whole call, so the collector cannot move it under us. */
-static void dispatch_events(lua_State *L, uint8_t allow_rfid); /* defined below */
 
 /* Give up when the decoder has accepted nothing for this long. Bounded by WALL
  * TIME, not by a count of fruitless attempts the way hal/audio.c's vlsi_feed_all
@@ -244,7 +231,7 @@ static int play_feed_pumping(lua_State *L, const uint8_t *data, uint32_t len)
     } else {
       if ((counter_timer - last) >= PLAY_STALL_MS)
         return 0;
-      dispatch_events(L, 1); /* FIFO full: let everything else run meanwhile */
+      pump_dispatch(L, 1); /* FIFO full: let everything else run meanwhile */
     }
   }
   return 1;
@@ -332,43 +319,13 @@ static int nab_tone(lua_State *L)
   return 1;
 }
 
-/* IMA-ADPCM WAV header for nab.record: 8 kHz mono, 256-byte blocks of 505
- * samples (~4055 B/s). Byte-for-byte the RIFF wrapper lib/hw/reclib.mtl's
- * _reclib_mkriff builds around the same VS1003 record stream for the V1
- * stack, so anything that accepts a V1 recording accepts this. */
-#define WAV_HEADER_LEN 60
-
-static void wav_le32(uint8_t *p, uint32_t v)
-{
-  p[0] = (uint8_t)v;
-  p[1] = (uint8_t)(v >> 8);
-  p[2] = (uint8_t)(v >> 16);
-  p[3] = (uint8_t)(v >> 24);
-}
-
-static void wav_adpcm_header(uint8_t *h, uint32_t datalen)
-{
-  static const uint8_t fmt[32] = {
-      'W', 'A', 'V', 'E', 'f', 'm', 't', ' ',
-      20, 0, 0, 0,        /* fmt chunk length */
-      0x11, 0,            /* format 0x0011 = IMA ADPCM */
-      1, 0,               /* mono */
-      0x40, 0x1F, 0, 0,   /* 8000 Hz */
-      0xD7, 0x0F, 0, 0,   /* 4055 bytes/s */
-      0, 1,               /* block align 256 */
-      4, 0,               /* 4 bits per sample */
-      2, 0,               /* extra fmt bytes */
-      0xF9, 1,            /* 505 samples per block */
-  };
-  memcpy(h, "RIFF", 4);
-  wav_le32(h + 4, datalen + 52);         /* file size - 8 */
-  memcpy(h + 8, fmt, sizeof fmt);
-  memcpy(h + 40, "fact", 4);
-  wav_le32(h + 44, 4);
-  wav_le32(h + 48, (datalen >> 8) * 505);   /* total samples: blocks * 505 */
-  memcpy(h + 52, "data", 4);
-  wav_le32(h + 56, datalen);
-}
+/* The IMA-ADPCM WAV header both recording paths wrap their data in is
+ * utils/wav.c - 8 kHz mono, 256-byte blocks of 505 samples (~4055 B/s), and
+ * byte-for-byte the RIFF wrapper lib/hw/reclib.mtl's _reclib_mkriff builds
+ * around the same VS1003 record stream for the V1 stack. It is there rather
+ * than here because that last sentence is a cross-track promise and main.c is
+ * the one TU nothing can link to check it (#327); test/host/wav_test.c now
+ * does, against the MTL source transcribed into it. */
 
 /* Cooperative record session state (nab.rec_start/rec_read/rec_stop). Outside
  * record mode HDAT0/HDAT1 mean decode state (stream format / bitrate), so
@@ -485,15 +442,6 @@ static int nab_wheel(lua_State *L)
   return 1;
 }
 
-/* uid -> "a1b2c3d4e5f60708" (lowercase hex) on the Lua stack; shared by
- * nab.rfid and the event dispatcher. */
-static void push_uid_hex(lua_State *L, const uint8_t uid[8])
-{
-  char hex[17];
-  fmt_hex8(hex, uid);
-  lua_pushstring(L, hex);
-}
-
 /* nab.rfid() -> UID as a lowercase hex string (e.g. "a1b2c3d4e5f60708"), or
  * nil if no tag is on the coupler. Scans the CRX14 (I2C 0xA0) each call - no
  * caching, so placing/removing a tag is reflected on the next poll. For
@@ -506,105 +454,24 @@ static int nab_rfid(lua_State *L)
     lua_pushnil(L);
     return 1;
   }
-  push_uid_hex(L, uid);
+  luaseam_push_uid(L, uid);
   return 1;
 }
 
 /* ---- cooperative events: nab.on / nab.wait / nab.time -------------- */
 /* Principle 2 lands here: event.c polls the hardware from the cooperative
- * pump (never an ISR) and queues edge events; this block delivers them to Lua
- * callbacks under lua_pcall. Dispatch runs while the REPL prompt sits idle
- * and inside nab.wait() - Lua code never runs behind the script's back. */
+ * pump (never an ISR) and queues edge events, and utils/pump.c delivers them
+ * to Lua callbacks under lua_pcall. Dispatch runs while the REPL prompt sits
+ * idle and inside nab.wait() - Lua code never runs behind the script's back.
+ *
+ * The dispatcher itself is in utils/pump.c rather than here: it carries four
+ * rules (a re-entrancy guard, polling even when re-entered, drain-then-tick,
+ * pcall isolation) and one of them has a consequence for every caller below -
+ * inside the guard, nothing else is delivered. See utils/pump.h. What stays
+ * here is the call sites and the console interlock that gates the coupler
+ * scan, which is the REPL's concern, not the pump's (#329). */
 
-#define EVENTS_TABLE "nab.events"  /* registry key: {button=fn, rfid=fn} */
 #define CONSOLE_IDLE_MS 500        /* RX quiet this long before a coupler scan */
-
-static const char *const event_names[] = {"button", "rfid", "tick", NULL};
-
-static void report(lua_State *L);  /* defined with the REPL below */
-
-/* Pump the pollers and deliver queued events to the registered callbacks,
- * each under lua_pcall (principle 3: a callback error prints and dispatch
- * continues; it never takes the runtime down). Not reentrant: a callback
- * that ends up back here (e.g. via nab.wait) must not dispatch recursively,
- * so nested calls no-op and the outer loop delivers anything new. */
-static void dispatch_events(lua_State *L, uint8_t allow_rfid)
-{
-  static uint8_t busy;
-  /* Sample the hardware ALWAYS, even when re-entered. The guard exists
-   * to stop recursive *Lua dispatch* (principle 2), and event_pump touches no
-   * Lua state - the queue is precisely the buffer that decouples the two. With
-   * the pump inside the guard, a nab.wait() called from a callback stopped the
-   * debouncer and the scan cycle outright, so a press+release entirely inside
-   * that window was never even observed, let alone queued for later. */
-  event_pump(allow_rfid);
-  if (busy)
-    return;
-  busy = 1;
-  event_t e;
-  /* The callback table is fetched once, not per event: it is the same table
-   * throughout, and the registry lookup hashes EVENTS_TABLE every time. */
-  lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
-  int cbs = lua_gettop(L);
-  while (event_next(&e)) {
-    lua_getfield(L, cbs,
-                 (e.type == EV_RFID_TAG || e.type == EV_RFID_GONE) ? "rfid"
-                                                                   : "button");
-    if (!lua_isfunction(L, -1)) {
-      lua_pop(L, 1); /* callback cleared after the event was queued */
-      continue;
-    }
-    switch (e.type) {
-      case EV_BUTTON_DOWN: lua_pushboolean(L, 1); break;
-      case EV_BUTTON_UP:   lua_pushboolean(L, 0); break;
-      case EV_RFID_TAG:    push_uid_hex(L, e.uid); break;
-      default:             lua_pushnil(L); break; /* EV_RFID_GONE */
-    }
-    if (lua_pcall(L, 1, 0, 0) != LUA_OK)
-      report(L);
-  }
-  /* Cooperative tick: once the C event queue is drained, hand the Lua
-   * reactor a slice. This is the seam that lets behaviour which must keep
-   * running during a blocking call - an ear stopping on its target, a net
-   * connection being pumped - actually run, without the C layer knowing what
-   * any of it is. Registered with nab.on("tick", fn); under lua_pcall like
-   * every other callback (principle 3), and inside the busy guard, so a
-   * nab.wait() from within the tick cannot recurse into dispatch. Reuses the
-   * callback table already on the stack rather than hashing EVENTS_TABLE again. */
-  lua_getfield(L, cbs, "tick");
-  if (lua_isfunction(L, -1)) {
-    if (lua_pcall(L, 0, 0, 0) != LUA_OK)
-      report(L);
-  } else {
-    lua_pop(L, 1);
-  }
-  lua_settop(L, cbs - 1); /* drop the callback table */
-  busy = 0;
-}
-
-/* nab.on(name, fn|nil): register (or clear) the callback for an event source.
- * name "button": fn(pressed) on debounced press/release edges. name "rfid":
- * fn(uid) when a new tag lands on the coupler, fn(nil) when it leaves;
- * registering starts the background ~750 ms scan cycle, clearing stops it.
- * name "tick": fn() on every pump iteration, after the event queue is drained -
- * the seam the Lua reactor (sched) hangs off. It is not an event source:
- * nothing is queued for it and it carries no argument.
- * Callbacks fire from the cooperative pump - while the REPL prompt is idle or
- * inside nab.wait()/nab.delay() - never from an interrupt (principle 2). */
-static int nab_on(lua_State *L)
-{
-  int which = luaL_checkoption(L, 1, NULL, event_names);
-  int has_fn = !lua_isnoneornil(L, 2);
-  if (has_fn)
-    luaL_checktype(L, 2, LUA_TFUNCTION);
-  lua_settop(L, 2); /* materialize an absent arg 2 as nil */
-  lua_getfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
-  lua_pushvalue(L, 2);
-  lua_setfield(L, -2, event_names[which]);
-  if (which == 1) /* "rfid" */
-    event_rfid_enable((uint8_t)has_fn);
-  return 0;
-}
 
 /* nab.wait(ms) - also exposed as nab.delay(ms), see above: sleep ~ms on the
  * 1 ms tick while running the event pump, so nab.on callbacks and the reactor
@@ -618,12 +485,12 @@ static int nab_wait(lua_State *L)
   luaL_argcheck(L, ms >= 0 && ms <= 60000, 1, "0..60000");
   uint32_t start = counter_timer;
   lua_Integer fallback = ms; /* counts DelayMs slices if the tick never moves */
-  dispatch_events(L, 1);
+  pump_dispatch(L, 1);
   while ((counter_timer - start) < (uint32_t)ms && fallback > 0) {
     DelayMs(1);
     if (counter_timer == start)
       fallback--;
-    dispatch_events(L, 1);
+    pump_dispatch(L, 1);
   }
   return 0;
 }
@@ -714,36 +581,10 @@ static int nab_sciw(lua_State *L)
  * provisioning flow branches on to pick an LED/message. The whole USB +
  * 802.11 stack is pulled into the image only because this binding references
  * it (see hal/wifi.c). */
-/* Bounded string argument for the radio bindings. The 802.11 SSID and
- * the WPA passphrase both land in fixed-size C buffers - rt2501_scan's probe
- * frame, the PBKDF2 - so the cap belongs here, at the seam, exactly as
- * nab.config already enforces its own field caps (principle 5: bindings are
- * bounded nab.* calls). The HAL re-checks; neither layer is the only guard. */
-static const char *check_bounded(lua_State *L, int arg, size_t max,
-                                 const char *what)
-{
-  size_t len;
-  const char *s = luaL_checklstring(L, arg, &len);
-
-  luaL_argcheck(L, len <= max, arg, what);
-  return s;
-}
-
-static const char *opt_bounded(lua_State *L, int arg, const char *def,
-                               size_t max, const char *what)
-{
-  size_t len;
-  const char *s = luaL_optlstring(L, arg, def, &len);
-
-  if (s != NULL)
-    luaL_argcheck(L, len <= max, arg, what);
-  return s;
-}
-
 static int nab_wifi(lua_State *L)
 {
-  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
-  const char *psk = opt_bounded(L, 2, "", WIFI_PSK_MAX, "PSK is at most 64 bytes");
+  const char *ssid = luaseam_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
+  const char *psk = luaseam_optbounded(L, 2, "", WIFI_PSK_MAX, "PSK is at most 64 bytes");
   wifi_fail_t why = WIFI_OK;
   if (wifi_connect_ex(ssid, psk, 30000, &why) != 0) {
     /* (nil, message, reason): reason is a stable machine-readable tag the
@@ -772,7 +613,7 @@ static int nab_wifi(lua_State *L)
  * arrive via nab.wifi_recv(). */
 static int nab_wifi_ap(lua_State *L)
 {
-  const char *ssid = check_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
+  const char *ssid = luaseam_bounded(L, 1, WIFI_SSID_MAX, "SSID is at most 32 bytes");
   lua_Integer ch = luaL_optinteger(L, 2, 1);
   luaL_argcheck(L, ch >= 1 && ch <= 14, 2, "1..14");
   if (wifi_ap(ssid, (uint8_t)ch) != 0) {
@@ -813,8 +654,8 @@ static int nab_wifi_up(lua_State *L)
  * hops all 14 channels, so an existing association does not survive it. */
 static int nab_wifi_scan(lua_State *L)
 {
-  const char *ssid = opt_bounded(L, 1, NULL, WIFI_SSID_MAX,
-                                 "SSID is at most 32 bytes");
+  const char *ssid = luaseam_optbounded(L, 1, NULL, WIFI_SSID_MAX,
+                                        "SSID is at most 32 bytes");
   if (ssid != NULL && *ssid == '\0')
     ssid = NULL;                        /* "" = broadcast, not a hidden SSID */
   if (wifi_state() == RT2501_S_MASTER) {
@@ -906,7 +747,7 @@ static int nab_wifi_recv(lua_State *L)
     r = wifi_recv_frame(0);
     if (r != NULL || (counter_timer - t0) >= (uint32_t)ms)
       break;
-    dispatch_events(L, 1);
+    pump_dispatch(L, 1);
   }
   if (r == NULL) {
     lua_pushnil(L);
@@ -925,23 +766,6 @@ static int nab_wifi_mac(lua_State *L)
 {
   lua_pushlstring(L, (const char *)wifi_mac(), 6);
   return 1;
-}
-
-/* Copy string field `k` of the table at index 1 into dst (missing/nil -> "").
- * Errors out on a non-string value or one that overflows the field - the
- * binding owns the sector layout, so bounds are enforced here, not in Lua. */
-static void cfg_field(lua_State *L, const char *k, char *dst, size_t cap)
-{
-  lua_getfield(L, 1, k);
-  size_t len = 0;
-  const char *s = "";
-  if (!lua_isnil(L, -1))
-    s = lua_tolstring(L, -1, &len);
-  if (s == NULL || len >= cap)
-    luaL_error(L, "config: bad %s", k);
-  memcpy(dst, s, len);
-  dst[len] = '\0';
-  lua_pop(L, 1);
 }
 
 /* nab.config() -> {ssid=,psk=,url=,fails=} or nil: the record persisted in the
@@ -975,9 +799,9 @@ static int nab_config(lua_State *L)
     return 1;
   }
   luaL_checktype(L, 1, LUA_TTABLE);
-  cfg_field(L, "ssid", cfg.ssid, sizeof cfg.ssid);
-  cfg_field(L, "psk", cfg.psk, sizeof cfg.psk);
-  cfg_field(L, "url", cfg.url, sizeof cfg.url);
+  luaseam_field(L, 1, "ssid", cfg.ssid, sizeof cfg.ssid);
+  luaseam_field(L, 1, "psk", cfg.psk, sizeof cfg.psk);
+  luaseam_field(L, 1, "url", cfg.url, sizeof cfg.url);
   lua_getfield(L, 1, "fails");
   lua_Integer f = luaL_optinteger(L, -1, 0);
   luaL_argcheck(L, f >= 0 && f <= 255, 1, "fails 0..255");
@@ -1045,7 +869,7 @@ static const luaL_Reg nab_funcs[] = {
     {"rec_wav", nab_rec_wav},
     {"wheel", nab_wheel},
     {"rfid", nab_rfid},
-    {"on", nab_on},
+    {"on", pump_on},
     {"wait", nab_wait},
     {"time", nab_time},
     {"ear_move", nab_ear_move},
@@ -1058,8 +882,7 @@ static const luaL_Reg nab_funcs[] = {
 
 static int luaopen_nab(lua_State *L)
 {
-  lua_newtable(L); /* callback table for nab.on / dispatch_events (#195) */
-  lua_setfield(L, LUA_REGISTRYINDEX, EVENTS_TABLE);
+  pump_init(L); /* callback table for nab.on / the pump (#195) */
   luaL_newlib(L, nab_funcs);
   return 1;
 }
@@ -1097,15 +920,6 @@ static void open_trimmed_libs(lua_State *L)
 unsigned int luai_tickseed(void)
 {
   return (unsigned int)counter_timer;
-}
-
-/* Print and clear a Lua error message sitting on the top of the stack. */
-static void report(lua_State *L)
-{
-  const char *msg = lua_tostring(L, -1);
-  sh_puts(msg ? msg : "(error with no message)");
-  sh_puts("\n");
-  lua_pop(L, 1);
 }
 
 /* Resident boot chunk: the M5 nab-binding demo helpers, a short LED showcase
@@ -1183,14 +997,14 @@ static void run_chunk(lua_State *L)
 {
   int base = lua_gettop(L) - 1; /* stack height below the chunk */
   if (lua_pcall(L, 0, LUA_MULTRET, 0) != LUA_OK) {
-    report(L);
+    luaseam_report(L);
   } else {
     int nres = lua_gettop(L) - base; /* values the chunk returned */
     if (nres > 0) {                  /* echo them via print() */
       lua_getglobal(L, "print");
       lua_insert(L, base + 1);
       if (lua_pcall(L, nres, 0, 0) != LUA_OK)
-        report(L);
+        luaseam_report(L);
     }
   }
 }
@@ -1207,14 +1021,14 @@ static void repl(lua_State *L)
      * always runs. Once a byte is pending we fall through to the blocking
      * line read - no pumping mid-line or mid-#LC-frame. */
     while (!rxrdy_uart())
-      dispatch_events(L, (counter_timer - console_last_rx_ms()) > CONSOLE_IDLE_MS);
+      pump_dispatch(L, (counter_timer - console_last_rx_ms()) > CONSOLE_IDLE_MS);
     if (sh_gets(line, sizeof line) == NULL)
       break;
     if (line[0] == '\n' || line[0] == '\0') {
       /* blank line: no-op, just re-prompt (matches the stock lua prompt) */
     } else if (line[0] == '#' && line[1] == 'L' && line[2] == 'C' && line[3] == ':') {
       if (load_lc_frame(L, line) != LUA_OK) /* off-device luac bytecode */
-        report(L);                          /* frame error */
+        luaseam_report(L);                          /* frame error */
       else
         run_chunk(L);
     } else {
@@ -1282,7 +1096,7 @@ int main(void)
   /* Load + run the resident boot chunk (precompiled bytecode; see boot_lc.h). */
   if (luaL_loadbuffer(L, (const char *)boot_lc, sizeof boot_lc, "=boot") != LUA_OK
       || lua_pcall(L, 0, 0, 0) != LUA_OK)
-    report(L);
+    luaseam_report(L);
 
   repl(L);
 

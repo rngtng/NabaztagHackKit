@@ -1,7 +1,7 @@
 -- Unit tests for `sched`, the cooperative reactor in boot.lua (#283).
 --
 -- Driven through the modelled device seam in run.lua: the test owns the clock
--- and calls nab_pump() where main.c's dispatch_events() would, so every
+-- and calls nab_pump() where utils/pump.c's pump_dispatch() would, so every
 -- assertion is about sched itself and nothing depends on wall time.
 --
 -- Per the repo testing rule every check names the value it expects. The
@@ -97,7 +97,7 @@ end
 --   * is never removed, so the same abort repeats on every single pump
 --     iteration, forever. Nothing recovers: sched exposes no way to remove a
 --     pump, and the app's own code is downstream of the abort;
---   * escapes into C, where dispatch_events()'s lua_pcall + report() prints it
+--   * escapes into C, where pump_dispatch()'s lua_pcall + luaseam_report() prints it
 --     to the console on every iteration of the REPL idle loop.
 --
 -- boot.lua's own header states the contract this breaks: "an error is printed
@@ -282,7 +282,7 @@ end
 -- DEFECT 3 - the reactor hangs off a single-slot callback that boot.lua claims
 -- at startup, and any app that uses the documented seam silently unhooks it.
 --
--- main.c's nab_on() stores one function per event name (`lua_setfield(L, -2,
+-- utils/pump.c's pump_on() stores one function per event name (`lua_setfield(L, -2,
 -- event_names[which])`). boot.lua ends with `nab.on("tick", sched.tick)`.
 -- firmware/README.md documents "tick" as a public nab.on source - "fn() on
 -- every pump iteration" - so an app doing exactly what the table says:

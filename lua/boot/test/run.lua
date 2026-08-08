@@ -32,25 +32,98 @@ end
 --  * nab.time() is the 1 ms tick (counter_timer). Here the test owns it, so
 --    deadlines are exact and nothing depends on wall time.
 --  * nab.on(name, fn|nil) holds ONE callback per name and replaces it
---    silently - main.c's nab_on is `lua_setfield(L, -2, event_names[which])`,
---    four lines with no chaining and no diagnostic. Modelling that faithfully
---    is the point: an app that registers its own "tick" is exercising the
---    documented API (see firmware/README.md's nab module table).
---  * dispatching a queued event and then the "tick" callback is what
---    main.c's dispatch_events() does on every pump iteration.
+--    silently - utils/pump.c's pump_on is `lua_setfield(L, -2,
+--    event_names[which])`, four lines with no chaining and no diagnostic.
+--    Modelling that faithfully is the point: an app that registers its own
+--    "tick" is exercising the documented API (see firmware/README.md's nab
+--    module table).
+--  * dispatch() below is utils/pump.c's pump_dispatch(), rule for rule -
+--    including the busy guard, which this harness used NOT to model. That gap
+--    is why the suite whose job is protecting the reactor could not see the
+--    nested-nab.wait trap (#329): nab_pump() was a plain call and nab.wait()
+--    was a no-op, so no test could tell a pump that keeps running from one
+--    that silently stops. test_pump.lua is the part that would now fail if the
+--    guard went away again.
 
 NAB_CB = {}          -- the C-side callback table (registry key "nab.events")
 local clock = 0
 
--- main.c's nab_on: one callback per name, replaced silently. Kept as its own
+-- The modelled device's three pieces of state, matching the C ones:
+--   timeline  the hardware, as a list of edges waiting for their moment. The
+--             pollers in utils/event.c see an edge only when they run, so a
+--             test injects WHEN a thing happens and the modelled poller is
+--             what notices it - that is what makes "the pollers run even when
+--             re-entered" an assertable rule rather than a comment.
+--   queue     the fixed-size C event queue (utils/event.c), FIFO.
+--   polls     how many times the pollers have run. The only way to tell rule 2
+--             (sampling continues inside the guard) from rule 1 (delivery does
+--             not) is to count them separately.
+local timeline, queue, polls = {}, {}, 0
+local busy = false   -- pump_dispatch's function-local `static uint8_t busy`
+
+-- pump.c's pump_on: one callback per name, replaced silently. Kept as its own
 -- local so boot_reload can put it back - boot.lua wraps nab.on to own the
 -- "tick" seam, and re-running the chunk over its own wrapper would model a
 -- device that booted twice, which is not a thing.
 local function raw_on(name, fn) NAB_CB[name] = fn end
 
+-- utils/event.c's event_pump(): look at the hardware, queue whatever edge has
+-- happened since last time. Touches no Lua state, which is exactly why
+-- pump_dispatch calls it OUTSIDE the busy guard.
+local function event_pump()
+  polls = polls + 1
+  local i = 1
+  while i <= #timeline do
+    if (clock - timeline[i].at) >= 0 then
+      queue[#queue + 1] = table.remove(timeline, i)
+    else
+      i = i + 1
+    end
+  end
+end
+
+-- utils/pump.c's pump_dispatch(), rule for rule. Returns the error message
+-- when a callback raised (the last one, if several did), else nil - the
+-- harness's stand-in for luaseam_report printing it to the console.
+local function dispatch()
+  event_pump()               -- rule 2: ALWAYS, even when re-entered
+  if busy then return nil end -- rule 1: nested calls deliver nothing
+  busy = true
+  local err
+  while #queue > 0 do        -- rule 3: drain the queue first...
+    local e = table.remove(queue, 1)
+    local fn = NAB_CB[e.name]
+    if fn then
+      local okc, e2 = pcall(fn, e.arg)   -- rule 4: pcall isolation
+      if not okc then err = tostring(e2) end
+    end
+  end
+  local fn = NAB_CB.tick     -- ...then hand the Lua reactor its slice
+  if fn then
+    local okc, e2 = pcall(fn)
+    if not okc then err = tostring(e2) end
+  end
+  busy = false
+  return err
+end
+
 nab = {
   time = function() return clock end,
   on = raw_on,
+  -- nab.wait(ms) / nab.delay(ms): main.c's nab_wait - dispatch once, then
+  -- advance the 1 ms tick dispatching at every step. At top level that is what
+  -- makes a blocking call stop being a hole; from INSIDE a callback every one
+  -- of those dispatches hits the busy guard, so time passes and the pollers
+  -- keep sampling while nothing at all is delivered. Both halves are the
+  -- device's, and test_pump.lua asserts them.
+  wait = function(ms)
+    ms = ms or 0
+    dispatch()
+    for _ = 1, ms do
+      clock = clock + 1
+      dispatch()
+    end
+  end,
   -- everything boot.lua's demo helpers touch at load time; no-ops here
   led = function() end,
   led8 = function() end,
@@ -60,24 +133,35 @@ nab = {
   ear_pos = function() return 0 end,
   button = function() return false end,
   rfid = function() return nil end,
-  delay = function() end,
-  wait = function() end,
 }
+nab.delay = nab.wait   -- the C table registers nab_wait under both names
 
 -- test-side control of the modelled device ------------------------------------
 
 function nab_set_time(ms) clock = ms end
 function nab_advance(ms) clock = clock + ms end
 
--- One iteration of main.c's cooperative pump: deliver the tick slice under
--- pcall, exactly as dispatch_events() does (`lua_pcall` + report on error, then
--- carry on). Returns the error message when the slice raised, else nil.
+-- Schedule a hardware edge: name is "button" (arg true/false) or "rfid" (arg a
+-- uid string, or nil for "the tag left"), at the clock reading when the
+-- pollers should first be able to see it.
+function nab_inject(at, name, arg)
+  timeline[#timeline + 1] = {at = at, name = name, arg = arg}
+end
+
+-- How many times the pollers have run. Rule 2 is only observable as a count.
+function nab_polls() return polls end
+
+-- Clear the modelled hardware and its counters; boot_reload calls it, so each
+-- scenario starts from a device with nothing pending.
+function nab_reset_hw()
+  timeline, queue, polls, busy = {}, {}, 0, false
+end
+
+-- One iteration of the cooperative pump, from the top level - what the REPL's
+-- idle loop does between lines. Returns the error message when a callback
+-- raised, else nil.
 function nab_pump()
-  local fn = NAB_CB.tick
-  if fn == nil then return nil end
-  local ok, err = pcall(fn)
-  if not ok then return tostring(err) end
-  return nil
+  return dispatch()
 end
 
 -- ---- load the chunk under test ---------------------------------------------
@@ -93,6 +177,7 @@ local src = runfile(BOOT)
 function boot_reload()
   NAB_CB = {}
   nab.on = raw_on      -- a fresh device: nab.on is the C binding
+  nab_reset_hw()       -- ...with nothing queued and nothing pending
   runfile(BOOT)
 end
 
@@ -133,7 +218,7 @@ function ok(cond, label) eq(not not cond, true, label) end
 
 -- ---- run every test_*.lua ---------------------------------------------------
 
-for _, m in ipairs({"sched"}) do
+for _, m in ipairs({"sched", "pump"}) do
   runfile(base .. "/test/test_" .. m .. ".lua")
 end
 
