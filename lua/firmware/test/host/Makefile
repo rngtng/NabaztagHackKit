@@ -17,7 +17,8 @@ CFLAGS := -std=c11 -Wall -Wextra -Wpedantic -Werror -g -O1 -I$(FW)/inc -I$(FW)/l
 CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer
 LDFLAGS := -fsanitize=address,undefined
 
-TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test lcframe_test
+TESTS := event_test fmt_test rfid_test i2c_test adc_test ieee80211_test eapol_test lcframe_test \
+         lcread_test
 
 all: $(TESTS)
 
@@ -67,6 +68,13 @@ eapol_test: eapol_test.c $(FW)/src/net/eapol.c
 	      -o $@ $^ $(LDFLAGS)
 
 lcframe_test: lcframe_test.c $(FW)/src/utils/lcframe.c
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+# lcread.c reads the console through _read (inc/libc/syscalls.h) and this test
+# supplies its own - the same link-time substitution fmt_test makes for _write.
+# src/libc/syscalls.c is deliberately NOT in the link: it would drag in the UART
+# and win the duplicate-symbol race, and the fake console is the point.
+lcread_test: lcread_test.c $(FW)/src/utils/lcread.c $(FW)/src/utils/lcframe.c
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 check: $(TESTS)

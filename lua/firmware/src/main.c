@@ -35,7 +35,7 @@
 #include "event.h"       /* cooperative event core (#195): queue + pollers */
 #include "utils/delay.h" /* 1 ms tick: init_tick, counter_timer, DelayMs */
 #include "utils/fmt.h"   /* fmt_hex8; printf/number shims are in fmt.c */
-#include "utils/lcframe.h" /* #LC frame integrity check (#298) */
+#include "utils/lcread.h"  /* #LC frame reader: console -> checked chunk (#328) */
 #include "hal/wifi.h"    /* USB RT2501 802.11 join - nab.wifi() */
 #include "hal/config.h"  /* internal-flash config sector - nab.config() */
 #include "hal/ota.h"      /* whole-image OTA flash writer - nab.flash_firmware() */
@@ -1147,111 +1147,23 @@ static void report(lua_State *L)
  * corrupted chunk costs). A frame that does not verify is reported and NOT
  * loaded. It is a checksum, not a signature - it catches a damaged frame, not a
  * chosen one. */
-#define LC_MAX 65536   /* sanity cap on a single bytecode chunk */
-
-/* Read the next hex digit off the console, skipping the whitespace the sender
- * uses to wrap the payload. Returns 0..15, or -1 on EOF / a non-hex byte. */
-static int read_hex_nibble(void)
-{
-  char c;
-  for (;;) {
-    if (_read(0, &c, 1) != 1)
-      return -1; /* EOF */
-    if (c == ' ' || c == '\n' || c == '\r' || c == '\t')
-      continue; /* framing whitespace */
-    if (c >= '0' && c <= '9')
-      return c - '0';
-    if (c >= 'a' && c <= 'f')
-      return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F')
-      return c - 'A' + 10;
-    return -1; /* not hex -> malformed frame */
-  }
-}
-
-/* Consume the console up to and including the next newline. After a frame's
- * 2*len hex chars there is still the payload's line terminator sitting in the
- * stream; dropping it here keeps the following sh_gets from reading that '\n'
- * as a spurious empty REPL line (which would double every prompt). */
-static void skip_to_eol(void)
-{
-  char c;
-  while (_read(0, &c, 1) == 1) {
-    if (c == '\n')
-      break;
-  }
-}
-
-/* Throw away a frame's payload: 2*len hex chars plus its trailing newline.
- *
- * Rejecting a frame is only half of rejecting it. The payload is already on the
- * wire behind the header, so a path that returns without consuming it leaves
- * sh_gets reading bytecode hex as REPL lines - one spurious error per wrapped
- * line, for every frame a sender gets wrong. That is what made a single
- * checksum-less frame from tools/simui look like ten failures. */
-static void drop_lc_payload(long len)
-{
-  for (long i = 0; i < 2 * len; i++) {
-    if (read_hex_nibble() < 0)
-      return;   /* EOF or non-hex: the frame was short, nothing left to drop */
-  }
-  skip_to_eol();
-}
-
-/* Parse a "#LC:<len>:<sum>" header (already read into `line`), stream the
- * following 2*len hex chars into a fresh buffer, verify the checksum and load
- * it as a Lua chunk. Leaves the compiled chunk on the stack on success (like
- * load_line), else pushes an error message and returns non-LUA_OK. The buffer
- * comes from the external-RAM heap (_sbrk).
- *
- * The payload is consumed on every path but ONE, and the exception is
- * deliberate: LCFRAME_ERR_TOOLONG leaves *len at 0 (see lcframe.c) precisely so
- * a header claiming 4 GB cannot make us read 8 GB of hex, which means
- * drop_lc_payload eats only the first line and the rest of that frame's hex is
- * then read as REPL input - one "bytecode-only build" reply per wrapped line,
- * the console desync in its remaining corner. It takes a chunk over LC_MAX (64 KB)
- * to reach, which no sender here produces. Draining to the first non-hex byte
- * instead would resync without trusting the length, but that is a loop over
- * attacker-paced input in main.c, where nothing can link it to test it - so it
- * is written down rather than half-done. This comment used to claim the console
- * stayed in sync either way, which was simply not true.
- *
- * The header parse itself is utils/lcframe.c - it is the part with a rule to
- * it, so it lives where a test can link it. */
+/* Reading the frame - the hex payload off the console, the buffer, the
+ * refusal paths - is utils/lcread.c, and the header parse and checksum are
+ * utils/lcframe.c. Both are there rather than here for the same reason: main.c
+ * carries main(), so nothing can link it and nothing in it can be tested, and
+ * what a REFUSED frame leaves on the console is the part with a rule to it
+ * (#308). What stays here is the Lua half - and only the Lua half, which is
+ * what keeps lcread.c and its test free of the Lua core. */
 static int load_lc_frame(lua_State *L, const char *line)
 {
+  char *buf;
   long len;
-  uint32_t want;
-  lcframe_status st = lcframe_parse_header(line, LC_MAX, &len, &want);
+  const char *msg;
+  lcread_status st = lcread_frame(line, &buf, &len, &msg);
 
-  if (st != LCFRAME_OK) {
-    drop_lc_payload(len);   /* len is what the sender queued; 0 = nothing to drop */
-    lua_pushstring(L, lcframe_strerror(st));
-    return LUA_ERRSYNTAX;
-  }
-
-  char *buf = (len > 0) ? malloc((size_t)len) : NULL;
-  if (len > 0 && buf == NULL) {
-    lua_pushliteral(L, "out of memory reading #LC frame");
-    return LUA_ERRMEM;
-  }
-  for (long i = 0; i < len; i++) {
-    int hi = read_hex_nibble();
-    int lo = read_hex_nibble();
-    if (hi < 0 || lo < 0) {
-      free(buf);
-      lua_pushliteral(L, "truncated or non-hex #LC frame payload");
-      return LUA_ERRSYNTAX;
-    }
-    buf[i] = (char)((hi << 4) | lo);
-  }
-  skip_to_eol(); /* drop the payload's trailing newline (see skip_to_eol) */
-
-  /* Verify before the loader ever sees it. */
-  if (lcframe_checksum((const uint8_t *)buf, (size_t)len) != want) {
-    free(buf);
-    lua_pushliteral(L, "#LC frame checksum mismatch - frame corrupted in transit");
-    return LUA_ERRSYNTAX;
+  if (st != LCREAD_OK) {
+    lua_pushstring(L, msg);
+    return (st == LCREAD_ERR_MEM) ? LUA_ERRMEM : LUA_ERRSYNTAX;
   }
 
   /* "=stdin" chunkname matches the host pipe's luaL_loadbuffer name. The chunk
