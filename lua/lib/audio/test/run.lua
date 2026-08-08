@@ -26,7 +26,7 @@ end
 -- audio/ modules under test; LIBDIR lets a test pull in a sibling lib it
 -- composes with (audio.stream parses with net.http).
 LIBDIR = base:match("^(.*)/[^/]+$") or ".."
-MODULES = {"player", "stream", "midi", "volume"}
+MODULES = {"player", "stream", "midi", "volume", "record"}
 
 -- The device opens base + table + string only (src/main.c): fail fast if a
 -- module drifts onto host-only stdlib. Word-boundary match keeps e.g.

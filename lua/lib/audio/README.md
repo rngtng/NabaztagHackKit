@@ -1,4 +1,4 @@
-# lua/lib/audio - non-blocking playback, HTTP streaming, jingles (#265)
+# lua/lib/audio - non-blocking playback, HTTP streaming, jingles, recording
 
 The userland audio layer of the lua track, mirroring `mtl/lib/audio/`
 (`audiolib.mtl` + `midi.mtl`): a cooperative player over the C stream HAL, an
@@ -6,8 +6,8 @@ HTTP body as a playable source, MIDI jingles, and the wheel as a volume knob.
 
 **Nothing in this folder costs flash** — modules are compiled off-device
 (`tools/luac`, `LUA_32BITS`) and shipped as `#LC` frames over the REPL into
-RAM. `task lua:lib:size`: `player` 2649 B, `stream` 1860 B, `midi` 1584 B,
-`volume` 670 B.
+RAM. `task lua:lib:size` (as of #333): `player` 2897 B, `record` 2353 B,
+`stream` 1860 B, `midi` 1584 B, `volume` 670 B — 9,364 B for the folder.
 
 ## Why
 
@@ -25,6 +25,7 @@ here is built on that one primitive.
 | `stream.lua` | an HTTP body as a player source: head parsed off `net.http`, body queued with high-water flow control, prebuffer before the first byte is fed |
 | `midi.lua` | jingles as Standard MIDI Files — the VS1003B decodes MIDI natively, so a tune is ~60 bytes per note and needs no samples |
 | `volume.lua` | wheel (`nab.wheel`, ADC ch.2) → `nab.volume`, through mtl's squared taper, with a movement threshold |
+| `record.lua` | the microphone: `nab.rec_start`/`rec_read`/`rec_stop` drained from the caller's loop, so recording no longer freezes the reactor (#333) |
 
 Pull-style like `lib/net` and `lib/hw`: the HAL is injected, the caller owns
 the clock and pumps `:step()`, so all of it unit-tests off-device
@@ -35,7 +36,7 @@ the clock and pumps `:step()`, so all of it unit-tests off-device
 ```lua
 local p = audio.player.new(audio.nabdrv())
 
-p:play(nab.tone())                       -- a byte string is a source
+p:play(nab.tone())                       -- a byte string is a source (a MIDI file, #331)
 while p:busy() do p:step() end           -- ... and your own work goes here
 
 p:play(audio.midi.tune{{"C5", 120}, {"E5", 120}, {"G5", 240}})
@@ -89,6 +90,36 @@ the file may be larger than the 1 MB of ExtRAM.
 Only one TCP connection exists at a time (`net.iface` tracks a single `conn`),
 so streaming and serving cannot overlap until #262 — a single stream is what
 this issue scopes.
+
+### Recording
+
+`audio.record(ms [, gain])` replaced the C `nab.record(ms)` binding in #333, which
+blocked for up to 30 s: no ear stepped, no player was fed, no `sched` task ran.
+Same arguments, same WAV bytes out, 252 B of flash back — and it pumps.
+
+```lua
+local wav = audio.record(2000)             -- REPL one-liner
+nab.play(wav)
+
+local r = audio.recorder.new(audio.recdrv())          -- ...or drive it yourself
+r:start(2000)
+while r:busy() do r:step(); leds_and_whatever_else() end
+nab.play(r:wav())
+```
+
+**Poll it often.** The codec's ~2 KB FIFO holds about half a second at 8 kHz;
+overflow drops audio (it never crashes), so a `:step()` gap longer than that
+loses sound. That is why `:wait()` uses `sleep(0)` — a pump-once with no delay —
+where `hw.ears:wait()` can afford `sleep(1)`.
+
+A recording can come back shorter than asked: `:stalled()` says the codec stopped
+delivering, which is what the simulator always does (no DREQ model), exactly as
+`nab.record` returned a header-only WAV there. `audio.recorder.bytes(ms)` is the
+duration arithmetic — 4055 B/s of 8 kHz IMA ADPCM rounded up to whole 256-byte
+blocks, byte-identical to what the C path computed.
+
+The RIFF header is still `nab.rec_wav` on the seam (`utils/wav.c`, #327), so this
+module builds no bytes of its own — it is a poll loop and a length.
 
 ## Not here
 

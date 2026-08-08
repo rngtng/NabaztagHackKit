@@ -209,11 +209,14 @@ tasks:
       - ssh -t {{.PI_HOST}} 'sudo systemctl stop serial-getty@ttyAMA0; sudo stty -F /dev/serial0 {{.BAUD}} raw -echo; echo "[monitor] /dev/serial0 @{{.BAUD}} 8N1 - Ctrl-C to stop"; sudo cat /dev/serial0'
 
   gen:tone:
-    desc: 'Regenerate inc/tone_mp3.h (the nab.tone() MP3) reproducibly: faded 880 Hz sine -> lame, inside the firmware image (tools/tonegen.py). The header is committed - run only to change the tone. Usage: task lua:firmware:gen:tone'
+    desc: 'Regenerate inc/tone_midi.h (the nab.tone() asset) reproducibly: a 45-byte Format-0 Standard MIDI File, no encoder involved (tools/tonegen.py, #331). The header is committed - run only to change the tone. FORMAT=mp3 regenerates the 2,160 B pre-#331 MP3 into inc/tone_mp3.h instead (faded 880 Hz sine -> lame), the escape hatch while MIDI playback is still ungated on the rig. Usage: task lua:firmware:gen:tone [FORMAT=mp3]'
+    summary: 'Usage: task lua:firmware:gen:tone [FORMAT=midi|mp3]'
     dir: '{{.TASKFILE_DIR}}'
     deps: [image]
+    vars:
+      FORMAT: '{{.FORMAT | default "midi"}}'
     cmds:
-      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py'
+      - 'docker run --rm -v "$(realpath .):/work" {{.FV_IMAGE}} python3 tools/tonegen.py --format {{.FORMAT}}'
 
   check:
     desc: 'Syntax-check one firmware TU with the real cross-compiler, building nothing (#319). SRC=<path relative to lua/firmware>; defaults to src/main.c, the one TU nothing else compiles - it carries main(), so no host test links it and the ARM build is its only reader. Seconds instead of minutes, -Werror like the build. Not in verify: firmware:build subsumes it.'

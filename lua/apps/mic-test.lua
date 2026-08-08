@@ -1,6 +1,9 @@
 -- Microphone hardware test (#116 mic half) - LED-guided, no interaction with
 -- the console needed. Run on the rig:
+--   task lua:firmware:flash:repl SCRIPT=lib/audio/record.lua
 --   task lua:firmware:flash:repl APP=lua SCRIPT=apps/mic-test.lua
+-- (recording is audio.record since #333 - nothing here is resident, so the
+-- module has to be loaded over the REPL first; #219 decides what changes.)
 -- LED legend (nose):  RED = RECORDING, speak/clap now!   BLUE = RECORDING,
 -- stay silent!   WHITE = LISTEN to the speaker.   BLINKING red/blue =
 -- cooperative recording, speak!   At the end:
@@ -18,21 +21,28 @@ nab.led('nose', 127, 127, 127)
 nab.beep()
 nab.play(nab.tone())
 --
-print('--- T1 blocking record: nose RED, speak for 2 s after the beep ---')
+-- T1 also proves the point of #333: the ear turns THROUGH the recording. With
+-- the old blocking nab.record it could not - the C loop owned the CPU for the
+-- whole 2 s and nothing else on the device moved.
+print('--- T1 record: nose RED, speak 2 s after the beep (the ear turns too) ---')
 nab.beep(60, 100)
 nab.led('nose', 127, 0, 0)
-s = nab.record(2000)
+e0 = nab.ear_pos(1)
+nab.ear_move(1, 'forward')
+s = audio.record(2000)
+nab.ear_stop(1)
 nab.led('nose', 0, 0, 0)
 print('T1 #s =', #s, '(expect 8252; 60 = codec never delivered)')
 ok('T1 record fills', #s == 8252)
+ok('T1 the ear moved while recording', nab.ear_pos(1) ~= e0)
 --
 print('--- T2a nose BLUE = stay SILENT for 1 s ---')
 nab.led('nose', 0, 0, 127)
-q = nab.record(1000)
+q = audio.record(1000)
 print('--- T2b nose RED = CLAP/SPEAK LOUD for 1 s after the beep ---')
 nab.beep(60, 100)
 nab.led('nose', 127, 0, 0)
-l = nab.record(1000)
+l = audio.record(1000)
 nab.led('nose', 0, 0, 0)
 print('T2 block-1 header bytes 61..64 (predictor + step index):')
 print('T2 quiet:', q:byte(61), q:byte(62), q:byte(63), q:byte(64))
@@ -63,6 +73,6 @@ print('--- T5 playback: nose WHITE = LISTEN, your cooperative clip ---')
 nab.led('nose', 127, 127, 127)
 if n > 0 then nab.play(nab.rec_wav(table.concat(chunks))) end
 --
-print('=== RESULT:', pass, 'passed,', fail, 'failed (of 4 objective checks) ===')
+print('=== RESULT:', pass, 'passed,', fail, 'failed (of 5 objective checks) ===')
 if fail == 0 then nab.led('nose', 0, 127, 0) nab.led('belly', 0, 127, 0) nab.led('left', 0, 127, 0) nab.led('right', 0, 127, 0) nab.led('bottom', 0, 127, 0) else nab.led('nose', 127, 0, 0) end
 print('ALL GREEN = objective checks passed. Ears verified: T0 beep+tone, T3 your voice, T4 clean tone, T5 clip.')

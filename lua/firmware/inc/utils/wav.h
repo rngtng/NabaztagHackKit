@@ -21,11 +21,16 @@
  * It is `string -> string` and touches no hardware, so it sits on the wrong
  * side of the seam and could be `audio.wav()` in `lib/audio/` for zero flash.
  * The extraction above was done WITHOUT that change, deliberately: `nab.record`
- * (the blocking convenience path) needs this header in C either way, so the C
- * side cannot go away - dropping the binding would buy 96 B and one fewer seam
- * name at the cost of breaking every script using it. That is a product
- * decision about the API, not a consequence of moving a file, and #327 asked
- * for the two not to be bundled. Reopen it on its own terms.
+ * (the blocking convenience path) needed this header in C either way, so the C
+ * side could not go away.
+ *
+ * **That reason expired with #333**, which deleted `nab.record`: this binding is
+ * now the ONLY caller of `wav_adpcm_header`, and `lib/audio/record.lua` reaches
+ * it only to get its own bytes wrapped. So the 96 B and the seam name really are
+ * recoverable now, and what is left holding the binding here is just the API
+ * break - #327 asked for the move and the break not to be bundled, and that
+ * still stands. But it is a plain product decision with nothing propping it up.
+ * Reopen it on its own terms (#330's third item).
  */
 #ifndef _WAV_H_
 #define _WAV_H_

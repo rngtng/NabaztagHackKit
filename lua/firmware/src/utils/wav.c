@@ -1,6 +1,6 @@
 /**
  * @file wav.c
- * @brief The RIFF/IMA-ADPCM header nab.record wraps its recordings in (#327).
+ * @brief The RIFF/IMA-ADPCM header a recording is wrapped in (#327).
  *
  * Split out of main.c for the reason fmt.c, lcframe.c and lcread.c were:
  * main.c carries main(), so nothing can link it and nothing in it can be
@@ -10,8 +10,8 @@
  * long after it stopped being true in the bytes.
  *
  * Pure byte formatting: no Lua, no hardware, no allocation. The binding that
- * used to hold it (nab.rec_wav / nab.record) stays in main.c, where the
- * luaL_Buffer handling belongs.
+ * used to hold it (nab.rec_wav) stays in main.c, where the luaL_Buffer
+ * handling belongs.
  */
 #include <string.h>
 

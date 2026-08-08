@@ -14,7 +14,7 @@ thing a reader most often needs: the edge list — including the edges that leav
 this track entirely.
 
 Sizes below were measured, not copied: `task lua:firmware:build` for flash and
-`task lua:lib:size` for bytecode, both re-run after #336 landed. Re-run them
+`task lua:lib:size` for bytecode, both re-run after #331/#333 landed. Re-run them
 rather than trusting this page — several of the numbers the layer READMEs
 carried had drifted, and these will too.
 
@@ -24,8 +24,8 @@ Five layers, read bottom-up like an address space, with one seam cutting across.
 Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
 
 ```
- L4  LUA USERLAND ─────────────────────────────────── RAM · 50,973 B · 19 modules
-     lib/net  12 mod · 35,585 B     lib/audio  4 · 7,011 B     apps/  10 demos
+ L4  LUA USERLAND ─────────────────────────────────── RAM · 53,326 B · 20 modules
+     lib/net  12 mod · 35,585 B     lib/audio  5 · 9,364 B     apps/  10 demos
      lib/sys   2 mod ·  4,702 B     lib/hw     1 · 3,675 B
      no require · no manifest · no bundler — chunks extending a global table
  ────────────────────────────────────────────────────────────────────────────────
@@ -36,15 +36,15 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
      absent                    math · io · os · package · debug · utf8
                                load() takes bytecode only → lundump is the whole
                                input surface
- ╔══ SEAM ═══ nab.* ═══ 38 names → 37 C functions ══════════════════════════════╗
- ║  LEDs 3 · audio out 8 · audio in 5 · wifi 8 · rfid/button/wheel/ears 7       ║
+ ╔══ SEAM ═══ nab.* ═══ 37 names → 36 C functions ══════════════════════════════╗
+ ║  LEDs 3 · audio out 8 · audio in 4 · wifi 8 · rfid/button/wheel/ears 7       ║
  ║  time+events 4 · persistence 2 · codec diagnostics 2                         ║
  ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
- ║  freeze it:  nab.wifi 30 s · nab.record 30 s · wifi_up 10 s · wifi_scan 5 s  ║
+ ║  freeze it:  nab.wifi 30 s · wifi_up 10 s · wifi_scan 5 s · nab.beep         ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
- L2  THE LUA HOST ──────────────────────────── src/main.c · 1,108 ln · fan-out 17
-     38 bindings · the REPL · init_hw · open_trimmed_libs
-     the ONLY TU where lua_State exists. 48 fns in 34 clusters — 29 of them
+ L2  THE LUA HOST ──────────────────────────── src/main.c · 1,084 ln · fan-out 17
+     37 bindings · the REPL · init_hw · open_trimmed_libs
+     the ONLY TU where lua_State exists. 47 fns in 33 clusters — 29 of them
      singletons, which is what a binding table SHOULD look like (#326 done)
  ────────────────────────────────────────────────────────────────────────────────
  L1  DRIVERS + SERVICES ────────────────────────────────────────────────────────
@@ -180,17 +180,18 @@ are global in effect:
 
 ### Flash budget
 
-`bin/firmware.elf` = **119,484 B of 126,976 B**, **7,492 B free** (measured, not
-quoted). Roughly: ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine`
-2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event core,
-3,674 B the resident boot chunk, 2,160 B the `nab.tone()` MP3, 836 B
-`nab.config`, ~0.8 KB the raw-frame/AP bindings, ~0.65 KB the OTA writer, 560 B
-the scan bindings, 552 B the stream HAL. Full breakdown and the two levers that
-keep it from being worse: [`firmware/README.md`](firmware/README.md).
+`bin/firmware.elf` = **117,120 B of 126,976 B**, **9,856 B free** (measured, not
+quoted; 119,484 / 7,492 before #331 and #333). Roughly: ~23 KB USB +
+802.11/WPA2, ~3.2 KB the reactor (`coroutine` 2,300 B measured), ~2.1 KB
+provisioning plumbing, ~1.5 KB the event core, 3,674 B the resident boot chunk,
+836 B `nab.config`, ~0.8 KB the raw-frame/AP bindings, ~0.65 KB the OTA writer,
+560 B the scan bindings, 552 B the stream HAL, **45 B the `nab.tone()` MIDI
+file**. Full breakdown and the two levers that keep it from being worse:
+[`firmware/README.md`](firmware/README.md).
 
 ## 4. The seam — `nab.*`
 
-One table, registered in `main.c`: **38 names, 37 C functions** (`nab.delay` is
+One table, registered in `main.c`: **37 names, 36 C functions** (`nab.delay` is
 an alias of `nab.wait`). Full signatures live in
 [`firmware/README.md`](firmware/README.md); what matters structurally is the
 shape of the mapping.
@@ -199,7 +200,7 @@ shape of the mapping.
 |---|---:|---|
 | LEDs | 3 | `hal/led.c` |
 | Audio out | 8 | `hal/audio.c` |
-| Audio in | 5 | `hal/audio.c` |
+| Audio in | 4 | `hal/audio.c` |
 | WiFi | 8 | `hal/wifi.c` → `src/usb/` + `src/net/` |
 | RFID / button / wheel / ears | 7 | `hal/{rfid,button,adc,motor}.c` |
 | Time + events | 4 | `utils/event.c`, `sys/src/tick.c` |
@@ -239,13 +240,13 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 |---|---|---|---|
 | `boot/boot.lua` | `sched` — the cooperative reactor — + demo helpers | **flash** | 3,674 B |
 | `lib/net/` | link, arp, ipv4, udp, dns, dhcp, tcp, http, iface, setup, provision, ota | RAM | 35,585 B |
-| `lib/audio/` | player, stream, midi, volume | RAM | 7,011 B |
+| `lib/audio/` | player, record, stream, midi, volume | RAM | 9,364 B |
 | `lib/sys/` | ntp, time | RAM | 4,702 B |
 | `lib/hw/` | ears | RAM | 3,675 B |
 | `apps/` | 10 demo apps | RAM | — |
 
-**50,973 B of bytecode across 19 modules**, against 7,492 B of free flash
-(`119,484` of `126,976` used, post-#336).
+**53,326 B of bytecode across 20 modules**, against 9,856 B of free flash
+(`117,120` of `126,976` used, post-#331/#333).
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -455,7 +456,7 @@ every open one has an issue, so this list is an index rather than a backlog.
 
 | | Finding | State |
 |---|---|---|
-| 1 | Blocking HAL calls cannot pump the reactor | open — `nab.record` in #333; wifi needs a step-form HAL, unfiled by design (see below) |
+| 1 | Blocking HAL calls cannot pump the reactor | open — `nab.record` ✅ closed (#333); wifi needs a step-form HAL, unfiled by design (see below) |
 | 1b | …and `nab.wait` is dead air when nested | ✅ documented + pinned by `test_pump.lua` (#329) |
 | 2 | The Lua userland has no delivery mechanism | open — #219 |
 | 3 | The cross-track twin dependency is unguarded | open — #337 |
@@ -466,15 +467,21 @@ every open one has an issue, so this list is an index rather than a backlog.
 | — | The reactor-attachment protocol has no owner (§9) | open — #339 |
 | — | `luaseam.c` extracted without a test (§9) | open — #340 |
 
-The C/Lua distribution assessment is #330, with #331 (the tone codec, ~2,100 B
-back — the largest reclaim available) and #333 beneath it.
+The C/Lua distribution assessment is #330: both of its moves have landed —
+#331 (the tone codec, **2,112 B** measured, the largest single reclaim on this
+track) and #333 (`nab.record` → `audio.record`, 220 B and one freeze). #331's
+rig gate is still open; see `firmware/README.md`'s hardware table.
 
 **1. Blocking HAL calls cannot pump the reactor — by construction.** The HAL
 takes no `lua_State`, which is what keeps it testable and example-linkable. The
 price: any HAL function that owns a multi-second loop internally freezes all of
 Lua. `nab.wifi` (up to 30 s), `nab.wifi_up` (~10 s cold boot), `nab.wifi_scan`
-(~5 s), `nab.record` (up to 30 s) and `nab.beep` do exactly that — during a
-WPA2 join no ear steps, no player is fed and no `sched` task runs. Only
+(~5 s) and `nab.beep` do exactly that — during a WPA2 join no ear steps, no
+player is fed and no `sched` task runs. `nab.record` (up to 30 s) was the fifth
+until #333 deleted it: everything it did already existed on the seam in
+cooperative form, so it became `lib/audio/record.lua` and the freeze went with
+it. That is the cheap half of this finding — where a session API already
+exists, the blocking convenience does not have to be in C. Only
 `nab.wait`, `nab.play` and `nab.wifi_recv` pump. The design principle already
 says new blocking bindings must pump; these predate it. The fix pattern also
 already exists twice — `play_start`/`play_feed`/`playing` and
@@ -517,7 +524,7 @@ inside a pump, never `nab.wait`. `lib/` gets this right (`player:wait()` and
 `ears:wait()` use the injected `sleep(0)`/`sleep(1)` as a pump-once); nothing
 enforces it for app code, and that is now a stated limit rather than an unknown.
 
-**2. The Lua userland has no delivery mechanism.** 50,973 B of bytecode in 19
+**2. The Lua userland has no delivery mechanism.** 53,326 B of bytecode in 20
 modules, no `require`, no manifest, no bundler; `SCRIPT=`/`replpipe.py` take a
 single file. The load order exists in exactly two places, neither of them
 shippable: prose in the lib READMEs, and a hard-coded `MODULES` array in each
@@ -525,7 +532,8 @@ shippable: prose in the lib READMEs, and a hard-coded `MODULES` array in each
 80 ms/line (`tools/openocd/uart_repl.py` defaults, ~333 B/s against a 115200
 line) — so shipping the boot-critical `net` subset (23 KB → ~46 KB of hex) is
 minutes, and the whole lib set is longer. Freezing a subset into flash is the
-known plan (#219); the 7,492 B free is the problem.
+known plan (#219); the 9,856 B free is the problem — #331 and #333 bought
+2,364 B of it, which was the point of doing them first.
 
 **3. The cross-track twin dependency is unguarded.** Ten byte-identical files,
 and the correct action on a change differs per file — copy for most, explicitly
@@ -690,27 +698,34 @@ Also still in `main.c` with a rule to it and no test: `play_feed_pumping`'s
 contract. Never listed in #326, and tangled with `nab_play`'s Lua buffer
 anchoring — the next candidate if anyone continues the pattern.
 
-**Two things are still on the wrong side of the seam.** `nab.rec_wav` is
-`string → string` — it touches no hardware, and #327 moved the RIFF assembly to
-`utils/wav.c` where it is now tested, but left the *binding* on the seam
-deliberately, because `nab.record` needs the header in C either way and dropping
-the name is an API break. The 2,160 B `nab.tone()` MP3 blob is the clearer case:
-the VS1003B decodes MIDI natively and `lib/audio/midi.lua` already builds it, so
-~2,100 B is recoverable for the same audible result (#331). Both tracked
-under #330; principle 1 says behaviour belongs in Lua, and these are behaviour.
+**One thing is still on the wrong side of the seam, and #333 is why.**
+`nab.rec_wav` is `string → string` — it touches no hardware, and #327 moved the
+RIFF assembly to `utils/wav.c` where it is now tested, but left the *binding* on
+the seam deliberately, on the grounds that "`nab.record` needs the header in C
+either way". **That premise is gone**: #333 removed `nab.record`, so nothing in
+C reads `wav_adpcm_header` any more except the binding itself, and the 96 B is
+now recoverable for real. It stays for the moment because dropping the name is
+still an API break and #327 asked for the move and the break not to be bundled —
+but it is now a plain decision with nothing propping it up. (The other item this
+paragraph used to list, the 2,160 B `nab.tone()` MP3, is done: #331 made it a
+45-byte MIDI file.) Principle 1 says behaviour belongs in Lua, and this is
+behaviour.
 
 ### The second-order problem: the reactor-attachment protocol has no owner
 
-Six objects in `lib/` are pull-style state machines, and they agree on nothing:
+Seven objects in `lib/` are pull-style state machines, and they agree on
+nothing:
 
 | Object | Step verb | Self-registers with `sched`? |
 |---|---|---|
-| `hw.ears`, `audio.player` | `:step()` | yes — via `:attach()`/`:detach()` |
+| `hw.ears`, `audio.player`, `audio.recorder` | `:step()` | yes — via `:attach()`/`:detach()` |
 | `audio.volume` | `:step()` | no |
 | `net.iface`, `net.tcp`, `audio.stream` | `:poll()` | no |
 
-`:attach()`/`:detach()` are duplicated **byte-for-byte** between `hw/ears.lua`
-and `audio/player.lua` (only the comments differ). `sched` is resident in flash
+`:attach()`/`:detach()` are duplicated **byte-for-byte** across `hw/ears.lua`,
+`audio/player.lua` and now `audio/record.lua` (only the comments differ) — #333
+made the third copy rather than inventing a fourth convention, which is the
+right call for one issue and the wrong steady state. `sched` is resident in flash
 and is the obvious owner of a protocol every reactor participant needs.
 Relatedly, [`boot/README.md`](boot/README.md) states that `net.iface:poll()` is
 "reachable via `:attach()`" — `iface.lua` contains zero occurrences of the word.

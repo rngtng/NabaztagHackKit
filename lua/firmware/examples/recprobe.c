@@ -11,7 +11,7 @@
  *      MODE readback + HDAT1 poll (no ExtRAM access anywhere).
  *   B. ExtRAM burst   -> CLOCKF/MODE readback (the #123 knock, now at 32 MHz).
  *   C. re-arm record  -> HDAT1 polls with an ExtRAM burst between each
- *      (what a real nab.record loop does via the Lua heap).
+ *      (what a real recording loop does via the Lua heap).
  *   D. region bisect: burst at 0xD0000000 (lua heap base) vs 0xD0010000 (mtl
  *      deliberately moved SRAM_BASE here, 0xD0000000 commented out in mem.h)
  *      vs two higher windows - is the knock address-dependent?
@@ -203,7 +203,7 @@ int main(void)
   sh_puthex16("B2 MODE(post-ext)   ", sci_read(VS1003_MODE));
   sh_puthex16("B3 STATUS(post-ext) ", sci_read(VS1003_STATUS));
 
-  /* --- C: record while ExtRAM traffic interleaves (a real nab.record) ---- */
+  /* --- C: record while ExtRAM traffic interleaves (a real recording) ----- */
   sh_puthex16("C0 CLOCKF(rb)       ", clockf_arm());
   rec_start_8k();
   sh_puthex16("C1 MODE(rec)        ", sci_read(VS1003_MODE));
