@@ -299,10 +299,10 @@ effectively one 9,725-line module.
 
 `src/libc/` sits **above** `hal/` (its `syscalls.c` drives `hal/uart`), so ④ is
 still upward when measured by folder rank. That is the same artifact as before,
-relocated: the folder move made the *concern* visible, which was the point, but
-it could not make `net/` calling `rand()` into a downward edge. `firmware/README.md`
-calls `src/libc/` "a leaf"; it is a substitution layer, and only `libc_shim.c`
-inside it is a true leaf.
+relocated — and no further move would help, because ④ is not a dependency
+between layers of this firmware at all (see below). Note also that
+`firmware/README.md` calls `src/libc/` "a leaf": it is a substitution *layer*,
+and only `libc_shim.c` inside it depends on nothing.
 
 Four edges used to run against the layering, and **they were four different
 things** — which is exactly why three could be closed and one could not:
@@ -333,12 +333,28 @@ things** — which is exactly why three could be closed and one could not:
    still fires 63 times per half) so it cannot pass having derived nothing —
    independently confirmed to fail against a re-added `set_led`.
 4. ⬜ **`net/{eapol,ieee80211}.c` → `libc/libc_shim.c`** (`rand`, 2 symbols) —
-   *not a violation, and unchanged.* The shim is a libc replacement, not a
-   layer; it exists because newlib's `rand` drags ~9 KB of `vfprintf`/FILE
-   machinery into a 124 KB budget. This edge is an artifact of ranking layers by
-   folder, and #324 moved `libc_shim.c` from `utils/` to `libc/` without moving
-   its rank relative to `net/`. "Fixing" it would mean deleting the shim and
-   re-linking the 9 KB. It stays listed here so nobody re-discovers it as a bug.
+   *not a layering problem at all, and no file move can fix it.* `rand()` is a
+   C standard library function; any module may call it at any layer. The edge
+   exists in this graph only because the firmware **implements libc itself** and
+   the analysis ranks by folder — had `rand` come from newlib's archive, no
+   directory-based measurement would show an edge. #324 relocating the shim
+   changed nothing, and relocating it again would not either. The correct fix is
+   to the *analysis*: treat the libc substitutions as external, the way
+   `<string.h>` is treated. Listed here so nobody re-discovers it as a bug.
+
+   **Following it did turn up something real, though — just not about layers.**
+   The two call sites are `eapol.c:370` (`randbuffer(snonce, …)`, the WPA2
+   4-way-handshake SNonce) and `ieee80211.c:863` (an auth-frame IV), and the
+   generator behind them is seeded with a compile-time constant
+   (`rand_state = 0x2545f491`) that **`srand()` never overwrites — there is no
+   call to it anywhere in the tree**. So every boot produces a byte-identical
+   SNonce. `libc_shim.c`'s own header says as much and correctly notes it is not
+   a regression: newlib's `rand()` was equally unseeded, so `mtl/firmware` has
+   the same property. It bounds well short of a break — the PMK comes from the
+   passphrase, so the PTK is not derivable without it — but it removes one of
+   the two independent contributions to per-session PTK freshness, leaving the
+   AP's randomness carrying it alone. Tracked separately; it is a crypto-hygiene
+   finding that the "benign layering artifact" label was hiding.
 
 **Cost of clearing them: −16 B net** (−64 eapol, +8 the `console_last_rx_ms`
 accessor, +40 the tick hook), and every bring-up example got smaller or stayed
@@ -504,6 +520,19 @@ the extractions; #324 landing also unblocks #328's test, since the console is
 now injectable behind a header.
 
 **5. ~~A vendored 802.11 file writes the LEDs.~~** Fixed by #323 — see §7.
+
+**5b. The WPA2 SNonce is the same on every boot.** Not a layering finding — it
+surfaced from following edge ④ to what it feeds. `rand()` is seeded with a
+compile-time constant and `srand()` is never called anywhere in the tree, so
+`eapol.c:370`'s `randbuffer(snonce, …)` produces a byte-identical nonce every
+boot, on every unit. `libc_shim.c` documents this in its own header and is right
+that it is not a regression (newlib's `rand()` was equally unseeded, so
+`mtl/firmware` shares it). It is bounded — the PMK comes from the passphrase, so
+the PTK is not derivable without it — but it removes one of the two independent
+contributions to per-session PTK freshness. There is no hardware entropy source
+on this part, so the realistic fix is "seed from something that varies (tick at
+first radio use, mixed with scan RSSI) and state the limits", not "make it
+cryptographic".
 
 **6. Size figures drift, and nothing catches it.** Three documented numbers for
 the two demo assets disagreed — `firmware/README.md`'s "4,547 B together" with
