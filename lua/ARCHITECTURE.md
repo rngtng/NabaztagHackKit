@@ -521,18 +521,35 @@ now injectable behind a header.
 
 **5. ~~A vendored 802.11 file writes the LEDs.~~** Fixed by #323 — see §7.
 
-**5b. The WPA2 SNonce is the same on every boot.** Not a layering finding — it
-surfaced from following edge ④ to what it feeds. `rand()` is seeded with a
-compile-time constant and `srand()` is never called anywhere in the tree, so
-`eapol.c:370`'s `randbuffer(snonce, …)` produces a byte-identical nonce every
-boot, on every unit. `libc_shim.c` documents this in its own header and is right
-that it is not a regression (newlib's `rand()` was equally unseeded, so
-`mtl/firmware` shares it). It is bounded — the PMK comes from the passphrase, so
-the PTK is not derivable without it — but it removes one of the two independent
-contributions to per-session PTK freshness. There is no hardware entropy source
-on this part, so the realistic fix is "seed from something that varies (tick at
-first radio use, mixed with scan RSSI) and state the limits", not "make it
-cryptographic".
+**5b. There is no randomness source anywhere in this track.** Not a layering
+finding — it surfaced from following edge ④ to what it feeds, and it is wider
+than that edge. Every value this firmware puts on the wire that is supposed to
+be unguessable comes from either a constant-seeded LCG or the millisecond tick:
+
+| On the wire | Where | Derived from |
+|---|---|---|
+| WPA2 SNonce | `eapol.c:370` | `rand()`, `rand_state` a compile-time constant, **`srand()` never called anywhere** |
+| DHCP xid | `iface.lua:165` | `self.time() ~ 0x5bd1` |
+| DNS transaction id | `iface.lua:236` | `self.time() ~ 0x5bd1` |
+| DNS source port | `iface.lua:231` | `49152 + (self.time() & 0x3FFF)` |
+
+The SNonce is byte-identical on every boot of every unit. The other three vary
+with uptime, but they are drawn from the **same clock microseconds apart** — and
+the two DNS values share a constant — so they are correlated rather than
+independent. That matters most for DNS: the standard off-path defence is that an
+attacker must guess the 16-bit id *and* the 16-bit source port, and here one
+essentially yields the other.
+
+**Lua cannot fix this above the seam**: `math` is not in the trimmed stdlib, so
+there is no randomness primitive up there at all. This is a genuine case of work
+that *must* be pushed down to C — the opposite direction from
+everything else in the C/Lua distribution assessment. #169 scoped exactly this
+(`nab.random_bytes(n)`, seeded from ADC noise + timer jitter) and was closed
+`not_planned` when its parent epic was; the need did not go away with it.
+
+Bounded, and worth saying so: the PMK comes from the passphrase, so no PTK is
+derivable without it, and there is no hardware entropy source on this part — the
+realistic goal is "unguessable to an off-path observer", not "cryptographic".
 
 **6. Size figures drift, and nothing catches it.** Three documented numbers for
 the two demo assets disagreed — `firmware/README.md`'s "4,547 B together" with
