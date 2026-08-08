@@ -14,7 +14,7 @@ thing a reader most often needs: the edge list — including the edges that leav
 this track entirely.
 
 Sizes below were measured, not copied: `task lua:firmware:build` for flash and
-`task lua:lib:size` for bytecode, both re-run after #332 landed. Re-run them
+`task lua:lib:size` for bytecode, both re-run after #334 landed. Re-run them
 rather than trusting this page — several of the numbers the layer READMEs
 carried had drifted, and these will too.
 
@@ -42,7 +42,7 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
  ║  advance the reactor while blocking:  nab.wait · nab.play · nab.wifi_recv    ║
  ║  freeze it:  nab.wifi 30 s · nab.record 30 s · wifi_up 10 s · wifi_scan 5 s  ║
  ╚══════════════════════════════════════════════════════════════════════════════╝
- L2  THE LUA HOST ──────────────────────────── src/main.c · 1,382 ln · fan-out 17
+ L2  THE LUA HOST ──────────────────────────── src/main.c · 1,294 ln · fan-out 17
      38 bindings · #LC frame REPL · dispatch_events (the pump)
      open_trimmed_libs · init_hw
      the ONLY TU where lua_State exists — and ~28 cohesion clusters wide
@@ -53,7 +53,7 @@ Every size is measured (`task lua:firmware:build`, `task lua:lib:size`).
      src/libc/   keep-newlib-out-of-flash, and nothing else (#324):
                  libc_shim (rand/srand/__assert_func) · syscalls
                  (_read/_write → UART0, _sbrk → ExtRAM, halting abort)
-     src/utils/  event · fmt · lcframe
+     src/utils/  event · fmt · lcframe · lcread
      src/usb/    OHCI + RT2501 · 5,522 ln                          (vendored, -Os)
      src/net/    802.11 + WPA2-CCMP · 4,203 ln                     (vendored, -Os)
      lua/        PUC-Rio 5.4.7, parser removed · 30,280 ln    (vendored, 4 edits)
@@ -154,8 +154,8 @@ writes the console through `hal/uart`. It is a substitution layer, not a leaf �
 | `src/hal/` | 24 | 3,119 | ported from `mtl/firmware`, then diverged |
 | `examples/` — one-peripheral bring-up progs | 19 | 3,222 | original |
 | `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe | 10 | 1,516 | original |
-| `src/main.c` — the Lua host | 1 | 1,382 | original |
+| `src/utils/` — event, fmt, lcframe, lcread | 12 | 1,777 | original |
+| `src/main.c` — the Lua host | 1 | 1,294 | original |
 | `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
@@ -180,7 +180,7 @@ are global in effect:
 
 ### Flash budget
 
-`bin/firmware.elf` = **119,316 B of 126,976 B**, **7,660 B free** (measured, not
+`bin/firmware.elf` = **119,428 B of 126,976 B**, **7,548 B free** (measured, not
 quoted). Roughly: ~23 KB USB + 802.11/WPA2, ~3.2 KB the reactor (`coroutine`
 2,300 B measured), ~2.1 KB provisioning plumbing, ~1.5 KB the event core,
 3,674 B the resident boot chunk, 2,160 B the `nab.tone()` MP3, 836 B
@@ -244,8 +244,8 @@ Dropped: `math`, `io`, `os`, `package`, `debug`, `utf8`, `loadlib`, and from
 | `lib/hw/` | ears | RAM | 3,675 B |
 | `apps/` | 10 demo apps | RAM | — |
 
-**50,973 B of bytecode across 19 modules**, against 7,660 B of free flash
-(`119,316` of `126,976` used, post-#332).
+**50,973 B of bytecode across 19 modules**, against 7,548 B of free flash
+(`119,428` of `126,976` used, post-#334).
 
 `sched` is the only Lua that ships inside the image, and it is a runtime
 service rather than a convenience: `nab.on("tick", fn)` is called by
@@ -276,13 +276,13 @@ one that was never a violation:
                  ┌───────────────┐
                  │  src/main.c   │
                  └─┬───────┬───┬─┘
-         43 syms ↓        6 ↓   ↓ 2
+         43 syms ↓        4 ↓   ↓ 2
        ┌─────────────┐  ┌──────────────┐  ┌─────────────┐
        │  src/hal/   │  │  src/utils/  │─►│  src/libc/  │  ② now an ordinary
-       └─┬────┬────┬─┘  └──────┬───────┘1 └──────┬──────┘     downward edge:
-   10 ↓    2 ↓    ↓ 9          │ 2               │ 2           fmt.c → a header,
- ┌──────────┐  ┌──────────┐    ▼                 ▼             not into main.c
- │ src/usb/ │◄─┤ src/net/ │──► hal/ (event core) hal/uart
+       └─┬────┬────┬─┘  └──────┬───────┘2 └──────┬──────┘     downward edge:
+   10 ↓    2 ↓    ↓ 9          │ 2               │ 2           fmt.c and lcread.c
+ ┌──────────┐  ┌──────────┐    ▼                 ▼             → a header, not
+ │ src/usb/ │◄─┤ src/net/ │──► hal/ (event core) hal/uart      into main.c
  └────┬─────┘17│4 └──┬──┬─┘
     3 ↓  └─────┴───► │  └╌╌╌╌► ④ rand() ╌╌► libc/   (still "upward" — and still
       │ 1            │                             not a violation: see below)
@@ -506,18 +506,18 @@ checksum-comparison gate over the known-twin list would turn that into a
 failing task, and would have to be paired with an explicit
 allowed-divergence list.
 
-**4. `main.c` is 1,382 lines that nothing can link.** It carries `main()`, so no
+**4. `main.c` is 1,294 lines that nothing can link.** It carries `main()`, so no
 host test can reach it. The repo's own rule sends new non-wiring logic to its
-own TU, and `utils/lcframe.c` shows the pattern working — as does #324, which
-took the four newlib syscalls out to `src/libc/` and shed ~60 lines. Still
-inside `main.c` with a rule to them and no unit test: the WAV/RIFF header
-assembly (a byte-identical-to-mtl contract), the hex-frame reader and
-`drop_lc_payload` resync path, and `dispatch_events`' ordering guarantees. They
-are covered end-to-end by the sim goldens (`test:bytecode`, `test:desync`,
-`test:inject`, `test:sched`) — real coverage, but a failure reports as a
-transcript diff rather than as a named contract. Tracked as #326, with #327-#329
-the extractions; #324 landing also unblocks #328's test, since the console is
-now injectable behind a header.
+own TU, and three landed extractions now show the pattern working — `lcframe.c`,
+#324's `src/libc/`, and #328's `lcread.c`, which found three unread bugs in the
+writing of its assertions (see §9). `main.c` is down 150 lines across the two.
+
+Still inside it with a rule to them and no unit test: the WAV/RIFF header
+assembly (a byte-identical-to-mtl contract, #327) and `dispatch_events`'
+ordering guarantees including the `busy` guard (#329). They are covered
+end-to-end by the sim goldens (`test:bytecode`, `test:desync`, `test:inject`,
+`test:sched`) — real coverage, but a failure reports as a transcript diff rather
+than as a named contract. Tracked as #326.
 
 **5. ~~A vendored 802.11 file writes the LEDs.~~** Fixed by #323 — see §7.
 
@@ -610,15 +610,15 @@ on. `main.c` is not a false positive.
 
 ### The one structural defect: `main.c`
 
-Every metric puts it alone at the end of the distribution — 1,382 lines, 61
+Every metric puts it alone at the end of the distribution — 1,294 lines, 58
 functions, **fan-out 17** where the next highest is 7, I=0.94, 28 cohesion
 clusters. It is six modules sharing a file:
 
 ```
-[19] the REPL: console, #LC frame reader, event dispatch, boot, main
+[16] the REPL: console, event dispatch, boot, main
 [ 7] record + WAV/RIFF assembly          [ 5] wifi bindings + arg checking
 [ 4] LED bindings + colour checking      [ 2] beep   [ 2] config
-[22] singleton bindings (each a thin arg-check over one HAL call)
+[21] singleton bindings (each a thin arg-check over one HAL call)
 ```
 
 The singletons are fine — a binding table *should* be a list of thin wrappers.
@@ -627,11 +627,28 @@ the cause is structural rather than careless: `main.c` is the only place
 `lua_State` exists, so anything needing one lands there, and once there it can
 never be linked by a test.
 
-**Extraction demonstrably works, twice now.** `utils/lcframe.c` was pulled out
-and gained a unit test the moment it left; #324 took the four newlib syscalls to
-`src/libc/`, which cost 0 B for the mechanical move (measured against a control
-build) and turned the `_write` seam from an inline forward-declaration into a
-named header. Three clusters remain worth extracting — #327, #328, #329.
+**Extraction demonstrably works, three times now — and #328 is the case that
+proves the argument rather than just illustrating it.** `utils/lcframe.c` was
+pulled out and gained a unit test the moment it left. #324 took the four newlib
+syscalls to `src/libc/` for 0 B (measured against a control build) and turned
+the `_write` seam from an inline forward-declaration into a named header.
+
+Then #328 moved the `#LC` reader to `utils/lcread.c` and **writing the
+assertions found three bugs nobody had read out of the code**: a hand-typed
+`#LC:oops` ate the user's next line — the one they would type the correction
+on; the out-of-memory path never consumed its payload, which is the #308 desync
+on a path nobody had looked at; and the decode loop read the second nibble after
+the first had already failed, costing two bytes of resync instead of the one
+this console cannot avoid. It also closed the `LCFRAME_ERR_TOOLONG` corner whose
+own comment said it was left open *"because it is a loop over attacker-paced
+input in main.c, where nothing can link it to test it"* — the clearest statement
+anywhere in this tree of what the god file costs.
+
+It was not free: **+112 B**, because `drop_lc_payload`/`load_lc_frame` had been
+inlined and `drain_hex` is new code. Worth it for a path whose failure mode is a
+console that silently desyncs.
+
+Two clusters remain worth extracting — #327 and #329.
 
 **Two things are on the wrong side of the seam entirely.** `nab.rec_wav` is
 `string → string`: it touches no hardware, yet ~44 lines of RIFF assembly sit in
