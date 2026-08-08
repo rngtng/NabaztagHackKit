@@ -160,11 +160,11 @@ lines larger than it is.
 | `src/usb/` — OHCI host + RT2501 | 19 | 5,522 | vendored from mtl/V1 |
 | `src/net/` — 802.11, EAPOL, AES-128, hashes | 8 | 4,198 | vendored from mtl/V1 |
 | `src/hal/` | 24 | 3,129 | ported from `mtl/firmware`, then diverged |
-| `examples/` — one-peripheral bring-up progs | 19 | 3,222 | original |
+| `examples/` — one-peripheral bring-up progs | 19 | 3,228 | original |
 | `sys/` — startup, tick, irq, linker, regs | 11 | 2,457 | copied from `mtl/firmware` |
-| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 16 | 1,751 | original |
-| `src/main.c` — the Lua host | 1 | 1,108 | original |
-| `inc/` — `common.h`, `event.h`, `tone_mp3.h` | 3 | 644 | vendored + original |
+| `src/utils/` — event, fmt, lcframe, lcread, pump, wav, luaseam | 16 | 1,756 | original |
+| `src/main.c` — the Lua host | 1 | 1,084 | original |
+| `inc/` — `common.h`, `event.h`, `tone_midi.h` | 3 | 514 | vendored + original |
 | `src/libc/` — the newlib substitutions | 3 | 206 | original (#324) |
 
 Of the vendored Lua tree the build compiles a **subset**: 16 core files (of 19
