@@ -1,5 +1,4 @@
--- net.dhcp - DHCP packet build/parse, join-mode client and the single-lease
--- server for AP config mode (#217, feeds #218).
+-- net.dhcp - DHCP packet build/parse and the join-mode client (#217).
 --
 -- The client emits complete SNAP frames (everything is broadcast until we
 -- own an address); the caller sends them via nab.wifi_send(link.BCAST, f),
@@ -7,6 +6,10 @@
 -- (:retransmit re-yields the in-flight frame). All replies here ride
 -- broadcast (flags 0x8000) so the stack never needs to receive unicast IP
 -- before it has an address.
+--
+-- The single-lease **server** for AP config mode is dhcpd.lua, which adds
+-- dhcp.server to this table. It is off the #219 boot path - a rabbit that is
+-- joining never hands out a lease - so it is not frozen into flash.
 
 net = net or {}
 local dhcp = {}
@@ -55,11 +58,16 @@ function dhcp.parse(p)
   return r
 end
 
+-- Exported (rather than duplicated into dhcpd.lua) so the two directions build
+-- their broadcast frames the same way: the server's replies ride broadcast for
+-- exactly the reason the client's requests do, and one copy is what keeps that
+-- true. Costs the resident module a table field; a twin copy would cost more.
 local function bcast_frame(src_ip, sport, dport, payload)
   return link.encap(link.ETH_IP, ipv4.build{
     src = src_ip, dst = BCAST, proto = ipv4.UDP,
     payload = udp.build(src_ip, sport, BCAST, dport, payload)})
 end
+dhcp.bcast_frame = bcast_frame
 
 -- Client: c:discover() -> frame; then per UDP:68 payload,
 -- c:input(dgram) -> frame|nil, lease|nil. state: selecting/requesting/bound;
@@ -112,37 +120,3 @@ function dhcp.client(mac, xid)
   return c
 end
 
--- Server for AP config mode: one fixed lease, DNS pointed at ourselves so
--- the phone's first lookup lands on the config portal (#218). A REQUEST for
--- any other address is NAKed back to rediscovery.
--- o = {ip=, client_ip=[, mask=]} -> s; s:input(udp:67 payload) -> frame|nil
-function dhcp.server(o)
-  local s = {ip = o.ip, client_ip = o.client_ip,
-             mask = o.mask or link.ip("255.255.255.0")}
-
-  function s:input(dgram)
-    local r = dhcp.parse(dgram)
-    if not r or r.op ~= 1 or not r.msgtype then return nil end
-    local reply
-    if r.msgtype == dhcp.DISCOVER then
-      reply = dhcp.OFFER
-    elseif r.msgtype == dhcp.REQUEST then
-      local want = r.opts[50] or r.ciaddr
-      reply = (want == self.client_ip or want == ANY) and dhcp.ACK or dhcp.NAK
-    else
-      return nil
-    end
-    local body
-    if reply == dhcp.NAK then
-      body = dhcp.build{op = 2, xid = r.xid, mac = r.mac, msgtype = dhcp.NAK,
-                        opts = {{54, self.ip}}}
-    else
-      body = dhcp.build{op = 2, xid = r.xid, mac = r.mac, msgtype = reply,
-                        yiaddr = self.client_ip, siaddr = self.ip,
-                        opts = {{54, self.ip}, {51, string.pack(">I4", 86400)},
-                                {1, self.mask}, {3, self.ip}, {6, self.ip}}}
-    end
-    return bcast_frame(self.ip, 67, 68, body)
-  end
-  return s
-end

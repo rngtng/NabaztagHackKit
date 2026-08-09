@@ -15,21 +15,36 @@ resident chunk is #219's decision, fed by `task lua:lib:size`.
 ## Layout / layering
 
 Each file is one self-contained luac chunk that extends the global `net`
-table (the device has no `require`; load order is bottom-up):
+table (the device has no `require`; load order is bottom-up).
 
-| Module | Provides |
+**Two halves, since #219.** The plain-named modules are the **boot path** — join,
+get an address, fetch one file — and those are the ones frozen into flash. Every
+`*d` / `*_x` module is the half a *listening* or *asking* rabbit needs: it
+extends the same table its base module made, stays out of flash, and is loaded
+over the REPL (or by the app) when something wants it. Load it after its base.
+
+| Boot path (resident) | Provides |
 |--------|----------|
-| `link.lua` | LLC/SNAP encap/decap, RFC 1071 checksum, addr helpers. MACs/IPs are binary strings (6/4 bytes) end to end |
+| `link.lua` | LLC/SNAP encap/decap, RFC 1071 checksum, `aton`. MACs/IPs are binary strings (6/4 bytes) end to end |
 | `arp.lua` | request/reply build+parse, learned `arp.cache` |
 | `ipv4.lua` | header build/parse (fragments dropped), ICMP echo responder |
 | `udp.lua` | datagram build/parse, pseudo-header checksum |
-| `dhcp.lua` | client state machine (join) + single-lease server (AP config mode, DNS pointed at the portal for #218) |
-| `dns.lua` | both DNS halves: an A-record resolver with a bounded TTL cache (#232), and the captive-portal sinkhole that answers every A query with the AP IP so a joined phone's OS probe lands on the config page (#233 follow-up) |
+| `dhcp.lua` | client state machine (join) |
 | `tcp.lua` | minimal single-connection TCP: stop-and-wait, fixed window, fixed RTO, no TIME_WAIT — sized for one HTTP exchange |
-| `http.lua` | HTTP/1.0 GET builder, incremental response/request parsers, query decoding. No chunked encoding — the boot URL points at a plain file |
-| `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, and the blocking flows below |
+| `http.lua` | HTTP/1.0 GET builder + incremental response parser. No chunked encoding — the boot URL points at a plain file |
+| `iface.lua` | glue: demux, passive MAC learning, ARP-on-demand, `:dhcp`, `:http_get`. Methods live on the shared `iface.mt` so the other half can add to them |
+| `provision.lua` | `provision.boot`, the provisioning decision (#234): setup-vs-join, the LED vocabulary, and the persisted strike counter that guarantees a wrong-PSK / dead-AP rabbit falls back to setup instead of boot-looping |
+
+| REPL-loaded (not in flash) | Provides |
+|--------|----------|
+| `link_x.lua` | `link.ip` (asserting parse), `ntoa`, `mac2s` — for callers and consoles |
+| `dhcpd.lua` | the single-lease DHCP server (AP config mode, DNS pointed at the portal for #218) |
+| `dns.lua` | both DNS halves: an A-record resolver with a bounded TTL cache (#232), and the captive-portal sinkhole that answers every A query with the AP IP so a joined phone's OS probe lands on the config page (#233 follow-up) |
+| `tcpd.lua` | `tcp.listen` + the SYN-accept half, reached through the `tcp.accept` hook |
+| `httpd.lua` | the server side: request parser, query decoding, response builder |
+| `iface_x.lua` | `:dhcpd`, `:dnsd`, `:serve`, `:resolve`, `:ntp`, and listen-socket routing added to `:tcpin` |
+| `provision_x.lua` | `provision.run`, the nab-backed wiring of `provision.boot` (its setup hook is `net.setup.run`) |
 | `setup.lua` | AP setup-mode provisioning portal (#233): the one-page SSID/PSK/URL form, POST validation, and the `run()` boot flow that beacons the open AP, hands out a lease and saves creds to `nab.config` |
-| `provision.lua` | the provisioning boot decision (#234): setup-vs-join, the LED vocabulary, and the persisted strike counter that guarantees a wrong-PSK / dead-AP rabbit falls back to setup instead of boot-looping |
 | `ota.lua` | portal firmware upload (#235): CRC-32, whole-image header verify (magic / hardware id / length / checksum), and the `/firmware` upload page — hands only a fully verified image to `nab.flash_firmware` |
 
 State machines are pull-style: methods return arrays of ready-to-send
@@ -235,17 +250,26 @@ cannot tell you: **#259's `:ntp` added +1,001 B to `iface`**, and #286/#302's
 multi-connection `serve()` the rest. The `sys` modules `:ntp` drives are counted
 under `lua/lib/sys/`, not here.
 
-The boot-critical subset (join path: link/arp/ipv4/udp/dhcp/tcp/http ≈ 15.8 KB,
-23.0 KB once `iface` is counted) is what #219 must fit (compressed) — if it doesn't, #215 (ExtRAM
-execution) is the lever. `setup.lua` + `ota.lua` are **not** in that subset
-(they run only in setup mode); `provision.lua` is small and boot-critical (it
-decides between join and setup every boot), so it joins the resident subset.
+The boot-critical subset is the left-hand table above — that is what #219 must
+fit, compressed, into what is left of the 124 KB image.
+
+**Two measurements #219 made, both of which contradict what was assumed.**
+Bytecode compresses **~1.65×**, not the 2–3× #128/#215/#219 all budgeted with
+(measured with an LZSS-class coder, the only kind a ~200 B decompressor can
+implement; zlib reaches ~1.98×, but `inflate` costs several KB of flash itself).
+And ARM code compresses only **~1.16×**, which is why #215 — "compress the Lua
+core into ExtRAM" — would free ~8 KB net rather than the 20–25 KB it claims.
+
+The splits above are what that forced: they moved **~2.1 KB of source** off the
+boot path, for about **+0.4 KB** of duplicated chunk headers and re-exported
+internals across the six new files. Worth it, and worth knowing that a split is
+never free.
 
 `dns.lua` is **conditionally** boot-critical: the sinkhole half is setup-mode
 only, but the resolver is on the join path the moment #219's boot URL carries a
-hostname instead of a dotted quad. #232 cost 3,475 B across three modules —
-dns 872 → 3,061 (the resolver + cache added to the responder), iface 4,108 →
-5,158 (`:resolve` + the `http_get` wiring) and link 1,266 → 1,502
-(`link.aton`) — well above the issue's ~1–1.5 KB guess, so a hostname boot URL
-costs #219 roughly 3.5 KB over a dotted quad. Configuring the boot server as an
-IP still avoids all of it: `dns.lua` simply is not loaded.
+hostname instead of a dotted quad. #232 cost ~3.5 KB across three modules (the
+resolver + cache on the responder, `:resolve` + its `http_get` wiring, and
+`link.aton`) — well above the issue's ~1–1.5 KB guess, so a hostname boot URL
+costs #219 roughly 3.5 KB over a dotted quad. **Configuring the boot server as
+an IP avoids all of it**, which is what #219 does: `dns.lua` is not loaded, and
+`:http_get` returns `no resolver` if it is handed a name without one.

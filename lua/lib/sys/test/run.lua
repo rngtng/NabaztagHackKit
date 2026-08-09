@@ -47,10 +47,11 @@ for _, m in ipairs(MODULES) do
   end
 end
 
--- The net stack, for ifc:ntp (net/iface.lua). Loaded bottom-up exactly as the
--- REPL would, and NOT re-linted here - net/test/run.lua owns that.
+-- The net stack, for ifc:ntp (net/iface_x.lua - :ntp is off the #219 boot path,
+-- so it lives in the optional half). Loaded bottom-up exactly as the REPL
+-- would, and NOT re-linted here - net/test/run.lua owns that.
 for _, m in ipairs{"link", "arp", "ipv4", "udp", "dhcp", "tcp", "http", "dns",
-                   "iface"} do
+                   "iface", "iface_x"} do
   runfile(base .. "/../net/" .. m .. ".lua")
 end
 

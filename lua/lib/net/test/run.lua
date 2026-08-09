@@ -22,8 +22,14 @@ local function runfile(path)
   return src
 end
 
-MODULES = {"link", "arp", "ipv4", "udp", "dns", "dhcp", "tcp", "http", "iface",
-           "setup", "provision", "ota"}
+-- Load order, bottom-up: each module extends the global `net` table, so a
+-- module that adds methods to another's table (iface_x -> iface.mt) must follow
+-- it. The #219 boot path is link..iface; everything after is REPL-loaded.
+-- The #219 boot path is the plain names; every *_x / *d module is the half that
+-- stays out of flash and is loaded over the REPL when something wants it.
+MODULES = {"link", "link_x", "arp", "ipv4", "udp", "dns", "dhcp", "dhcpd",
+           "tcp", "tcpd", "http", "httpd", "iface", "iface_x", "setup",
+           "provision", "provision_x", "ota"}
 
 -- The device opens base + table + string only (src/main.c): fail fast if a
 -- module drifts onto host-only stdlib. Word-boundary match keeps e.g.
