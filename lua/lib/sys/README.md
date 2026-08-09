@@ -30,8 +30,11 @@ print(sys.time.format(sys.time.localtime(), sys.time.HUMAN))
                                                     -- 2026-08-01 14:34:56
 ```
 
-`ifc:ntp(server [, timeout])` lives in `net/iface.lua` (it is a UDP flow, and
-net owns the socket), shaped exactly like `ifc:resolve`: one datagram to port
+`ifc:ntp(server [, timeout])` lives in `net/iface_x.lua` (it is a UDP flow, and
+net owns the socket) — `iface_x` rather than `iface` since #219, which froze the
+boot path into flash and left everything else, `:ntp` and `:resolve` included,
+to be loaded over the REPL. Load `net/iface_x.lua` before calling it. It is
+shaped exactly like `ifc:resolve`: one datagram to port
 123 from an ephemeral port, retried on a 1 s timer until the timeout
 (default 5 s), returning `unix seconds | nil, err`. `server` is a 4-byte
 address or a name — a name goes through `ifc:resolve` first, so

@@ -75,15 +75,7 @@ function link.aton(s)
   return string.char(a, b, c, d)
 end
 
-function link.ip(s)
-  return assert(link.aton(s), "bad IPv4 address")
-end
-
-function link.ntoa(ip)
-  return ("%d.%d.%d.%d"):format(ip:byte(1, 4))
-end
-
-function link.mac2s(m)
-  return (m:gsub(".", function(c) return ("%02x:"):format(c:byte()) end)
-          :sub(1, -2))
-end
+-- link.ip / link.ntoa / link.mac2s are link_x.lua (#219): the asserting form and
+-- the two human-readable renderings are for callers and consoles, and no module
+-- on the boot path calls them - netboot needs only link.aton, to turn the
+-- configured dotted-quad boot server into an address.

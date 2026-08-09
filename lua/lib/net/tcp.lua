@@ -182,16 +182,13 @@ local function new(o)
       return out
     end
 
+    -- Accepting a SYN is tcpd.lua's (#219): a connection only ever reaches
+    -- "listen" through tcp.listen, which lives there too, so a boot image
+    -- without it can never take this branch. Kept as a hook rather than a
+    -- wrapped :input because the port/checksum filtering above must happen
+    -- first either way, and duplicating that is what the split is avoiding.
     if self.state == "listen" then
-      if (s.flags & tcp.SYN) ~= 0 and (s.flags & tcp.ACK) == 0 then
-        self.dst, self.dport = pkt.src, s.sport
-        self.rcv_nxt = s.seq + 1
-        if s.mss and s.mss < MSS then self.mss = s.mss else self.mss = MSS end
-        self.iss = self.iss or (self.clock() * 31 + 5) & 0x7FFFFFFF
-        self.snd_nxt = self.iss
-        self.state = "syn-received"
-        arm(self, out, tcp.SYN | tcp.ACK, "", string.pack(">BBI2", 2, 4, 1460))
-      end
+      if tcp.accept then tcp.accept(self, s, pkt, out) end
       return out
     end
 
@@ -259,9 +256,6 @@ function tcp.client(o)
   return new(o)
 end
 
--- {src=,port=[,iss=,clock=]} -> conn in "listen"; accepts the first SYN
-function tcp.listen(o)
-  local c = new{src = o.src, sport = o.port, iss = o.iss, clock = o.clock}
-  c.state = "listen"
-  return c
-end
+-- The listening half is tcpd.lua (tcp.listen + the tcp.accept hook above); it
+-- needs these three, which are otherwise internal. Not the public surface.
+tcp.new, tcp.arm, tcp.MSS = new, arm, MSS

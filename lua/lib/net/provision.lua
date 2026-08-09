@@ -89,23 +89,8 @@ function provision.boot(h)
   return "retry", reason
 end
 
--- nab-backed wiring of boot(). opts.button_held / opts.max_fails override the
--- defaults (tests, or a different recovery gesture). Returns boot()'s result.
-function provision.run(opts)
-  opts = opts or {}
-  return provision.boot{
-    button_held = opts.button_held or nab.button,
-    read_cfg = function() return nab.config() end,
-    save = function(cfg) return nab.config(cfg) end,
-    join = function(cfg)
-      local ok, _, reason = nab.wifi(cfg.ssid, cfg.psk)
-      return ok == true, reason
-    end,
-    led = function(state)
-      local d = provision.LED[state]
-      if d then nab.led(d[1], d[2], d[3], d[4]) end
-    end,
-    setup = function() return net.setup.run() end,
-    max_fails = opts.max_fails,
-  }
-end
+-- provision.run - the nab-backed wiring of boot() - is provision_x.lua. It
+-- wires setup = net.setup.run, and net.setup is not resident (#219), so the
+-- boot image cannot use it: boot/netboot.lua supplies its own hooks instead,
+-- with a setup hook that signals rather than serving a portal. What stays here
+-- is boot(), the pure decision, which both wirings share.
